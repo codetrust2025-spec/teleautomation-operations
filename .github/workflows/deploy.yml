@@ -1,0 +1,215 @@
+name: deploy
+
+# Merging to main is a production release. This workflow builds the image once,
+# pushes it to the private registry by commit, and asks the production host to
+# run exactly that digest. The host does the pulling, restarting, verification
+# and rollback (deploy/production/teleautomation-deploy in the Marketing
+# repository); this side only chooses the commit and names the digest.
+#
+# Manual runs choose a commit that is already on main -- a redeploy or a
+# rollback -- and either `verify` it on the host (pull and inspect, nothing
+# restarts) or `deploy` it. A commit that was built before is not rebuilt.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit on main, 40 hex characters. Empty means the current main."
+        required: false
+        default: ""
+      action:
+        description: "verify: pull and inspect on the host, restart nothing. deploy: make it live."
+        type: choice
+        options: [verify, deploy]
+        default: verify
+
+permissions:
+  contents: read
+
+# One release at a time, and never cancelled part-way: a deploy interrupted
+# between restart and verification is exactly the state rollback exists for.
+# GitHub keeps only the newest pending run, so a burst of merges releases the
+# last of them rather than each in turn.
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPO: ghcr.io/codetrust2025-spec/teleautomation-operations
+  # The stage switch. While "false", a push to main builds and pushes the image
+  # and deploys nothing; production is still released by the Marketing
+  # fix_and_deploy.sh. The cutover sets it to "true", after which every merge to
+  # main deploys.
+  AUTO_DEPLOY: "false"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+      auto_deploy: ${{ steps.check.outputs.auto_deploy }}
+    steps:
+      - id: check
+        env:
+          OPERATIONS_PUBLIC_URL: ${{ vars.OPERATIONS_PUBLIC_URL }}
+          MARKETING_PUBLIC_URL: ${{ vars.MARKETING_PUBLIC_URL }}
+        run: |
+          echo "auto_deploy=$AUTO_DEPLOY" >> "$GITHUB_OUTPUT"
+          # The dashboard bakes both public URLs in at build time, and neither
+          # repository commits environment specifics, so they are repository
+          # variables. Without them there is no correct image to build.
+          if [ -n "$OPERATIONS_PUBLIC_URL" ] && [ -n "$MARKETING_PUBLIC_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Image build SKIPPED: repository variables OPERATIONS_PUBLIC_URL and MARKETING_PUBLIC_URL are not set yet."
+          fi
+
+  image:
+    needs: preflight
+    if: needs.preflight.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha: ${{ steps.target.outputs.sha }}
+      digest: ${{ steps.existing.outputs.digest || steps.build.outputs.digest }}
+    steps:
+      - name: Choose the commit
+        id: target
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          sha="${INPUT_SHA:-$GITHUB_SHA}"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be 40 lowercase hex characters"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 0
+      - name: Only a commit on main is ever released
+        run: |
+          git merge-base --is-ancestor "${{ steps.target.outputs.sha }}" origin/main \
+            || { echo "::error::${{ steps.target.outputs.sha }} is not on main"; exit 1; }
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # A redeploy or rollback runs the bits that were released before, not a
+      # rebuild of them.
+      - name: Reuse the image if this commit was already built
+        id: existing
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          if manifest=$(docker buildx imagetools inspect "$IMAGE_REPO:$SHA" --format '{{json .Manifest}}' 2>/dev/null); then
+            digest=$(printf '%s' "$manifest" | python3 -c 'import json, sys; print(json.load(sys.stdin)["digest"])')
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "::notice::$SHA was already built as $digest; reusing it"
+          fi
+      - name: Build and push
+        id: build
+        if: steps.existing.outputs.digest == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # One plain manifest, so the digest the host pulls is the digest of
+          # the image whose labels it inspects.
+          provenance: false
+          sbom: false
+          tags: ${{ env.IMAGE_REPO }}:${{ steps.target.outputs.sha }}
+          build-args: |
+            RELEASE_SHA=${{ steps.target.outputs.sha }}
+            RELEASE_BUILT_AT=${{ steps.target.outputs.built_at }}
+            VITE_OPERATIONS_PUBLIC_URL=${{ vars.OPERATIONS_PUBLIC_URL }}
+            VITE_MARKETING_PUBLIC_URL=${{ vars.MARKETING_PUBLIC_URL }}
+          cache-from: type=gha,scope=operations-image
+          cache-to: type=gha,scope=operations-image,mode=max
+      - name: Summary
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+          DIGEST: ${{ steps.existing.outputs.digest || steps.build.outputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no image digest was produced"; exit 1; }
+          echo "### Image" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$IMAGE_REPO:$SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: [preflight, image]
+    if: github.event_name == 'workflow_dispatch' || needs.preflight.outputs.auto_deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The SSH key and host details live only in this environment, which is
+    # limited to main. A branch, a fork or a pull request cannot read them.
+    environment:
+      name: production
+      url: ${{ vars.OPERATIONS_PUBLIC_URL }}
+    permissions:
+      contents: read
+      # The host pulls with this job's own token. It expires with the job, so
+      # no registry credential is ever stored on the server.
+      packages: read
+    steps:
+      - name: Skip a push that main has already moved past
+        id: current
+        env:
+          SHA: ${{ needs.image.outputs.sha }}
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$EVENT" = "push" ]; then
+            head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)
+            if [ -n "$head" ] && [ "$head" != "$SHA" ]; then
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::main is now ${head:0:7}; its own run releases it, so ${SHA:0:7} is not deployed"
+              exit 0
+            fi
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+      - name: Configure SSH
+        if: steps.current.outputs.release == 'true'
+        env:
+          KEY: ${{ secrets.PROD_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.PROD_KNOWN_HOSTS }}
+          HOST: ${{ vars.PROD_DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          [ -n "$KEY" ] && [ -n "$KNOWN_HOSTS" ] && [ -n "$HOST" ] \
+            || { echo "::error::the production environment needs PROD_DEPLOY_SSH_KEY, PROD_KNOWN_HOSTS and PROD_DEPLOY_HOST"; exit 1; }
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/prod_deploy"
+          chmod 0600 "$HOME/.ssh/prod_deploy"
+          # Pinned host key: the connection fails rather than trusting a host
+          # it has not been told about.
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/prod_known_hosts"
+      - name: Release on the host
+        if: steps.current.outputs.release == 'true'
+        env:
+          HOST: ${{ vars.PROD_DEPLOY_HOST }}
+          SHA: ${{ needs.image.outputs.sha }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || 'deploy' }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no commit"; exit 1; }
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
+          case "$ACTION" in verify|deploy) ;; *) echo "::error::unknown action $ACTION"; exit 1 ;; esac
+          # The registry credential travels on stdin only: never in the remote
+          # command line, which the host would see in its process list.
+          printf '%s\n%s\n' "$GITHUB_ACTOR" "$REGISTRY_TOKEN" \
+            | ssh -i "$HOME/.ssh/prod_deploy" \
+                -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
+                -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/prod_known_hosts" \
+                "deploy@$HOST" "$ACTION $SHA $DIGEST"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$HOME/.ssh/prod_deploy"
