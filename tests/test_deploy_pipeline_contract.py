@@ -63,7 +63,19 @@ class TestWhatCanStartARelease:
     def test_a_manual_run_defaults_to_verify_not_deploy(self, deploy):
         action = triggers(deploy)["workflow_dispatch"]["inputs"]["action"]
         assert action["default"] == "verify"
-        assert action["options"] == ["verify", "deploy"]
+        assert action["options"] == ["verify", "deploy", "build"]
+
+    def test_a_manual_build_never_reaches_the_host(self, deploy):
+        condition = " ".join(deploy["jobs"]["deploy"]["if"].split())
+        assert "(github.event_name == 'workflow_dispatch' && inputs.action != 'build')" in condition
+        assert "(github.event_name == 'push' && needs.preflight.outputs.auto_deploy == 'true')" in condition
+
+    def test_old_images_are_pruned_but_a_rollback_window_is_kept(self, deploy):
+        prune = deploy["jobs"]["prune"]
+        assert prune["if"] == "github.event_name == 'push'"
+        keep = steps(prune)[0]["with"]
+        assert keep["package-name"] == "teleautomation-operations"
+        assert int(keep["min-versions-to-keep"]) >= 20
 
     def test_only_a_commit_on_main_is_built(self, deploy):
         run = step_named(deploy["jobs"]["image"], "Only a commit on main")["run"]

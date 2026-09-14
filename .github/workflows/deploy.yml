@@ -8,7 +8,8 @@ name: deploy
 #
 # Manual runs choose a commit that is already on main -- a redeploy or a
 # rollback -- and either `verify` it on the host (pull and inspect, nothing
-# restarts) or `deploy` it. A commit that was built before is not rebuilt.
+# restarts), `deploy` it, or only `build` it, which never contacts the host. A
+# commit that was built before is not rebuilt.
 on:
   push:
     branches: [main]
@@ -19,9 +20,9 @@ on:
         required: false
         default: ""
       action:
-        description: "verify: pull and inspect on the host, restart nothing. deploy: make it live."
+        description: "verify: pull and inspect on the host, restart nothing. deploy: make it live. build: image only."
         type: choice
-        options: [verify, deploy]
+        options: [verify, deploy, build]
         default: verify
 
 permissions:
@@ -142,9 +143,29 @@ jobs:
           echo "\`$IMAGE_REPO:$SHA\`" >> "$GITHUB_STEP_SUMMARY"
           echo "\`$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
 
+  # Every release is kept as an image until 30 newer ones exist: at one or
+  # more merges a day that is weeks of rollback targets, and the registry never
+  # grows without bound. Only after a push, so a manual run never deletes.
+  prune:
+    needs: image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/delete-package-versions@v5
+        with:
+          package-name: teleautomation-operations
+          package-type: container
+          min-versions-to-keep: 30
+
   deploy:
     needs: [preflight, image]
-    if: github.event_name == 'workflow_dispatch' || needs.preflight.outputs.auto_deploy == 'true'
+    # A manual run reaches the host unless it asked only for a build; a push
+    # reaches it only once the committed stage switch says so.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.action != 'build') ||
+      (github.event_name == 'push' && needs.preflight.outputs.auto_deploy == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The SSH key and host details live only in this environment, which is
