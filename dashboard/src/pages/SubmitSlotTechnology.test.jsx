@@ -116,9 +116,9 @@ describe('Submit slot — round-wise technology', () => {
     await waitFor(() => expect(screen.queryByText(/reading invite with ai/i)).toBeNull())
     // This candidate is waived, so the fee must have cleared before confirming.
     // Asserting it makes the precondition explicit instead of timing-dependent.
-    // Round-wise names no price, so the card is recognised by its note. Checking
-    // for "Payment due" here would pass whether or not the fee had cleared.
-    await waitFor(() => expect(screen.queryByText(/finalized based on referrer and client discussion/i)).toBeNull())
+    // Round-wise shows no pricing, so the card is recognised by its upload hint,
+    // which is gone once the fee is waived or cleared.
+    await waitFor(() => expect(screen.queryByText(/paid in parts\? attach each screenshot/i)).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
 
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
