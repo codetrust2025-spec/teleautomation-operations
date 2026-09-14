@@ -21,6 +21,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  # The dual-service verification checks out the private Marketing repository
+  # with a read-only deploy key (secret MARKETING_READ_DEPLOY_KEY). While this is
+  # "false", a run without that key reports the job as skipped and passes -- the
+  # Marketing release-anchor PR still runs the same verification before any
+  # deploy. The cutover to CI-driven deploys sets it to "true", after which a
+  # missing key fails the check instead of skipping it.
+  REQUIRE_DUAL_SERVICE: "false"
+
 jobs:
   # Which lane a change takes. Fail-safe by construction: the fast lane requires
   # every changed path to match a narrow allowlist, so anything unrecognised --
@@ -63,11 +72,10 @@ jobs:
           echo "lane=$LANE" >> "$GITHUB_OUTPUT"
           echo "::notice::lane=$LANE"
 
-  # Fast lane. Runs every dashboard check the full lane runs -- the complete
-  # vitest suite, the audit, and the production build -- and skips only the
-  # backend and image steps.
+  # Every dashboard check, on both lanes: the complete vitest suite, the audit,
+  # and the production build. On the fast lane it is the whole gate.
   #
-  # Why skipping those is safe rather than merely quicker, for these paths:
+  # Why the fast lane may skip everything else, for its paths:
   #   - No Python test reads the dashboard tree. The one test that walks the
   #     repository (tests/test_interview_booking_regression_baseline.py) lists
   #     "dashboard" in its skip set, so pytest's inputs are byte-identical to
@@ -81,9 +89,8 @@ jobs:
   #     this lane cannot have changed.
   # The deploy still builds the real image and verifies /version, health, every
   # container and public 200 on the host.
-  frontend:
+  dashboard:
     needs: classify
-    if: needs.classify.outputs.lane == 'frontend'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +105,9 @@ jobs:
       - run: npm run build
         working-directory: dashboard
 
-  verify:
+  # The backend half of what used to be one sequential `verify` job. The three
+  # full-lane jobs run side by side; together they are every step it ran.
+  python:
     needs: classify
     if: needs.classify.outputs.lane == 'full'
     runs-on: ubuntu-latest
@@ -118,7 +127,6 @@ jobs:
         with: {python-version: "3.12", cache: pip}
       - run: pip install -r requirements.txt pytest
       - run: pip check
-      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - run: python -m core.migrations.runner
         env: {DATABASE_URL: "postgresql://business_ci:business_ci@localhost:5432/business_ci"}
       - name: Verify migrations are idempotent
@@ -135,22 +143,48 @@ jobs:
       # "An active profile already exists for phone ...". Scoping the variable
       # to the migration steps restores the isolation the tests are built on.
       - run: python -m pytest -q
-      - uses: actions/setup-node@v4
-        with: {node-version: "22", cache: npm, cache-dependency-path: dashboard/package-lock.json}
-      - run: npm ci
-        working-directory: dashboard
-      - run: npm audit --omit=dev --audit-level=critical
-        working-directory: dashboard
-      - run: npm test -- --run
-        working-directory: dashboard
-      - run: npm run build
-        working-directory: dashboard
+
+  # The real image, built with the layer cache the deploy build also uses, then
+  # run the way production runs it: migrations, health, the commit it reports,
+  # and persistence across a restart.
+  container:
+    needs: classify
+    if: needs.classify.outputs.lane == 'full'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: teleautomation-operations-ci:${{ github.sha }}
+          build-args: |
+            RELEASE_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=operations-image
+          cache-to: type=gha,scope=operations-image,mode=max
       - run: cp .env.example .env
-      - run: docker compose build
-      - run: docker compose up -d
+      - name: Run both services from the image just built
+        run: |
+          cat > compose.ci-image.yml <<EOF
+          services:
+            api: {image: "teleautomation-operations-ci:${GITHUB_SHA}", pull_policy: never}
+            migrate: {image: "teleautomation-operations-ci:${GITHUB_SHA}", pull_policy: never}
+          EOF
+          echo "COMPOSE_FILE=docker-compose.yml:compose.ci-image.yml" >> "$GITHUB_ENV"
+      - run: docker compose up -d --no-build
         env: {TELEAUTOMATION_SAFE_UI_MODE: "true"}
       - name: Health check
         run: curl --fail --retry 24 --retry-delay 5 --retry-all-errors http://127.0.0.1:8200/health
+      # What the deploy verifies on the host, proven here first: the commit
+      # baked into the image is the one /version reports.
+      - name: /version reports the commit the image was built from
+        run: |
+          got=$(curl -s http://127.0.0.1:8200/version | python3 -c 'import json, sys; print(json.load(sys.stdin)["sha"])')
+          [ "$got" = "$GITHUB_SHA" ] || { echo "::error::/version is $got, expected $GITHUB_SHA"; exit 1; }
+          label=$(docker image inspect "teleautomation-operations-ci:${GITHUB_SHA}" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+          [ "$label" = "$GITHUB_SHA" ] || { echo "::error::image revision label is $label, expected $GITHUB_SHA"; exit 1; }
       - name: Migrations ran inside the container and are idempotent
         run: |
           docker compose run --rm -T migrate | tee /tmp/second-run.txt
@@ -167,38 +201,99 @@ jobs:
       - if: always()
         run: docker compose down -v
 
+  # Operations against Marketing, exactly as Marketing CI runs it the other way
+  # round: both repositories share scripts/ci_dual_service.sh in Marketing, so
+  # the dual-service contracts, the staging stack and the backup/restore/rollback
+  # rehearsal are the same checks from either side.
+  dual-service:
+    needs: classify
+    if: needs.classify.outputs.lane == 'full'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the read-only Marketing key
+        id: key
+        env:
+          HAS_KEY: ${{ secrets.MARKETING_READ_DEPLOY_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          if [ "$REQUIRE_DUAL_SERVICE" = "true" ]; then
+            echo "::error::MARKETING_READ_DEPLOY_KEY is not set, so the dual-service verification cannot run"
+            exit 1
+          fi
+          echo "::notice::Dual-service verification SKIPPED: MARKETING_READ_DEPLOY_KEY is not set yet. The Marketing release-anchor PR still runs it before any deploy."
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.available == 'true'
+        with: {path: teleautomation-business}
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.available == 'true'
+        with:
+          repository: codetrust2025-spec/teleautomation-messaging
+          ssh-key: ${{ secrets.MARKETING_READ_DEPLOY_KEY }}
+          path: teleautomation-messaging
+          # The rollback rehearsal checks out a real previous commit.
+          fetch-depth: 0
+      # Paired changes are made on identically named branches in both
+      # repositories and merge together, so when Marketing has a branch of the
+      # same name, that pair is what will ship: verify against it. Otherwise
+      # verify against Marketing main.
+      - name: Pair with a same-named Marketing branch
+        if: steps.key.outputs.available == 'true'
+        working-directory: teleautomation-messaging
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          if [ -n "$BRANCH" ] && git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch --quiet origin "$BRANCH"
+            git checkout --quiet FETCH_HEAD
+            echo "::notice::Verifying against the paired Marketing branch $BRANCH"
+          else
+            echo "::notice::Verifying against Marketing main"
+          fi
+      - name: Cross-repository verification
+        if: steps.key.outputs.available == 'true'
+        working-directory: teleautomation-messaging
+        run: |
+          [ -f scripts/ci_dual_service.sh ] || { echo "::error::Marketing has no scripts/ci_dual_service.sh at this commit"; exit 1; }
+          bash scripts/ci_dual_service.sh
+
   # One check that always runs and always reflects the whole workflow.
   #
-  # Neither repository has branch protection -- private repositories on this
-  # plan cannot -- so nothing on GitHub's side requires a status before a merge.
-  # The only gate is `gh pr checks --watch` in fix_and_deploy.sh. A workflow
-  # whose every job can be skipped could therefore present nothing to fail on,
-  # so this job runs unconditionally and fails unless the lane that was actually
-  # selected succeeded.
+  # A workflow whose every job can be skipped could present nothing to fail on,
+  # so this job runs unconditionally and fails unless every job the selected
+  # lane requires succeeded. It is the single status a merge requires.
   ci:
-    needs: [classify, frontend, verify]
+    needs: [classify, dashboard, python, container, dual-service]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - env:
           LANE: ${{ needs.classify.outputs.lane }}
           CLASSIFY: ${{ needs.classify.result }}
-          FRONTEND: ${{ needs.frontend.result }}
-          VERIFY: ${{ needs.verify.result }}
+          DASHBOARD: ${{ needs.dashboard.result }}
+          PYTHON: ${{ needs.python.result }}
+          CONTAINER: ${{ needs.container.result }}
+          DUAL: ${{ needs.dual-service.result }}
         run: |
           set -eu
-          echo "lane=$LANE classify=$CLASSIFY frontend=$FRONTEND verify=$VERIFY"
+          echo "lane=$LANE classify=$CLASSIFY dashboard=$DASHBOARD python=$PYTHON container=$CONTAINER dual-service=$DUAL"
           if [ "$CLASSIFY" != success ]; then
             echo "::error::classification failed"; exit 1
           fi
+          [ "$DASHBOARD" = success ] || { echo "::error::dashboard checks failed"; exit 1; }
           case "$LANE" in
             frontend)
-              [ "$FRONTEND" = success ] || { echo "::error::frontend lane failed"; exit 1; }
-              [ "$VERIFY" = skipped ] || { echo "::error::verify should be skipped on the frontend lane"; exit 1; }
+              for job in "python=$PYTHON" "container=$CONTAINER" "dual-service=$DUAL"; do
+                [ "${job#*=}" = skipped ] || { echo "::error::${job%%=*} should be skipped on the frontend lane"; exit 1; }
+              done
               ;;
             full)
-              [ "$VERIFY" = success ] || { echo "::error::full lane failed"; exit 1; }
-              [ "$FRONTEND" = skipped ] || { echo "::error::frontend should be skipped on the full lane"; exit 1; }
+              for job in "python=$PYTHON" "container=$CONTAINER" "dual-service=$DUAL"; do
+                [ "${job#*=}" = success ] || { echo "::error::${job%%=*} did not pass on the full lane"; exit 1; }
+              done
               ;;
             *)
               echo "::error::unknown lane '$LANE'"; exit 1
