@@ -120,10 +120,15 @@ def build_reconciliation_report(
         cid = _text(audit.get("candidate_id"))
         event = events_by_message.get(_text(audit.get("gmail_message_id")), {})
         expected = resolve(_text(event.get("candidate_id")) or cid, links)
-        if expected and (cid != expected or event and _text(event.get("canonical_candidate_id")) != expected):
+        # Historical source IDs are immutable facts, not stale projections.
+        # Only persisted identity links prove equivalence; never infer a link
+        # from names, contact details, booking times, or the event itself.
+        audit_identity = resolve(cid, links)
+        event_identity = resolve(_text(event.get("canonical_candidate_id")), links)
+        if expected and (audit_identity != expected or event and event_identity != expected):
             add("CANONICAL_CANDIDATE_REFERENCE_DRIFT", "high", audit,
-                detail=f"Audit candidate {cid}; event canonical {event.get('canonical_candidate_id')}; persisted identity {expected}.",
-                expected=expected, repair="Normalize references in a separately approved, audited transaction; retain original source IDs. Do not rebook.", sources=("booking_audit", "ai_recruitment_event", "candidate_identity_links"))
+                detail=f"Audit candidate {cid} resolves to {audit_identity}; event canonical {event.get('canonical_candidate_id')} resolves to {event_identity}; persisted identity {expected}.",
+                expected=expected, repair="Verify identity evidence before proposing a separately approved append-only correction or projection update. Preserve original audit references. Do not link identities or rebook automatically.", sources=("booking_audit", "ai_recruitment_event", "candidate_identity_links"))
 
     message_audits = {}
     # Attempts are append-only. A later failed/skipped replay cannot hide a
