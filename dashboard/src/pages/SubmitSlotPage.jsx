@@ -435,13 +435,9 @@ export function SubmitSlotPage() {
   const paymentAmountDue = roundWise
     ? (paymentRequirement?.amount_due ?? paymentTotals?.amount_due ?? null)
     : (selected?.balance_due || 0)
-  // Round-wise has no fixed price. The backend tariff is only the floor --
-  // payment_complete clears once verified payments reach it -- and the final
-  // amount is agreed between the referrer and the client, so presenting the
-  // tariff as the amount owed told candidates a number that was often wrong.
-  const roundWiseMinimum = roundWise && paymentAmountDue > 0
-    ? `₹${paymentAmountDue.toLocaleString('en-IN')}`
-    : null
+  // Round-wise shows no price, minimum or pricing explanation: the amount is
+  // agreed off this page. The backend still enforces its own floor through
+  // payment_complete and /bookings/confirm; the page simply never repeats it.
   const needsPaymentProof = Boolean(paymentRequired && !paymentComplete)
 
   // Asked of the backend, never derived here. The Re-Service waiver depends on
@@ -752,7 +748,15 @@ export function SubmitSlotPage() {
       // message instead of inventing a cause.
       const res = await fetch(`${API_BASE}/bookings/confirm`, { method: 'POST', body: fd })
       const data = await readApiResponse(res)
-      if (!res.ok) { setError(data.payment_due ? (data.message || 'Payment required.') : (data.message || 'Could not book slot')); return }
+      if (!res.ok) {
+        // Every round-wise payment refusal but one names the fee, and the page
+        // shows no pricing for round-wise, so it says what to do instead.
+        const paymentMessage = roundWise
+          ? 'Upload and verify the payment screenshot to continue.'
+          : (data.message || 'Payment required.')
+        setError(data.payment_due ? paymentMessage : (data.message || 'Could not book slot'))
+        return
+      }
       booked = true
       if (slotPreview) URL.revokeObjectURL(slotPreview)
       setSlotFile(null); setSlotPreview(''); setParsedSlot(null); setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setServiceType('profile_service'); resetPaymentProofs()
@@ -1014,18 +1018,13 @@ export function SubmitSlotPage() {
                       )}
                     </span>
                   </div>
-                  {roundWise && (
-                    <p className="sbs-pay-note">
-                      {`Payment amount will be finalized based on referrer and client discussion.${roundWiseMinimum ? ` Minimum charge starts from ${roundWiseMinimum}.` : ''}`}
-                    </p>
-                  )}
                   {paymentProofIds.length > 0 && (
                     <>
                       <p className={paymentComplete ? 'sbs-pay-ok' : 'sbs-pay-partial'}>
                         {paymentComplete
                           ? `Payment proof on file ✓ · ₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} across ${paymentProofIds.length} screenshot${paymentProofIds.length === 1 ? '' : 's'}`
                           : roundWise
-                            ? `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far · ₹${(paymentTotals?.remaining_due || 0).toLocaleString('en-IN')} more to reach the ${roundWiseMinimum ? `${roundWiseMinimum} ` : ''}minimum`
+                            ? `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far`
                             : `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far · ₹${(paymentTotals?.remaining_due || 0).toLocaleString('en-IN')} still to upload`}
                       </p>
                       <div className="sbs-pay-list">
@@ -1055,7 +1054,7 @@ export function SubmitSlotPage() {
                         busy={busy || paymentAnalysing}
                         onFiles={next => { setPaymentFiles(next); setPaymentRejected([]) }}
                       />
-                      {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{roundWise ? 'Attach a payment screenshot that covers at least the minimum charge.' : 'Attach a payment screenshot that covers the amount due.'}</span>}
+                      {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{roundWise ? 'Attach the payment screenshot.' : 'Attach a payment screenshot that covers the amount due.'}</span>}
                     </>
                   )}
                 </div>

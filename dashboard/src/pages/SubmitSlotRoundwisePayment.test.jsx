@@ -12,7 +12,7 @@
  */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { SubmitSlotPage } from './SubmitSlotPage.jsx'
 
 // Profile-service roster candidates — none of these are "venkat"
@@ -21,11 +21,20 @@ const PROFILE_CANDIDATES = [
   { id: 'c2', name: 'Manu', technology: 'Java', needs_payment_proof: false, balance_due: 0 },
 ]
 
-// Round-wise states how the amount is set instead of showing a price, so the
-// card is recognised by this sentence. "Payment due" now belongs to profile
-// service alone: asserting its absence for round-wise would pass whether or not
-// the card was on screen.
-const ROUND_WISE_NOTE = /finalized based on referrer and client discussion/i
+// Round-wise shows no price, minimum or pricing explanation, so the payment card
+// is recognised by its upload hint. Asserting the absence of pricing text alone
+// would pass whether or not the card was on screen.
+const PAYMENT_UPLOAD = /paid in parts\? attach each screenshot/i
+
+/** Nothing on the page states a price, a minimum or how the amount is set. */
+function expectNoPricing(...amounts) {
+  const text = document.body.textContent
+  expect(text).not.toMatch(/finali[sz]ed|minimum|referrer and client|client discussion|payment due/i)
+  for (const amount of ['5,000', ...amounts]) expect(text).not.toContain(amount)
+}
+
+/** Let an answer that has been requested land before asserting what it must not show. */
+const settle = () => act(() => new Promise(resolve => setTimeout(resolve, 20)))
 
 function screenshot(label) {
   return new File([label], `${label}.jpg`, { type: 'image/jpeg' })
@@ -52,7 +61,7 @@ function inviteFileInput() {
   return [...document.querySelectorAll('input[type="file"]')].find(input => !input.multiple)
 }
 
-function stubFetch({ paymentRequirementOverride, uploadReply, confirmReply } = {}) {
+function stubFetch({ paymentRequirementOverride, uploadReply, confirmReply, confirmFailure } = {}) {
   const calls = { uploads: [], confirms: [], paymentRequirementCalls: [] }
   vi.stubGlobal('fetch', vi.fn((url, options) => {
     const target = String(url)
@@ -75,6 +84,9 @@ function stubFetch({ paymentRequirementOverride, uploadReply, confirmReply } = {
     }
     if (target.includes('/bookings/confirm')) {
       calls.confirms.push(options.body)
+      if (confirmFailure) {
+        return Promise.resolve({ ok: false, status: 400, json: () => Promise.resolve(confirmFailure) })
+      }
       return reply(confirmReply || { status: 'ok', candidate: { name: 'venkat' } })
     }
     if (target.includes('/public/slots/booked')) return reply({ status: 'ok', slots: [] })
@@ -95,28 +107,31 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
   it('shows payment card for a manually typed name not in roster', async () => {
-    stubFetch()
+    const calls = stubFetch()
     await chooseRoundWise()
 
     // Type a name not in roster
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
 
-    // Payment card must appear -- naming the tariff as a minimum, not a price
-    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
-    await waitFor(() => expect(screen.getByText(
-      'Payment amount will be finalized based on referrer and client discussion. Minimum charge starts from ₹5,000.',
-    )).toBeTruthy())
+    // Payment card must appear: the upload section, with no pricing in it
+    expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
+    await waitFor(() => expect(calls.paymentRequirementCalls.length).toBeGreaterThan(0))
+    await settle()
+    expect(screen.getByText(PAYMENT_UPLOAD)).toBeTruthy()
+    expectNoPricing()
   })
 
-  it('shows correct amount from the authoritative backend requirement', async () => {
-    stubFetch({ paymentRequirementOverride: { status: 'ok', service_type: 'round_wise', amount_due: 9000, payment_required: true, re_service: false } })
+  it('does not show the amount the backend requires', async () => {
+    const calls = stubFetch({ paymentRequirementOverride: { status: 'ok', service_type: 'round_wise', amount_due: 9000, payment_required: true, re_service: false } })
     await chooseRoundWise()
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'New Candidate' } })
 
-    // The minimum is the backend's figure, never one of the page's own.
-    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
-    await waitFor(() => expect(screen.getByText(/Minimum charge starts from ₹9,000\./)).toBeTruthy())
+    // The backend still decides and enforces the amount; the page never repeats it.
+    expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
+    await waitFor(() => expect(calls.paymentRequirementCalls.length).toBeGreaterThan(0))
+    await settle()
+    expectNoPricing('9,000')
   })
 
   it('roster candidate still gets correct behavior (profile service)', async () => {
@@ -141,7 +156,7 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
 
     // Payment card should NOT appear for waived candidate
     await waitFor(() => {
-      expect(screen.queryByText(ROUND_WISE_NOTE)).toBeNull()
+      expect(screen.queryByText(PAYMENT_UPLOAD)).toBeNull()
     })
   })
 })
@@ -162,7 +177,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
     // Payment card should be visible
-    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
+    expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
 
     // Attach payment screenshot
     const payInput = document.querySelectorAll('input[type="file"]')[0]
@@ -189,7 +204,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
-    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
+    expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
 
     attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
     fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
@@ -460,21 +475,11 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
   })
 })
 
-describe('Round-wise payment — the tariff is a minimum, not a price', () => {
+describe('Round-wise payment — no pricing is shown', () => {
   beforeEach(() => { vi.restoreAllMocks() })
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  it('shows no fixed amount beside the payment heading', async () => {
-    stubFetch()
-    await chooseRoundWise()
-
-    await waitFor(() => expect(screen.getByText(/Minimum charge starts from ₹5,000\./)).toBeTruthy())
-    // The figure survives only inside the sentence that calls it a minimum.
-    expect(screen.queryByText('₹5,000')).toBeNull()
-    expect(screen.queryByText(/payment due/i)).toBeNull()
-  })
-
-  it('counts an instalment toward the minimum rather than toward a price', async () => {
+  it('an instalment reports what was paid and nothing about what remains', async () => {
     stubFetch({
       uploadReply: {
         status: 'ok', proof_ids: ['proof-rw-1'], verified_total: 2000,
@@ -484,13 +489,49 @@ describe('Round-wise payment — the tariff is a minimum, not a price', () => {
     })
     await chooseRoundWise()
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    await waitFor(() => expect(screen.getByText(/Minimum charge starts from ₹5,000\./)).toBeTruthy())
 
     attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
     fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
 
-    expect(await screen.findByText('₹2,000 verified so far · ₹3,000 more to reach the ₹5,000 minimum')).toBeTruthy()
-    // "Still to upload" would say ₹5,000 is the whole bill; more may be agreed.
-    expect(screen.queryByText(/still to upload/i)).toBeNull()
+    expect(await screen.findByText('₹2,000 verified so far')).toBeTruthy()
+    expect(screen.queryByText(/still to upload|more to reach/i)).toBeNull()
+    expectNoPricing('3,000')
+    // Still short, so the upload stays open for the rest of the payment.
+    expect(screen.getByText(PAYMENT_UPLOAD)).toBeTruthy()
+  })
+
+  it('a refused confirmation does not repeat the fee the server names', async () => {
+    // The candidate paid ₹6,000, so any "5,000" on screen could only have come
+    // from the server's refusal.
+    const calls = stubFetch({
+      uploadReply: {
+        status: 'ok', proof_ids: ['proof-rw-1'], verified_total: 6000,
+        remaining_due: 0, amount_due: 5000, payment_complete: true,
+        rejected: [], ai_extractions: [{ is_payment_screenshot: true, amount: 6000, verified: true, utr_number: '123456789012' }],
+      },
+      confirmFailure: {
+        status: 'error', payment_due: true, balance_due: 5000, amount_due: 5000,
+        message: '₹5,000 payment is pending for venkat. Upload your payment screenshot first, then book the interview slot.',
+      },
+    })
+    await chooseRoundWise()
+
+    fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
+
+    attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('pay')])
+    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
+    await screen.findByText(/payment proof saved/i)
+
+    attach(inviteFileInput(), [screenshot('invite')])
+    await waitFor(() => expect(screen.queryByText(/reading invite with ai/i)).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
+    await waitFor(() => expect(calls.confirms).toHaveLength(1))
+
+    expect(await screen.findByText('Upload and verify the payment screenshot to continue.')).toBeTruthy()
+    expectNoPricing()
   })
 })
