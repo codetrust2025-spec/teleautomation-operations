@@ -82,15 +82,52 @@ def test_exact_uid_and_person_proves_duplicate_but_other_person_is_allowed():
     assert result['findings'][0]['code'] == 'DUPLICATE_CONFIRMED_INTERVIEW_IDENTITY'
 
 
-def test_canonical_drift_preserves_source_ids_and_exposes_event():
+def test_existing_alias_is_not_canonical_drift_and_preserves_source_ids():
     audit = dict(id='audit', candidate_id='alias', gmail_message_id='mail')
     result = report(audits=[audit], events=[dict(id='event', candidate_id='alias', canonical_candidate_id='person', provider_message_id='mail')],
                     identity_links={'alias': 'person'})
+    assert result['findings'] == []
+    assert audit['candidate_id'] == 'alias'
+
+
+def test_split_identity_preserves_source_ids_and_exposes_event():
+    audit = dict(id='audit', candidate_id='alias', gmail_message_id='mail')
+    result = report(audits=[audit], events=[dict(id='event', candidate_id='person', canonical_candidate_id='person', provider_message_id='mail')],
+                    identity_links={'alias': 'other-person'})
     finding = result['findings'][0]
-    assert finding['candidate_id'] == 'person'
+    assert finding['candidate_id'] == 'other-person'
     assert finding['event_id'] == 'event'
     assert finding['expected_state'] == 'person'
     assert audit['candidate_id'] == 'alias'
+
+
+def test_transitive_aliases_resolve_all_references_without_mutating_input():
+    import copy
+    inputs = dict(audits=[dict(id='a', candidate_id='old', gmail_message_id='m')],
+                  events=[dict(id='e', provider_message_id='m', candidate_id='middle', canonical_candidate_id='old')],
+                  identity_links={'old': 'middle', 'middle': 'person'})
+    before = copy.deepcopy(inputs)
+    assert report(**inputs)['findings'] == []
+    assert inputs == before
+
+
+def test_alias_without_event_does_not_require_historical_audit_repair():
+    assert report(audits=[dict(candidate_id='old')], identity_links={'old': 'person'})['findings'] == []
+
+
+def test_missing_or_conflicting_event_canonical_identity_is_not_hidden():
+    for canonical in (None, '', 'unlinked-person'):
+        result = report(audits=[dict(candidate_id='old', gmail_message_id='m')],
+                        events=[dict(provider_message_id='m', candidate_id='person', canonical_candidate_id=canonical)],
+                        identity_links={'old': 'person'})
+        assert [f['code'] for f in result['findings']] == ['CANONICAL_CANDIDATE_REFERENCE_DRIFT']
+
+
+def test_equal_contact_details_do_not_prove_identity():
+    result = report(candidates=[dict(id=cid, name='Same Name', phone='123', email='same@example.test') for cid in ('a', 'b')],
+                    audits=[dict(candidate_id='a', gmail_message_id='m')],
+                    events=[dict(provider_message_id='m', candidate_id='b', canonical_candidate_id='b')])
+    assert [f['code'] for f in result['findings']] == ['CANONICAL_CANDIDATE_REFERENCE_DRIFT']
 
 
 def test_partial_inventory_does_not_claim_references_are_missing():
