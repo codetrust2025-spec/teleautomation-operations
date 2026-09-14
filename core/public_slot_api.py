@@ -872,10 +872,19 @@ def install_public_slot_routes(app) -> None:
                 [entry for _path, entry in pending_payment_proofs]
             )
             if required_amount > 0 and paid_total < required_amount:
-                return _json_error(
-                    f"The verified payments add up to Rs {paid_total:,} of the "
+                # Round-wise is priced by the referrer and client; the tariff
+                # enforced here is only the floor, so it is named as one.
+                shortfall = (
+                    f"The verified payments add up to Rs {paid_total:,}, below the "
+                    f"Rs {required_amount:,} minimum charge. Upload the remaining payment "
+                    "screenshot(s) before confirming."
+                    if normalized_service_type == "round_wise"
+                    else f"The verified payments add up to Rs {paid_total:,} of the "
                     f"Rs {required_amount:,} due. Upload the remaining payment "
-                    "screenshot(s) before confirming.",
+                    "screenshot(s) before confirming."
+                )
+                return _json_error(
+                    shortfall,
                     payment_due=True,
                     balance_due=required_amount - paid_total,
                     verified_total=paid_total,

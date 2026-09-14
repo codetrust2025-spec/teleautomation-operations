@@ -304,6 +304,15 @@ class TestWrongAmountRejected:
         assert response.status_code == 400
         data = response.json()
         assert data.get("payment_due") is True
+        # The enforcement is unchanged: short of the floor is still refused.
+        assert data.get("verified_total") == 3000
+        assert data.get("amount_due") == 5000
+        assert data.get("balance_due") == 2000
+        # Round-wise is priced by the referrer and client, so the refusal names
+        # the tariff as the minimum it is rather than as the amount owed.
+        message = data.get("message") or data.get("detail") or ""
+        assert "Rs 3,000, below the Rs 5,000 minimum charge" in message
+        assert "Rs 5,000 due" not in message
 
     def test_waiver_path_accepted_without_payment(self, monkeypatch, tmp_path):
         # Re-service eligible candidate should not require payment

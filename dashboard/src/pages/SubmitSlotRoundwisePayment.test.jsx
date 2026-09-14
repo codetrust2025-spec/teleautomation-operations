@@ -21,6 +21,12 @@ const PROFILE_CANDIDATES = [
   { id: 'c2', name: 'Manu', technology: 'Java', needs_payment_proof: false, balance_due: 0 },
 ]
 
+// Round-wise states how the amount is set instead of showing a price, so the
+// card is recognised by this sentence. "Payment due" now belongs to profile
+// service alone: asserting its absence for round-wise would pass whether or not
+// the card was on screen.
+const ROUND_WISE_NOTE = /finalized based on referrer and client discussion/i
+
 function screenshot(label) {
   return new File([label], `${label}.jpg`, { type: 'image/jpeg' })
 }
@@ -95,9 +101,11 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
     // Type a name not in roster
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
 
-    // Payment card must appear
-    expect(await screen.findByText(/payment due/i)).toBeTruthy()
-    await waitFor(() => expect(screen.getByText(/₹5,000/)).toBeTruthy())
+    // Payment card must appear -- naming the tariff as a minimum, not a price
+    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(
+      'Payment amount will be finalized based on referrer and client discussion. Minimum charge starts from ₹5,000.',
+    )).toBeTruthy())
   })
 
   it('shows correct amount from the authoritative backend requirement', async () => {
@@ -106,8 +114,9 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'New Candidate' } })
 
-    expect(await screen.findByText(/payment due/i)).toBeTruthy()
-    await waitFor(() => expect(screen.getByText(/₹9,000/)).toBeTruthy())
+    // The minimum is the backend's figure, never one of the page's own.
+    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(/Minimum charge starts from ₹9,000\./)).toBeTruthy())
   })
 
   it('roster candidate still gets correct behavior (profile service)', async () => {
@@ -132,7 +141,7 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
 
     // Payment card should NOT appear for waived candidate
     await waitFor(() => {
-      expect(screen.queryByText(/payment due/i)).toBeNull()
+      expect(screen.queryByText(ROUND_WISE_NOTE)).toBeNull()
     })
   })
 })
@@ -153,7 +162,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
     // Payment card should be visible
-    expect(await screen.findByText(/payment due/i)).toBeTruthy()
+    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
 
     // Attach payment screenshot
     const payInput = document.querySelectorAll('input[type="file"]')[0]
@@ -180,7 +189,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
-    expect(await screen.findByText(/payment due/i)).toBeTruthy()
+    expect(await screen.findByText(ROUND_WISE_NOTE)).toBeTruthy()
 
     attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
     fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
@@ -448,5 +457,40 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
       expect(confirmBtn.disabled).toBe(false)
       expect(screen.queryByText(/interview date is in the past/i)).toBeNull()
     })
+  })
+})
+
+describe('Round-wise payment — the tariff is a minimum, not a price', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  it('shows no fixed amount beside the payment heading', async () => {
+    stubFetch()
+    await chooseRoundWise()
+
+    await waitFor(() => expect(screen.getByText(/Minimum charge starts from ₹5,000\./)).toBeTruthy())
+    // The figure survives only inside the sentence that calls it a minimum.
+    expect(screen.queryByText('₹5,000')).toBeNull()
+    expect(screen.queryByText(/payment due/i)).toBeNull()
+  })
+
+  it('counts an instalment toward the minimum rather than toward a price', async () => {
+    stubFetch({
+      uploadReply: {
+        status: 'ok', proof_ids: ['proof-rw-1'], verified_total: 2000,
+        remaining_due: 3000, amount_due: 5000, payment_complete: false,
+        rejected: [], ai_extractions: [{ is_payment_screenshot: true, amount: 2000, verified: true, utr_number: '123456789012' }],
+      },
+    })
+    await chooseRoundWise()
+    fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
+    await waitFor(() => expect(screen.getByText(/Minimum charge starts from ₹5,000\./)).toBeTruthy())
+
+    attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
+    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
+
+    expect(await screen.findByText('₹2,000 verified so far · ₹3,000 more to reach the ₹5,000 minimum')).toBeTruthy()
+    // "Still to upload" would say ₹5,000 is the whole bill; more may be agreed.
+    expect(screen.queryByText(/still to upload/i)).toBeNull()
   })
 })

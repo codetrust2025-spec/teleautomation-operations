@@ -17059,6 +17059,9 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 }
 .sbs-pay-ok { margin: 0; font-size: 0.72rem; color: #6ee7b7; font-weight: 500; }
 .sbs-pay-partial { margin: 0; font-size: 0.72rem; color: #fbbf24; font-weight: 500; }
+/* Round-wise states how the amount is set instead of a price. Same size as the
+ * status lines beside it: it replaces the figure, so it must read as easily. */
+.sbs-pay-note { margin: 0; font-size: 0.72rem; line-height: 1.35; color: var(--text-muted, #a8b4c4); }
 .sbs-pay-list { display: flex; flex-direction: column; gap: 0.25rem; }
 .sbs-pay-item {
   display: flex;
