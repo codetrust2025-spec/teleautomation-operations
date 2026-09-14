@@ -106,6 +106,7 @@ describe('validation runs top to bottom', () => {
       'Choose the technology for this interview.',
       'Choose the interview round.',
       'Attach a payment screenshot that covers the amount due.',
+      'Attach a payment screenshot that covers at least the minimum charge.',
       'Attach the interview invite screenshot.',
     ]) {
       expect(page).toContain(message)
