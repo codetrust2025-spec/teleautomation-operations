@@ -30,33 +30,6 @@ ANALYSIS_POLL_SECONDS = 0.3
 ANALYSIS_STREAM_SECONDS = 300
 ANALYSIS_KEEPALIVE_SECONDS = 15
 
-
-def _analysis_view(analysis_id: str) -> dict[str, Any]:
-    return ai_activity.analysis_status(analysis_id) or {
-        "analysis_id": analysis_id, "state": "waiting", "node": None, "analysed_by": [],
-    }
-
-
-def _with_analysis(response: Any, analysis_id: str) -> Any:
-    """Add the finished analysis -- which nodes read the upload -- to a response.
-
-    The page follows the analysis live, but the upload's own response is the
-    last word: it arrives after every model call has returned, so the node
-    named as having analysed the upload can never lag behind the work.
-    """
-    analysis = _analysis_view(analysis_id)
-    if isinstance(response, dict):
-        return {**response, "analysis": analysis}
-    if isinstance(response, JSONResponse):
-        try:
-            payload = json.loads(response.body)
-        except ValueError:
-            return response
-        if isinstance(payload, dict):
-            payload["analysis"] = analysis
-            return JSONResponse(payload, status_code=response.status_code)
-    return response
-
 # Invite extraction must always answer with JSON. Nginx gives the app 300s
 # (proxy_read_timeout) before serving its own HTML 504, which the browser
 # cannot parse, so the application deadline is deliberately well below that.
@@ -270,18 +243,20 @@ def install_public_slot_routes(app) -> None:
 
     @app.get("/public/slots/analysis/{analysis_id}")
     async def public_slot_analysis_status(analysis_id: str):
-        """Which AI node is working on one booking upload, for the page that sent it.
+        """Which AI node is working on one upload, for the page that sent it.
 
-        Only the node's display name and the analysis state are ever returned:
-        nothing about the candidate, the image or the result. An id that is not
-        known (yet) reads as waiting, since the upload it belongs to may still
-        be arriving, and saying "unknown" would only tell a caller which ids
-        exist.
+        The booking page follows its uploads here, and so do the dashboard's
+        payment, resume and referrer-expense uploads: one status for every
+        upload an AI node reads. Only node display names and the analysis
+        state are ever returned: nothing about the candidate, the image or the
+        result. An id that is not known (yet) reads as waiting, since the
+        upload it belongs to may still be arriving, and saying "unknown" would
+        only tell a caller which ids exist.
         """
         if not ai_activity.valid_analysis_id(analysis_id):
             return _json_error("Unknown analysis.", status=404)
         return JSONResponse(
-            {"status": "ok", "analysis": _analysis_view(analysis_id)},
+            {"status": "ok", "analysis": ai_activity.analysis_view(analysis_id)},
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
@@ -306,7 +281,7 @@ def install_public_slot_routes(app) -> None:
                 deadline = time.monotonic() + ANALYSIS_STREAM_SECONDS
                 keepalive = time.monotonic() + ANALYSIS_KEEPALIVE_SECONDS
                 while time.monotonic() < deadline:
-                    status = _analysis_view(analysis_id)
+                    status = ai_activity.analysis_view(analysis_id)
                     if status != last:
                         last = status
                         keepalive = time.monotonic() + ANALYSIS_KEEPALIVE_SECONDS
@@ -352,7 +327,7 @@ def install_public_slot_routes(app) -> None:
                 technology=technology, interview_round=interview_round,
                 existing_proof_ids=existing_proof_ids,
             )
-        return _with_analysis(response, analysis)
+        return ai_activity.with_analysis(response, analysis)
 
     async def _payment_proof(
         *,
@@ -662,7 +637,7 @@ def install_public_slot_routes(app) -> None:
         """AI-powered interview invite extraction using Ollama vision models."""
         with ai_activity.booking_analysis(analysis_id) as analysis:
             response = await _extract_invite_ai(file)
-        return _with_analysis(response, analysis)
+        return ai_activity.with_analysis(response, analysis)
 
     async def _extract_invite_ai(file: UploadFile):
         raw = await file.read()
@@ -865,12 +840,22 @@ def install_public_slot_routes(app) -> None:
         }
 
     @app.post("/public/slots/extract-resume-ai")
-    async def public_slot_extract_resume_ai(file: UploadFile = File(...)):
+    async def public_slot_extract_resume_ai(
+        file: UploadFile = File(...),
+        analysis_id: str = Form(default=""),
+    ):
         """AI-powered resume PDF extraction using Ollama.
 
         Reads PDF resumes and extracts: name, phone, email, technology,
-        years of experience, skills, education, current company.
+        years of experience, skills, education, current company. The
+        dashboard's resume auto-fill follows the node reading it by
+        `analysis_id`, exactly as the booking page follows its uploads.
         """
+        with ai_activity.analysis(analysis_id, kind=ai_activity.RESUME_ANALYSIS) as analysis:
+            response = await _extract_resume_ai(file)
+        return ai_activity.with_analysis(response, analysis)
+
+    async def _extract_resume_ai(file: UploadFile):
         raw = await file.read()
         mime = file.content_type or "application/pdf"
         try:
