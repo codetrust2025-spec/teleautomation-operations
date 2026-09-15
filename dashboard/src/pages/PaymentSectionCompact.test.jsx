@@ -193,7 +193,9 @@ describe('the surface is the form surface', () => {
     await waitFor(() => expect(document.querySelector('.sbs-pay-result')).not.toBeNull())
     const result = document.querySelector('.sbs-pay-result')
     expect(result.className).toContain('sbs-detected-compact')
-    expect(result.querySelector('.sbs-detected-compact__text').textContent).toBe('Payment verified · Analysed by RTX 4060')
+    // The node that read it, and how long it took.
+    expect(result.querySelector('.sbs-detected-compact__text').textContent)
+      .toMatch(/^Payment verified · Analysed by RTX 4060 in \d+\.\ds$/)
     expect(document.querySelector('.sbs-pay-card').className).not.toContain('sbs-pay-card--warn')
   })
 
