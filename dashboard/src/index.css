@@ -16710,6 +16710,23 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   transition: border-color 0.15s;
 }
 .sbs-input:focus { border-color: rgba(99,102,241,0.45); }
+/* A field the browser has autofilled -- Client name, most often -- is repainted
+ * by the browser's own stylesheet in a light blue with dark text, which put a
+ * white box in the middle of the dark form. The inset shadow restores the
+ * field's resting surface (the 4% white wash over the #0f1117 card, composited
+ * to an opaque colour because the browser's background cannot be made
+ * translucent), and the text keeps the form's colour. Autofill itself still
+ * works. */
+.sbs-input:-webkit-autofill,
+.sbs-input:-webkit-autofill:hover,
+.sbs-input:-webkit-autofill:focus,
+.sbs-input:autofill {
+  -webkit-text-fill-color: var(--text,#eef2f7);
+  caret-color: var(--text,#eef2f7);
+  -webkit-box-shadow: 0 0 0 1000px rgb(25,27,32) inset;
+  box-shadow: 0 0 0 1000px rgb(25,27,32) inset;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
 /* Name picker */
 .sbs-picker { position: relative; }
 .sbs-picker__input-wrap {

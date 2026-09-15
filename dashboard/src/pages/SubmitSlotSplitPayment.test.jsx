@@ -176,7 +176,9 @@ describe('Submit slot — split payment screenshots', () => {
 
     attach(paymentInput(), [screenshot('pay-1'), screenshot('pay-2')])
 
-    expect(await screen.findByText(/pay-2\.jpg: Receiver is not registered\./)).toBeTruthy()
+    // By position in the upload, never by file name.
+    expect(await screen.findByText('Screenshot 2: Receiver is not registered.')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('pay-2.jpg')
   })
 
   it('never holds screenshots waiting to be saved', async () => {

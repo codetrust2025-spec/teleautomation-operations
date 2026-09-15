@@ -15,6 +15,11 @@ export function SubmitSlotFileDrop({
   multiple = false,
   files,
   onFiles,
+  // What an attached file is called on screen. Uploaded file names are never
+  // shown -- a phone names a screenshot after a hash or a timestamp, which
+  // says nothing to the person and leaks whatever the name happens to hold.
+  attachedLabel = 'Screenshot attached',
+  removeLabel = 'Remove screenshot',
 }) {
   const inputRef = useRef(null)
   const [drag, setDrag] = useState(false)
@@ -119,7 +124,7 @@ export function SubmitSlotFileDrop({
             )
           ) : file ? (
             <>
-              <strong>{file.name}</strong>
+              <strong>{attachedLabel}</strong>
               <span>Tap to replace</span>
             </>
           ) : (
@@ -133,7 +138,7 @@ export function SubmitSlotFileDrop({
           <button
             type="button"
             className="submit-slot-drop-remove"
-            aria-label={`Remove ${file.name}`}
+            aria-label={removeLabel}
             onClick={ev => {
               ev.stopPropagation()
               onFile(null)
@@ -148,11 +153,11 @@ export function SubmitSlotFileDrop({
           {picked.map((f, index) => (
             <li className="submit-slot-drop-list__item" key={`${f.name}-${f.size}-${index}`}>
               {thumbs[index] ? <img src={thumbs[index]} alt="" /> : null}
-              <span className="submit-slot-drop-list__name">{f.name}</span>
+              <span className="submit-slot-drop-list__name">Screenshot {index + 1}</span>
               <button
                 type="button"
                 className="submit-slot-drop-list__remove"
-                aria-label={`Remove ${f.name}`}
+                aria-label={`Remove screenshot ${index + 1}`}
                 disabled={disabled || busy}
                 onClick={() => onFiles(picked.filter((_, other) => other !== index))}
               >

@@ -510,7 +510,7 @@ export function PaymentProofUploader({
     if (!e) return;
     const ok = await window.__TA_CONFIRM_VALUE__?.confirm?.({
       title: "Remove this proof?",
-      message: b.note || b.original_name || b.filename,
+      message: b.note || "This payment proof will be removed.",
       confirmLabel: "Remove",
       variant: "danger",
     });
@@ -764,7 +764,7 @@ export function PaymentProofUploader({
               aria-live="polite"
               aria-label="Payment screenshot upload status"
             >
-              {uploadJobs.map((job) => {
+              {uploadJobs.map((job, jobIndex) => {
                 const active = ["selected", "uploading", "processing"].includes(
                   job.status,
                 );
@@ -780,7 +780,7 @@ export function PaymentProofUploader({
                     />
                     <div className="cand-proof-upload-main">
                       <div className="cand-proof-upload-head">
-                        <strong title={job.file.name}>{job.file.name}</strong>
+                        <strong>Payment screenshot{uploadJobs.length > 1 ? ` ${jobIndex + 1}` : ""}</strong>
                         <span>{kx(job.file.size)}</span>
                       </div>
                       <div className="cand-proof-upload-state">
@@ -796,7 +796,7 @@ export function PaymentProofUploader({
                         <div
                           className="cand-proof-upload-progress"
                           role="progressbar"
-                          aria-label={`Uploading ${job.file.name}`}
+                          aria-label="Uploading payment screenshot"
                           aria-valuemin="0"
                           aria-valuemax="100"
                           aria-valuenow={job.progress}
@@ -808,7 +808,7 @@ export function PaymentProofUploader({
                         <div
                           className="cand-proof-upload-progress cand-proof-upload-progress--processing"
                           role="progressbar"
-                          aria-label={`Processing ${job.file.name}`}
+                          aria-label="Processing payment screenshot"
                         >
                           <span />
                         </div>
@@ -872,7 +872,7 @@ export function PaymentProofUploader({
                           type="button"
                           className="cand-btn cand-btn--xs cand-btn--ghost"
                           onClick={() => removeJob(job)}
-                          aria-label={`Dismiss ${job.file.name} status`}
+                          aria-label="Dismiss upload status"
                         >
                           Dismiss
                         </button>
@@ -1029,7 +1029,7 @@ export function PaymentProofUploader({
               >
                 <img
                   src={`${ve}${b.url}`}
-                  alt={b.note || b.original_name || "payment proof"}
+                  alt={b.note || "payment proof"}
                   loading="lazy"
                 />
               </button>
@@ -1139,7 +1139,7 @@ export function PaymentProofUploader({
           </button>
           <img
             src={`${ve}${u.url}`}
-            alt={u.note || u.original_name}
+            alt={u.note || "payment proof"}
             onClick={(b) => b.stopPropagation()}
           />
           <div
@@ -4694,7 +4694,7 @@ export function PaymentProofsModal({ candidate: e, onClose: t, onEdit: r }) {
                   >
                     <img
                       src={paymentProofAssetUrl(u)}
-                      alt={u.note || u.original_name || "payment proof"}
+                      alt={u.note || "payment proof"}
                       loading="lazy"
                     />
                   </button>
@@ -4789,7 +4789,7 @@ export function PaymentProofsModal({ candidate: e, onClose: t, onEdit: r }) {
             )}
             <img
               src={paymentProofAssetUrl(n)}
-              alt={n.note || n.original_name}
+              alt={n.note || "payment proof"}
               onClick={(u) => u.stopPropagation()}
               style={{ transform: `scale(${previewZoom})` }}
             />

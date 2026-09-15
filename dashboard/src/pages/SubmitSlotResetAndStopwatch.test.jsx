@@ -165,7 +165,7 @@ describe('the analysis stopwatch', () => {
     await server.answerInvite(INVITE)
     await screen.findByText(/^✓ Analysed by RTX 4060 in \d+\.\ds$/)
 
-    fireEvent.click(screen.getByRole('button', { name: /remove invite\.jpg/i }))
+    fireEvent.click(screen.getByRole('button', { name: /remove invite screenshot/i }))
 
     await waitFor(() => expect(screen.queryByText(/analysed by|read in/i)).toBeNull())
   })
