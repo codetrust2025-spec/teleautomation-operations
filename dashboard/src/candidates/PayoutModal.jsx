@@ -591,7 +591,7 @@ export default function PayoutModal({
                   role="button"
                   tabIndex={filterHandler === "all" ? -1 : 0}
                   aria-disabled={filterHandler === "all"}
-                  title={proofFile ? proofFile.name : editId ? "Attach new screenshot (optional)" : "Attach expense screenshot (required)"}
+                  title={proofFile ? "Screenshot attached — click to replace" : editId ? "Attach new screenshot (optional)" : "Attach expense screenshot (required)"}
                 >
                   <input
                     ref={proofInputRef}
@@ -610,7 +610,9 @@ export default function PayoutModal({
                   />
                   <span className="cand-payout-attach-icon">{proofFile ? "✓" : "📷"}</span>
                   <span className="cand-payout-attach-text">
-                    {proofFile ? proofFile.name.slice(0, 24) : editId ? "Replace screenshot" : "Attach screenshot *"}
+                    {/* Described, never named: a phone's file name is a hash or a
+                        timestamp, and says nothing about the payment. */}
+                    {proofFile ? "Screenshot attached" : editId ? "Replace screenshot" : "Attach screenshot *"}
                   </span>
                 </div>
                 {editId && <button type="button" className="cand-btn cand-btn--ghost" onClick={resetForm}>Cancel edit</button>}
@@ -708,9 +710,9 @@ export default function PayoutModal({
     {previewProof && <div className="cand-proof-lightbox" onClick={() => setPreviewProof(null)}>
       <div className="cand-proof-lightbox-inner" onClick={ev => ev.stopPropagation()}>
         <button type="button" className="cand-proof-lightbox-close" onClick={() => setPreviewProof(null)} aria-label="Close preview">×</button>
-        <img src={`${ve}${previewProof.url}`} alt={previewProof.note || previewProof.original_name || "Payment proof"} className="cand-proof-lightbox-img" />
+        <img src={`${ve}${previewProof.url}`} alt={previewProof.note || "Payment proof"} className="cand-proof-lightbox-img" />
         {previewProof.note && <p className="cand-proof-lightbox-note">{previewProof.note}</p>}
-        <p className="cand-proof-lightbox-meta">{previewProof.original_name}{previewProof.uploaded_at && <span> · {new Date(previewProof.uploaded_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}</p>
+        <p className="cand-proof-lightbox-meta">Payment proof{previewProof.uploaded_at && <span> · {new Date(previewProof.uploaded_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}</p>
       </div>
     </div>}
   </Fragment>;

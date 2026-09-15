@@ -284,10 +284,17 @@ describe("referrer payment accounts", () => {
     fireEvent.change(screen.getByLabelText("Note / reason"), {
       target: { value: "Interview expense" },
     });
-    const proof = new File(["proof"], "expense.png", { type: "image/png" });
+    const proof = new File(["proof"], "5k payment screenshot.jpg", { type: "image/png" });
     fireEvent.change(document.querySelector('input[type="file"]'), {
       target: { files: [proof] },
     });
+    // The attachment is described, never named -- not in the label, not in the
+    // hover title, not in any accessible name.
+    expect(screen.getByText("Screenshot attached")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("5k payment screenshot");
+    expect([...document.querySelectorAll("[title], [aria-label], [alt]")].some((el) =>
+      ["title", "aria-label", "alt"].some((attr) => (el.getAttribute(attr) || "").includes("5k payment")),
+    )).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
 
     await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
