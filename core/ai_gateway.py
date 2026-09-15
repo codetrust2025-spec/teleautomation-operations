@@ -24,7 +24,77 @@ from core import ollama_status
 from core import ollama_nodes
 
 logger = logging.getLogger("teleautomation.ai_gateway")
-_slots = threading.BoundedSemaphore(max(1, int(os.getenv("AI_OLLAMA_MAX_CONCURRENCY", "1"))))
+
+# Workloads a person is waiting on: a candidate at the booking form uploading a
+# payment screenshot or an interview invite, or a resume upload. They go ahead
+# of background work (mail analysis, attachments) queued for the same machine.
+INTERACTIVE_WORKLOADS = frozenset({
+    "payment_screenshot_vision",
+    "payment_screenshot_text",
+    "interview_screenshot_vision",
+    "interview_screenshot_text",
+    "resume_vision",
+    "resume_text",
+})
+
+
+class _HostQueue:
+    """A bounded request queue per inference machine, interactive work first.
+
+    This replaced one process-wide slot. That slot serialised every Ollama call
+    in the service, including calls bound for different machines: mail analysis
+    runs on one host and the booking-form vision model on another, yet a
+    candidate's payment screenshot waited behind a mail analysis it shared no
+    hardware with, gave up after the queue wait, and was refused as unreadable.
+    On 2026-09-14 every booking-form vision call after 20:56 IST failed that way
+    -- two invites and a payment -- and a round-wise candidate could not book an
+    interview for the next day.
+
+    `AI_OLLAMA_MAX_CONCURRENCY` now bounds each machine rather than the whole
+    service, so no machine ever receives more concurrent requests from here
+    than before. On a machine that is busy, a waiting interactive request is
+    served before any waiting background request.
+    """
+
+    def __init__(self, capacity: int) -> None:
+        self._capacity = max(1, int(capacity))
+        self._lock = threading.Condition()
+        self._in_use: dict[str, int] = {}
+        self._interactive_waiting: dict[str, int] = {}
+
+    def acquire(self, host: str, *, interactive: bool, timeout: float) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        with self._lock:
+            if interactive:
+                self._interactive_waiting[host] = self._interactive_waiting.get(host, 0) + 1
+            try:
+                while True:
+                    free = self._in_use.get(host, 0) < self._capacity
+                    # Background work does not take a slot an interactive
+                    # request on the same machine is already waiting for.
+                    unclaimed = interactive or not self._interactive_waiting.get(host, 0)
+                    if free and unclaimed:
+                        self._in_use[host] = self._in_use.get(host, 0) + 1
+                        return True
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return False
+                    self._lock.wait(remaining)
+            finally:
+                if interactive:
+                    self._interactive_waiting[host] -= 1
+                    if not self._interactive_waiting[host]:
+                        # A background request may have been holding back for
+                        # this one; let it look again.
+                        self._lock.notify_all()
+
+    def release(self, host: str) -> None:
+        with self._lock:
+            self._in_use[host] = max(0, self._in_use.get(host, 0) - 1)
+            self._lock.notify_all()
+
+
+_host_slots = _HostQueue(int(os.getenv("AI_OLLAMA_MAX_CONCURRENCY", "1") or "1"))
 
 
 @dataclass(frozen=True)
@@ -221,99 +291,117 @@ def chat(
         _env_float("OLLAMA_HEALTH_TIMEOUT_SECONDS", 10),
     )
     wait = _env_float("AI_RECRUITMENT_QUEUE_WAIT_SECONDS", 30)
-    if not _slots.acquire(timeout=_remaining(deadline_monotonic, wait)):
-        raise AIGatewayError("The Ollama request queue timed out.", code="OLLAMA_QUEUE_TIMEOUT")
+    interactive = workload in INTERACTIVE_WORKLOADS
     started = time.monotonic()
-    try:
-        prepared_messages = [dict(message) for message in messages]
-        if images and prepared_messages:
-            prepared_messages[-1]["images"] = images
-        request_payload: dict[str, Any] = {
-            "model": chosen,
-            "messages": prepared_messages,
-            "stream": False,
-            "options": {"temperature": temperature},
-        }
-        if schema is not None:
-            request_payload["format"] = schema
-        if num_predict is not None:
-            request_payload["options"]["num_predict"] = int(num_predict)
-        if think is not None:
-            request_payload["think"] = think
-        keep_alive = (os.getenv("OLLAMA_KEEP_ALIVE") or "5m").strip()
-        if keep_alive:
-            request_payload["keep_alive"] = keep_alive
-        body = json.dumps(request_payload).encode("utf-8")
-        connect_timeout = _env_float(
-            "OLLAMA_CONNECT_TIMEOUT",
-            _env_float("OLLAMA_CONNECT_TIMEOUT_SECONDS", 10),
-        )
-        response_timeout = timeout or _env_float(
-            "OLLAMA_REQUEST_TIMEOUT",
-            _env_float("OLLAMA_RESPONSE_TIMEOUT_SECONDS", _env_float("OLLAMA_TIMEOUT", 300)),
-        )
-        configured_retries = _env_int("OLLAMA_RETRY_COUNT", _env_int("OLLAMA_MAX_RETRIES", 1))
-        retry_limit = max(0, min(3, configured_retries if max_retries is None else int(max_retries)))
-        retry_delays = (2, 5, 10)
-        last_error: AIGatewayError | None = None
-        # Nodes this request has already found wanting. The breaker cools a node
-        # only after three consecutive failures, which is the right global
-        # policy and useless here: without this set the next selection returns
-        # the node that just refused this very call, because the preference
-        # order is deterministic.
-        excluded_nodes: set[str] = set()
-        node_budget = max(1, len(ollama_nodes.candidate_order(chosen)))
-        for _node_attempt in range(node_budget):
-            try:
-                chosen_node = ollama_nodes.select_available_node(
-                    model=chosen,
-                    timeout=_remaining(deadline_monotonic, health_timeout),
-                    exclude=excluded_nodes,
-                )
-                selected_node = chosen_node["node_id"]
-            except RuntimeError:
-                # Selection could not resolve a node — every health probe
-                # failed, or none carries this model. Rather than give up, walk
-                # the preference order directly and try the next node this
-                # request has not already ruled out. On the first pass that is
-                # the configured primary, which is exactly what happened before
-                # this change, so the caller still sees the specific health
-                # failure from the checks below rather than a generic selection
-                # message. On later passes it is what keeps failover working
-                # even when the health probes themselves are unavailable.
-                remaining = [
-                    node for node in ollama_nodes.candidate_order(chosen)
-                    if node not in excluded_nodes
-                ]
-                if not remaining:
-                    break
-                selected_node = remaining[0]
-            selected_base_url = ollama_nodes.base_url_for(selected_node)
-            host_id = ollama_nodes.inference_host_id(selected_node)
-            status = health(
+    # Time spent queued for a machine, kept out of duration_ms so the latency
+    # it reports is still the model's, as it was when the one slot was taken
+    # before `started`.
+    queued = 0.0
+    prepared_messages = [dict(message) for message in messages]
+    if images and prepared_messages:
+        prepared_messages[-1]["images"] = images
+    request_payload: dict[str, Any] = {
+        "model": chosen,
+        "messages": prepared_messages,
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+    if schema is not None:
+        request_payload["format"] = schema
+    if num_predict is not None:
+        request_payload["options"]["num_predict"] = int(num_predict)
+    if think is not None:
+        request_payload["think"] = think
+    keep_alive = (os.getenv("OLLAMA_KEEP_ALIVE") or "5m").strip()
+    if keep_alive:
+        request_payload["keep_alive"] = keep_alive
+    body = json.dumps(request_payload).encode("utf-8")
+    connect_timeout = _env_float(
+        "OLLAMA_CONNECT_TIMEOUT",
+        _env_float("OLLAMA_CONNECT_TIMEOUT_SECONDS", 10),
+    )
+    response_timeout = timeout or _env_float(
+        "OLLAMA_REQUEST_TIMEOUT",
+        _env_float("OLLAMA_RESPONSE_TIMEOUT_SECONDS", _env_float("OLLAMA_TIMEOUT", 300)),
+    )
+    configured_retries = _env_int("OLLAMA_RETRY_COUNT", _env_int("OLLAMA_MAX_RETRIES", 1))
+    retry_limit = max(0, min(3, configured_retries if max_retries is None else int(max_retries)))
+    retry_delays = (2, 5, 10)
+    last_error: AIGatewayError | None = None
+    # Nodes this request has already found wanting. The breaker cools a node
+    # only after three consecutive failures, which is the right global
+    # policy and useless here: without this set the next selection returns
+    # the node that just refused this very call, because the preference
+    # order is deterministic.
+    excluded_nodes: set[str] = set()
+    node_budget = max(1, len(ollama_nodes.candidate_order(chosen)))
+    for _node_attempt in range(node_budget):
+        try:
+            chosen_node = ollama_nodes.select_available_node(
                 model=chosen,
                 timeout=_remaining(deadline_monotonic, health_timeout),
-                node_id=selected_node,
+                exclude=excluded_nodes,
             )
-            if not status["endpoint_reachable"]:
-                last_error = AIGatewayError(status["error_message"], code=status["error_code"])
-                ollama_nodes.record_failure(
-                    selected_node, status.get("error_message") or "unreachable"
+            selected_node = chosen_node["node_id"]
+        except RuntimeError:
+            # Selection could not resolve a node — every health probe
+            # failed, or none carries this model. Rather than give up, walk
+            # the preference order directly and try the next node this
+            # request has not already ruled out. On the first pass that is
+            # the configured primary, which is exactly what happened before
+            # this change, so the caller still sees the specific health
+            # failure from the checks below rather than a generic selection
+            # message. On later passes it is what keeps failover working
+            # even when the health probes themselves are unavailable.
+            remaining = [
+                node for node in ollama_nodes.candidate_order(chosen)
+                if node not in excluded_nodes
+            ]
+            if not remaining:
+                break
+            selected_node = remaining[0]
+        selected_base_url = ollama_nodes.base_url_for(selected_node)
+        host_id = ollama_nodes.inference_host_id(selected_node)
+        status = health(
+            model=chosen,
+            timeout=_remaining(deadline_monotonic, health_timeout),
+            node_id=selected_node,
+        )
+        if not status["endpoint_reachable"]:
+            last_error = AIGatewayError(status["error_message"], code=status["error_code"])
+            ollama_nodes.record_failure(
+                selected_node, status.get("error_message") or "unreachable"
+            )
+            excluded_nodes.add(selected_node)
+            continue
+        if not status["model_available"]:
+            # Per model, not per node: a node without this model may serve
+            # another one perfectly well, so it is skipped, not blamed.
+            last_error = AIGatewayError(status["error_message"], code="OLLAMA_MODEL_NOT_FOUND")
+            excluded_nodes.add(selected_node)
+            continue
+        node_failed = False
+        for attempt in range(retry_limit + 1):
+            logger.info(
+                "Ollama request started workload=%s inference_host=%s model=%s attempt=%s",
+                workload, host_id, chosen, attempt + 1,
+            )
+            # The slot belongs to the machine the request is about to run
+            # on, and is held only for the call itself -- never across a
+            # retry delay or while another machine is being tried. A queue
+            # timeout is raised here, before the node-failure handling
+            # below, because waiting for our own queue says nothing about
+            # the node and must never cool it.
+            queue_started = time.monotonic()
+            if not _host_slots.acquire(
+                host_id, interactive=interactive,
+                timeout=_remaining(deadline_monotonic, wait),
+            ):
+                raise AIGatewayError(
+                    "The Ollama request queue timed out.", code="OLLAMA_QUEUE_TIMEOUT"
                 )
-                excluded_nodes.add(selected_node)
-                continue
-            if not status["model_available"]:
-                # Per model, not per node: a node without this model may serve
-                # another one perfectly well, so it is skipped, not blamed.
-                last_error = AIGatewayError(status["error_message"], code="OLLAMA_MODEL_NOT_FOUND")
-                excluded_nodes.add(selected_node)
-                continue
-            node_failed = False
-            for attempt in range(retry_limit + 1):
-                logger.info(
-                    "Ollama request started workload=%s inference_host=%s model=%s attempt=%s",
-                    workload, host_id, chosen, attempt + 1,
-                )
+            queued += time.monotonic() - queue_started
+            try:
                 try:
                     payload = _request_json(
                         "/api/chat", method="POST", body=body,
@@ -321,98 +409,98 @@ def chat(
                         response_timeout=_remaining(deadline_monotonic, response_timeout),
                         base_url=selected_base_url,
                     )
-                    content = str((payload.get("message") or {}).get("content") or "").strip()
-                    if not content:
+                finally:
+                    _host_slots.release(host_id)
+                content = str((payload.get("message") or {}).get("content") or "").strip()
+                if not content:
+                    raise AIGatewayError(
+                        _safe_message("OLLAMA_EMPTY_RESPONSE"), code="OLLAMA_EMPTY_RESPONSE"
+                    )
+                if schema is not None:
+                    try:
+                        parsed_content = json.loads(content)
+                    except json.JSONDecodeError as exc:
                         raise AIGatewayError(
-                            _safe_message("OLLAMA_EMPTY_RESPONSE"), code="OLLAMA_EMPTY_RESPONSE"
+                            _safe_message("OLLAMA_INVALID_JSON"), code="OLLAMA_INVALID_JSON"
+                        ) from exc
+                    try:
+                        validate_json_schema(instance=parsed_content, schema=schema)
+                    except ValidationError as exc:
+                        logger.warning(
+                            "Ollama schema validation failed workload=%s inference_host=%s "
+                            "model=%s path=%s",
+                            workload, host_id, chosen, list(exc.absolute_path),
                         )
-                    if schema is not None:
-                        try:
-                            parsed_content = json.loads(content)
-                        except json.JSONDecodeError as exc:
-                            raise AIGatewayError(
-                                _safe_message("OLLAMA_INVALID_JSON"), code="OLLAMA_INVALID_JSON"
-                            ) from exc
-                        try:
-                            validate_json_schema(instance=parsed_content, schema=schema)
-                        except ValidationError as exc:
-                            logger.warning(
-                                "Ollama schema validation failed workload=%s inference_host=%s "
-                                "model=%s path=%s",
-                                workload, host_id, chosen, list(exc.absolute_path),
-                            )
-                            raise AIGatewayError(
-                                _safe_message("OLLAMA_SCHEMA_VALIDATION_FAILED"),
-                                code="OLLAMA_SCHEMA_VALIDATION_FAILED",
-                            ) from exc
-                        content = json.dumps(parsed_content, ensure_ascii=False)
-                    duration_ms = int((time.monotonic() - started) * 1000)
-                    logger.info(
-                        "Ollama response completed workload=%s inference_host=%s model=%s "
-                        "attempt=%s duration_ms=%s",
-                        workload, host_id, chosen, attempt + 1, duration_ms,
-                    )
-                    ollama_status.record_request_success(duration_ms)
-                    ollama_nodes.record_success(selected_node)
-                    selected_node_record = ollama_nodes.node(selected_node)
-                    return AIResult(
-                        content=content,
-                        model=chosen,
-                        duration_ms=duration_ms,
-                        node_id=selected_node,
-                        node_label=str(selected_node_record.get("label") or selected_node),
-                    )
-                except AIGatewayError as exc:
-                    last_error = exc
-                    ollama_status.record_request_failure(exc.code, str(exc))
-                    logger.warning(
-                        "Ollama request failed workload=%s inference_host=%s model=%s "
-                        "attempt=%s code=%s elapsed_ms=%s",
-                        workload, host_id, chosen, attempt + 1, exc.code,
-                        int((time.monotonic() - started) * 1000),
-                    )
-                    if exc.code in _MODEL_OUTPUT_CODES:
-                        # The node answered; the answer was unusable. Another
-                        # node would re-run the same prompt against the same
-                        # weights for the same bad output, while blaming a node
-                        # that is working.
-                        raise
-                    if exc.code in _NODE_FAILURE_CODES:
-                        ollama_nodes.record_failure(selected_node, str(exc))
-                        alternatives = [
-                            node for node in ollama_nodes.candidate_order(chosen)
-                            if node not in excluded_nodes and node != selected_node
-                        ]
-                        if alternatives:
-                            # Somewhere else to go: never spend another attempt
-                            # on the machine that just refused this call.
-                            excluded_nodes.add(selected_node)
-                            node_failed = True
-                            break
-                        # Nowhere else to go. A timeout under load is often
-                        # transient, so on a single-node pool the old
-                        # retry-with-backoff is still the best available move -
-                        # abandoning after one attempt would be a regression.
-                        if attempt < retry_limit:
-                            delay = retry_delays[min(attempt, len(retry_delays) - 1)]
-                            _remaining(deadline_monotonic, delay)
-                            time.sleep(delay)
-                        continue
+                        raise AIGatewayError(
+                            _safe_message("OLLAMA_SCHEMA_VALIDATION_FAILED"),
+                            code="OLLAMA_SCHEMA_VALIDATION_FAILED",
+                        ) from exc
+                    content = json.dumps(parsed_content, ensure_ascii=False)
+                duration_ms = int((time.monotonic() - started - queued) * 1000)
+                logger.info(
+                    "Ollama response completed workload=%s inference_host=%s model=%s "
+                    "attempt=%s duration_ms=%s",
+                    workload, host_id, chosen, attempt + 1, duration_ms,
+                )
+                ollama_status.record_request_success(duration_ms)
+                ollama_nodes.record_success(selected_node)
+                selected_node_record = ollama_nodes.node(selected_node)
+                return AIResult(
+                    content=content,
+                    model=chosen,
+                    duration_ms=duration_ms,
+                    node_id=selected_node,
+                    node_label=str(selected_node_record.get("label") or selected_node),
+                )
+            except AIGatewayError as exc:
+                last_error = exc
+                ollama_status.record_request_failure(exc.code, str(exc))
+                logger.warning(
+                    "Ollama request failed workload=%s inference_host=%s model=%s "
+                    "attempt=%s code=%s elapsed_ms=%s",
+                    workload, host_id, chosen, attempt + 1, exc.code,
+                    int((time.monotonic() - started) * 1000),
+                )
+                if exc.code in _MODEL_OUTPUT_CODES:
+                    # The node answered; the answer was unusable. Another
+                    # node would re-run the same prompt against the same
+                    # weights for the same bad output, while blaming a node
+                    # that is working.
+                    raise
+                if exc.code in _NODE_FAILURE_CODES:
+                    ollama_nodes.record_failure(selected_node, str(exc))
+                    alternatives = [
+                        node for node in ollama_nodes.candidate_order(chosen)
+                        if node not in excluded_nodes and node != selected_node
+                    ]
+                    if alternatives:
+                        # Somewhere else to go: never spend another attempt
+                        # on the machine that just refused this call.
+                        excluded_nodes.add(selected_node)
+                        node_failed = True
+                        break
+                    # Nowhere else to go. A timeout under load is often
+                    # transient, so on a single-node pool the old
+                    # retry-with-backoff is still the best available move -
+                    # abandoning after one attempt would be a regression.
                     if attempt < retry_limit:
                         delay = retry_delays[min(attempt, len(retry_delays) - 1)]
                         _remaining(deadline_monotonic, delay)
                         time.sleep(delay)
-            if not node_failed:
-                # Retries exhausted without a verdict naming the node. Do not
-                # spin on it again inside this request.
-                excluded_nodes.add(selected_node)
-        if last_error is not None:
-            raise last_error
-        raise AIGatewayError(
-            "No Ollama node could serve this request.", code="OLLAMA_CONNECTION_FAILED"
-        )
-    finally:
-        _slots.release()
+                    continue
+                if attempt < retry_limit:
+                    delay = retry_delays[min(attempt, len(retry_delays) - 1)]
+                    _remaining(deadline_monotonic, delay)
+                    time.sleep(delay)
+        if not node_failed:
+            # Retries exhausted without a verdict naming the node. Do not
+            # spin on it again inside this request.
+            excluded_nodes.add(selected_node)
+    if last_error is not None:
+        raise last_error
+    raise AIGatewayError(
+        "No Ollama node could serve this request.", code="OLLAMA_CONNECTION_FAILED"
+    )
 
 
 def chat_structured(
