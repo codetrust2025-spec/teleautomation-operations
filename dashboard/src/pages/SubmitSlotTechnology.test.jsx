@@ -113,7 +113,7 @@ describe('Submit slot — round-wise technology', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
     attach(inviteInput(), [screenshot('invite.jpg')])
 
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
     // This candidate is waived, so the fee must have cleared before confirming.
     // Asserting it makes the precondition explicit instead of timing-dependent.
     // Round-wise shows no pricing, so the card is recognised by its upload hint,
@@ -134,7 +134,7 @@ describe('Submit slot — round-wise technology', () => {
     fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
     attach(inviteInput(), [screenshot('invite.jpg')])
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
 
     // Confirm opens once the invite is read and the waiver has come back: until
     // the backend answers, a round-wise payment counts as owed.
@@ -166,7 +166,7 @@ describe('Submit slot — round-wise technology', () => {
     fireEvent.change(tech, { target: { value: 'Golang' } })
     attach(inviteInput(), [screenshot('invite.jpg')])
 
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
     expect(tech.value).toBe('Golang')
   })
 

@@ -86,7 +86,7 @@ function stubServer() {
 
 const paymentInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => i.multiple)
 const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
-const timerIn = selector => document.querySelector(`${selector} .sbs-status--loading .sbs-timer`)
+const timerIn = selector => document.querySelector(`${selector} .ai-node-progress--active .ai-node-progress__timer`)
 const seconds = text => Number(String(text).replace(/s$/, ''))
 
 async function roundWiseDetails() {
@@ -130,14 +130,19 @@ describe('the analysis stopwatch', () => {
     attach(paymentInput(), [screenshot('wrong')])
     await waitFor(() => expect(timerIn('.sbs-pay-card')).not.toBeNull())
 
+    // No analysis in the answer, so no node is claimed -- only the time.
     await server.answerUpload({
       status: 'error', message: 'Receiver is not registered.',
       rejected: [{ filename: 'wrong.jpg', message: 'Receiver is not registered.' }],
     }, 400)
 
-    await waitFor(() => expect(document.querySelector('.sbs-pay-card .sbs-status--done')).not.toBeNull())
-    expect(document.querySelector('.sbs-pay-card .sbs-status--done').textContent).toMatch(/^Analysed in \d+\.\ds$/)
+    const failure = () => document.querySelector('.sbs-pay-card .ai-node-progress--failure')
+    await waitFor(() => expect(failure()).not.toBeNull())
+    expect(failure().textContent).toMatch(/^✕ Not verified after \d+\.\ds$/)
     expect(document.querySelector('.sbs-pay-result')).toBeNull()
+    const frozen = failure().textContent
+    await pause(300)
+    expect(failure().textContent).toBe(frozen)
   })
 
   it('ticks while the invite is read and freezes beside its result', async () => {
@@ -146,15 +151,15 @@ describe('the analysis stopwatch', () => {
     await screen.findByRole('button', { name: /confirm booking/i })
     attach(inviteInput(), [screenshot('invite')])
 
-    await waitFor(() => expect(document.querySelector('.sbs-status--loading .sbs-timer')).not.toBeNull())
-    const timer = () => document.querySelector('.sbs-status--loading .sbs-timer')
+    await waitFor(() => expect(timerIn('')).not.toBeNull())
+    const timer = () => timerIn('')
     const first = seconds(timer().textContent)
     await pause(350)
     expect(seconds(timer().textContent)).toBeGreaterThan(first)
 
     await server.answerInvite(INVITE)
     expect(await screen.findByText(/^✓ Analysed by RTX 4060 in \d+\.\ds$/)).toBeTruthy()
-    expect(document.querySelector('.sbs-timer')).toBeNull()
+    expect(document.querySelector('.ai-node-progress__timer')).toBeNull()
   })
 
   it('never keeps a time once its invite is removed', async () => {
@@ -203,8 +208,8 @@ describe('after a booking the whole form resets', () => {
     expect(document.querySelector('.sbs-detected-compact')).toBeNull()
     expect(document.querySelector('.sbs-pay-card')).toBeNull()
     expect(document.querySelector('.sbs-manual')).toBeNull()
-    expect(document.querySelector('.sbs-timer')).toBeNull()
-    expect(document.querySelector('.sbs-status')).toBeNull()
+    expect(document.querySelector('.ai-node-progress__timer')).toBeNull()
+    expect(document.querySelector('.ai-node-progress')).toBeNull()
     expect(screen.queryByText(/analysed by|analysed in|read in|payment verified/i)).toBeNull()
     expect(document.querySelectorAll('.sbs-hint--warn')).toHaveLength(0)
     expect(document.querySelector('.sbs-alert--error')).toBeNull()

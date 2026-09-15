@@ -3,6 +3,7 @@
  * CSS: index.css (.cand-*). API: /candidates, /handler-expenses.
  */
 import React from "react";
+import { createRoot } from "react-dom/client";
 import { useConfirm } from "../context/ConfirmContext.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
@@ -20,6 +21,11 @@ import "./EarningsBreakdown.css";
 import CompanyExpenditure from "./CompanyExpenditure.jsx";
 import "./CompanyExpenditure.css";
 import { normalizePaymentProofs } from "./paymentProofs.js";
+import AiNodeProgress, {
+  startAiAnalysis,
+  useAiAnalysis,
+} from "../components/AiNodeProgress.jsx";
+import { newAnalysisId } from "../components/aiAnalysisStatus.js";
 
 const w = React;
 const s = { Fragment: React.Fragment };
@@ -91,6 +97,9 @@ function createProofUploadJob(file) {
     error: "",
     slow: false,
     proof: null,
+    // The AI node reading this screenshot once its bytes have arrived: a
+    // snapshot from startAiAnalysis, shown by AiNodeProgress.
+    analysis: null,
   };
 }
 // Evidence the server can no longer re-read. ARCHIVED is excluded: that is a
@@ -135,6 +144,8 @@ export function PaymentProofUploader({
   const uploadInFlightRef = w.useRef(false);
   const uploadRequestRef = w.useRef(null);
   const stallTimerRef = w.useRef(null);
+  // One followed analysis per upload job, so each screenshot names its own node.
+  const analysisRunsRef = w.useRef(new Map());
   const mountedRef = w.useRef(true);
   const cancelledJobsRef = w.useRef(new Set());
   const previewUrlsRef = w.useRef(new Set());
@@ -155,6 +166,33 @@ export function PaymentProofUploader({
       stallTimerRef.current = null;
     }
   }, []);
+  // Follow the AI node reading one job's screenshot, from the moment its bytes
+  // have arrived. `sentAt` keeps the timer honest if the response lands before
+  // the browser reported the upload complete.
+  const followAnalysis = w.useCallback(
+    (jobId, analysisId, startedAt) => {
+      const current = analysisRunsRef.current.get(jobId);
+      if (current?.id === analysisId) return current;
+      current?.cancel();
+      const run = startAiAnalysis(
+        ve,
+        (snapshot) => updateJob(jobId, { analysis: snapshot }),
+        { id: analysisId, startedAt },
+      );
+      analysisRunsRef.current.set(jobId, run);
+      return run;
+    },
+    [updateJob],
+  );
+  // No answer names no node: stop following and take the status away.
+  const dropAnalysis = w.useCallback(
+    (jobId) => {
+      analysisRunsRef.current.get(jobId)?.cancel();
+      analysisRunsRef.current.delete(jobId);
+      updateJob(jobId, { analysis: null });
+    },
+    [updateJob],
+  );
   const armStallTimer = w.useCallback(
     (jobId) => {
       clearStallTimer();
@@ -204,6 +242,8 @@ export function PaymentProofUploader({
       mountedRef.current = false;
       clearStallTimer();
       uploadRequestRef.current?.xhr?.abort();
+      analysisRunsRef.current.forEach((run) => run.cancel());
+      analysisRunsRef.current.clear();
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       previewUrlsRef.current.clear();
     };
@@ -227,6 +267,7 @@ export function PaymentProofUploader({
         progress: 0,
         error: "",
         slow: false,
+        analysis: null,
       });
       armStallTimer(job.id);
       return new Promise((resolve) => {
@@ -236,6 +277,11 @@ export function PaymentProofUploader({
         if (c.trim()) {
           A.append("note", c.trim());
         }
+        // Named before it is sent, so the node reading it can be followed while
+        // the request is still in flight.
+        const analysisId = newAnalysisId();
+        A.append("analysis_id", analysisId);
+        const sentAt = Date.now();
         const xhr = new XMLHttpRequest();
         uploadRequestRef.current = { xhr, jobId: job.id };
         xhr.open("POST", `${ve}/candidates/${e}/proofs`);
@@ -251,12 +297,16 @@ export function PaymentProofUploader({
           armStallTimer(job.id);
         };
         xhr.upload.onload = () => {
+          // The bytes are there; what remains is the AI node reading them,
+          // which the analysis status shows and times. The upload stall notice
+          // was only ever about bytes that had stopped moving.
+          clearStallTimer();
           updateJob(job.id, {
             status: "processing",
             progress: 100,
             slow: false,
           });
-          armStallTimer(job.id);
+          followAnalysis(job.id, analysisId);
         };
         const finish = (status, details = {}) => {
           clearStallTimer();
@@ -271,6 +321,9 @@ export function PaymentProofUploader({
           try {
             L = xhr.responseText ? JSON.parse(xhr.responseText) : {};
           } catch {
+            // A proxy error page, not the server's answer: it cannot say which
+            // node read the screenshot, or whether the proof was saved.
+            dropAnalysis(job.id);
             finish("error", {
               error:
                 xhr.status === 504
@@ -279,7 +332,13 @@ export function PaymentProofUploader({
             });
             return;
           }
-          if (xhr.status < 200 || xhr.status >= 300 || L.status !== "ok") {
+          const saved =
+            xhr.status >= 200 && xhr.status < 300 && L.status === "ok";
+          followAnalysis(job.id, analysisId, sentAt).finish(L.analysis, {
+            ok: saved,
+            failureLabel: "Not saved",
+          });
+          if (!saved) {
             finish("error", {
               error:
                 L.message ||
@@ -309,22 +368,37 @@ export function PaymentProofUploader({
             error: "",
           });
         };
-        xhr.onerror = () =>
+        xhr.onerror = () => {
+          dropAnalysis(job.id);
           finish("error", {
             error: "Network connection lost. Please try again.",
           });
-        xhr.ontimeout = () =>
+        };
+        xhr.ontimeout = () => {
+          dropAnalysis(job.id);
           finish("error", {
             error: "Upload timed out before the payment proof was saved.",
           });
-        xhr.onabort = () =>
+        };
+        xhr.onabort = () => {
+          dropAnalysis(job.id);
           finish("cancelled", {
             error: "",
           });
+        };
         xhr.send(A);
       });
     },
-    [armStallTimer, c, clearStallTimer, e, r, updateJob],
+    [
+      armStallTimer,
+      c,
+      clearStallTimer,
+      dropAnalysis,
+      e,
+      followAnalysis,
+      r,
+      updateJob,
+    ],
   );
   const reconcileJob = w.useCallback(
     async (job) => {
@@ -356,6 +430,9 @@ export function PaymentProofUploader({
         );
         if (!existing) return false;
         if (r) r(currentProofs, payload.candidate, payload.payment_summary);
+        // Saved by another request: this one's refusal, and the node named in
+        // it, no longer describe the proof on the record.
+        dropAnalysis(job.id);
         updateJob(job.id, {
           status: "success",
           progress: 100,
@@ -369,7 +446,7 @@ export function PaymentProofUploader({
         return false;
       }
     },
-    [e, r, updateJob],
+    [dropAnalysis, e, r, updateJob],
   );
   const M = w.useCallback(
     async (b) => {
@@ -443,6 +520,7 @@ export function PaymentProofUploader({
             );
             if (existing) {
               if (r) r(currentProofs);
+              dropAnalysis(job.id);
               updateJob(job.id, {
                 status: "success",
                 progress: 100,
@@ -461,11 +539,13 @@ export function PaymentProofUploader({
         a(false);
       }
     },
-    [e, n, r, updateJob, y],
+    [dropAnalysis, e, n, r, updateJob, y],
   );
   const removeJob = w.useCallback(
     (job) => {
       if (["uploading", "processing"].includes(job.status)) cancelJob(job.id);
+      analysisRunsRef.current.get(job.id)?.cancel();
+      analysisRunsRef.current.delete(job.id);
       previewUrlsRef.current.delete(job.previewUrl);
       URL.revokeObjectURL(job.previewUrl);
       setUploadJobs((jobs) => jobs.filter((item) => item.id !== job.id));
@@ -540,6 +620,9 @@ export function PaymentProofUploader({
   const [evidenceHistory, setEvidenceHistory] = w.useState(null);
   const replaceInputRef = w.useRef(null);
   const [replaceTarget, setReplaceTarget] = w.useState(null);
+  // A replacement is re-read by an AI node too, and says which one the same way.
+  const { analysis: replaceAnalysis, begin: beginReplaceAnalysis } =
+    useAiAnalysis(ve);
 
   function replaceProof(proof) {
     setReplaceTarget(proof);
@@ -554,6 +637,7 @@ export function PaymentProofUploader({
     if (!file || !proof || !e) return;
     a(true);
     l("");
+    const run = beginReplaceAnalysis();
     try {
       const ownerId = proofCandidateId(proof, e);
       const body = new FormData();
@@ -562,11 +646,16 @@ export function PaymentProofUploader({
         "reason",
         "Administrator re-uploaded the original payment screenshot.",
       );
+      body.append("analysis_id", run.id);
       const res = await fetch(
         `${ve}/candidates/${ownerId}/proofs/${proof.id}/replace`,
         { method: "POST", body, credentials: "include" },
       );
       const payload = await res.json();
+      run.finish(payload.analysis, {
+        ok: payload.status === "ok",
+        failureLabel: "Not replaced",
+      });
       if (payload.status !== "ok") {
         l(payload.message || "Replacement failed");
         return;
@@ -579,6 +668,7 @@ export function PaymentProofUploader({
         );
       }
     } catch (err) {
+      run.finish(null, { ok: false, failureLabel: "Not replaced" });
       l(err.message || "Network error");
     } finally {
       a(false);
@@ -783,15 +873,13 @@ export function PaymentProofUploader({
                         <strong>Payment screenshot{uploadJobs.length > 1 ? ` ${jobIndex + 1}` : ""}</strong>
                         <span>{kx(job.file.size)}</span>
                       </div>
-                      <div className="cand-proof-upload-state">
-                        {job.status === "processing" && (
-                          <span
-                            className="cand-proof-upload-spinner"
-                            aria-hidden="true"
-                          />
-                        )}
-                        <span>{jobStatusText(job)}</span>
-                      </div>
+                      {/* While the node reads it, the analysis status below is
+                          the whole story; the words would only repeat it. */}
+                      {!(job.status === "processing" && job.analysis) && (
+                        <div className="cand-proof-upload-state">
+                          <span>{jobStatusText(job)}</span>
+                        </div>
+                      )}
                       {job.status === "uploading" && (
                         <div
                           className="cand-proof-upload-progress"
@@ -804,19 +892,13 @@ export function PaymentProofUploader({
                           <span style={{ width: `${job.progress}%` }} />
                         </div>
                       )}
-                      {job.status === "processing" && (
-                        <div
-                          className="cand-proof-upload-progress cand-proof-upload-progress--processing"
-                          role="progressbar"
-                          aria-label="Processing payment screenshot"
-                        >
-                          <span />
-                        </div>
+                      {job.analysis && (
+                        <AiNodeProgress analysis={job.analysis} />
                       )}
                       {job.error && (
                         <div className="cand-proof-upload-error">{job.error}</div>
                       )}
-                      {job.slow && active && (
+                      {job.slow && job.status === "uploading" && (
                         <div className="cand-proof-upload-slow">
                           <span>This upload is taking longer than expected.</span>
                           <button
@@ -884,6 +966,12 @@ export function PaymentProofUploader({
             </div>
           )}
         </s.Fragment>
+      )}
+      {replaceAnalysis && (
+        <AiNodeProgress
+          analysis={replaceAnalysis}
+          idle="Reading the replacement…"
+        />
       )}
       {i && <div className="cand-proofs-error">{i}</div>}
       {aiResult && (
@@ -1163,21 +1251,27 @@ export function PaymentProofUploader({
     </div>
   );
 }
-function ResumeAutoFill({ candidateId, onExtracted }) {
+export function ResumeAutoFill({ candidateId, onExtracted }) {
   const [busy, setBusy] = w.useState(false);
   const [aiData, setAiData] = w.useState(null);
   const [error, setError] = w.useState("");
   const [filled, setFilled] = w.useState(false);
   const inputRef = w.useRef(null);
+  // The AI node reading the resume, and how long it took.
+  const { analysis, begin: beginAnalysis } = useAiAnalysis(ve);
   async function handleFile(file) {
     if (!file) return;
     setBusy(true);
     setError("");
     setAiData(null);
     setFilled(false);
+    let run = beginAnalysis();
+    let serverAnalysis = null;
+    let outcome = { ok: false, failureLabel: "Could not read" };
     try {
       const body = new FormData();
       body.append("file", file);
+      body.append("analysis_id", run.id);
       // Use a long timeout — AI model may take up to 2 minutes on cold start
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 200000); // 200s
@@ -1192,12 +1286,20 @@ function ResumeAutoFill({ candidateId, onExtracted }) {
           signal: controller.signal,
         });
         res = await resp.json();
+        serverAnalysis = res.analysis;
+        if (res.ai_extraction?.is_resume === false) {
+          outcome = { ok: false, failureLabel: "Not a resume" };
+        }
         if (candidateId && res.status === "ok") {
           if (res.ai_extraction) {
             res = { status: "ok", success: true, data: res.ai_extraction };
           } else {
+            // A second read of the same resume, followed the same way; the
+            // time keeps counting from the first request.
+            run = beginAnalysis({ startedAt: run.startedAt });
             const extractionBody = new FormData();
             extractionBody.append("file", file);
+            extractionBody.append("analysis_id", run.id);
             const extractionResponse = await fetch(
               `${ve}/public/slots/extract-resume-ai`,
               {
@@ -1207,6 +1309,7 @@ function ResumeAutoFill({ candidateId, onExtracted }) {
               },
             );
             const extractionResult = await extractionResponse.json();
+            serverAnalysis = extractionResult.analysis;
             res =
               extractionResult.status === "ok"
                 ? extractionResult
@@ -1229,6 +1332,7 @@ function ResumeAutoFill({ candidateId, onExtracted }) {
           d.candidate_name || d.phone || d.email || d.technology;
         if (res.success || hasUsefulData) {
           setAiData(d);
+          outcome = { ok: true };
           // Warn user if it was partial (regex-only, no AI)
           if (!res.success && hasUsefulData) {
             setError(
@@ -1248,14 +1352,17 @@ function ResumeAutoFill({ candidateId, onExtracted }) {
         );
       }
     } catch (err) {
+      // No answer names no node.
+      serverAnalysis = null;
       if (err.name === "AbortError") {
         setError(
-          "Request timed out. Make sure Ollama tunnel is running on your laptop.",
+          "Reading the resume took too long. Fill the fields manually.",
         );
       } else {
         setError(err.message || "Resume extraction failed");
       }
     } finally {
+      run.finish(serverAnalysis, outcome);
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -1308,15 +1415,20 @@ function ResumeAutoFill({ candidateId, onExtracted }) {
             whiteSpace: "nowrap",
           }}
         >
-          {busy
-            ? "⏳ AI analyzing (~30-60s)…"
-            : "📄 Upload resume PDF to auto-fill"}
+          {/* The node reading it and the time it has taken are shown below;
+              the button no longer guesses how long that will be. */}
+          {busy ? "Reading resume…" : "📄 Upload resume PDF to auto-fill"}
         </button>
         <span style={{ fontSize: "11px", color: "rgba(148,163,184,.7)" }}>
           AI reads the PDF and fills name, phone, email, and technology
           automatically
         </span>
       </div>
+      {analysis && (
+        <div style={{ marginTop: "8px" }}>
+          <AiNodeProgress analysis={analysis} idle="Reading resume…" />
+        </div>
+      )}
       {error && (
         <div
           style={{
@@ -1383,177 +1495,20 @@ function ResumeAutoFill({ candidateId, onExtracted }) {
     </div>
   );
 }
-function ResumeUpload({ candidateId, resumes = [], onExtracted }) {
-  const [busy, setBusy] = w.useState(false);
-  const [message, setMessage] = w.useState("");
-  const [aiData, setAiData] = w.useState(null);
-  const inputRef = w.useRef(null);
-  const disabled = !candidateId;
-  async function upload(file) {
-    if (!file || disabled) return;
-    setBusy(true);
-    setMessage("");
-    setAiData(null);
-    try {
-      const body = new FormData();
-      body.append("file", file);
-      const result = await (
-        await fetch(`${ve}/candidates/${candidateId}/resumes`, {
-          method: "POST",
-          body,
-        })
-      ).json();
-      if (result.status !== "ok")
-        throw new Error(result.message || "Resume upload failed");
-      setMessage("Resume uploaded successfully.");
-      if (result.ai_extraction && result.ai_extraction.is_resume) {
-        setAiData(result.ai_extraction);
-      }
-    } catch (err) {
-      setMessage(err.message || "Resume upload failed");
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-  function handleFillProfile() {
-    if (aiData && onExtracted) {
-      onExtracted(aiData);
-      setAiData(null);
-      setMessage("Profile fields updated from resume.");
-    }
-  }
-  return (
-    <div className="cand-proofs cand-resume-upload">
-      <div className="cand-proofs-header">
-        <span className="cand-field-label">
-          Resume AI reader
-          <span className="cand-proofs-count">{resumes.length}</span>
-        </span>
-      </div>
-      {disabled ? (
-        <div className="cand-proofs-empty cand-proofs-empty--blocked">
-          <strong>Save the candidate first</strong>, then upload the resume.
-        </div>
-      ) : (
-        <>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            hidden
-            onChange={(event) => upload(event.target.files?.[0])}
-            disabled={busy}
-          />
-          <button
-            type="button"
-            className="cand-btn cand-btn--primary"
-            onClick={() => inputRef.current?.click()}
-            disabled={busy}
-          >
-            {busy ? "Analyzing resume…" : "Upload and analyze resume"}
-          </button>
-          <span className="cand-field-hint">
-            PDF, DOC, or DOCX · up to 10 MB · AI auto-extracts profile
-          </span>
-        </>
-      )}
-      {message && <div className="cand-proofs-error">{message}</div>}
-      {aiData && (
-        <div
-          style={{
-            margin: "8px 0",
-            padding: "10px 12px",
-            borderRadius: "6px",
-            background: "rgba(99,102,241,.08)",
-            border: "1px solid rgba(99,102,241,.2)",
-            fontSize: "12px",
-            lineHeight: "1.5",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: "6px",
-            }}
-          >
-            <strong style={{ color: "#a5b4fc", fontSize: "12px" }}>
-              📄 AI Resume Extraction
-            </strong>
-            <button
-              type="button"
-              onClick={() => setAiData(null)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "rgba(148,163,184,.6)",
-                fontSize: "13px",
-              }}
-            >
-              ×
-            </button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "6px 14px",
-              color: "rgba(226,232,240,.85)",
-              fontSize: "12px",
-            }}
-          >
-            {aiData.candidate_name && <span>👤 {aiData.candidate_name}</span>}
-            {aiData.technology && <span>💻 {aiData.technology}</span>}
-            {aiData.years_of_experience && (
-              <span>📅 {aiData.years_of_experience} yrs</span>
-            )}
-            {aiData.phone && <span>📱 {aiData.phone}</span>}
-            {aiData.current_company && <span>🏢 {aiData.current_company}</span>}
-            {aiData.email && <span>✉ {aiData.email}</span>}
-          </div>
-          {aiData.skills && aiData.skills.length > 0 && (
-            <div
-              style={{
-                marginTop: "4px",
-                fontSize: "11px",
-                color: "rgba(148,163,184,.7)",
-              }}
-            >
-              Skills: {aiData.skills.slice(0, 6).join(", ")}
-              {aiData.skills.length > 6 ? "…" : ""}
-            </div>
-          )}
-          {onExtracted && (
-            <button
-              type="button"
-              onClick={handleFillProfile}
-              style={{
-                marginTop: "8px",
-                padding: "5px 12px",
-                borderRadius: "5px",
-                background: "#6366f1",
-                color: "#fff",
-                border: "none",
-                fontSize: "12px",
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-            >
-              Fill profile from resume
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+// Only a PDF is read by an AI node before it is filed -- the server checks the
+// same content type -- so only a PDF upload follows one.
+const resumeIsReadByAi = (file) => /pdf/i.test(file?.type || "");
+const resumeFailureLabel = (result) =>
+  result?.ai_extraction?.is_resume === false ? "Not a resume" : "Not saved";
 
-function ResumeCell({ candidate, onRefresh }) {
+export function ResumeCell({ candidate, onRefresh }) {
   const inputRef = w.useRef(null);
   const [busy, setBusy] = w.useState(false);
+  const {
+    analysis,
+    begin: beginAnalysis,
+    reset: resetAnalysis,
+  } = useAiAnalysis(ve);
   const count =
     Number(candidate.resume_count) ||
     (Array.isArray(candidate.resumes)
@@ -1563,19 +1518,27 @@ function ResumeCell({ candidate, onRefresh }) {
   async function upload(file) {
     if (!file || !candidate.id) return;
     setBusy(true);
+    const run = resumeIsReadByAi(file) ? beginAnalysis() : null;
+    if (!run) resetAnalysis();
     try {
       const body = new FormData();
       body.append("file", file);
+      if (run) body.append("analysis_id", run.id);
       const result = await (
         await fetch(`${ve}/candidates/${candidate.id}/resumes`, {
           method: "POST",
           body,
         })
       ).json();
+      run?.finish(result.analysis, {
+        ok: result.status === "ok",
+        failureLabel: resumeFailureLabel(result),
+      });
       if (result.status !== "ok")
         throw new Error(result.message || "Upload failed");
       if (onRefresh) await onRefresh();
     } catch (err) {
+      run?.finish(null, { ok: false, failureLabel: "Not saved" });
       window.alert(err.message || "Resume upload failed");
     } finally {
       setBusy(false);
@@ -1591,7 +1554,25 @@ function ResumeCell({ candidate, onRefresh }) {
     backdrop.className = "cand-modal-backdrop cand-resume-manager";
     const panel = document.createElement("div");
     panel.className = "cand-modal cand-modal--resume";
-    const close = () => backdrop.remove();
+    // The modal is built by hand, so the AI node status is its own small React
+    // root: mounted once, and carried into every redraw of the list rather
+    // than lost with it.
+    const progressHost = document.createElement("div");
+    progressHost.className = "cand-resume-ai-progress";
+    let progressRoot = null;
+    let activeRun = null;
+    const showProgress = (snapshot) => {
+      if (!progressRoot) progressRoot = createRoot(progressHost);
+      progressRoot.render(
+        snapshot ? <AiNodeProgress analysis={snapshot} /> : null,
+      );
+    };
+    const close = () => {
+      activeRun?.cancel();
+      progressRoot?.unmount();
+      progressRoot = null;
+      backdrop.remove();
+    };
     backdrop.onclick = (event) => {
       if (event.target === backdrop) close();
     };
@@ -1603,6 +1584,8 @@ function ResumeCell({ candidate, onRefresh }) {
         candidate.name +
         '</h3><p class="cand-modal-sub">Manage saved resume versions</p></div><button type="button" class="cand-modal-close" aria-label="Close">\u00d7</button></header><div class="cand-modal-body cand-modal-body--stack"><p class="cand-exp-empty">Loading resumes\u2026</p></div>';
       panel.querySelector(".cand-modal-close").onclick = close;
+      // Still shown while the list reloads after an upload.
+      panel.querySelector(".cand-modal-body").append(progressHost);
       let details = candidate;
       try {
         const response = await fetch(`${ve}/candidates/${candidate.id}`, {
@@ -1631,20 +1614,32 @@ function ResumeCell({ candidate, onRefresh }) {
         if (!file) return;
         uploadBtn.disabled = true;
         uploadBtn.textContent = "Uploading\u2026";
+        activeRun?.cancel();
+        showProgress(null);
+        const run = resumeIsReadByAi(file)
+          ? startAiAnalysis(ve, showProgress)
+          : null;
+        activeRun = run;
         try {
           const fd = new FormData();
           fd.append("file", file);
+          if (run) fd.append("analysis_id", run.id);
           const result = await (
             await fetch(`${ve}/candidates/${candidate.id}/resumes`, {
               method: "POST",
               body: fd,
             })
           ).json();
+          run?.finish(result.analysis, {
+            ok: result.status === "ok",
+            failureLabel: resumeFailureLabel(result),
+          });
           if (result.status !== "ok")
             throw new Error(result.message || "Upload failed");
           if (onRefresh) await onRefresh();
           await render();
         } catch (err) {
+          run?.finish(null, { ok: false, failureLabel: "Not saved" });
           window.alert(err.message);
         } finally {
           uploadBtn.disabled = false;
@@ -1653,7 +1648,7 @@ function ResumeCell({ candidate, onRefresh }) {
         }
       };
       actions.append(input, uploadBtn);
-      body.append(actions);
+      body.append(actions, progressHost);
       if (!resumes.length) {
         const empty = document.createElement("p");
         empty.className = "cand-exp-empty";
@@ -1799,6 +1794,12 @@ function ResumeCell({ candidate, onRefresh }) {
       >
         {busy ? "…" : count ? "Update" : "Upload resume"}
       </button>
+      {analysis && (
+        <AiNodeProgress
+          analysis={analysis}
+          className="ai-node-progress--compact"
+        />
+      )}
     </span>
   );
 }

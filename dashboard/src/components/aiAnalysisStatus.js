@@ -1,11 +1,13 @@
 /**
- * Which AI node is reading a booking upload, as the server reports it.
+ * Which AI node is reading an upload, as the server reports it.
  *
- * The page never decides or guesses the node. It names the upload with a fresh
- * id before sending it, and the backend gateway -- the only place that knows
- * where the model call actually runs, including when it fails over -- reports
- * against that id. This module follows those reports while the upload is in
- * flight.
+ * Used by every upload an AI node reads -- the booking page's, and the
+ * dashboard's payment, resume and referrer-expense uploads -- through
+ * AiNodeProgress. The page never decides or guesses the node. It names the
+ * upload with a fresh id before sending it, and the backend gateway -- the only
+ * place that knows where the model call actually runs, including when it fails
+ * over -- reports against that id. This module follows those reports while the
+ * upload is in flight.
  *
  * It listens on a server-sent event stream. If the stream cannot be opened or
  * says nothing (a proxy that buffers it, a browser without EventSource), it

@@ -16935,18 +16935,9 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 }
 .sbs-manual__hint { font-size: 0.68rem; color: #f87171; margin: 0 0 0.4rem; }
 .sbs-manual__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
-/* Status */
-.sbs-status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted,#a8b4c4); }
-.sbs-status--done { opacity: 0.85; }
-/* Analysis stopwatch: right-aligned in the row that shows the analysis. */
-.sbs-timer { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 0.7rem; color: var(--text-dim,#7b8a9e); background: rgba(255,255,255,0.06); padding: 0.05rem 0.4rem; border-radius: 0.35rem; }
-/* The AI node reading an upload. It takes the size and colour of the words it
- * replaced in the Save button and the invite status row; only the live dot and
- * the finished line carry a colour of their own. */
-.sbs-ai-node { white-space: nowrap; }
-.sbs-ai-node__dot { color: #22c55e; font-size: 0.75em; }
-.sbs-ai-node--done { font-size: 0.68rem; color: #6ee7b7; font-weight: 500; white-space: normal; }
-.sbs-detected-compact .sbs-ai-node--done { width: 100%; }
+/* The AI node status (components/AiNodeProgress) inside a result card takes a
+ * line of its own, at the card's smaller size. */
+.sbs-detected-compact .ai-node-progress { width: 100%; font-size: 0.68rem; }
 /* Alerts */
 .sbs-alert { padding: 0.45rem 0.65rem; border-radius: 0.45rem; font-size: 0.75rem; margin: 0; }
 .sbs-alert--error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: #fca5a5; }
@@ -17221,6 +17212,10 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .cand-resume-link:hover { color: #a9adff; text-decoration: underline; }
 .cand-resume-empty { color: var(--muted, #7e879d); }
 .cand-resume-upload-btn { margin-left: 6px; white-space: nowrap; }
+/* The AI node reading a resume: under the cell's buttons, and under the resume
+ * modal's upload button (components/AiNodeProgress). */
+.cand-resume-cell-react .ai-node-progress { margin-top: 4px; }
+.cand-resume-ai-progress:not(:empty) { margin: 8px 0 4px; }
 .cand-row--pending-focus td { background: rgba(250, 204, 21, .20) !important; box-shadow: inset 0 2px 0 #facc15, inset 0 -2px 0 #facc15; animation: cand-pending-focus 1s ease-in-out 5; }
 @keyframes cand-pending-focus { 50% { background: rgba(250, 204, 21, .38) !important; } }
 .cand-service-filter{display:inline-flex;align-items:center;border:1px solid rgba(129,140,248,.34);border-radius:8px;overflow:hidden;background:#0f172a}

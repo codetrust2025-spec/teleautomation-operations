@@ -1,0 +1,76 @@
+/* The one AI node status line -- see AiNodeProgress.jsx.
+ *
+ * It sits inside very different surfaces (the booking form's payment card, a
+ * candidate's upload row, a table cell, a modal's form row), so it takes its
+ * size and colour from the text around it and only the live dot, a failover
+ * and the finished line carry colours of their own. Dark theme, from the
+ * dashboard's own tokens. */
+
+.ai-node-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted, #a8b4c4);
+}
+
+.ai-node-progress__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-node-progress__dot {
+  color: var(--green, #22c55e);
+  font-size: 0.75em;
+}
+
+.ai-node-progress__failover {
+  color: var(--yellow, #fbbf24);
+}
+
+/* Right-aligned, and fixed-width digits so the line does not shuffle as it
+ * counts. */
+.ai-node-progress__timer {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim, #7b8a9e);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-node-progress__line {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.ai-node-progress--success .ai-node-progress__line {
+  color: #6ee7b7;
+}
+
+.ai-node-progress--failure .ai-node-progress__line {
+  color: var(--status-error, #f87171);
+}
+
+/* A table cell has room for the facts, not for a row of its own. */
+.ai-node-progress--compact {
+  gap: 0.3rem;
+  font-size: 0.68rem;
+}
+
+.ai-node-progress--compact .ai-node-progress__timer {
+  margin-left: 0;
+  padding: 0 0.3rem;
+  font-size: 0.66rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-node-progress__spinner {
+    animation-duration: 2.4s;
+  }
+}

@@ -482,6 +482,11 @@
 .payout-modal__save {
   min-width: 120px;
 }
+/* The AI node verifying the screenshot takes the row's full width beneath the
+ * fields and the Save button (components/AiNodeProgress). */
+.payout-modal__ai-status {
+  grid-column: 1 / -1;
+}
 .cand-payout-attach[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: .48;

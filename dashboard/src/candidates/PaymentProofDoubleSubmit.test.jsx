@@ -278,7 +278,11 @@ describe("payment proof double submit", () => {
     );
     expect(FakeXMLHttpRequest.instances).toHaveLength(1);
     // No reconciliation request is needed when the upload itself succeeded.
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    // The only other request is the AI node status the panel follows.
+    const reconciliations = globalThis.fetch.mock.calls.filter(
+      ([url]) => !String(url).includes("/public/slots/analysis/"),
+    );
+    expect(reconciliations).toHaveLength(0);
   });
 
   it("releases the guard so a later upload can still start", async () => {

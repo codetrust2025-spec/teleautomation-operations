@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '../Loader.jsx'
 import { SubmitSlotFileDrop } from './SubmitSlotFileDrop.jsx'
 import { bookingSourceMeta } from '../utils/bookingSource.js'
-import { analysedByText, newAnalysisId, watchAnalysis } from './aiAnalysisStatus.js'
+import AiNodeProgress, { analysedByLine, analysisSeconds, useAiAnalysis } from '../components/AiNodeProgress.jsx'
 
 const API_BASE = typeof window !== 'undefined' && window.location.port === '3000'
   ? ''
@@ -97,38 +97,6 @@ function uniqueNonEmptyTags(values) {
     seen.add(key)
     return true
   })
-}
-
-/** Elapsed analysis time: "12.3s" under a minute, then "m:ss". */
-function formatElapsed(seconds) {
-  if (seconds == null) return ''
-  const s = Math.max(0, seconds)
-  if (s < 60) return `${s.toFixed(1)}s`
-  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-}
-
-/**
- * How long an analysis has been running: ticks while `running` is true and
- * holds its final value once it stops, until cleared.
- *
- * Display only. It follows the same flag that shows the analysis in progress,
- * so it can neither outlast nor stop short of what the page is showing, and it
- * never touches the request.
- */
-function useStopwatch(running) {
-  const [elapsed, setElapsed] = useState(null)
-  useEffect(() => {
-    if (!running) return undefined
-    const startedAt = Date.now()
-    setElapsed(0)
-    const tick = setInterval(() => setElapsed((Date.now() - startedAt) / 1000), 100)
-    return () => {
-      clearInterval(tick)
-      setElapsed((Date.now() - startedAt) / 1000)
-    }
-  }, [running])
-  const clear = useCallback(() => setElapsed(null), [])
-  return [elapsed, clear]
 }
 
 const ROUND_OPTIONS = ['Screening', 'L1', 'L2', 'Final', 'HR']
@@ -297,31 +265,6 @@ function PaymentAiResultCard({ ai }) {
   )
 }
 
-/** The node reading an upload, in place of a bare "Analysing…".
- *
- * The name is whatever the server reports for this upload: it changes if the
- * request moves to another node, and it is never filled in from the page's
- * own idea of where AI work runs.
- *
- * "Waiting for AI node…" is only said while a node analysis is actually in
- * flight. Once it has ended -- the AI read failed or timed out and the page
- * fell back to the plain screenshot parser, which runs on no AI node -- the
- * row says what is happening instead of claiming a wait that is not.
- */
-function AiNodeProgress({ status, idle = 'Analysing…' }) {
-  if (status?.state === 'running' && status.node) {
-    return (
-      <span className="sbs-ai-node">
-        <span className="sbs-ai-node__dot" aria-hidden="true">●</span> {status.node} · Analysing…
-      </span>
-    )
-  }
-  if (status?.state === 'waiting' || status?.state === 'running') {
-    return <span className="sbs-ai-node">Waiting for AI node…</span>
-  }
-  return <span className="sbs-ai-node">{idle}</span>
-}
-
 /** Bring a field into view and put the cursor in it.
  *
  * `block: 'center'` rather than the default: on a phone the sticky Confirm bar
@@ -434,25 +377,15 @@ export function SubmitSlotPage() {
   const [paymentAiResults, setPaymentAiResults] = useState([])
   const [paymentRejected, setPaymentRejected] = useState([])
   const [paymentAnalysing, setPaymentAnalysing] = useState(false)
-  // How long each analysis took, shown while it runs and kept once it ends.
-  const [inviteElapsed, clearInviteElapsed] = useStopwatch(parsing)
-  const [paymentElapsed, clearPaymentElapsed] = useStopwatch(paymentAnalysing)
-  // Whether the last payment upload was accepted, so its time is shown beside
-  // the result it produced rather than beside an earlier one.
-  const [paymentOutcome, setPaymentOutcome] = useState(null)
-  // The server's report of which AI node is reading each upload, live while it
-  // runs and final once its response arrives.
-  const [paymentAnalysis, setPaymentAnalysis] = useState(null)
+  // The server's report of which AI node is reading each upload -- live while
+  // it runs, final once its response arrives -- and how long it took. Its
+  // outcome also says whether the last payment upload was accepted, so the
+  // time is shown beside the result it produced rather than an earlier one.
+  const { analysis: paymentAnalysis, begin: beginPaymentAnalysis, reset: resetPaymentAnalysis } = useAiAnalysis(API_BASE)
+  const { analysis: inviteAnalysis, begin: beginInviteAnalysis, reset: resetInviteAnalysis } = useAiAnalysis(API_BASE)
   // Instalments can be uploaded one at a time and read by different nodes, so
   // the payment result names every node that verified any of them.
   const [paymentAnalysedBy, setPaymentAnalysedBy] = useState([])
-  const [inviteAnalysis, setInviteAnalysis] = useState(null)
-  const stopPaymentWatch = useRef(null)
-  const stopInviteWatch = useRef(null)
-  useEffect(() => () => {
-    stopPaymentWatch.current?.()
-    stopInviteWatch.current?.()
-  }, [])
 
   const effectiveName = name.trim()
   const selected = useMemo(() => {
@@ -527,6 +460,13 @@ export function SubmitSlotPage() {
   // either, so offering the button earlier only offered a refusal.
   const inviteReady = Boolean(slotFile && !parsing && !aiBlocked && bookingSlot && !isPastDate)
   const confirmReady = inviteReady && !needsPaymentProof && !paymentAnalysing
+  // The invite's result card shows what an AI node read, so it also says which
+  // node read it and how long that took.
+  const inviteResultNamesNode = Boolean(
+    !parsing && aiExtraction && !aiBlocked && aiExtraction.confidence_score > 0 &&
+    inviteAnalysis?.finishedAt && inviteAnalysis.outcome === 'success' &&
+    inviteAnalysis.status?.analysed_by?.length
+  )
 
   // Asked of the backend, never derived here. The Re-Service waiver depends on
   // who is booking and for which round, so it is re-asked as those change.
@@ -571,11 +511,9 @@ export function SubmitSlotPage() {
     setPaymentTotals(null)
     setPaymentAiResults([])
     setPaymentRejected([])
-    setPaymentAnalysis(null)
+    resetPaymentAnalysis()
     setPaymentAnalysedBy([])
-    setPaymentOutcome(null)
-    clearPaymentElapsed()
-  }, [clearPaymentElapsed])
+  }, [resetPaymentAnalysis])
 
   // Everything the Book slot form holds, cleared once a booking is confirmed so
   // the next one starts from nothing: every field, both uploads and their
@@ -584,17 +522,15 @@ export function SubmitSlotPage() {
   // server and listed under Confirmed slots; that list, the roster and the open
   // tab are left alone. Previews are released by the effect that owns them.
   const resetBookForm = useCallback(() => {
-    stopInviteWatch.current?.()
-    stopPaymentWatch.current?.()
     setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
     setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
     setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology('')
     setSessionFile(null); setSessionPreview('')
-    setAiExtraction(null); setAiBlocked(''); setUserEditedFields({}); setInviteAnalysis(null)
-    clearInviteElapsed()
+    setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
+    resetInviteAnalysis()
     resetPaymentProofs(); setPaymentRequirement(null)
     setMissingField(''); setError('')
-  }, [resetPaymentProofs, clearInviteElapsed])
+  }, [resetPaymentProofs, resetInviteAnalysis])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -622,17 +558,12 @@ export function SubmitSlotPage() {
     setParsing(true); setError(''); setSuccess(''); setAiExtraction(null); setAiBlocked('')
     // Named before it is sent, so the node reading it can be followed while
     // the upload is still in flight.
-    stopInviteWatch.current?.()
-    const analysisId = newAnalysisId()
-    setInviteAnalysis({ state: 'waiting' })
-    stopInviteWatch.current = watchAnalysis(API_BASE, analysisId, setInviteAnalysis)
+    const run = beginInviteAnalysis()
     try {
       // Try AI extraction first
-      const fd = new FormData(); fd.append('file', file); fd.append('analysis_id', analysisId)
+      const fd = new FormData(); fd.append('file', file); fd.append('analysis_id', run.id)
       const res = await fetch(`${API_BASE}/public/slots/extract-invite-ai`, { method: 'POST', body: fd })
       const data = await res.json()
-      stopInviteWatch.current?.()
-      setInviteAnalysis(data?.analysis?.state === 'done' ? data.analysis : null)
 
       if (res.ok && data.status === 'ok' && data.data) {
         const ext = data.data
@@ -642,6 +573,7 @@ export function SubmitSlotPage() {
         if (ext.is_payment_screenshot) {
           setAiBlocked('This looks like a payment screenshot. Please upload the interview invite screenshot here.')
           setParsedSlot(null)
+          run.finish(data.analysis, { ok: false, failureLabel: 'Not an invite' })
           setParsing(false)
           return
         }
@@ -649,6 +581,7 @@ export function SubmitSlotPage() {
         if (ext.looks_like_interview_invite === false) {
           setAiBlocked('This image does not look like an interview invite.')
           setParsedSlot(null)
+          run.finish(data.analysis, { ok: false, failureLabel: 'Not an invite' })
           setParsing(false)
           return
         }
@@ -673,13 +606,16 @@ export function SubmitSlotPage() {
         setParsedSlot(slot)
         if (!userEditedFields.date) setManualDate(fixedDate || '')
         if (!userEditedFields.time) setManualTime(normalizeTo12h(ext.start_time || ext.time || ''))
+        run.finish(data.analysis)
         setParsing(false)
         return
       }
+      // The AI read produced nothing usable. The fallback parser below runs on
+      // no AI node, so the status stops naming one while it reads.
+      run.detach()
     } catch (e) {
       console.warn('AI extraction failed, falling back to OCR:', e)
-      stopInviteWatch.current?.()
-      setInviteAnalysis(null)
+      run.detach()
     }
 
     // Fallback to existing OCR endpoint
@@ -687,7 +623,11 @@ export function SubmitSlotPage() {
       const fd2 = new FormData(); fd2.append('file', file)
       const res2 = await fetch(`${API_BASE}/public/slots/parse-screenshot`, { method: 'POST', body: fd2 })
       const data2 = await res2.json()
-      if (!res2.ok) { setParsedSlot(null); setError('Auto-read failed — enter date & time manually.'); return }
+      if (!res2.ok) {
+        setParsedSlot(null); setError('Auto-read failed — enter date & time manually.')
+        run.finish(null, { ok: false, failureLabel: 'Could not read' })
+        return
+      }
       const slot = data2.slot || null
       // Normalize all times to 12h format and fix wrong year
       if (slot) {
@@ -698,14 +638,18 @@ export function SubmitSlotPage() {
       setParsedSlot(slot)
       if (!interviewRound) setInterviewRound(slot?.interview_round || '')
       setManualDate(''); setManualTime('')
-    } catch { setParsedSlot(null); setError('Network error while reading screenshot') }
+      run.finish(null)
+    } catch {
+      setParsedSlot(null); setError('Network error while reading screenshot')
+      run.finish(null, { ok: false, failureLabel: 'Could not read' })
+    }
     finally { setParsing(false) }
   }
 
   async function onSlotFileChange(file) {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
-    clearInviteElapsed()
+    resetInviteAnalysis()
     if (file) { setSlotPreview(URL.createObjectURL(file)); await parseScreenshot(file) }
     else setSlotPreview('')
   }
@@ -730,10 +674,7 @@ export function SubmitSlotPage() {
     setBusy(true); setError(''); setSuccess(''); setPaymentRejected([]); setPaymentAnalysing(true)
     // The screenshot the form was asking for has arrived.
     setMissingField(current => (current === 'payment' ? '' : current))
-    stopPaymentWatch.current?.()
-    const analysisId = newAnalysisId()
-    setPaymentAnalysis({ state: 'waiting' })
-    stopPaymentWatch.current = watchAnalysis(API_BASE, analysisId, setPaymentAnalysis)
+    const run = beginPaymentAnalysis()
     try {
       const fd = new FormData()
       fd.append('name', effectiveName)
@@ -750,17 +691,15 @@ export function SubmitSlotPage() {
       // so instalments uploaded across several attempts still add together.
       screenshots.forEach(f => fd.append('files', f))
       fd.append('existing_proof_ids', paymentProofIds.join(','))
-      fd.append('analysis_id', analysisId)
+      fd.append('analysis_id', run.id)
       const res = await fetch(`${API_BASE}/public/slots/payment-proof`, { method: 'POST', body: fd })
       // Not res.json(): a 502 from the proxy arrives as HTML, and parsing it
       // threw into the bare catch below, which called it a network fault. That
       // is the same misreport that hid a working booking on the confirm path.
       const data = await readApiResponse(res)
-      stopPaymentWatch.current?.()
-      // The response is the final word on which node read the screenshots. A
-      // refused upload shows only why it was refused.
-      setPaymentAnalysis(res.ok && data?.analysis?.state === 'done' ? data.analysis : null)
-      setPaymentOutcome(res.ok ? 'accepted' : 'refused')
+      // The response is the final word on which node read the screenshots,
+      // refused ones included.
+      run.finish(data?.analysis, { ok: res.ok, failureLabel: 'Not verified' })
       const rejected = data.rejected || []
       // Named by position, never by file name. The server reports refusals in
       // upload order, so each one takes the next matching screenshot -- two
@@ -797,10 +736,10 @@ export function SubmitSlotPage() {
       // connection over a receipt the server actually refused. With no Save
       // step to press again, trying again means attaching again.
       setError(err instanceof TypeError ? 'Network error — attach the screenshot again.' : (err?.message || 'Payment upload failed'))
-      setPaymentAnalysis(null)
-      setPaymentOutcome(null)
+      // No answer names no node: the upload's own error says what happened.
+      run.finish(null, { ok: false, failureLabel: 'Upload failed' })
     }
-    finally { stopPaymentWatch.current?.(); setBusy(false); setPaymentAnalysing(false) }
+    finally { setBusy(false); setPaymentAnalysing(false) }
   }
 
   // Clear the message the moment that field is satisfied, rather than leaving
@@ -1182,20 +1121,17 @@ export function SubmitSlotPage() {
                       {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{roundWise ? 'Attach the payment screenshot.' : 'Attach a payment screenshot that covers the amount due.'}</span>}
                     </>
                   )}
-                  {paymentAnalysing && (
-                    <div className="sbs-status sbs-status--loading">
-                      <Spinner size={18} /><AiNodeProgress status={paymentAnalysis} />
-                      {paymentElapsed != null && <span className="sbs-timer" role="timer">{formatElapsed(paymentElapsed)}</span>}
-                    </div>
-                  )}
+                  {/* The node reading the screenshots, while they are read. */}
+                  {paymentAnalysing && <AiNodeProgress analysis={paymentAnalysis} />}
                   {paymentRejected.map((item, index) => (
                     <span className="sbs-hint sbs-hint--warn" key={index}>
                       {item.position ? `Screenshot ${item.position}: ` : ''}{item.message}
                     </span>
                   ))}
-                  {/* A refused upload has no result card to carry its time. */}
-                  {!paymentAnalysing && paymentOutcome === 'refused' && paymentElapsed != null && (
-                    <span className="sbs-status sbs-status--done">Analysed in {formatElapsed(paymentElapsed)}</span>
+                  {/* A refused upload has no result card to carry its node and
+                      time, so they follow the reasons it was refused. */}
+                  {!paymentAnalysing && paymentAnalysis?.outcome === 'failure' && (
+                    <AiNodeProgress analysis={paymentAnalysis} />
                   )}
                   {paymentProofIds.length > 0 && !paymentAnalysing && (
                     <div className="sbs-detected-compact sbs-pay-result">
@@ -1207,9 +1143,11 @@ export function SubmitSlotPage() {
                             : roundWise
                               ? `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far`
                               : `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far · ₹${(paymentTotals?.remaining_due || 0).toLocaleString('en-IN')} still to upload`,
-                          paymentAnalysedBy.length
-                            ? `Analysed by ${paymentAnalysedBy.join(' + ')}${paymentOutcome === 'accepted' && paymentElapsed != null ? ` in ${formatElapsed(paymentElapsed)}` : ''}`
-                            : '',
+                          // Every node that verified any instalment; the time and
+                          // any failover belong to the upload that just landed.
+                          paymentAnalysis?.outcome === 'success'
+                            ? analysedByLine(paymentAnalysedBy, analysisSeconds(paymentAnalysis), paymentAnalysis.status?.failed_on)
+                            : analysedByLine(paymentAnalysedBy),
                         ].filter(Boolean).join(' · ')}
                       </span>
                       {paymentAiResults.length > 0 && (
@@ -1230,17 +1168,12 @@ export function SubmitSlotPage() {
                 {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
               </div>
 
-              {parsing && (
-                <div className="sbs-status sbs-status--loading">
-                  <Spinner size={18} /><AiNodeProgress status={inviteAnalysis} idle="Reading invite…" />
-                  {inviteElapsed != null && <span className="sbs-timer" role="timer">{formatElapsed(inviteElapsed)}</span>}
-                </div>
-              )}
-              {/* When no result card names the node -- the invite was refused, or
-                  read by the fallback parser -- the time stands on its own. */}
-              {!parsing && slotFile && inviteElapsed != null &&
-                !(aiExtraction && !aiBlocked && aiExtraction.confidence_score > 0 && analysedByText(inviteAnalysis)) && (
-                <div className="sbs-status sbs-status--done">Invite read in {formatElapsed(inviteElapsed)}</div>
+              {/* The node reading the invite, then who read it and how long it
+                  took. When the result card below shows what a node read, the
+                  card carries that line instead; a refused invite, or one read
+                  by the fallback parser, has it here on its own. */}
+              {slotFile && inviteAnalysis && !inviteResultNamesNode && (
+                <AiNodeProgress analysis={inviteAnalysis} idle="Reading invite…" finishedLabel="Invite read" />
               )}
 
               {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
@@ -1257,9 +1190,7 @@ export function SubmitSlotPage() {
                       aiExtraction.confidence_score ? `${aiExtraction.confidence_score}%` : ''
                     ].filter(Boolean).join(' • ')}
                   </span>
-                  {analysedByText(inviteAnalysis) && (
-                    <span className="sbs-ai-node sbs-ai-node--done">✓ {analysedByText(inviteAnalysis)}{inviteElapsed != null ? ` in ${formatElapsed(inviteElapsed)}` : ''}</span>
-                  )}
+                  {inviteResultNamesNode && <AiNodeProgress analysis={inviteAnalysis} />}
                   {aiExtraction.warnings && aiExtraction.warnings.length > 0 && (
                     <div className="sbs-detected-compact__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>
                   )}
