@@ -367,7 +367,6 @@ export function SubmitSlotPage() {
   // A fee paid in instalments produces one proof per transfer, so the booking
   // carries a list of proof ids rather than a single one.
   const [paymentProofIds, setPaymentProofIds] = useState([])
-  const [paymentFiles, setPaymentFiles] = useState([])
   const [paymentTotals, setPaymentTotals] = useState(null)
   const [paymentRequirement, setPaymentRequirement] = useState(null)
   const [sessionFile, setSessionFile] = useState(null)
@@ -406,6 +405,9 @@ export function SubmitSlotPage() {
   // The server's report of which AI node is reading each upload, live while it
   // runs and final once its response arrives.
   const [paymentAnalysis, setPaymentAnalysis] = useState(null)
+  // Instalments can be uploaded one at a time and read by different nodes, so
+  // the payment result names every node that verified any of them.
+  const [paymentAnalysedBy, setPaymentAnalysedBy] = useState([])
   const [inviteAnalysis, setInviteAnalysis] = useState(null)
   const stopPaymentWatch = useRef(null)
   const stopInviteWatch = useRef(null)
@@ -475,6 +477,18 @@ export function SubmitSlotPage() {
   // agreed off this page. The backend still enforces its own floor through
   // payment_complete and /bookings/confirm; the page simply never repeats it.
   const needsPaymentProof = Boolean(paymentRequired && !paymentComplete)
+  // A proof is filed under the candidate it belongs to -- round-wise by phone --
+  // and changing the name or phone afterwards discards it. Screenshots are
+  // therefore taken only once those are known, which is also the moment their
+  // analysis can start straight away: there is nothing to hold and nothing to
+  // save later.
+  const paymentUploadReady = Boolean(effectiveName && (!roundWise || roundWisePhone.trim()))
+  // Confirm opens only once both uploads have been analysed successfully: the
+  // payment verified when one is owed, and the invite read to a date and start
+  // time that is not in the past. /bookings/confirm refuses a booking without
+  // either, so offering the button earlier only offered a refusal.
+  const inviteReady = Boolean(slotFile && !parsing && !aiBlocked && bookingSlot && !isPastDate)
+  const confirmReady = inviteReady && !needsPaymentProof && !paymentAnalysing
 
   // Asked of the backend, never derived here. The Re-Service waiver depends on
   // who is booking and for which round, so it is re-asked as those change.
@@ -516,11 +530,11 @@ export function SubmitSlotPage() {
 
   const resetPaymentProofs = useCallback(() => {
     setPaymentProofIds([])
-    setPaymentFiles([])
     setPaymentTotals(null)
     setPaymentAiResults([])
     setPaymentRejected([])
     setPaymentAnalysis(null)
+    setPaymentAnalysedBy([])
   }, [])
 
   const refresh = useCallback(async () => {
@@ -642,9 +656,20 @@ export function SubmitSlotPage() {
     if (file) setSessionPreview(URL.createObjectURL(file)); else setSessionPreview('')
   }
 
-  async function uploadPaymentProof() {
-    if (!effectiveName || !paymentFiles.length) { setError('Enter your name and attach at least one payment screenshot first.'); return }
+  // Attaching payment screenshots starts their analysis, exactly as attaching
+  // the invite does. There used to be a Save step in between, and a candidate
+  // who attached both receipts but never pressed "Save 2" was told to "Attach
+  // the payment screenshot" beside the two screenshots they had attached.
+  async function analysePaymentScreenshots(files) {
+    const screenshots = [...(files || [])].filter(Boolean)
+    if (!screenshots.length) return
+    if (!paymentUploadReady) {
+      setError(roundWise ? 'Enter the client name and phone number first.' : 'Enter the client name first.')
+      return
+    }
     setBusy(true); setError(''); setSuccess(''); setPaymentRejected([]); setPaymentAnalysing(true)
+    // The screenshot the form was asking for has arrived.
+    setMissingField(current => (current === 'payment' ? '' : current))
     stopPaymentWatch.current?.()
     const analysisId = newAnalysisId()
     setPaymentAnalysis({ state: 'waiting' })
@@ -663,7 +688,7 @@ export function SubmitSlotPage() {
       if (interviewRound) fd.append('interview_round', interviewRound)
       // Every screenshot goes in one request; ids already saved are sent back
       // so instalments uploaded across several attempts still add together.
-      paymentFiles.forEach(f => fd.append('files', f))
+      screenshots.forEach(f => fd.append('files', f))
       fd.append('existing_proof_ids', paymentProofIds.join(','))
       fd.append('analysis_id', analysisId)
       const res = await fetch(`${API_BASE}/public/slots/payment-proof`, { method: 'POST', body: fd })
@@ -688,18 +713,21 @@ export function SubmitSlotPage() {
       }
       setPaymentProofIds(data.proof_ids || [])
       setPaymentTotals(data)
-      setPaymentFiles([])
       // Every accepted screenshot keeps the AI reading the backend already ran.
-      setPaymentAiResults([
-        ...paymentAiResults,
+      setPaymentAiResults(current => [
+        ...current,
         ...(data.ai_extractions || []).filter(ai => ai && ai.is_payment_screenshot),
       ])
-      if (data.payment_complete) setSuccess('Payment proof saved — you can confirm your slot.')
+      if ((data.proof_ids || []).length) {
+        const nodes = data?.analysis?.state === 'done' ? data.analysis.analysed_by || [] : []
+        setPaymentAnalysedBy(current => [...new Set([...current, ...nodes.filter(Boolean)])])
+      }
     } catch (err) {
       // Only a fetch that never got an answer is a network fault. Anything
       // else says what it was, rather than sending the payer to check their
-      // connection over a receipt the server actually refused.
-      setError(err instanceof TypeError ? 'Network error — try again' : (err?.message || 'Payment upload failed'))
+      // connection over a receipt the server actually refused. With no Save
+      // step to press again, trying again means attaching again.
+      setError(err instanceof TypeError ? 'Network error — attach the screenshot again.' : (err?.message || 'Payment upload failed'))
       setPaymentAnalysis(null)
     }
     finally { stopPaymentWatch.current?.(); setBusy(false); setPaymentAnalysing(false) }
@@ -1046,15 +1074,12 @@ export function SubmitSlotPage() {
                 {missingField === 'round' && <span className="sbs-hint sbs-hint--warn" role="alert">Choose the interview round.</span>}
               </label>
 
-              {/* Amber only when something is actually wrong: a screenshot was
-                  refused, or the sequence is asking for one. In every other
-                  state this is an ordinary field on the form. */}
+              {/* Amber only when payment needs attention: a screenshot was
+                  refused, or the sequence is asking for one. Otherwise this is
+                  an ordinary field, and a verified payment gets the same green
+                  result the invite does. */}
               {paymentRequired && (
                 <div className={`sbs-pay-card${paymentRejected.length || missingField === 'payment' ? ' sbs-pay-card--warn' : ''}`}>
-                  {/* One row carries the whole control surface: what is owed,
-                      and the action for it. Save used to sit below as a
-                      full-width block that was present and disabled even with
-                      nothing to save, which is most of the time. */}
                   <div ref={paymentRef} className="sbs-pay-head">
                     <span>{roundWise ? 'Payment' : 'Payment due'}</span>
                     <span className="sbs-pay-head__end">
@@ -1063,42 +1088,10 @@ export function SubmitSlotPage() {
                       {!roundWise && (
                         <strong>{paymentAmountDue == null ? '—' : `₹${paymentAmountDue.toLocaleString('en-IN')}`}</strong>
                       )}
-                      {/* Short on screen because it sits in a narrow header beside
-                          the amount; the full name is kept for assistive tech,
-                          where "Save" on its own says too little. */}
-                      {!paymentComplete && paymentFiles.length > 0 && (
-                        <button type="button" className="sbs-secondary-btn sbs-pay-save" aria-label={`Save payment proof${paymentFiles.length > 1 ? 's' : ''}`} disabled={busy || parsing || paymentAnalysing} onClick={uploadPaymentProof}>
-                          {paymentAnalysing
-                            ? <><Spinner size={12} />&nbsp;<AiNodeProgress status={paymentAnalysis} /></>
-                            : `Save${paymentFiles.length > 1 ? ` ${paymentFiles.length}` : ''}`}
-                        </button>
-                      )}
                     </span>
                   </div>
-                  {paymentProofIds.length > 0 && (
-                    <>
-                      <p className={paymentComplete ? 'sbs-pay-ok' : 'sbs-pay-partial'}>
-                        {paymentComplete
-                          ? `Payment proof on file ✓ · ₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} across ${paymentProofIds.length} screenshot${paymentProofIds.length === 1 ? '' : 's'}`
-                          : roundWise
-                            ? `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far`
-                            : `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far · ₹${(paymentTotals?.remaining_due || 0).toLocaleString('en-IN')} still to upload`}
-                      </p>
-                      <div className="sbs-pay-list">
-                        {paymentAiResults.map((ai, index) => (
-                          <PaymentAiResultCard key={ai.utr_number || ai.transaction_id || index} ai={ai} />
-                        ))}
-                      </div>
-                      {analysedByText(paymentAnalysis) && (
-                        <span className="sbs-ai-node sbs-ai-node--done">✓ {analysedByText(paymentAnalysis)}</span>
-                      )}
-                    </>
-                  )}
-                  {paymentRejected.map((item, index) => (
-                    <span className="sbs-hint sbs-hint--warn" key={`${item.filename}-${index}`}>
-                      {item.filename}: {item.message}
-                    </span>
-                  ))}
+                  {/* The same flow as the invite below: upload, the node reading
+                      it, then the result. Nothing waits to be saved. */}
                   {!paymentComplete && (
                     <>
                       {/* Split payments are normal here — one screenshot per
@@ -1109,13 +1102,45 @@ export function SubmitSlotPage() {
                         compact
                         multiple
                         hint="Paid in parts? Attach each screenshot — they are added up."
-                        files={paymentFiles}
-                        disabled={busy || parsing}
-                        busy={busy || paymentAnalysing}
-                        onFiles={next => { setPaymentFiles(next); setPaymentRejected([]) }}
+                        disabled={busy || parsing || !paymentUploadReady}
+                        busy={paymentAnalysing}
+                        onFiles={analysePaymentScreenshots}
                       />
+                      {!paymentUploadReady && (
+                        <span className="sbs-hint">{roundWise ? 'Enter the client name and phone number first.' : 'Enter the client name first.'}</span>
+                      )}
                       {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{roundWise ? 'Attach the payment screenshot.' : 'Attach a payment screenshot that covers the amount due.'}</span>}
                     </>
+                  )}
+                  {paymentAnalysing && (
+                    <div className="sbs-status sbs-status--loading"><Spinner size={18} /><AiNodeProgress status={paymentAnalysis} /></div>
+                  )}
+                  {paymentRejected.map((item, index) => (
+                    <span className="sbs-hint sbs-hint--warn" key={`${item.filename}-${index}`}>
+                      {item.filename}: {item.message}
+                    </span>
+                  ))}
+                  {paymentProofIds.length > 0 && !paymentAnalysing && (
+                    <div className="sbs-detected-compact sbs-pay-result">
+                      <span className="sbs-detected-compact__check">✓</span>
+                      <span className="sbs-detected-compact__text">
+                        {[
+                          paymentComplete
+                            ? 'Payment verified'
+                            : roundWise
+                              ? `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far`
+                              : `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far · ₹${(paymentTotals?.remaining_due || 0).toLocaleString('en-IN')} still to upload`,
+                          paymentAnalysedBy.length ? `Analysed by ${paymentAnalysedBy.join(' + ')}` : '',
+                        ].filter(Boolean).join(' · ')}
+                      </span>
+                      {paymentAiResults.length > 0 && (
+                        <div className="sbs-pay-list">
+                          {paymentAiResults.map((ai, index) => (
+                            <PaymentAiResultCard key={ai.utr_number || ai.transaction_id || index} ai={ai} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -1179,7 +1204,7 @@ export function SubmitSlotPage() {
               {error && <p className="sbs-alert sbs-alert--error" role="alert">{error}</p>}
               {success && <div className="sbs-alert sbs-alert--success sbs-success-anim"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{flexShrink:0}}><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg><span>{success}</span></div>}
 
-              <button type="submit" className="sbs-cta sbs-cta--ready" disabled={busy || parsing || isPastDate || !!aiBlocked}>
+              <button type="submit" className="sbs-cta sbs-cta--ready" disabled={busy || !confirmReady}>
                 {busy ? <Spinner size={18} /> : parsing ? 'Reading invite...' : 'Confirm booking'}
               </button>
             </form>

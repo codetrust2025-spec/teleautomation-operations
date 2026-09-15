@@ -17006,22 +17006,13 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   line-height: 1.2;
   font-size: 0.66rem;
 }
-/* Save rides in the header row, so it must not set the row's height. It is
- * only rendered when there is something to save; the full-width block it
- * replaced was present and disabled in the idle state, which is most of the
- * time, and cost 36px there for nothing. */
+/* The end of the header row carries the profile balance. There is no Save
+ * control beside it any more: screenshots are analysed as soon as they are
+ * attached, as the invite is. */
 .sbs-pay-head__end {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-}
-.sbs-pay-card .sbs-pay-save {
-  min-height: 0;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.7rem;
-  line-height: 1.4;
-  display: inline-flex;
-  align-items: center;
 }
 
 /* Payment is a field on this form, not a warning about it.
@@ -17064,9 +17055,12 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   font-size: 0.8125rem;
   font-weight: 600;
 }
-.sbs-pay-ok { margin: 0; font-size: 0.72rem; color: #6ee7b7; font-weight: 500; }
-.sbs-pay-partial { margin: 0; font-size: 0.72rem; color: #fbbf24; font-weight: 500; }
 .sbs-pay-list { display: flex; flex-direction: column; gap: 0.25rem; }
+/* A verified payment uses the invite's green result card; its receipts sit on
+ * their own lines under the one-line summary, as lines of that card rather
+ * than green boxes nested inside it. */
+.sbs-pay-result .sbs-pay-list { width: 100%; gap: 0.1rem; }
+.sbs-pay-result .sbs-pay-item { background: none; border: 0; padding: 0.05rem 0; }
 .sbs-pay-item {
   display: flex;
   align-items: center;

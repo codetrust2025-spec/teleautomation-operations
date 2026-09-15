@@ -33,6 +33,15 @@ function stubFetch(uploadReplies) {
       const body = uploadReplies[calls.uploads.length - 1]
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
     }
+    if (target.includes('/extract-invite-ai')) {
+      const soon = new Date(); soon.setDate(soon.getDate() + 7)
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ status: 'ok', success: true, data: {
+          interview_date: soon.toISOString().slice(0, 10), start_time: '03:00 PM', confidence_score: 92,
+        } }),
+      })
+    }
     if (target.includes('/bookings/confirm')) {
       calls.confirms.push(options.body)
       return Promise.resolve({
@@ -97,14 +106,13 @@ describe('Submit slot — split payment screenshots', () => {
     expect(input.multiple).toBe(true)
     attach(input, [screenshot('pay-1'), screenshot('pay-2'), screenshot('pay-3')])
 
-    expect(await screen.findByText('3 screenshots ready')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /save payment proofs/i }))
-
+    // Attaching is the upload: all three go in one request, with nothing to press.
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
     expect(calls.uploads[0].getAll('files')).toHaveLength(3)
-    expect(await screen.findByText(/₹5,000 across 3 screenshots/)).toBeTruthy()
+    expect(await screen.findByText(/payment verified/i)).toBeTruthy()
+    expect(document.querySelectorAll('.sbs-pay-result .sbs-pay-item')).toHaveLength(3)
     // The fee is covered, so the upload control retires.
-    expect(screen.queryByRole('button', { name: /save payment proof/i })).toBeNull()
+    expect(document.querySelector('.sbs-pay-card input[type="file"]')).toBeNull()
   })
 
   it('reports the shortfall and keeps collecting while instalments are short', async () => {
@@ -123,16 +131,14 @@ describe('Submit slot — split payment screenshots', () => {
     await pickCandidate()
 
     attach(paymentInput(), [screenshot('pay-1')])
-    fireEvent.click(screen.getByRole('button', { name: /save payment proof/i }))
 
     expect(await screen.findByText(/₹2,000 verified so far · ₹3,000 still to upload/)).toBeTruthy()
-    // Still short, so the drop stays open for the rest of the payment. Save
-    // appears with the next instalment rather than waiting around disabled --
-    // attach first, then it is there to click.
+    // Still short, so the drop stays open for the rest of the payment, and the
+    // next instalment is analysed the moment it is attached.
     attach(paymentInput(), [screenshot('pay-2')])
-    fireEvent.click(screen.getByRole('button', { name: /save payment proof/i }))
 
-    expect(await screen.findByText(/₹5,000 across 2 screenshots/)).toBeTruthy()
+    expect(await screen.findByText(/payment verified/i)).toBeTruthy()
+    expect(document.querySelectorAll('.sbs-pay-result .sbs-pay-item')).toHaveLength(2)
   })
 
   it('sends every proof id to the booking boundary', async () => {
@@ -144,8 +150,7 @@ describe('Submit slot — split payment screenshots', () => {
     await pickCandidate()
 
     attach(paymentInput(), [screenshot('pay-1'), screenshot('pay-2'), screenshot('pay-3')])
-    fireEvent.click(screen.getByRole('button', { name: /save payment proofs/i }))
-    await screen.findByText(/₹5,000 across 3 screenshots/)
+    await screen.findByText(/payment verified/i)
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
     // The invite field is the remaining single-file input.
@@ -170,20 +175,24 @@ describe('Submit slot — split payment screenshots', () => {
     await pickCandidate()
 
     attach(paymentInput(), [screenshot('pay-1'), screenshot('pay-2')])
-    fireEvent.click(screen.getByRole('button', { name: /save payment proofs/i }))
 
     expect(await screen.findByText(/pay-2\.jpg: Receiver is not registered\./)).toBeTruthy()
   })
 
-  it('drops one screenshot from the set without clearing the rest', async () => {
-    stubFetch([])
+  it('never holds screenshots waiting to be saved', async () => {
+    // A candidate once attached both receipts, never pressed "Save 2", and was
+    // told to attach the payment screenshot beside the two they had attached.
+    const calls = stubFetch([{
+      status: 'ok', proof_ids: ['proof-a', 'proof-b'], verified_total: 5000, remaining_due: 0,
+      amount_due: 5000, payment_complete: true, rejected: [], ai_extractions: [],
+    }])
     await pickCandidate()
 
-    attach(paymentInput(), [screenshot('pay-1'), screenshot('pay-2'), screenshot('pay-3')])
-    expect(await screen.findByText('3 screenshots ready')).toBeTruthy()
+    attach(paymentInput(), [screenshot('pay-1'), screenshot('pay-2')])
 
-    fireEvent.click(screen.getByRole('button', { name: /remove pay-2\.jpg/i }))
-    expect(await screen.findByText('2 screenshots ready')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /remove pay-2\.jpg/i })).toBeNull()
+    await waitFor(() => expect(calls.uploads).toHaveLength(1))
+    expect(screen.queryByText(/screenshots? ready/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /save/i })).toBeNull()
+    expect(await screen.findByText(/payment verified/i)).toBeTruthy()
   })
 })

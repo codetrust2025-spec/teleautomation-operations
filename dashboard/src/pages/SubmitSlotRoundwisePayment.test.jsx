@@ -182,7 +182,6 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     // Attach payment screenshot
     const payInput = document.querySelectorAll('input[type="file"]')[0]
     attach(payInput, [screenshot('payment-proof')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
 
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
     const uploadBody = calls.uploads[0]
@@ -207,7 +206,6 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
 
     attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
 
     const uploadBody = calls.uploads[0]
@@ -228,7 +226,6 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     expect(await screen.findByText(/payment due/i)).toBeTruthy()
     const payInput = document.querySelectorAll('input[type="file"]')[0]
     attach(payInput, [screenshot('payment-proof')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
 
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
     const uploadBody = calls.uploads[0]
@@ -249,8 +246,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     // Upload payment
     const payInput = document.querySelectorAll('input[type="file"]')[0]
     attach(payInput, [screenshot('pay')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
-    await screen.findByText(/payment proof saved/i)
+    await screen.findByText(/payment verified/i)
 
     // Upload invite
     const inviteInput = inviteFileInput()
@@ -281,8 +277,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     // Upload payment
     const payInput = document.querySelectorAll('input[type="file"]')[0]
     attach(payInput, [screenshot('pay')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
-    await screen.findByText(/payment proof saved/i)
+    await screen.findByText(/payment verified/i)
 
     // Upload invite
     const inviteInput = inviteFileInput()
@@ -389,13 +384,15 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     // 5. Upload 3 payment screenshots
     const payInput = document.querySelectorAll('input[type="file"]')[0]
     attach(payInput, [screenshot('receipt-1'), screenshot('receipt-2'), screenshot('receipt-3')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
 
-    await screen.findByText(/payment proof saved/i)
-    expect(screen.getByText(/across 3 screenshot/i)).toBeTruthy()
-    expect(screen.getByText(/UTR 2001/)).toBeTruthy()
-    expect(screen.getByText(/UTR 2002/)).toBeTruthy()
-    expect(screen.getByText(/UTR 1001/)).toBeTruthy()
+    await screen.findByText(/payment verified/i)
+    // One green result for the payment, listing every receipt it verified.
+    const result = document.querySelector('.sbs-pay-result')
+    expect(result.textContent).toMatch(/UTR 2001/)
+    expect(result.textContent).toMatch(/UTR 2002/)
+    expect(result.textContent).toMatch(/UTR 1001/)
+    // Payment is done, but the invite has not been read yet.
+    expect(screen.getByRole('button', { name: /confirm booking/i }).disabled).toBe(true)
 
     // 6. Upload invite screenshot
     const inviteInput = inviteFileInput()
@@ -436,6 +433,12 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
       if (target.includes('/extract-invite-ai')) {
         return reply({ status: 'ok', success: true, data: { interview_date: yesterdayIso, start_time: '03:00 PM', confidence_score: 90 } })
       }
+      if (target.includes('/public/slots/payment-proof')) {
+        return reply({
+          status: 'ok', proof_ids: ['proof-rw-1'], verified_total: 5000, remaining_due: 0, amount_due: 5000,
+          payment_complete: true, rejected: [], ai_extractions: [{ is_payment_screenshot: true, amount: 5000, verified: true }],
+        })
+      }
       if (target.includes('/public/slots/payment-requirement')) {
         return reply({ status: 'ok', service_type: 'round_wise', amount_due: 5000, payment_required: true, re_service: false })
       }
@@ -449,6 +452,10 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Python' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
+
+    // Payment verified first, so the date is the only thing holding Confirm.
+    attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('pay')])
+    await screen.findByText(/payment verified/i)
 
     // Upload invite with past date (yesterday)
     const fileInputs = document.querySelectorAll('input[type="file"]')
@@ -489,9 +496,10 @@ describe('Round-wise payment — no pricing is shown', () => {
     })
     await chooseRoundWise()
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
+    // A round-wise proof is filed under the phone, so the upload waits for it.
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
 
     attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
 
     expect(await screen.findByText('₹2,000 verified so far')).toBeTruthy()
     expect(screen.queryByText(/still to upload|more to reach/i)).toBeNull()
@@ -522,8 +530,7 @@ describe('Round-wise payment — no pricing is shown', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
     attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('pay')])
-    fireEvent.click(await screen.findByRole('button', { name: /save payment proof/i }))
-    await screen.findByText(/payment proof saved/i)
+    await screen.findByText(/payment verified/i)
 
     attach(inviteFileInput(), [screenshot('invite')])
     await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
