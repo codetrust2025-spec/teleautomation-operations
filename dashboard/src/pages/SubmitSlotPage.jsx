@@ -762,7 +762,15 @@ export function SubmitSlotPage() {
       setPaymentAnalysis(res.ok && data?.analysis?.state === 'done' ? data.analysis : null)
       setPaymentOutcome(res.ok ? 'accepted' : 'refused')
       const rejected = data.rejected || []
-      setPaymentRejected(rejected)
+      // Named by position, never by file name. The server reports refusals in
+      // upload order, so each one takes the next matching screenshot -- two
+      // files a phone gave the same name still get their own numbers.
+      const taken = new Set()
+      setPaymentRejected(rejected.map(item => {
+        const index = screenshots.findIndex((f, i) => f.name === item.filename && !taken.has(i))
+        if (index >= 0) taken.add(index)
+        return { message: item.message, position: screenshots.length > 1 && index >= 0 ? index + 1 : 0 }
+      }))
       if (!res.ok) {
         // The per-screenshot reasons are already listed against the files they
         // belong to. Repeating one of them as a page-level alert showed the
@@ -1181,8 +1189,8 @@ export function SubmitSlotPage() {
                     </div>
                   )}
                   {paymentRejected.map((item, index) => (
-                    <span className="sbs-hint sbs-hint--warn" key={`${item.filename}-${index}`}>
-                      {item.filename}: {item.message}
+                    <span className="sbs-hint sbs-hint--warn" key={index}>
+                      {item.position ? `Screenshot ${item.position}: ` : ''}{item.message}
                     </span>
                   ))}
                   {/* A refused upload has no result card to carry its time. */}
@@ -1218,7 +1226,7 @@ export function SubmitSlotPage() {
 
               <div ref={inviteRef} className="sbs-field">
                 <span className="sbs-label">Interview invite screenshot</span>
-                <SubmitSlotFileDrop hint="Teams, Gmail, Calendar, or Zoom — date and time must be visible." file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} />
+                <SubmitSlotFileDrop hint="Teams, Gmail, Calendar, or Zoom — date and time must be visible." file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} attachedLabel="Invite screenshot attached" removeLabel="Remove invite screenshot" />
                 {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
               </div>
 

@@ -115,6 +115,43 @@ describe("PaymentProofUploader", () => {
     );
   });
 
+  it("never shows the uploaded file's name, while uploading or after", async () => {
+    // A phone names a screenshot after a timestamp or a hash; it tells an
+    // operator nothing and was printed, and put in hover titles and labels.
+    const name = "IMG-20260915-WA0012.png";
+    const exposed = () =>
+      document.body.textContent.includes(name) ||
+      [...document.querySelectorAll("[aria-label], [title], [alt]")].some((el) =>
+        ["aria-label", "title", "alt"].some((attr) => (el.getAttribute(attr) || "").includes(name)),
+      );
+    const { container } = render(<Harness />);
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(["payment"], name, { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(FakeXMLHttpRequest.instances).toHaveLength(1));
+    const xhr = FakeXMLHttpRequest.instances[0];
+    act(() => xhr.upload.onprogress({ lengthComputable: true, loaded: 10, total: 100 }));
+    expect(screen.getByText("Payment screenshot")).toBeInTheDocument();
+    expect(exposed()).toBe(false);
+
+    act(() => xhr.upload.onload());
+    expect(exposed()).toBe(false);
+
+    xhr.status = 200;
+    xhr.responseText = JSON.stringify({
+      status: "ok",
+      candidate: {
+        id: "candidate-1",
+        payment_proofs: [{ id: "proof-1", attachment_type: "payment_proof", original_name: name,
+                           url: "/candidates/candidate-1/proofs/proof-1" }],
+      },
+    });
+    act(() => xhr.onload());
+    await waitFor(() => expect(screen.getByText("Screenshot uploaded successfully")).toBeInTheDocument());
+    expect(exposed()).toBe(false);
+  });
+
   it("cancels an active request without saving a proof", async () => {
     const { container } = render(<Harness />);
     fireEvent.change(container.querySelector('input[type="file"]'), {
