@@ -59,7 +59,7 @@ function pending() {
 }
 
 function stubServer() {
-  const server = { uploads: [], invites: [], upload: pending(), invite: pending() }
+  const server = { uploads: [], invites: [], parses: [], upload: pending(), invite: pending(), parse: pending() }
   const reply = (body, status = 200) =>
     Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) })
   vi.stubGlobal('fetch', vi.fn((url, options) => {
@@ -74,6 +74,10 @@ function stubServer() {
     if (target.includes('/extract-invite-ai')) {
       server.invites.push(options.body)
       return server.invite.promise
+    }
+    if (target.includes('/public/slots/parse-screenshot')) {
+      server.parses.push(options.body)
+      return server.parse.promise
     }
     if (target.includes('/public/slots/booked')) return reply({ status: 'ok', slots: [] })
     return reply({ status: 'ok', candidates: [] })
@@ -231,6 +235,42 @@ describe('interview invite: the node reading it', () => {
     expect(screen.queryByText('Waiting for AI node…')).toBeNull()
     expect(screen.queryByText(/· Analysing…/)).toBeNull()
     expect(stream().closed).toBe(true)
+  })
+
+  it('stops claiming a node wait once the AI read has failed and the page falls back', async () => {
+    // Seen live: a read on a CPU-only node outlasted the public proxy's 60s
+    // limit, the proxy answered with an HTML 504, and the page fell back to
+    // the plain screenshot parser -- which runs on no AI node at all.
+    const server = stubServer()
+    await startInviteUpload()
+    await waitFor(() => expect(server.invites).toHaveLength(1))
+    push({ state: 'running', node: 'Praveen' })
+
+    await act(async () => server.invite.resolve({
+      ok: false, status: 504, json: () => Promise.reject(new SyntaxError("Unexpected token '<'")),
+    }))
+    await waitFor(() => expect(server.parses).toHaveLength(1))
+
+    const row = document.querySelector('.sbs-status--loading')
+    expect(row.textContent).toContain('Reading invite…')
+    expect(row.textContent).not.toMatch(/waiting for ai node|praveen|analysing/i)
+    expect(stream().closed).toBe(true)
+  })
+
+  it('does not show a finished analysis as a wait either', async () => {
+    const server = stubServer()
+    await startInviteUpload()
+    await waitFor(() => expect(server.invites).toHaveLength(1))
+
+    await act(async () => server.invite.resolve({
+      ok: false, status: 500,
+      json: () => Promise.resolve({ status: 'error', analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060'] } }),
+    }))
+    await waitFor(() => expect(server.parses).toHaveLength(1))
+
+    const row = document.querySelector('.sbs-status--loading')
+    expect(row.textContent).toContain('Reading invite…')
+    expect(row.textContent).not.toMatch(/waiting for ai node/i)
   })
 
   it('follows a failover while the invite is being read', async () => {
