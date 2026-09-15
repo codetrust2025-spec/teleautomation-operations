@@ -16127,8 +16127,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding: 0.5rem 0.75rem 1rem;
+  justify-content: center;
+  padding: 1rem 0.75rem;
   background: var(--bg, #0f1117);
   position: relative;
   overflow-x: hidden;
@@ -16686,6 +16686,10 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-manual__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
 /* Status */
 .sbs-status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted,#a8b4c4); }
+.sbs-status--done { color: var(--text-muted,#a8b4c4); opacity: 0.85; }
+/* Analysis stopwatch */
+.sbs-timer { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 0.7rem; color: var(--text-dim,#7b8a9e); background: rgba(255,255,255,0.06); padding: 0.05rem 0.4rem; border-radius: 0.35rem; }
+.sbs-timer--inline { display: inline-block; margin-left: 0.5rem; font-size: 0.7rem; color: var(--text-dim,#7b8a9e); background: none; padding: 0; }
 /* Alerts */
 .sbs-alert { padding: 0.45rem 0.65rem; border-radius: 0.45rem; font-size: 0.75rem; margin: 0; }
 .sbs-alert--error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: #fca5a5; }

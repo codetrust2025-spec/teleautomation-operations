@@ -98,6 +98,16 @@ function uniqueNonEmptyTags(values) {
   })
 }
 
+/** Format elapsed seconds as m:ss or s.s for the analysis stopwatch. */
+function formatElapsed(seconds) {
+  if (seconds == null) return ''
+  const s = Math.max(0, seconds)
+  if (s < 60) return `${s.toFixed(1)}s`
+  const mins = Math.floor(s / 60)
+  const rem = Math.floor(s % 60)
+  return `${mins}:${String(rem).padStart(2, '0')}`
+}
+
 const ROUND_OPTIONS = ['Screening', 'L1', 'L2', 'Final', 'HR']
 
 function candidateNameKey(value) {
@@ -300,6 +310,43 @@ export function SubmitSlotPage() {
   const [paymentRejected, setPaymentRejected] = useState([])
   const [paymentAnalysing, setPaymentAnalysing] = useState(false)
 
+  // ── Analysis stopwatch (display-only; does not affect analysis logic) ──────
+  // One stopwatch per analysis kind ('invite' | 'payment'). Started when an
+  // analysis begins, frozen on success/failure, and cleared on a full form
+  // reset. Purely a UI affordance — it never gates or alters the request.
+  const [inviteElapsed, setInviteElapsed] = useState(null)
+  const [paymentElapsed, setPaymentElapsed] = useState(null)
+  const timerRefs = useRef({ invite: null, payment: null })
+
+  const startTimer = useCallback((kind) => {
+    const setElapsed = kind === 'invite' ? setInviteElapsed : setPaymentElapsed
+    if (timerRefs.current[kind]) clearInterval(timerRefs.current[kind])
+    const startedAt = Date.now()
+    setElapsed(0)
+    timerRefs.current[kind] = setInterval(() => {
+      setElapsed((Date.now() - startedAt) / 1000)
+    }, 100)
+  }, [])
+
+  const stopTimer = useCallback((kind) => {
+    if (timerRefs.current[kind]) {
+      clearInterval(timerRefs.current[kind])
+      timerRefs.current[kind] = null
+    }
+  }, [])
+
+  const clearTimer = useCallback((kind) => {
+    stopTimer(kind)
+    const setElapsed = kind === 'invite' ? setInviteElapsed : setPaymentElapsed
+    setElapsed(null)
+  }, [stopTimer])
+
+  // Never leak an interval if the component unmounts mid-analysis.
+  useEffect(() => () => {
+    if (timerRefs.current.invite) clearInterval(timerRefs.current.invite)
+    if (timerRefs.current.payment) clearInterval(timerRefs.current.payment)
+  }, [])
+
   const effectiveName = name.trim()
   const selected = useMemo(() => {
     if (!effectiveName) return null
@@ -405,6 +452,44 @@ export function SubmitSlotPage() {
     setPaymentRejected([])
   }, [])
 
+  // Full reset of the Book slot form. Called after a booking is confirmed so
+  // the next candidate starts from a clean form. Clears every field, upload,
+  // preview, analysis result, timer and validation/temporary UI state. It does
+  // NOT touch confirmed bookings (`booked`), the candidate roster, or the
+  // active tab — only the transient inputs of the book form.
+  const resetBookForm = useCallback(() => {
+    // Free object URLs before dropping their references.
+    setSlotPreview(prev => { if (prev) URL.revokeObjectURL(prev); return '' })
+    setSessionPreview(prev => { if (prev) URL.revokeObjectURL(prev); return '' })
+    // Identity + service
+    setName('')
+    setRoundWisePhone('')
+    setServiceType('profile_service')
+    setShowServiceDrop(false)
+    // Invite upload + parsed slot
+    setSlotFile(null)
+    setParsedSlot(null)
+    setManualDate('')
+    setManualTime('')
+    setInterviewRound('')
+    setTechnology('')
+    // Session upload
+    setSessionFile(null)
+    // AI / analysis results
+    setAiExtraction(null)
+    setAiBlocked('')
+    setUserEditedFields({})
+    // Payment proofs + requirement
+    resetPaymentProofs()
+    setPaymentRequirement(null)
+    // Validation + transient flags
+    setTriedSubmit(false)
+    setError('')
+    // Analysis stopwatches
+    clearTimer('invite')
+    clearTimer('payment')
+  }, [resetPaymentProofs, clearTimer])
+
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
@@ -429,6 +514,7 @@ export function SubmitSlotPage() {
   async function parseScreenshot(file) {
     if (!file) { setParsedSlot(null); setAiExtraction(null); setAiBlocked(''); return }
     setParsing(true); setError(''); setSuccess(''); setAiExtraction(null); setAiBlocked('')
+    startTimer('invite')
     try {
       // Try AI extraction first
       const fd = new FormData(); fd.append('file', file)
@@ -444,6 +530,7 @@ export function SubmitSlotPage() {
           setAiBlocked('This looks like a payment screenshot. Please upload the interview invite screenshot here.')
           setParsedSlot(null)
           setParsing(false)
+          stopTimer('invite')
           return
         }
         // Check if it doesn't look like an invite
@@ -451,6 +538,7 @@ export function SubmitSlotPage() {
           setAiBlocked('This image does not look like an interview invite.')
           setParsedSlot(null)
           setParsing(false)
+          stopTimer('invite')
           return
         }
 
@@ -475,6 +563,7 @@ export function SubmitSlotPage() {
         if (!userEditedFields.date) setManualDate(fixedDate || '')
         if (!userEditedFields.time) setManualTime(normalizeTo12h(ext.start_time || ext.time || ''))
         setParsing(false)
+        stopTimer('invite')
         return
       }
     } catch (e) {
@@ -498,12 +587,13 @@ export function SubmitSlotPage() {
       if (!interviewRound) setInterviewRound(slot?.interview_round || '')
       setManualDate(''); setManualTime('')
     } catch { setParsedSlot(null); setError('Network error while reading screenshot') }
-    finally { setParsing(false) }
+    finally { setParsing(false); stopTimer('invite') }
   }
 
   async function onSlotFileChange(file) {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
+    clearTimer('invite')
     if (file) { setSlotPreview(URL.createObjectURL(file)); await parseScreenshot(file) }
     else setSlotPreview('')
   }
@@ -517,6 +607,7 @@ export function SubmitSlotPage() {
   async function uploadPaymentProof() {
     if (!effectiveName || !paymentFiles.length) { setError('Enter your name and attach at least one payment screenshot first.'); return }
     setBusy(true); setError(''); setSuccess(''); setPaymentRejected([]); setPaymentAnalysing(true)
+    startTimer('payment')
     try {
       const fd = new FormData()
       fd.append('name', effectiveName)
@@ -555,7 +646,7 @@ export function SubmitSlotPage() {
       ])
       if (data.payment_complete) setSuccess('Payment proof saved — you can confirm your slot.')
     } catch { setError('Network error — try again') }
-    finally { setBusy(false); setPaymentAnalysing(false) }
+    finally { setBusy(false); setPaymentAnalysing(false); stopTimer('payment') }
   }
 
   async function submitBook(ev) {
@@ -609,11 +700,11 @@ export function SubmitSlotPage() {
       const res = await fetch(`${API_BASE}/bookings/confirm`, { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok) { setError(data.payment_due ? (data.message || 'Payment required.') : (data.message || 'Could not book slot')); return }
-      if (slotPreview) URL.revokeObjectURL(slotPreview)
-      setSlotFile(null); setSlotPreview(''); setParsedSlot(null); setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setServiceType('profile_service'); resetPaymentProofs()
-      setName(''); setRoundWisePhone('')
-      setTriedSubmit(false)
-      setSuccess(`Slot confirmed for ${data.candidate?.name || effectiveName}.`)
+      const confirmedName = data.candidate?.name || effectiveName
+      // Fully reset the Book slot form; the confirmed booking is already saved
+      // server-side and shows on the Confirmed slots tab after refresh.
+      resetBookForm()
+      setSuccess(`Slot confirmed for ${confirmedName}.`)
       // Refresh data first, then switch to confirmed tab after 2 seconds
       await refresh()
       setTimeout(() => { setTab('confirmed'); setSuccess('') }, 2000)
@@ -861,9 +952,10 @@ export function SubmitSlotPage() {
                       />
                       <button type="button" className="sbs-secondary-btn" disabled={busy || parsing || paymentAnalysing || !paymentFiles.length} onClick={uploadPaymentProof}>
                         {paymentAnalysing
-                          ? <><Spinner size={14} />&nbsp;Analysing {paymentFiles.length > 1 ? `${paymentFiles.length} screenshots` : ''}…</>
+                          ? <><Spinner size={14} />&nbsp;Analysing {paymentFiles.length > 1 ? `${paymentFiles.length} screenshots` : ''}…&nbsp;{paymentElapsed != null && formatElapsed(paymentElapsed)}</>
                           : `Save payment proof${paymentFiles.length > 1 ? 's' : ''}`}
                       </button>
+                      {!paymentAnalysing && paymentElapsed != null && <span className="sbs-timer sbs-timer--inline" aria-live="polite">Analysed in {formatElapsed(paymentElapsed)}</span>}
                       {triedSubmit && needsPaymentProof && <span className="sbs-hint sbs-hint--warn">Upload and save payment proof to confirm.</span>}
                     </>
                   )}
@@ -876,7 +968,8 @@ export function SubmitSlotPage() {
                 {triedSubmit && !slotFile && <span className="sbs-hint sbs-hint--warn">Upload your interview invite screenshot to confirm.</span>}
               </div>
 
-              {parsing && <div className="sbs-status sbs-status--loading"><Spinner size={18} /><span>Reading invite with AI… this may take a few minutes</span></div>}
+              {parsing && <div className="sbs-status sbs-status--loading"><Spinner size={18} /><span>Reading invite with AI… this may take a few minutes</span>{inviteElapsed != null && <span className="sbs-timer" aria-live="polite">{formatElapsed(inviteElapsed)}</span>}</div>}
+              {!parsing && inviteElapsed != null && <div className="sbs-status sbs-status--done"><span>Invite read in {formatElapsed(inviteElapsed)}</span></div>}
 
               {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
 
