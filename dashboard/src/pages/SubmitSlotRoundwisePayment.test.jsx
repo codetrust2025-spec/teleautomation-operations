@@ -251,7 +251,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     // Upload invite
     const inviteInput = inviteFileInput()
     attach(inviteInput, [screenshot('invite')])
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
 
     // Submit
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
@@ -282,7 +282,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     // Upload invite
     const inviteInput = inviteFileInput()
     attach(inviteInput, [screenshot('invite')])
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
 
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
 
@@ -339,7 +339,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     const inviteInput = inviteFileInput()
     attach(inviteInput, [screenshot('invite')])
 
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
     // The manually typed technology must survive
     expect(tech.value).toBe('Golang')
   })
@@ -398,7 +398,7 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     const inviteInput = inviteFileInput()
     attach(inviteInput, [screenshot('invite')])
 
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
 
     // 7. Verify detected invite row
     expect(screen.getByText(/03:00 PM/)).toBeTruthy()
@@ -462,7 +462,7 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     const inviteInput = fileInputs[fileInputs.length - 1]
     attach(inviteInput, [screenshot('past-invite')])
 
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
 
     // Manual date fields must be visible because date is in the past
     expect(screen.getByText(/interview date is in the past/i)).toBeTruthy()
@@ -533,7 +533,7 @@ describe('Round-wise payment — no pricing is shown', () => {
     await screen.findByText(/payment verified/i)
 
     attach(inviteFileInput(), [screenshot('invite')])
-    await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
+    await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
 
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
     await waitFor(() => expect(calls.confirms).toHaveLength(1))

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
-import AiProcessingStatus from "../components/AiProcessingStatus.jsx";
+import AiNodeProgress, { useAiAnalysis } from "../components/AiNodeProgress.jsx";
 import { useDialogA11y } from "../hooks/useDialogA11y.js";
 import ReferrerPaymentAccounts, {
   fetchReferrerRegistryJson,
@@ -91,9 +91,15 @@ export default function PayoutModal({
     date: todayInputValue(),
   }));
   const [saving, setSaving] = useState(false);
-  // Saving a proof runs Ollama payment verification server-side, so the
-  // button alone cannot explain the wait. Null when no AI work is running.
-  const [aiState, setAiState] = useState(null);
+  // Saving a proof runs AI payment verification server-side, so the button
+  // alone cannot explain the wait: the node verifying the screenshot is shown
+  // beside it, then who verified it and how long it took. Null until a
+  // screenshot is sent.
+  const {
+    analysis: proofAnalysis,
+    begin: beginProofAnalysis,
+    reset: resetProofAnalysis,
+  } = useAiAnalysis(ve);
   const [proofFile, setProofFile] = useState(null);
   const proofInputRef = useRef(null);
   const [previewProof, setPreviewProof] = useState(null);
@@ -330,6 +336,7 @@ export default function PayoutModal({
     setFilterHandler(nextName);
     setEditId(null);
     setProofFile(null);
+    resetProofAnalysis();
     if (proofInputRef.current) proofInputRef.current.value = "";
     setForm({
       reference: nextName,
@@ -343,6 +350,7 @@ export default function PayoutModal({
   }
 
   function startEdit(row) {
+    resetProofAnalysis();
     setEditId(row.id);
     setFilterHandler(row.reference || "all");
     setForm({
@@ -394,8 +402,10 @@ export default function PayoutModal({
       : window.confirm(confirmationMessage);
     if (!confirmed) return;
     setSaving(true);
-    if (proofFile) setAiState("processing");
     setError("");
+    // Every path that sends the screenshot finishes this with the server's
+    // answer -- refusals included -- so the status never outlives the request.
+    let run = null;
     try {
       let res;
       if (editId) {
@@ -410,7 +420,10 @@ export default function PayoutModal({
         if (proofFile) {
           const fd = new FormData();
           fd.append("file", proofFile);
+          run = beginProofAnalysis();
+          fd.append("analysis_id", run.id);
           const proofRes = await (await fetch(`${ve}/handler-expenses/${editId}/proofs`, { method: "POST", body: fd })).json();
+          run.finish(proofRes.analysis, { ok: proofRes.status === "ok", failureLabel: "Not verified" });
           if (proofRes.status !== "ok") { setError(proofRes.message || "Proof upload failed, but fields saved"); }
         }
       } else {
@@ -421,7 +434,10 @@ export default function PayoutModal({
         fd.append("note", form.note.trim());
         fd.append("date", form.date);
         fd.append("file", proofFile);
+        run = beginProofAnalysis();
+        fd.append("analysis_id", run.id);
         res = await (await fetch(`${ve}/handler-expenses`, { method: "POST", body: fd })).json();
+        run.finish(res.analysis, { ok: res.status === "ok", failureLabel: "Not verified" });
       }
       if (res.status !== "ok") { setError(res.message || "Save failed"); return; }
       const deductionDelta = amt - previousAmount;
@@ -433,10 +449,10 @@ export default function PayoutModal({
       setHandlerStatsRevision((revision) => revision + 1);
       setSuccess(`Expense added successfully. ${Jc(amt)} was deducted from the amount owed.`);
       onChanged?.();
-      if (proofFile) setAiState("success");
     } catch (err) {
       setError(err.message || "Network error");
-      if (proofFile) setAiState(/timed out|timeout/i.test(String(err.message || "")) ? "timeout" : "error");
+      // No answer names no node.
+      run?.finish(null, { ok: false, failureLabel: "Not saved" });
     }
     finally { setSaving(false); }
   }
@@ -604,6 +620,8 @@ export default function PayoutModal({
                       if (!/^image\//.test(file.type || "")) { setError("Only image files allowed"); return; }
                       if (file.size > 8 * 1024 * 1024) { setError("File too large (max 8 MB)"); return; }
                       setProofFile(file);
+                      // A new screenshot has not been read by any node yet.
+                      resetProofAnalysis();
                       setError("");
                     }}
                     hidden
@@ -623,21 +641,10 @@ export default function PayoutModal({
                 >
                   {saving ? "Saving…" : editId ? "Save changes" : "Save expense"}
                 </button>
-                {aiState && (
-                  <AiProcessingStatus
-                    variant="inline"
-                    state={aiState}
-                    title="Verifying screenshot"
-                    onRetry={
-                      aiState === "error" || aiState === "timeout"
-                        ? () => { setAiState(null); setError(""); }
-                        : undefined
-                    }
-                    onCancel={
-                      aiState === "error" || aiState === "timeout"
-                        ? () => setAiState(null)
-                        : undefined
-                    }
+                {proofAnalysis && (
+                  <AiNodeProgress
+                    analysis={proofAnalysis}
+                    className="payout-modal__ai-status"
                   />
                 )}
               </div>

@@ -2,6 +2,7 @@
 import asyncio
 from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse
+from core import ai_activity
 from features import transaction_identity
 from core.operations_api_helpers import require_admin as _require_fleet_admin
 from core.operations_api_helpers import require_payroll_admin as _require_payroll_admin
@@ -57,7 +58,16 @@ async def handler_expenses_create(
     note: str = Form(default=""),
     date: str = Form(default=""),
     file: UploadFile = File(...),
+    analysis_id: str = Form(default=""),
 ):
+    # The screenshot is verified by an AI node before the expense exists;
+    # `analysis_id` lets the dashboard follow which one.
+    with ai_activity.analysis(analysis_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
+        response = await _create_expense(reference, amount, category, note, date, file)
+    return ai_activity.with_analysis(response, analysis)
+
+
+async def _create_expense(reference: str, amount: str, category: str, note: str, date: str, file: UploadFile):
     from features import handler_expenses
     from features.referrer_registry import resolve_referrer
 
@@ -249,8 +259,18 @@ async def handler_expense_upload_proof(
     eid: str,
     file: UploadFile = File(...),
     note: str = Form(default=""),
+    analysis_id: str = Form(default=""),
 ):
-    """Attach a payment screenshot to a handler expense entry."""
+    """Attach a payment screenshot to a handler expense entry.
+
+    `analysis_id` lets the dashboard follow the AI node verifying it.
+    """
+    with ai_activity.analysis(analysis_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
+        response = await _attach_expense_proof(eid, file, note)
+    return ai_activity.with_analysis(response, analysis)
+
+
+async def _attach_expense_proof(eid: str, file: UploadFile, note: str):
     from features import handler_expenses
 
     try:

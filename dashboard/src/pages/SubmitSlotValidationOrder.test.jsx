@@ -65,7 +65,7 @@ const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].f
 /** Read an invite, as a candidate would before Confirm opens. */
 async function readInvite() {
   attach(inviteInput(), [new File(['invite'], 'invite.jpg', { type: 'image/jpeg' })])
-  await waitFor(() => expect(document.querySelector('.sbs-status--loading')).toBeNull())
+  await waitFor(() => expect(document.querySelector('.ai-node-progress--active')).toBeNull())
   await waitFor(() => expect(document.querySelector('.sbs-detected-compact')).not.toBeNull())
 }
 
@@ -464,7 +464,7 @@ describe('Confirm opens only once both uploads have been analysed', () => {
 
     attach([...document.querySelectorAll('input[type="file"]')].find(i => i.multiple),
            [new File(['pay'], 'pay.jpg', { type: 'image/jpeg' })])
-    await waitFor(() => expect(document.querySelector('.sbs-pay-card .sbs-status--loading')).not.toBeNull())
+    await waitFor(() => expect(document.querySelector('.sbs-pay-card .ai-node-progress--active')).not.toBeNull())
     // While busy the button shows a spinner rather than its label, so it is
     // found as the form's submit button.
     expect(document.querySelector('form.sbs-form button[type="submit"]').disabled).toBe(true)

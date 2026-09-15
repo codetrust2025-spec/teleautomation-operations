@@ -150,6 +150,7 @@ class TestTheNodeShownIsTheNodeServing:
         worker.join(5)
         assert status(analysis) == {
             "analysis_id": analysis, "state": "done", "node": label, "analysed_by": [label],
+            "failed_on": [],
         }
         assert busy_nodes() == {}
         # The gateway's own answer agrees with what was displayed.
@@ -193,17 +194,37 @@ class TestTheNodeShownIsTheNodeServing:
         assert pool.selecting.wait(5)
         assert status(analysis)["state"] == "waiting"
         assert status(analysis)["node"] is None
+        # Said as a failover, not left to look like any other wait.
+        assert status(analysis)["failed_on"] == ["RTX 4060"]
         assert busy_nodes() == {}
 
         pool.hold_selection.set()
         assert pool.on_node["jagadeesh"].wait(5)
         assert status(analysis)["node"] == "Jagadeesh"
+        assert status(analysis)["failed_on"] == ["RTX 4060"]
         assert busy_nodes() == {"jagadeesh": ["Booking analysis"]}
 
         release_jagadeesh.set()
         worker.join(5)
-        # Only the node that answered analysed it.
+        # Only the node that answered analysed it; the one it left is named apart.
         assert status(analysis)["analysed_by"] == ["Jagadeesh"]
+        assert status(analysis)["failed_on"] == ["RTX 4060"]
+
+    def test_a_node_that_fails_once_and_answers_later_is_not_a_failover(self, pool):
+        pool.routes[VISION_MODEL] = ["rtx4060", "jagadeesh"]
+        pool.routes[TEXT_MODEL] = ["rtx4060"]
+        pool.failing.add("rtx4060")
+        analysis = "1c" * 16
+
+        with ai_activity.booking_analysis(analysis):
+            ai_gateway.chat(messages=[{"role": "user", "content": "read"}], model=VISION_MODEL,
+                            images=["aW1hZ2U="], workload="payment_screenshot_vision", max_retries=0)
+            pool.failing.discard("rtx4060")
+            ai_gateway.chat(messages=[{"role": "user", "content": "summarise"}], model=TEXT_MODEL,
+                            workload="payment_screenshot_text", max_retries=0)
+
+        assert status(analysis)["analysed_by"] == ["Jagadeesh", "RTX 4060"]
+        assert status(analysis)["failed_on"] == []
 
     def test_between_two_calls_the_last_node_stays_named(self, pool):
         """No flicker to "waiting" for the moments between two model calls."""
@@ -403,6 +424,7 @@ class TestTheBookingEndpoints:
         body = out["response"].json()
         assert body["analysis"] == {
             "analysis_id": analysis, "state": "done", "node": "RTX 4060", "analysed_by": ["RTX 4060"],
+            "failed_on": [],
         }
         assert body["data"]["inference_node_id"] == "rtx4060"
 
@@ -499,7 +521,8 @@ class TestTheBookingEndpoints:
 
     def test_an_unknown_id_reads_as_waiting_and_says_nothing_else(self, booking_app):
         body = booking_app.get(f"/public/slots/analysis/{'3' * 32}").json()
-        assert body["analysis"] == {"analysis_id": "3" * 32, "state": "waiting", "node": None, "analysed_by": []}
+        assert body["analysis"] == {"analysis_id": "3" * 32, "state": "waiting", "node": None,
+                                    "analysed_by": [], "failed_on": []}
 
     def test_too_many_streams_are_refused_without_touching_the_upload(self, booking_app, monkeypatch):
         monkeypatch.setattr(ai_activity, "MAX_STREAMS", 0)

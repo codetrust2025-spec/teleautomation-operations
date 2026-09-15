@@ -103,8 +103,8 @@ async function startPaymentUpload() {
   attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('receipt')])
 }
 
-/** The payment card's status row, where the node reading the receipt is named. */
-const paymentStatus = () => document.querySelector('.sbs-pay-card .sbs-status--loading')
+/** The payment card's live status row, where the node reading the receipt is named. */
+const paymentStatus = () => document.querySelector('.sbs-pay-card .ai-node-progress--active')
 
 /** The payment card's green result line. */
 const paymentResult = () => document.querySelector('.sbs-pay-result .sbs-detected-compact__text')
@@ -152,6 +152,26 @@ describe('payment screenshot: the node reading it', () => {
     expect(paymentStatus().textContent).not.toContain('Jagadeesh')
   })
 
+  it('says a failover is one when the server names the node the request left', async () => {
+    const server = stubServer()
+    await startPaymentUpload()
+    await waitFor(() => expect(server.uploads).toHaveLength(1))
+
+    push({ state: 'running', node: 'Praveen' })
+    push({ state: 'waiting', node: null, failed_on: ['Praveen'] })
+    expect(paymentStatus().textContent).toContain('Praveen failed · waiting for another AI node…')
+
+    push({ state: 'running', node: 'RTX 4060', failed_on: ['Praveen'] })
+    expect(paymentStatus().textContent).toContain('● RTX 4060 · Analysing… · switched from Praveen')
+
+    await server.finishUpload({
+      ...ACCEPTED, analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060'], failed_on: ['Praveen'] },
+    })
+    await waitFor(() => expect(paymentResult()).not.toBeNull())
+    expect(paymentResult().textContent)
+      .toMatch(/^Payment verified · Analysed by RTX 4060 in \d+\.\ds · switched from Praveen$/)
+  })
+
   it('says which node analysed it once the upload returns', async () => {
     const server = stubServer()
     await startPaymentUpload()
@@ -186,7 +206,7 @@ describe('payment screenshot: the node reading it', () => {
     expect(paymentStatus().textContent).toContain('● RTX 5090 · Analysing…')
   })
 
-  it('shows no analysed-by line for a refused screenshot, only why it was refused', async () => {
+  it('says why a screenshot was refused, then which node read it and how long it took', async () => {
     const server = stubServer()
     await startPaymentUpload()
     await waitFor(() => expect(server.uploads).toHaveLength(1))
@@ -199,8 +219,11 @@ describe('payment screenshot: the node reading it', () => {
     }, 400)
 
     expect(await screen.findByText(/not a verified payment/i)).toBeTruthy()
-    expect(screen.queryByText(/analysed by/i)).toBeNull()
+    const failure = document.querySelector('.sbs-pay-card .ai-node-progress--failure')
+    expect(failure.textContent).toMatch(/^✕ Not verified · Analysed by RTX 4060 in \d+\.\ds$/)
+    // Not dressed as a result: there is no green card for a refusal.
     expect(paymentResult()).toBeNull()
+    expect(paymentStatus()).toBeNull()
     expect(document.querySelector('.sbs-pay-card').className).toContain('sbs-pay-card--warn')
   })
 })
@@ -261,10 +284,17 @@ describe('interview invite: the node reading it', () => {
     }))
     await waitFor(() => expect(server.parses).toHaveLength(1))
 
-    const row = document.querySelector('.sbs-status--loading')
+    const row = document.querySelector('.ai-node-progress--active')
     expect(row.textContent).toContain('Reading invite…')
     expect(row.textContent).not.toMatch(/waiting for ai node|praveen|analysing/i)
     expect(stream().closed).toBe(true)
+
+    // The fallback parser read it: the finished line names no node.
+    await act(async () => server.parse.resolve({
+      ok: true, status: 200, json: () => Promise.resolve({ status: 'ok', slot: { date: upcomingDate(), time: '05:00 PM' } }),
+    }))
+    expect(await screen.findByText(/^✓ Invite read in \d+\.\ds$/)).toBeTruthy()
+    expect(screen.queryByText(/analysed by|praveen/i)).toBeNull()
   })
 
   it('does not show a finished analysis as a wait either', async () => {
@@ -278,9 +308,24 @@ describe('interview invite: the node reading it', () => {
     }))
     await waitFor(() => expect(server.parses).toHaveLength(1))
 
-    const row = document.querySelector('.sbs-status--loading')
+    const row = document.querySelector('.ai-node-progress--active')
     expect(row.textContent).toContain('Reading invite…')
     expect(row.textContent).not.toMatch(/waiting for ai node/i)
+  })
+
+  it('says a refused invite is not an invite, with the node that read it', async () => {
+    const server = stubServer()
+    await startInviteUpload()
+    await waitFor(() => expect(server.invites).toHaveLength(1))
+
+    await server.finishInvite({
+      status: 'ok', success: true,
+      data: { is_payment_screenshot: true, confidence_score: 88 },
+      analysis: { state: 'done', node: 'Jagadeesh', analysed_by: ['Jagadeesh'] },
+    })
+
+    expect(await screen.findByText(/looks like a payment screenshot/i)).toBeTruthy()
+    expect(screen.getByText(/^✕ Not an invite · Analysed by Jagadeesh in \d+\.\ds$/)).toBeTruthy()
   })
 
   it('follows a failover while the invite is being read', async () => {

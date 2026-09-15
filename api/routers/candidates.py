@@ -8,6 +8,7 @@ import asyncio
 import os
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
+from core import ai_activity
 from core.operations_api_helpers import (
     operations_actor as _ops_by,
     resolve_resume_hit as _resolve_resume_hit,
@@ -514,13 +515,22 @@ async def candidates_upload_proof(
     file: UploadFile = File(...),
     note: str = Form(default=""),
     attachment_type: str = Form(default=""),
+    analysis_id: str = Form(default=""),
 ):
     """Attach a payment screenshot (image) to a candidate.
 
     Multipart form fields:
       - `file`  (required): the screenshot itself.
       - `note`  (optional): a short caption (e.g. "₹10k UPI · 26 May").
+      - `analysis_id` (optional): lets the dashboard follow the AI node
+        reading the screenshot; the response reports which nodes read it.
     """
+    with ai_activity.analysis(analysis_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
+        response = await _upload_proof(request, cid, file, note, attachment_type)
+    return ai_activity.with_analysis(response, analysis)
+
+
+async def _upload_proof(request: Request, cid: str, file: UploadFile, note: str, attachment_type: str):
     from core.dashboard_access import assert_candidate_row_access
     from features import candidate_store
     from features.candidate_attachments import AttachmentType, parse_attachment_type
@@ -820,14 +830,22 @@ async def candidates_replace_proof(
     pid: str,
     file: UploadFile = File(...),
     reason: str = Form(default=""),
+    analysis_id: str = Form(default=""),
 ):
     """Re-upload evidence for a payment whose original file was lost.
 
     A replacement is a second capture of the same transaction, not a second
     transaction. It stores durably, re-extracts, and updates the payment the
     original proof already belongs to — it never inserts another payment, so no
-    duplicate credit can arise.
+    duplicate credit can arise. `analysis_id` lets the dashboard follow the AI
+    node re-reading it.
     """
+    with ai_activity.analysis(analysis_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
+        response = await _replace_proof(request, cid, pid, file, reason)
+    return ai_activity.with_analysis(response, analysis)
+
+
+async def _replace_proof(request: Request, cid: str, pid: str, file: UploadFile, reason: str):
     from core.dashboard_access import assert_candidate_row_access
     from features import candidate_store, payment_evidence_store, payment_receipts
     from features import payment_verification_engine as pve
@@ -958,7 +976,16 @@ async def candidates_upload_resume(
     cid: str,
     file: UploadFile = File(...),
     note: str = Form(default=""),
+    analysis_id: str = Form(default=""),
 ):
+    # A PDF is read by an AI node before it is filed; `analysis_id` lets the
+    # dashboard follow which one.
+    with ai_activity.analysis(analysis_id, kind=ai_activity.RESUME_ANALYSIS) as analysis:
+        response = await _upload_resume(request, cid, file, note)
+    return ai_activity.with_analysis(response, analysis)
+
+
+async def _upload_resume(request: Request, cid: str, file: UploadFile, note: str):
     from core.dashboard_access import assert_candidate_row_access
     from features import candidate_store
 

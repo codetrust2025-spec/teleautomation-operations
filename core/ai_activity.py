@@ -3,10 +3,11 @@
 The gateway is the one place that knows where a request really runs: it picks
 the node, waits for that machine's slot, and moves the request on when a node
 refuses it. It reports each of those moments here, and everything that names a
-node reads this record -- the booking page saying which node is reading a
-candidate's screenshot, and the AI nodes panel marking that node busy. Neither
-infers the node from configuration or the routing table, so the two cannot
-disagree with each other or with the machine that actually did the work.
+node reads this record -- the booking page and the dashboard uploads saying
+which node is reading a screenshot or a resume, and the AI nodes panel marking
+that node busy. None of them infers the node from configuration or the routing
+table, so they cannot disagree with each other or with the machine that
+actually did the work.
 
 Nothing here chooses a node or changes how one is chosen.
 
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import contextvars
 import itertools
+import json
 import logging
 import re
 import threading
@@ -33,19 +35,22 @@ from core import ollama_nodes
 logger = logging.getLogger("teleautomation.ai_activity")
 
 BOOKING_ANALYSIS = "booking_analysis"
+PAYMENT_ANALYSIS = "payment_analysis"
+RESUME_ANALYSIS = "resume_analysis"
 
 _KIND_LABELS = {
     BOOKING_ANALYSIS: "Booking analysis",
-    "payment_analysis": "Payment analysis",
+    PAYMENT_ANALYSIS: "Payment analysis",
     "invite_analysis": "Invite analysis",
-    "resume_analysis": "Resume analysis",
+    RESUME_ANALYSIS: "Resume analysis",
     "mail_analysis": "Mail analysis",
     "ai_request": "AI request",
 }
 
-# Work that is not inside a booking analysis is named from its workload, first
-# matching prefix wins. A payment screenshot read from the admin dashboard is a
-# payment analysis, not a booking one: only the booking endpoints say "booking".
+# Work that is not inside an analysis of a named kind is named from its
+# workload, first matching prefix wins. A payment screenshot read from the admin
+# dashboard is a payment analysis, not a booking one: only the booking endpoints
+# say "booking".
 _WORKLOAD_KINDS = (
     ("payment_screenshot", "payment_analysis"),
     ("interview_screenshot", "invite_analysis"),
@@ -211,7 +216,7 @@ def node_snapshot() -> dict[str, Any]:
         return {"boot": BOOT_ID, "version": _version, "nodes": nodes}
 
 
-# ── booking analyses ─────────────────────────────────────────────────────────
+# ── analyses: one upload, followed by the page that sent it ──────────────────
 
 
 def valid_analysis_id(value: Any) -> bool:
@@ -229,13 +234,17 @@ def _expire(now: float) -> None:
 
 
 @contextmanager
-def booking_analysis(analysis_id: str = "") -> Iterator[str]:
-    """Attribute every model call made inside this block to one booking upload.
+def analysis(analysis_id: str = "", kind: str = "") -> Iterator[str]:
+    """Attribute every model call made inside this block to one upload.
 
-    The id comes from the booking page, which generates it before uploading so
-    it can follow the analysis while the upload is still in flight. A missing or
+    The id comes from the page, which generates it before uploading so it can
+    follow the analysis while the upload is still in flight. A missing or
     malformed one is replaced: the analysis is still tracked, and the node still
     shows as busy with it, the page simply cannot follow it live.
+
+    `kind` is how the AI nodes panel names the work ("Payment analysis"). Left
+    empty, each call is named from its own workload, as work outside any
+    analysis is.
 
     The context variable is copied into `asyncio.to_thread` workers, which is
     how the gateway, running in a worker thread, knows which upload a call
@@ -246,7 +255,7 @@ def booking_analysis(analysis_id: str = "") -> Iterator[str]:
     with _lock:
         _expire(now)
         _analyses[analysis_id] = {
-            "kind": BOOKING_ANALYSIS,
+            "kind": kind,
             "created": now,
             "finished_at": 0.0,
             "served": [],
@@ -272,20 +281,39 @@ def booking_analysis(analysis_id: str = "") -> Iterator[str]:
             # server's own account of which machine read the upload -- the
             # thing to compare with what the page displayed.
             logger.warning(
-                "Booking analysis finished analysis_id=%s analysed_by=%s failed_on=%s "
-                "seconds=%.1f",
+                "%s finished analysis_id=%s analysed_by=%s failed_on=%s seconds=%.1f",
+                kind_label(kind) if kind else "AI analysis",
                 analysis_id, served, failed, seconds,
             )
 
 
+def booking_analysis(analysis_id: str = ""):
+    """An analysis of one upload from the public booking page."""
+    return analysis(analysis_id, kind=BOOKING_ANALYSIS)
+
+
+def _failed_elsewhere(record: dict[str, Any], answering: list[str]) -> list[str]:
+    """Nodes that failed this analysis and did not go on to serve it.
+
+    A node that failed one attempt and answered a later one did not hand the
+    work to another machine, so it is not reported as a failover.
+    """
+    labels: list[str] = []
+    for _, label in record["failed"]:
+        if label not in answering and label not in labels:
+            labels.append(label)
+    return labels
+
+
 def analysis_status(analysis_id: str) -> dict[str, Any] | None:
-    """What the booking page shows for one upload, or None if it is unknown.
+    """What the page shows for one upload, or None if it is unknown.
 
     `running` names the node serving it now; between two model calls it keeps
     naming the node that served the last one. `waiting` covers the time before
     any node has taken it, a request queued behind other work, and a node that
     has just failed while the request moves elsewhere. `done` lists every node
-    that answered, in order.
+    that answered, in order. `failed_on` names the nodes the request moved away
+    from, so a failover can be shown as one rather than as a change of name.
     """
     now = time.monotonic()
     with _lock:
@@ -296,19 +324,62 @@ def analysis_status(analysis_id: str) -> dict[str, Any] | None:
         served = [label for _, label in record["served"]]
         status: dict[str, Any] = {"analysis_id": analysis_id, "analysed_by": served}
         if record["finished_at"]:
-            return {**status, "state": "done", "node": served[-1] if served else None}
+            return {**status, "state": "done", "node": served[-1] if served else None,
+                    "failed_on": _failed_elsewhere(record, served)}
         mine = [call for call in _calls.values() if call["analysis_id"] == analysis_id]
         running = sorted(
             (call for call in mine if call["state"] == "running"),
             key=lambda call: call["since"],
         )
         if running:
-            return {**status, "state": "running", "node": running[-1]["node_label"]}
+            node = running[-1]["node_label"]
+            return {**status, "state": "running", "node": node,
+                    "failed_on": _failed_elsewhere(record, [*served, node])}
         reassigning = bool(mine) and record["failed_at"] > record["served_at"]
         queued = any(now - call["since"] >= QUEUE_GRACE_SECONDS for call in mine)
         if served and not reassigning and not queued:
-            return {**status, "state": "running", "node": served[-1]}
-        return {**status, "state": "waiting", "node": None}
+            return {**status, "state": "running", "node": served[-1],
+                    "failed_on": _failed_elsewhere(record, served)}
+        return {**status, "state": "waiting", "node": None,
+                "failed_on": _failed_elsewhere(record, served)}
+
+
+def analysis_view(analysis_id: str) -> dict[str, Any]:
+    """The status of one analysis; an id not known (yet) reads as waiting.
+
+    The upload it belongs to may still be arriving, and saying "unknown" would
+    only tell a caller which ids exist.
+    """
+    return analysis_status(analysis_id) or {
+        "analysis_id": analysis_id, "state": "waiting", "node": None,
+        "analysed_by": [], "failed_on": [],
+    }
+
+
+def with_analysis(response: Any, analysis_id: str) -> Any:
+    """Add the finished analysis -- which nodes read the upload -- to a response.
+
+    The page follows the analysis live, but the upload's own response is the
+    last word: it arrives after every model call has returned, so the node
+    named as having analysed the upload can never lag behind the work. Refusals
+    carry it too, since a refused upload was still read by a node.
+    """
+    view = analysis_view(analysis_id)
+    if isinstance(response, dict):
+        return {**response, "analysis": view}
+    # Imported here so the record stays free of the web layer for everything
+    # else that reports into it.
+    from fastapi.responses import JSONResponse
+
+    if isinstance(response, JSONResponse):
+        try:
+            payload = json.loads(response.body)
+        except ValueError:
+            return response
+        if isinstance(payload, dict):
+            payload["analysis"] = view
+            return JSONResponse(payload, status_code=response.status_code)
+    return response
 
 
 def open_stream() -> bool:

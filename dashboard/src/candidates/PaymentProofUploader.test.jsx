@@ -28,8 +28,31 @@ class FakeXMLHttpRequest {
   }
 }
 
-function Harness({ onBusyChange = () => {} }) {
-  const [proofs, setProofs] = useState([]);
+class FakeEventSource {
+  static instances = [];
+
+  constructor(url) {
+    this.url = url;
+    this.closed = false;
+    FakeEventSource.instances.push(this);
+  }
+
+  close() {
+    this.closed = true;
+  }
+}
+
+/** The AI node status stream for the upload most recently followed. */
+const stream = () => FakeEventSource.instances[FakeEventSource.instances.length - 1];
+
+function push(status) {
+  act(() =>
+    stream().onmessage({ data: JSON.stringify({ analysed_by: [], failed_on: [], ...status }) }),
+  );
+}
+
+function Harness({ onBusyChange = () => {}, proofs: initial = [] }) {
+  const [proofs, setProofs] = useState(initial);
   return (
     <PaymentProofUploader
       candidateId="candidate-1"
@@ -42,7 +65,9 @@ function Harness({ onBusyChange = () => {} }) {
 
 beforeEach(() => {
   FakeXMLHttpRequest.instances = [];
+  FakeEventSource.instances = [];
   vi.stubGlobal("XMLHttpRequest", FakeXMLHttpRequest);
+  vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn());
   vi.stubGlobal("URL", {
     ...URL,
@@ -82,8 +107,18 @@ describe("PaymentProofUploader", () => {
       "42",
     );
 
+    // The bytes are in; the AI node reading them is what the row shows now,
+    // with the time it has taken, instead of "Processing screenshot…".
     act(() => xhr.upload.onload());
-    expect(screen.getByText("Processing screenshot…")).toBeInTheDocument();
+    expect(screen.queryByText("Processing screenshot…")).toBeNull();
+    expect(screen.getByText("Waiting for AI node…")).toBeInTheDocument();
+    expect(document.querySelector(".ai-node-progress__timer").textContent).toMatch(/^\d+\.\ds$/);
+    const analysisId = xhr.body.get("analysis_id");
+    expect(analysisId).toMatch(/^[0-9a-f]{32}$/);
+    expect(stream().url).toBe(`/public/slots/analysis/${analysisId}/events`);
+
+    push({ state: "running", node: "RTX 4060" });
+    expect(document.querySelector(".ai-node-progress--active").textContent).toContain("● RTX 4060 · Analysing…");
 
     xhr.status = 200;
     xhr.responseText = JSON.stringify({
@@ -100,6 +135,7 @@ describe("PaymentProofUploader", () => {
           },
         ],
       },
+      analysis: { state: "done", node: "RTX 4060", analysed_by: ["RTX 4060"], failed_on: [] },
     });
     act(() => xhr.onload());
 
@@ -108,11 +144,98 @@ describe("PaymentProofUploader", () => {
         screen.getByText("Screenshot uploaded successfully"),
       ).toBeInTheDocument(),
     );
+    expect(screen.getByText(/^✓ Analysed by RTX 4060 in \d+\.\ds$/)).toBeInTheDocument();
+    expect(document.querySelector(".ai-node-progress__timer")).toBeNull();
+    expect(stream().closed).toBe(true);
     expect(screen.getByText("1")).toBeInTheDocument();
     expect(onBusyChange).toHaveBeenCalledWith(true);
     await waitFor(() =>
       expect(onBusyChange).toHaveBeenLastCalledWith(false),
     );
+  });
+
+  it("names the node a refused screenshot was read by, and a failover it made", async () => {
+    const { container } = render(<Harness />);
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(["payment"], "refused.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(FakeXMLHttpRequest.instances).toHaveLength(1));
+    const xhr = FakeXMLHttpRequest.instances[0];
+    act(() => xhr.upload.onload());
+
+    push({ state: "running", node: "Praveen" });
+    push({ state: "waiting", node: null, failed_on: ["Praveen"] });
+    expect(screen.getByText("Praveen failed · waiting for another AI node…")).toBeInTheDocument();
+    push({ state: "running", node: "Jagadeesh", failed_on: ["Praveen"] });
+    expect(document.querySelector(".ai-node-progress--active").textContent)
+      .toContain("● Jagadeesh · Analysing… · switched from Praveen");
+
+    xhr.status = 200;
+    xhr.responseText = JSON.stringify({
+      status: "error",
+      message: "The receiver is not present in the configured receiver registry.",
+      analysis: { state: "done", node: "Jagadeesh", analysed_by: ["Jagadeesh"], failed_on: ["Praveen"] },
+    });
+    fetch.mockResolvedValue({ ok: true, json: async () => ({ status: "ok", candidate: { payment_proofs: [] } }) });
+    await act(async () => xhr.onload());
+
+    await waitFor(() => expect(screen.getByText("Upload failed")).toBeInTheDocument());
+    expect(screen.getByText(/not present in the configured receiver registry/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^✕ Not saved · Analysed by Jagadeesh in \d+\.\ds · switched from Praveen$/),
+    ).toBeInTheDocument();
+  });
+
+  it("claims no node when the request never got an answer", async () => {
+    const { container } = render(<Harness />);
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(["payment"], "lost.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(FakeXMLHttpRequest.instances).toHaveLength(1));
+    const xhr = FakeXMLHttpRequest.instances[0];
+    act(() => xhr.upload.onload());
+    push({ state: "running", node: "RTX 4060" });
+
+    fetch.mockResolvedValue({ ok: true, json: async () => ({ status: "ok", candidate: { payment_proofs: [] } }) });
+    await act(async () => xhr.onerror());
+
+    await waitFor(() => expect(screen.getByText("Upload failed")).toBeInTheDocument());
+    expect(document.querySelector(".ai-node-progress")).toBeNull();
+    expect(screen.queryByText(/RTX 4060/)).toBeNull();
+  });
+
+  it("follows the node re-reading a replacement for lost evidence", async () => {
+    const broken = {
+      id: "proof-9", attachment_type: "payment_proof", file_availability: "MISSING_FILE",
+      url: "/candidates/candidate-1/proofs/proof-9",
+    };
+    let answer;
+    fetch.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    const { container } = render(<Harness proofs={[broken]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-upload proof" }));
+    const replaceInput = [...container.querySelectorAll('input[type="file"]')]
+      .find((input) => input.accept.includes("application/pdf"));
+    fireEvent.change(replaceInput, {
+      target: { files: [new File(["payment"], "again.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe("/candidates/candidate-1/proofs/proof-9/replace");
+    expect(stream().url).toBe(`/public/slots/analysis/${options.body.get("analysis_id")}/events`);
+    expect(screen.getByText("Waiting for AI node…")).toBeInTheDocument();
+    push({ state: "running", node: "RTX 4060" });
+    expect(document.querySelector(".ai-node-progress--active").textContent).toContain("● RTX 4060 · Analysing…");
+
+    await act(async () => answer({
+      ok: true,
+      json: async () => ({
+        status: "ok", candidate: { payment_proofs: [{ ...broken, file_availability: "AVAILABLE" }] },
+        analysis: { state: "done", node: "RTX 4060", analysed_by: ["RTX 4060"], failed_on: [] },
+      }),
+    }));
+    expect(await screen.findByText(/^✓ Analysed by RTX 4060 in \d+\.\ds$/)).toBeInTheDocument();
   });
 
   it("never shows the uploaded file's name, while uploading or after", async () => {

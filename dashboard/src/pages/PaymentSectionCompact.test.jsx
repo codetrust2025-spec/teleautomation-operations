@@ -101,7 +101,7 @@ describe('upload is the action: nothing waits to be saved', () => {
     enterPhone()
     expect(screen.queryByRole('button', { name: /save/i })).toBeNull()
     attach(paymentInput(), [screenshot('pay-1')])
-    await waitFor(() => expect(document.querySelector('.sbs-pay-card .sbs-status--loading')).not.toBeNull())
+    await waitFor(() => expect(document.querySelector('.sbs-pay-card .ai-node-progress--active')).not.toBeNull())
     expect(screen.queryByRole('button', { name: /save/i })).toBeNull()
     expect(document.querySelector('.sbs-pay-head button')).toBeNull()
   })
@@ -113,7 +113,7 @@ describe('upload is the action: nothing waits to be saved', () => {
     await waitFor(() =>
       expect(fetch.mock.calls.some(([url]) => String(url).includes('/public/slots/payment-proof'))).toBe(true),
     )
-    const status = document.querySelector('.sbs-pay-card .sbs-status--loading')
+    const status = document.querySelector('.sbs-pay-card .ai-node-progress--active')
     expect(status.textContent).toContain('Waiting for AI node…')
   })
 
