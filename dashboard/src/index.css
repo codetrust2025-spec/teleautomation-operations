@@ -16920,6 +16920,9 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-manual__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
 /* Status */
 .sbs-status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted,#a8b4c4); }
+.sbs-status--done { opacity: 0.85; }
+/* Analysis stopwatch: right-aligned in the row that shows the analysis. */
+.sbs-timer { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 0.7rem; color: var(--text-dim,#7b8a9e); background: rgba(255,255,255,0.06); padding: 0.05rem 0.4rem; border-radius: 0.35rem; }
 /* The AI node reading an upload. It takes the size and colour of the words it
  * replaced in the Save button and the invite status row; only the live dot and
  * the finished line carry a colour of their own. */

@@ -99,6 +99,38 @@ function uniqueNonEmptyTags(values) {
   })
 }
 
+/** Elapsed analysis time: "12.3s" under a minute, then "m:ss". */
+function formatElapsed(seconds) {
+  if (seconds == null) return ''
+  const s = Math.max(0, seconds)
+  if (s < 60) return `${s.toFixed(1)}s`
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+}
+
+/**
+ * How long an analysis has been running: ticks while `running` is true and
+ * holds its final value once it stops, until cleared.
+ *
+ * Display only. It follows the same flag that shows the analysis in progress,
+ * so it can neither outlast nor stop short of what the page is showing, and it
+ * never touches the request.
+ */
+function useStopwatch(running) {
+  const [elapsed, setElapsed] = useState(null)
+  useEffect(() => {
+    if (!running) return undefined
+    const startedAt = Date.now()
+    setElapsed(0)
+    const tick = setInterval(() => setElapsed((Date.now() - startedAt) / 1000), 100)
+    return () => {
+      clearInterval(tick)
+      setElapsed((Date.now() - startedAt) / 1000)
+    }
+  }, [running])
+  const clear = useCallback(() => setElapsed(null), [])
+  return [elapsed, clear]
+}
+
 const ROUND_OPTIONS = ['Screening', 'L1', 'L2', 'Final', 'HR']
 
 function candidateNameKey(value) {
@@ -402,6 +434,12 @@ export function SubmitSlotPage() {
   const [paymentAiResults, setPaymentAiResults] = useState([])
   const [paymentRejected, setPaymentRejected] = useState([])
   const [paymentAnalysing, setPaymentAnalysing] = useState(false)
+  // How long each analysis took, shown while it runs and kept once it ends.
+  const [inviteElapsed, clearInviteElapsed] = useStopwatch(parsing)
+  const [paymentElapsed, clearPaymentElapsed] = useStopwatch(paymentAnalysing)
+  // Whether the last payment upload was accepted, so its time is shown beside
+  // the result it produced rather than beside an earlier one.
+  const [paymentOutcome, setPaymentOutcome] = useState(null)
   // The server's report of which AI node is reading each upload, live while it
   // runs and final once its response arrives.
   const [paymentAnalysis, setPaymentAnalysis] = useState(null)
@@ -535,7 +573,28 @@ export function SubmitSlotPage() {
     setPaymentRejected([])
     setPaymentAnalysis(null)
     setPaymentAnalysedBy([])
-  }, [])
+    setPaymentOutcome(null)
+    clearPaymentElapsed()
+  }, [clearPaymentElapsed])
+
+  // Everything the Book slot form holds, cleared once a booking is confirmed so
+  // the next one starts from nothing: every field, both uploads and their
+  // previews, both analyses -- results, the node that read them and the time
+  // they took -- and every warning. The confirmed booking is saved on the
+  // server and listed under Confirmed slots; that list, the roster and the open
+  // tab are left alone. Previews are released by the effect that owns them.
+  const resetBookForm = useCallback(() => {
+    stopInviteWatch.current?.()
+    stopPaymentWatch.current?.()
+    setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
+    setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
+    setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology('')
+    setSessionFile(null); setSessionPreview('')
+    setAiExtraction(null); setAiBlocked(''); setUserEditedFields({}); setInviteAnalysis(null)
+    clearInviteElapsed()
+    resetPaymentProofs(); setPaymentRequirement(null)
+    setMissingField(''); setError('')
+  }, [resetPaymentProofs, clearInviteElapsed])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -646,6 +705,7 @@ export function SubmitSlotPage() {
   async function onSlotFileChange(file) {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
+    clearInviteElapsed()
     if (file) { setSlotPreview(URL.createObjectURL(file)); await parseScreenshot(file) }
     else setSlotPreview('')
   }
@@ -700,6 +760,7 @@ export function SubmitSlotPage() {
       // The response is the final word on which node read the screenshots. A
       // refused upload shows only why it was refused.
       setPaymentAnalysis(res.ok && data?.analysis?.state === 'done' ? data.analysis : null)
+      setPaymentOutcome(res.ok ? 'accepted' : 'refused')
       const rejected = data.rejected || []
       setPaymentRejected(rejected)
       if (!res.ok) {
@@ -729,6 +790,7 @@ export function SubmitSlotPage() {
       // step to press again, trying again means attaching again.
       setError(err instanceof TypeError ? 'Network error — attach the screenshot again.' : (err?.message || 'Payment upload failed'))
       setPaymentAnalysis(null)
+      setPaymentOutcome(null)
     }
     finally { stopPaymentWatch.current?.(); setBusy(false); setPaymentAnalysing(false) }
   }
@@ -843,10 +905,10 @@ export function SubmitSlotPage() {
         return
       }
       booked = true
-      if (slotPreview) URL.revokeObjectURL(slotPreview)
-      setSlotFile(null); setSlotPreview(''); setParsedSlot(null); setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setServiceType('profile_service'); resetPaymentProofs()
-      setName(''); setRoundWisePhone('')
-      setMissingField('')
+      // The whole form, not only the fields: the invite's result card, the
+      // node that read it and both analysis times used to survive a booking
+      // and sit under an empty form as if they belonged to the next one.
+      resetBookForm()
       setSuccess(`Slot confirmed for ${data.candidate?.name || effectiveName}.`)
       // Refresh data first, then switch to confirmed tab after 2 seconds
       await refresh()
@@ -1113,13 +1175,20 @@ export function SubmitSlotPage() {
                     </>
                   )}
                   {paymentAnalysing && (
-                    <div className="sbs-status sbs-status--loading"><Spinner size={18} /><AiNodeProgress status={paymentAnalysis} /></div>
+                    <div className="sbs-status sbs-status--loading">
+                      <Spinner size={18} /><AiNodeProgress status={paymentAnalysis} />
+                      {paymentElapsed != null && <span className="sbs-timer" role="timer">{formatElapsed(paymentElapsed)}</span>}
+                    </div>
                   )}
                   {paymentRejected.map((item, index) => (
                     <span className="sbs-hint sbs-hint--warn" key={`${item.filename}-${index}`}>
                       {item.filename}: {item.message}
                     </span>
                   ))}
+                  {/* A refused upload has no result card to carry its time. */}
+                  {!paymentAnalysing && paymentOutcome === 'refused' && paymentElapsed != null && (
+                    <span className="sbs-status sbs-status--done">Analysed in {formatElapsed(paymentElapsed)}</span>
+                  )}
                   {paymentProofIds.length > 0 && !paymentAnalysing && (
                     <div className="sbs-detected-compact sbs-pay-result">
                       <span className="sbs-detected-compact__check">✓</span>
@@ -1130,7 +1199,9 @@ export function SubmitSlotPage() {
                             : roundWise
                               ? `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far`
                               : `₹${(paymentTotals?.verified_total || 0).toLocaleString('en-IN')} verified so far · ₹${(paymentTotals?.remaining_due || 0).toLocaleString('en-IN')} still to upload`,
-                          paymentAnalysedBy.length ? `Analysed by ${paymentAnalysedBy.join(' + ')}` : '',
+                          paymentAnalysedBy.length
+                            ? `Analysed by ${paymentAnalysedBy.join(' + ')}${paymentOutcome === 'accepted' && paymentElapsed != null ? ` in ${formatElapsed(paymentElapsed)}` : ''}`
+                            : '',
                         ].filter(Boolean).join(' · ')}
                       </span>
                       {paymentAiResults.length > 0 && (
@@ -1151,7 +1222,18 @@ export function SubmitSlotPage() {
                 {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
               </div>
 
-              {parsing && <div className="sbs-status sbs-status--loading"><Spinner size={18} /><AiNodeProgress status={inviteAnalysis} idle="Reading invite…" /></div>}
+              {parsing && (
+                <div className="sbs-status sbs-status--loading">
+                  <Spinner size={18} /><AiNodeProgress status={inviteAnalysis} idle="Reading invite…" />
+                  {inviteElapsed != null && <span className="sbs-timer" role="timer">{formatElapsed(inviteElapsed)}</span>}
+                </div>
+              )}
+              {/* When no result card names the node -- the invite was refused, or
+                  read by the fallback parser -- the time stands on its own. */}
+              {!parsing && slotFile && inviteElapsed != null &&
+                !(aiExtraction && !aiBlocked && aiExtraction.confidence_score > 0 && analysedByText(inviteAnalysis)) && (
+                <div className="sbs-status sbs-status--done">Invite read in {formatElapsed(inviteElapsed)}</div>
+              )}
 
               {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
 
@@ -1168,7 +1250,7 @@ export function SubmitSlotPage() {
                     ].filter(Boolean).join(' • ')}
                   </span>
                   {analysedByText(inviteAnalysis) && (
-                    <span className="sbs-ai-node sbs-ai-node--done">✓ {analysedByText(inviteAnalysis)}</span>
+                    <span className="sbs-ai-node sbs-ai-node--done">✓ {analysedByText(inviteAnalysis)}{inviteElapsed != null ? ` in ${formatElapsed(inviteElapsed)}` : ''}</span>
                   )}
                   {aiExtraction.warnings && aiExtraction.warnings.length > 0 && (
                     <div className="sbs-detected-compact__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>

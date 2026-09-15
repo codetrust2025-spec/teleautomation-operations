@@ -161,7 +161,7 @@ describe('payment screenshot: the node reading it', () => {
     await server.finishUpload({ ...ACCEPTED, analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060'] } })
 
     await waitFor(() => expect(paymentResult()).not.toBeNull())
-    expect(paymentResult().textContent).toBe('Payment verified · Analysed by RTX 4060')
+    expect(paymentResult().textContent).toMatch(/^Payment verified · Analysed by RTX 4060 in \d+\.\ds$/)
     expect(paymentStatus()).toBeNull()
     expect(stream().closed).toBe(true)
   })
@@ -175,7 +175,7 @@ describe('payment screenshot: the node reading it', () => {
     await server.finishUpload({ ...ACCEPTED, analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060', 'Jagadeesh'] } })
 
     await waitFor(() => expect(paymentResult()).not.toBeNull())
-    expect(paymentResult().textContent).toBe('Payment verified · Analysed by RTX 4060 + Jagadeesh')
+    expect(paymentResult().textContent).toMatch(/^Payment verified · Analysed by RTX 4060 \+ Jagadeesh in \d+\.\ds$/)
   })
 
   it('names a node it has never heard of, exactly as the server does', async () => {
@@ -241,7 +241,7 @@ describe('interview invite: the node reading it', () => {
       analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060'] },
     })
 
-    expect(await screen.findByText('✓ Analysed by RTX 4060')).toBeTruthy()
+    expect(await screen.findByText(/^✓ Analysed by RTX 4060 in \d+\.\ds$/)).toBeTruthy()
     expect(screen.queryByText('Waiting for AI node…')).toBeNull()
     expect(screen.queryByText(/· Analysing…/)).toBeNull()
     expect(stream().closed).toBe(true)
