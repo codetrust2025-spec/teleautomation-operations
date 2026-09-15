@@ -46,9 +46,69 @@ def test_company_payment_accepts_configured_company_upi():
 def test_official_company_payment_defaults_survive_config_loader_failure(monkeypatch):
     monkeypatch.delenv("COMPANY_PAYMENT_UPI_IDS", raising=False)
     monkeypatch.delenv("COMPANY_PAYMENT_PHONE_NUMBERS", raising=False)
+    monkeypatch.delenv("COMPANY_PAYMENT_PHONE", raising=False)
 
     assert configured_company_upi_ids() == {"company@upi"}
-    assert configured_company_phone_numbers() == {"9000000001"}
+    # No placeholder phone: 9000000001 was never the company's number, and an
+    # unconfigured phone must not allow-list one.
+    assert configured_company_phone_numbers() == set()
+
+
+def test_configured_company_phones_are_still_honoured(monkeypatch):
+    monkeypatch.setenv("COMPANY_PAYMENT_PHONE_NUMBERS", "+91 98765 00001, 9876500002")
+    monkeypatch.setenv("COMPANY_PAYMENT_PHONE", "9876500009")
+    assert configured_company_phone_numbers() == {"9876500001", "9876500002"}
+
+    # The older single-number setting, used exactly as before: only when the
+    # list is not configured.
+    monkeypatch.delenv("COMPANY_PAYMENT_PHONE_NUMBERS")
+    assert configured_company_phone_numbers() == {"9876500009"}
+
+
+def _empty_registries(monkeypatch, tmp_path):
+    referrers = tmp_path / "referrers.json"
+    referrers.write_text(json.dumps({"version": 1, "referrers": []}), encoding="utf-8")
+    accounts = tmp_path / "accounts.json"
+    accounts.write_text(json.dumps({"accounts": []}), encoding="utf-8")
+    monkeypatch.setenv("REFERRER_REGISTRY_FILE", str(referrers))
+    monkeypatch.setenv("PAYMENT_RECEIVER_REGISTRY_FILE", str(accounts))
+    monkeypatch.setenv("COMPANY_PAYMENT_RECEIVER_NAMES", "SAMPLE COMPANY")
+    monkeypatch.setenv("COMPANY_PAYMENT_UPI_IDS", "company@upi")
+
+
+def test_a_receipt_to_the_old_placeholder_is_not_a_company_payment(monkeypatch, tmp_path):
+    from features.payment_verification_engine import classify_receiver, receiver_registry
+
+    _empty_registries(monkeypatch, tmp_path)
+    monkeypatch.delenv("COMPANY_PAYMENT_PHONE_NUMBERS", raising=False)
+    monkeypatch.delenv("COMPANY_PAYMENT_PHONE", raising=False)
+
+    company = next(record for record in receiver_registry() if record["type"] == "company")
+    assert company["phones"] == []
+
+    # Paid to the placeholder under the company's name: the name resembles a
+    # registered receiver but the identifier does not match -- manual review,
+    # never a company credit.
+    impostor = classify_receiver({"receiver_name": "SAMPLE COMPANY", "receiver_phone": "+919000000001"})
+    assert impostor["receiver_type"] == "unknown"
+    assert impostor["receiver_identifier_conflict"] is True
+
+    # Paid to the placeholder under any other name: simply not a registered receiver.
+    stranger = classify_receiver({"receiver_name": "Somebody Else", "receiver_phone": "+919000000001"})
+    assert stranger["receiver_type"] == "unknown"
+
+
+def test_real_company_identifiers_still_verify(monkeypatch, tmp_path):
+    from features.payment_verification_engine import classify_receiver
+
+    _empty_registries(monkeypatch, tmp_path)
+    monkeypatch.setenv("COMPANY_PAYMENT_PHONE_NUMBERS", "9876500001")
+
+    by_upi = classify_receiver({"receiver_name": "SAMPLE COMPANY", "receiver_upi_id": "company@upi"})
+    assert (by_upi["receiver_type"], by_upi["receiver_match"]) == ("company", "upi")
+
+    by_phone = classify_receiver({"receiver_name": "SAMPLE COMPANY", "receiver_phone": "+919876500001"})
+    assert (by_phone["receiver_type"], by_phone["receiver_match"]) == ("company", "phone")
 
 
 def test_registered_referrer_payment_is_accepted(monkeypatch, tmp_path):

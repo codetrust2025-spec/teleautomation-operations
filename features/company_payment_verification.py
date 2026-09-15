@@ -16,7 +16,6 @@ SUCCESS_STATUSES = {"success", "successful", "completed", "complete", "paid"}
 # Real values are configured in production via the smart-reply config / env;
 # these are placeholder fallbacks only (never commit real payment identifiers).
 DEFAULT_COMPANY_UPI_ID = os.environ.get("COMPANY_UPI_ID", "company@upi")
-DEFAULT_COMPANY_PHONE_NUMBER = os.environ.get("COMPANY_PAYMENT_PHONE", "9000000001")
 
 
 def _normalise_upi(value: Any) -> str:
@@ -37,11 +36,27 @@ def configured_company_upi_ids() -> set[str]:
 
 
 def configured_company_phone_numbers() -> set[str]:
-    """Return phone-number aliases that identify the company payee."""
+    """Return phone-number aliases that identify the company payee.
+
+    Only numbers that are actually configured. This used to fall back to a
+    placeholder, 9000000001, whenever COMPANY_PAYMENT_PHONE_NUMBERS was empty --
+    as it is in production -- and the receiver registry then carried a number
+    that is not the company's as a verified company receiver: a receipt paid to
+    it was credited as a company payment. No production payment, proof or
+    record was ever matched through it, so nothing depended on it.
+
+    With no phone configured the company is identified by its UPI IDs and
+    account numbers alone. COMPANY_PAYMENT_PHONE, the older single-number
+    setting, is still honoured exactly as before: when it is set and
+    COMPANY_PAYMENT_PHONE_NUMBERS is not.
+    """
     values: list[str] = []
     values.extend(os.environ.get("COMPANY_PAYMENT_PHONE_NUMBERS", "").split(","))
     configured = {value for raw in values if (value := _normalise_phone(raw))}
-    return configured or {DEFAULT_COMPANY_PHONE_NUMBER}
+    if configured:
+        return configured
+    legacy = _normalise_phone(os.environ.get("COMPANY_PAYMENT_PHONE", ""))
+    return {legacy} if legacy else set()
 
 
 def configured_company_account_numbers() -> set[str]:
