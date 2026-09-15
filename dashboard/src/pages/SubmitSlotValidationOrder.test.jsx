@@ -27,12 +27,27 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function stubFetch() {
+function upcomingDate() {
+  const date = new Date()
+  date.setDate(date.getDate() + 7)
+  return date.toISOString().slice(0, 10)
+}
+
+function stubFetch({ paymentRequired = true, upload } = {}) {
   vi.stubGlobal('fetch', vi.fn((url) => {
     const target = String(url)
     const reply = body => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
     if (target.includes('/public/slots/payment-requirement')) {
-      return reply({ status: 'ok', service_type: 'round_wise', amount_due: 5000, payment_required: true })
+      return reply({
+        status: 'ok', service_type: 'round_wise', amount_due: paymentRequired ? 5000 : 0,
+        payment_required: paymentRequired, re_service: !paymentRequired,
+      })
+    }
+    if (target.includes('/extract-invite-ai')) {
+      return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '03:00 PM', confidence_score: 92 } })
+    }
+    if (target.includes('/public/slots/payment-proof')) {
+      return upload ? reply(upload) : new Promise(() => {})
     }
     if (target.includes('/public/slots/booked')) return reply({ status: 'ok', slots: [] })
     return reply({ status: 'ok', candidates: [] })
@@ -40,8 +55,32 @@ function stubFetch() {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() })
 }
 
+function attach(input, files) {
+  Object.defineProperty(input, 'files', { value: files, configurable: true })
+  fireEvent.change(input)
+}
+
+const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
+
+/** Read an invite, as a candidate would before Confirm opens. */
+async function readInvite() {
+  attach(inviteInput(), [new File(['invite'], 'invite.jpg', { type: 'image/jpeg' })])
+  await waitFor(() => expect(document.querySelector('.sbs-status--loading')).toBeNull())
+  await waitFor(() => expect(document.querySelector('.sbs-detected-compact')).not.toBeNull())
+}
+
+/**
+ * The form with Confirm open, so the sequence can be asked for its first
+ * missing field.
+ *
+ * Confirm now opens only once the invite is read and any payment owed is
+ * verified. These tests are about the fields the sequence still reports on
+ * click, so they read an invite and, for round-wise, use a candidate whose
+ * payment is waived -- a round-wise payment cannot be uploaded before the name
+ * and phone it is filed under, so an owed one would stop the form earlier.
+ */
 async function openForm({ roundWise = false } = {}) {
-  stubFetch()
+  stubFetch({ paymentRequired: false })
   render(<SubmitSlotPage />)
   const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
   if (roundWise) {
@@ -51,7 +90,14 @@ async function openForm({ roundWise = false } = {}) {
     fireEvent.click(screen.getByRole('button', { name: /Profile service/i }))
     fireEvent.click(screen.getByText('Round-wise'))
   }
+  await readInvite()
   return confirm
+}
+
+/** Click Confirm once it is open; the waiver is re-asked as fields change. */
+async function clickConfirm(confirm) {
+  await waitFor(() => expect(confirm.disabled).toBe(false))
+  fireEvent.click(confirm)
 }
 
 /** The ordered checks, read out of the component. */
@@ -169,7 +215,7 @@ describe("an empty form reports the first field, not the browser's choice", () =
     // The symptom: an empty form used to jump to Interview round and say
     // "Please select an item in the list."
     const confirm = await openForm()
-    fireEvent.click(confirm)
+    await clickConfirm(confirm)
 
     await waitFor(() =>
       expect(screen.getByText('Enter the client name for this round.')).toBeInTheDocument(),
@@ -182,7 +228,7 @@ describe("an empty form reports the first field, not the browser's choice", () =
     fireEvent.change(screen.getByPlaceholderText('Type client name'), {
       target: { value: 'Code Trust' },
     })
-    fireEvent.click(confirm)
+    await clickConfirm(confirm)
 
     await waitFor(() =>
       expect(screen.getByText('Enter the candidate phone number.')).toBeInTheDocument(),
@@ -198,7 +244,7 @@ describe("an empty form reports the first field, not the browser's choice", () =
     const phone = document.querySelector('input[type="tel"], input[inputMode="numeric"]')
       || [...document.querySelectorAll('input')].find(i => i !== screen.getByPlaceholderText('Type client name'))
     fireEvent.change(phone, { target: { value: '1234567890' } })
-    fireEvent.click(confirm)
+    await clickConfirm(confirm)
 
     await waitFor(() =>
       expect(screen.getByText('Choose the technology for this interview.')).toBeInTheDocument(),
@@ -214,7 +260,7 @@ describe('one error, in one place', () => {
     // An empty form used to answer a single click with a warning under every
     // field at once.
     const confirm = await openForm({ roundWise: true })
-    fireEvent.click(confirm)
+    await clickConfirm(confirm)
 
     await waitFor(() => expect(warnings()).toHaveLength(1))
     expect(warnings()[0].textContent).toBe('Enter the client name for this round.')
@@ -222,7 +268,7 @@ describe('one error, in one place', () => {
 
   it('does not repeat the same message in the page-level alert', async () => {
     const confirm = await openForm({ roundWise: true })
-    fireEvent.click(confirm)
+    await clickConfirm(confirm)
 
     await waitFor(() =>
       expect(screen.getByText('Enter the client name for this round.')).toBeInTheDocument(),
@@ -234,7 +280,7 @@ describe('one error, in one place', () => {
 
   it('clears the message as soon as that field is filled', async () => {
     const confirm = await openForm({ roundWise: true })
-    fireEvent.click(confirm)
+    await clickConfirm(confirm)
     await waitFor(() => expect(warnings()).toHaveLength(1))
 
     fireEvent.change(screen.getByPlaceholderText('Type client name'), {
@@ -251,7 +297,7 @@ describe('one error, in one place', () => {
     fireEvent.change(screen.getByPlaceholderText('Type client name'), {
       target: { value: 'Code Trust' },
     })
-    fireEvent.click(confirm)
+    await clickConfirm(confirm)
 
     await waitFor(() => expect(warnings()).toHaveLength(1))
     expect(warnings()[0].textContent).toBe('Enter the candidate phone number.')
@@ -298,12 +344,13 @@ describe('the payment card is compact, without shrinking what you tap', () => {
     expect(page).not.toContain('they are added up for this booking.')
   })
 
-  it('leaves upload, multi-file and save behaviour alone', () => {
-    // Only spacing moved: the same drop component, the same multiple flag, the
-    // same save handler.
+  it('keeps the drop component and multi-file upload, and analyses on attach', () => {
+    // The same drop component and multiple flag. There is no save handler any
+    // more: attaching the screenshots is what starts their analysis.
     expect(page).toContain('multiple')
-    expect(page).toMatch(/onFiles=\{next => \{ setPaymentFiles\(next\)/)
-    expect(page).toContain('onClick={uploadPaymentProof}')
+    expect(page).toContain('onFiles={analysePaymentScreenshots}')
+    expect(page).not.toContain('uploadPaymentProof')
+    expect(page).not.toContain('sbs-pay-save')
   })
 })
 
@@ -358,5 +405,68 @@ ${selector} {`)
   it('states the amount on one compact header row', () => {
     expect(rule('.sbs-pay-head')).toContain('justify-content: space-between')
     expect(css).toContain('.sbs-pay-head strong')
+  })
+})
+
+
+describe('Confirm opens only once both uploads have been analysed', () => {
+  const confirmButton = () => screen.getByRole('button', { name: /Confirm booking/i })
+
+  it('stays disabled on an empty form', async () => {
+    stubFetch()
+    render(<SubmitSlotPage />)
+    expect((await screen.findByRole('button', { name: /Confirm booking/i })).disabled).toBe(true)
+  })
+
+  it('opens once the invite is read when nothing is owed', async () => {
+    stubFetch({ paymentRequired: false })
+    render(<SubmitSlotPage />)
+    await screen.findByRole('button', { name: /Confirm booking/i })
+    expect(confirmButton().disabled).toBe(true)
+    await readInvite()
+    expect(confirmButton().disabled).toBe(false)
+  })
+
+  it('stays disabled while an owed payment is unverified, and opens once it is', async () => {
+    stubFetch({
+      upload: {
+        status: 'ok', proof_ids: ['proof-1'], verified_total: 5000, remaining_due: 0, amount_due: 5000,
+        payment_complete: true, rejected: [], ai_extractions: [{ is_payment_screenshot: true, amount: 5000, verified: true }],
+      },
+    })
+    render(<SubmitSlotPage />)
+    await screen.findByRole('button', { name: /Confirm booking/i })
+    fireEvent.click(screen.getByRole('button', { name: /Profile service/i }))
+    fireEvent.click(screen.getByText('Round-wise'))
+    fireEvent.change(screen.getByPlaceholderText('Type client name'), { target: { value: 'Code Trust' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000066350' } })
+
+    await readInvite()
+    // The invite is read; the payment is still owed.
+    expect(confirmButton().disabled).toBe(true)
+    expect(document.querySelector('.sbs-hint--warn')).toBeNull()
+
+    attach([...document.querySelectorAll('input[type="file"]')].find(i => i.multiple),
+           [new File(['pay'], 'pay.jpg', { type: 'image/jpeg' })])
+    await screen.findByText(/payment verified/i)
+    await waitFor(() => expect(confirmButton().disabled).toBe(false))
+  })
+
+  it('stays disabled while a payment is being analysed', async () => {
+    stubFetch()
+    render(<SubmitSlotPage />)
+    await screen.findByRole('button', { name: /Confirm booking/i })
+    fireEvent.click(screen.getByRole('button', { name: /Profile service/i }))
+    fireEvent.click(screen.getByText('Round-wise'))
+    fireEvent.change(screen.getByPlaceholderText('Type client name'), { target: { value: 'Code Trust' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000066350' } })
+    await readInvite()
+
+    attach([...document.querySelectorAll('input[type="file"]')].find(i => i.multiple),
+           [new File(['pay'], 'pay.jpg', { type: 'image/jpeg' })])
+    await waitFor(() => expect(document.querySelector('.sbs-pay-card .sbs-status--loading')).not.toBeNull())
+    // While busy the button shows a spinner rather than its label, so it is
+    // found as the form's submit button.
+    expect(document.querySelector('form.sbs-form button[type="submit"]').disabled).toBe(true)
   })
 })

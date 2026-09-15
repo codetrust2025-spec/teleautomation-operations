@@ -136,7 +136,11 @@ describe('Submit slot — round-wise technology', () => {
     attach(inviteInput(), [screenshot('invite.jpg')])
     await waitFor(() => expect(document.querySelector(".sbs-status--loading")).toBeNull())
 
-    fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
+    // Confirm opens once the invite is read and the waiver has come back: until
+    // the backend answers, a round-wise payment counts as owed.
+    const confirm = screen.getByRole('button', { name: /confirm booking/i })
+    await waitFor(() => expect(confirm.disabled).toBe(false))
+    fireEvent.click(confirm)
 
     // Flagged on the field, not bounced off the server.
     // Wording changed with sequential validation; the field-level

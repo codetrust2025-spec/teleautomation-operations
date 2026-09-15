@@ -54,15 +54,18 @@ function attach(input, files) {
   fireEvent.change(input)
 }
 
-function stubFetch() {
+function stubFetch({ upload } = {}) {
   vi.stubGlobal('fetch', vi.fn((url) => {
     const target = String(url)
-    const reply = body => Promise.resolve({
-      ok: true, status: 200, headers: { get: () => 'application/json' },
+    const reply = (body, status = 200) => Promise.resolve({
+      ok: status < 400, status, headers: { get: () => 'application/json' },
       json: () => Promise.resolve(body),
     })
     if (target.includes('/public/slots/payment-requirement')) {
       return reply({ status: 'ok', service_type: 'round_wise', amount_due: 5000, payment_required: true })
+    }
+    if (target.includes('/public/slots/payment-proof')) {
+      return upload ? upload(reply) : new Promise(() => {})
     }
     if (target.includes('/public/slots/booked')) return reply({ status: 'ok', slots: [] })
     return reply({ status: 'ok', candidates: [] })
@@ -71,8 +74,8 @@ function stubFetch() {
 }
 
 /** Reach the round-wise form, which is the one that asks for payment. */
-async function roundWiseForm() {
-  stubFetch()
+async function roundWiseForm(options) {
+  stubFetch(options)
   render(<SubmitSlotPage />)
   await screen.findByRole('button', { name: /Confirm booking/i })
 
@@ -89,33 +92,41 @@ async function roundWiseForm() {
 
 const paymentInput = () => document.querySelector('.sbs-pay-card input[type="file"]')
 
-describe('nothing is rendered that has nothing to do', () => {
-  it('shows no Save button until a screenshot is attached', async () => {
+const enterPhone = () => fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i),
+                                          { target: { value: '9000066350' } })
+
+describe('upload is the action: nothing waits to be saved', () => {
+  it('never shows a Save button, before or after a screenshot is attached', async () => {
     await roundWiseForm()
-    expect(screen.queryByRole('button', { name: /save payment proof/i })).toBeNull()
+    enterPhone()
+    expect(screen.queryByRole('button', { name: /save/i })).toBeNull()
+    attach(paymentInput(), [screenshot('pay-1')])
+    await waitFor(() => expect(document.querySelector('.sbs-pay-card .sbs-status--loading')).not.toBeNull())
+    expect(screen.queryByRole('button', { name: /save/i })).toBeNull()
+    expect(document.querySelector('.sbs-pay-head button')).toBeNull()
   })
 
-  it('shows Save as soon as one is', async () => {
+  it('starts analysing the moment a screenshot is attached, as the invite does', async () => {
     await roundWiseForm()
+    enterPhone()
     attach(paymentInput(), [screenshot('pay-1')])
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /save payment proof/i })).toBeInTheDocument(),
+      expect(fetch.mock.calls.some(([url]) => String(url).includes('/public/slots/payment-proof'))).toBe(true),
     )
+    const status = document.querySelector('.sbs-pay-card .sbs-status--loading')
+    expect(status.textContent).toContain('Waiting for AI node…')
   })
 
-  it('puts Save in the header row, beside the amount', async () => {
+  it('waits for the client name and phone before taking a screenshot', async () => {
+    // A round-wise proof is filed under the phone, and changing it afterwards
+    // discards the proof -- so the upload is not offered before it is known.
     await roundWiseForm()
-    attach(paymentInput(), [screenshot('pay-1')])
-    await waitFor(() => expect(document.querySelector('.sbs-pay-save')).not.toBeNull())
-    // In the header, not stacked underneath it as a full-width block.
-    expect(document.querySelector('.sbs-pay-head .sbs-pay-save')).not.toBeNull()
-  })
+    expect(paymentInput().disabled).toBe(true)
+    expect(document.querySelector('.sbs-pay-card').textContent).toContain('Enter the client name and phone number first.')
 
-  it('keeps the full name for assistive tech while showing a short label', async () => {
-    await roundWiseForm()
-    attach(paymentInput(), [screenshot('pay-1')])
-    const save = await screen.findByRole('button', { name: /save payment proof/i })
-    expect(save.textContent.trim()).toBe('Save')
+    enterPhone()
+    await waitFor(() => expect(paymentInput().disabled).toBe(false))
+    expect(document.querySelector('.sbs-pay-card').textContent).not.toContain('Enter the client name and phone number first.')
   })
 
   it('does not repeat the section caption inside the drop zone', async () => {
@@ -153,21 +164,37 @@ describe('the surface is the form surface', () => {
     expect(card.className).not.toContain('sbs-pay-card--warn')
   })
 
-  it('turns amber when the sequence reaches the payment', async () => {
-    // Only when payment is the first thing missing. Everything ahead of it in
-    // the order has to be satisfied first, or the form stops earlier and the
-    // payment section is not what is being asked for.
-    await roundWiseForm()
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i),
-                     { target: { value: '9000066350' } })
-    fireEvent.change(screen.getByPlaceholderText(/type the technology/i),
-                     { target: { value: 'React JS' } })
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L2' } })
-
-    fireEvent.click(screen.getByRole('button', { name: /Confirm booking/i }))
+  it('turns amber when a screenshot is refused', async () => {
+    await roundWiseForm({
+      upload: reply => reply({
+        status: 'error', message: 'Receiver is not registered.',
+        rejected: [{ filename: 'pay-1.jpg', message: 'Receiver is not registered.' }],
+      }, 400),
+    })
+    enterPhone()
+    attach(paymentInput(), [screenshot('pay-1')])
     await waitFor(() =>
       expect(document.querySelector('.sbs-pay-card').className).toContain('sbs-pay-card--warn'),
     )
+    expect(document.querySelector('.sbs-pay-result')).toBeNull()
+  })
+
+  it('shows a verified payment in the green result card the invite uses', async () => {
+    await roundWiseForm({
+      upload: reply => reply({
+        status: 'ok', proof_ids: ['proof-1'], verified_total: 5000, remaining_due: 0, amount_due: 5000,
+        payment_complete: true, rejected: [],
+        ai_extractions: [{ is_payment_screenshot: true, amount: 5000, verified: true, utr_number: '629529860169' }],
+        analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060'] },
+      }),
+    })
+    enterPhone()
+    attach(paymentInput(), [screenshot('pay-1')])
+    await waitFor(() => expect(document.querySelector('.sbs-pay-result')).not.toBeNull())
+    const result = document.querySelector('.sbs-pay-result')
+    expect(result.className).toContain('sbs-detected-compact')
+    expect(result.querySelector('.sbs-detected-compact__text').textContent).toBe('Payment verified · Analysed by RTX 4060')
+    expect(document.querySelector('.sbs-pay-card').className).not.toContain('sbs-pay-card--warn')
   })
 
   it('keeps amber reserved for the warn variant alone', () => {
@@ -181,14 +208,12 @@ describe('the header stays one line', () => {
     expect(rule('\\.sbs-pay-head')).toContain('justify-content: space-between')
   })
 
-  it('groups the amount and Save at the end of that line', () => {
+  it('groups the amount at the end of that line', () => {
     expect(rule('\\.sbs-pay-head__end')).toContain('display: flex')
   })
 
-  it('does not let Save set the header height', () => {
-    // The shared .sbs-pay-card .sbs-secondary-btn sizing would have made this
-    // 36px tall and grown the row it sits in.
-    expect(rule('\\.sbs-pay-card \\.sbs-pay-save')).toContain('min-height: 0')
+  it('carries no Save styling, because there is no Save', () => {
+    expect(css).not.toContain('.sbs-pay-save')
   })
 
   it('keeps the drop zone at a full tap target on mobile', () => {

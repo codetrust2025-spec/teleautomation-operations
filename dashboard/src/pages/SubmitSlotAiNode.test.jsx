@@ -99,11 +99,15 @@ async function startPaymentUpload() {
   fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
   await screen.findByText(/paid in parts\? attach each screenshot/i)
+  // Attaching is the upload: the analysis starts at once, as the invite's does.
   attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('receipt')])
-  const save = await screen.findByRole('button', { name: /save payment proof/i })
-  fireEvent.click(save)
-  return save
 }
+
+/** The payment card's status row, where the node reading the receipt is named. */
+const paymentStatus = () => document.querySelector('.sbs-pay-card .sbs-status--loading')
+
+/** The payment card's green result line. */
+const paymentResult = () => document.querySelector('.sbs-pay-result .sbs-detected-compact__text')
 
 const ACCEPTED = {
   status: 'ok', proof_ids: ['proof-1'], verified_total: 5000, remaining_due: 0,
@@ -123,11 +127,12 @@ describe('payment screenshot: the node reading it', () => {
 
   it('waits for a node, names the node, and follows the request to another node', async () => {
     const server = stubServer()
-    const save = await startPaymentUpload()
+    await startPaymentUpload()
 
     await waitFor(() => expect(server.uploads).toHaveLength(1))
-    expect(within(save).getByText('Waiting for AI node…')).toBeTruthy()
-    expect(within(save).queryByText(/^Analysing…$/)).toBeNull()
+    expect(within(paymentStatus()).getByText('Waiting for AI node…')).toBeTruthy()
+    expect(within(paymentStatus()).queryByText(/^Analysing…$/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /save/i })).toBeNull()
 
     // The page follows exactly the analysis it sent.
     const analysisId = server.uploads[0].get('analysis_id')
@@ -135,16 +140,16 @@ describe('payment screenshot: the node reading it', () => {
     expect(stream().url).toBe(`/public/slots/analysis/${analysisId}/events`)
 
     push({ state: 'running', node: 'Jagadeesh' })
-    expect(save.textContent).toContain('● Jagadeesh · Analysing…')
+    expect(paymentStatus().textContent).toContain('● Jagadeesh · Analysing…')
 
     // Jagadeesh fails; the gateway moves the request on.
     push({ state: 'waiting', node: null })
-    expect(save.textContent).toContain('Waiting for AI node…')
-    expect(save.textContent).not.toContain('Jagadeesh')
+    expect(paymentStatus().textContent).toContain('Waiting for AI node…')
+    expect(paymentStatus().textContent).not.toContain('Jagadeesh')
 
     push({ state: 'running', node: 'Praveen' })
-    expect(save.textContent).toContain('● Praveen · Analysing…')
-    expect(save.textContent).not.toContain('Jagadeesh')
+    expect(paymentStatus().textContent).toContain('● Praveen · Analysing…')
+    expect(paymentStatus().textContent).not.toContain('Jagadeesh')
   })
 
   it('says which node analysed it once the upload returns', async () => {
@@ -155,7 +160,9 @@ describe('payment screenshot: the node reading it', () => {
 
     await server.finishUpload({ ...ACCEPTED, analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060'] } })
 
-    expect(await screen.findByText('✓ Analysed by RTX 4060')).toBeTruthy()
+    await waitFor(() => expect(paymentResult()).not.toBeNull())
+    expect(paymentResult().textContent).toBe('Payment verified · Analysed by RTX 4060')
+    expect(paymentStatus()).toBeNull()
     expect(stream().closed).toBe(true)
   })
 
@@ -167,15 +174,16 @@ describe('payment screenshot: the node reading it', () => {
 
     await server.finishUpload({ ...ACCEPTED, analysis: { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060', 'Jagadeesh'] } })
 
-    expect(await screen.findByText('✓ Analysed by RTX 4060 + Jagadeesh')).toBeTruthy()
+    await waitFor(() => expect(paymentResult()).not.toBeNull())
+    expect(paymentResult().textContent).toBe('Payment verified · Analysed by RTX 4060 + Jagadeesh')
   })
 
   it('names a node it has never heard of, exactly as the server does', async () => {
     const server = stubServer()
-    const save = await startPaymentUpload()
+    await startPaymentUpload()
     await waitFor(() => expect(server.uploads).toHaveLength(1))
     push({ state: 'running', node: 'RTX 5090' })
-    expect(save.textContent).toContain('● RTX 5090 · Analysing…')
+    expect(paymentStatus().textContent).toContain('● RTX 5090 · Analysing…')
   })
 
   it('shows no analysed-by line for a refused screenshot, only why it was refused', async () => {
@@ -192,6 +200,8 @@ describe('payment screenshot: the node reading it', () => {
 
     expect(await screen.findByText(/not a verified payment/i)).toBeTruthy()
     expect(screen.queryByText(/analysed by/i)).toBeNull()
+    expect(paymentResult()).toBeNull()
+    expect(document.querySelector('.sbs-pay-card').className).toContain('sbs-pay-card--warn')
   })
 })
 
