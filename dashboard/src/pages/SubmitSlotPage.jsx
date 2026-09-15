@@ -270,8 +270,13 @@ function PaymentAiResultCard({ ai }) {
  * The name is whatever the server reports for this upload: it changes if the
  * request moves to another node, and it is never filled in from the page's
  * own idea of where AI work runs.
+ *
+ * "Waiting for AI node…" is only said while a node analysis is actually in
+ * flight. Once it has ended -- the AI read failed or timed out and the page
+ * fell back to the plain screenshot parser, which runs on no AI node -- the
+ * row says what is happening instead of claiming a wait that is not.
  */
-function AiNodeProgress({ status }) {
+function AiNodeProgress({ status, idle = 'Analysing…' }) {
   if (status?.state === 'running' && status.node) {
     return (
       <span className="sbs-ai-node">
@@ -279,7 +284,10 @@ function AiNodeProgress({ status }) {
       </span>
     )
   }
-  return <span className="sbs-ai-node">Waiting for AI node…</span>
+  if (status?.state === 'waiting' || status?.state === 'running') {
+    return <span className="sbs-ai-node">Waiting for AI node…</span>
+  }
+  return <span className="sbs-ai-node">{idle}</span>
 }
 
 /** Bring a field into view and put the cursor in it.
@@ -1118,7 +1126,7 @@ export function SubmitSlotPage() {
                 {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
               </div>
 
-              {parsing && <div className="sbs-status sbs-status--loading"><Spinner size={18} /><AiNodeProgress status={inviteAnalysis} /></div>}
+              {parsing && <div className="sbs-status sbs-status--loading"><Spinner size={18} /><AiNodeProgress status={inviteAnalysis} idle="Reading invite…" /></div>}
 
               {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
 
