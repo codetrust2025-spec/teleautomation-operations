@@ -203,7 +203,65 @@ async def _tail_events(poll_seconds: float = 2.0) -> None:
             logger.exception("Mail event tailer iteration failed; continuing")
 
 
+async def _push_node_activity(poll_seconds: float = 0.5) -> None:
+    """Tell connected dashboards what each AI node is serving, as it changes.
+
+    Node activity is live state, not history: it is sent to the sockets open
+    now and never written to the durable event log, so a reconnecting client
+    is not replayed a stale "busy" and reads the current snapshot instead. The
+    whole snapshot goes out each time, so one missed push corrects itself on
+    the next.
+    """
+    from core import ai_activity
+
+    sent = ai_activity.version()
+    while True:
+        try:
+            await asyncio.sleep(poll_seconds)
+            if not _connections:
+                # Nobody to tell. A client that connects later reads the
+                # snapshot itself rather than being sent one unasked, so the
+                # socket's opening frames stay exactly what they were.
+                sent = ai_activity.version()
+                continue
+            if ai_activity.version() == sent:
+                continue
+            snapshot = ai_activity.node_snapshot()
+            await _broadcast({"event": "ai_node_activity", **snapshot})
+            sent = snapshot["version"]
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("AI node activity push failed; continuing")
+
+
 _tailer: asyncio.Task | None = None
+_activity_pusher: asyncio.Task | None = None
+
+
+def start_activity_pusher() -> None:
+    """Start the node activity push on the running loop, once per process."""
+    global _activity_pusher
+    if _activity_pusher is not None and not _activity_pusher.done():
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.info("No running loop; AI node activity push not started")
+        return
+    _activity_pusher = loop.create_task(_push_node_activity())
+
+
+async def stop_activity_pusher() -> None:
+    global _activity_pusher
+    task, _activity_pusher = _activity_pusher, None
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        pass
 
 
 def start_tailer() -> None:

@@ -21,6 +21,11 @@ const TRACE_LIMIT = 200
 
 const subscribers = new Set()
 const statusSubscribers = new Set()
+// What each AI node is serving, pushed by the server as it changes. It shares
+// the socket but not the mail pipeline: it is live state rather than an alert,
+// so it is never deduped, replayed, traced or handed to the mail subscribers,
+// any of which would refetch or sound on it.
+const activitySubscribers = new Set()
 
 let socket = null
 let channel = null
@@ -93,6 +98,16 @@ function emit(payload, fromSocket) {
 }
 
 function receive(payload, fromSocket = true) {
+  if (payload?.event === 'ai_node_activity') {
+    for (const fn of activitySubscribers) {
+      try {
+        fn(payload)
+      } catch {
+        /* one bad subscriber must not stop the others */
+      }
+    }
+    return
+  }
   const id = payload?.event_id
   if (id && seen.has(id)) return
   if (id) {
@@ -200,10 +215,26 @@ function stop() {
  */
 export function subscribeMailEvents(handler) {
   subscribers.add(handler)
-  if (subscribers.size === 1) start()
+  if (subscribers.size + activitySubscribers.size === 1) start()
   return () => {
     subscribers.delete(handler)
-    if (subscribers.size === 0) stop()
+    if (subscribers.size + activitySubscribers.size === 0) stop()
+  }
+}
+
+/**
+ * Subscribe to AI node activity: `{event, version, nodes: {node_id: [...]}}`,
+ * the whole snapshot each time. Returns an unsubscribe function.
+ *
+ * Pushes sent while the socket was down are not replayed, so a subscriber
+ * should read the current snapshot itself whenever the status turns Live.
+ */
+export function subscribeNodeActivity(handler) {
+  activitySubscribers.add(handler)
+  if (subscribers.size + activitySubscribers.size === 1) start()
+  return () => {
+    activitySubscribers.delete(handler)
+    if (subscribers.size + activitySubscribers.size === 0) stop()
   }
 }
 
@@ -221,6 +252,7 @@ export function getMailStatus() {
 export function __resetMailEventStream() {
   subscribers.clear()
   statusSubscribers.clear()
+  activitySubscribers.clear()
   seen.clear()
   trace.length = 0
   retry = 0

@@ -187,6 +187,7 @@ async def startup() -> None:
     # events written by any process, and it needs the loop registered before a
     # publisher runs, not after a browser happens to arrive.
     recruitment_realtime.start_tailer()
+    recruitment_realtime.start_activity_pusher()
     recruitment_mail_worker.start()
     start_interview_reminder_loop()
     start_gmail_watch_renewal_loop()
@@ -206,6 +207,7 @@ async def shutdown() -> None:
     await stop_interview_reminder_loop()
     await stop_outbox_dispatcher()
     await recruitment_realtime.stop_tailer()
+    await recruitment_realtime.stop_activity_pusher()
     await recruitment_mail_worker.stop()
 
 
