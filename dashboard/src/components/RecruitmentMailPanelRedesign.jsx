@@ -3,6 +3,7 @@ import { API } from "../config.js";
 import { useConfirm } from "../context/ConfirmContext.jsx";
 import { mailboxUiStatus, reconnectWorklist } from "../utils/mailboxStatus.js";
 import { publishGmailExpired } from "../notifications/gmailExpired.js";
+import { subscribeMailStatus, subscribeNodeActivity } from "../notifications/mailEventStream.js";
 import { ButtonContent, InlineLoader, OverlayLoader } from "../Loader.jsx";
 import { OcrToggle } from "./OcrToggle.jsx";
 import { PureOllamaToggle } from "./PureOllamaToggle.jsx";
@@ -1397,6 +1398,7 @@ function EvidenceDrawer({ id, onClose, onChanged }) {
 
 function AiNodeManager({
   nodes,
+  activity = {},
   busy,
   refreshing,
   onRefresh,
@@ -1439,72 +1441,86 @@ function AiNodeManager({
       </summary>
       <div className="sot-ai-node-grid">
         {nodes.length ? (
-          nodes.map((node) => (
-            <article
-              className={`sot-ai-node is-${node.status || "offline"}`}
-              key={node.id}
-            >
-              {/* One row per node, and only what an operator acts on. The host
-                * URL, Ollama version, acceleration split and last success and
-                * failure timestamps were diagnostics that pushed the three
-                * nodes into a tall stack; they are still on the health
-                * endpoint for anyone debugging. */}
-              <span className="sot-ai-node-name">
-                <i aria-hidden="true" />
-                <strong>{node.label}</strong>
-                {node.primary && (
-                  <span className="sot-ai-node-primary">PRIMARY</span>
-                )}
-              </span>
-              <span
-                className={`sot-ai-node-state is-${
-                  node.endpoint_reachable ? "up" : "down"
-                }`}
+          nodes.map((node) => {
+            // What the gateway says this node is running right now -- the
+            // record the booking page names its node from, so the two agree.
+            const serving = [
+              ...new Set(
+                (activity[node.id] || [])
+                  .map((item) => item.label)
+                  .filter(Boolean),
+              ),
+            ];
+            return (
+              <article
+                className={`sot-ai-node is-${node.status || "offline"}`}
+                key={node.id}
               >
-                {node.endpoint_reachable ? "Online" : "Offline"}
-              </span>
-              <span className="sot-ai-node-state">
-                {/* Busy and Ready are different facts -- a model held in memory
-                  * versus every required model installed -- so they are shown
-                  * as one state rather than one label meaning either. */}
-                {node.model_loaded
-                  ? "Busy"
-                  : node.ready
-                    ? "Ready"
-                    : "Not ready"}
-              </span>
-              <span className="sot-ai-node-latency">
-                {node.response_time_ms == null
-                  ? "—"
-                  : `${node.response_time_ms} ms`}
-              </span>
-              <span className="sot-ai-node-actions">
-                {!node.primary && (
+                {/* One row per node, and only what an operator acts on. The host
+                  * URL, Ollama version, acceleration split and last success and
+                  * failure timestamps were diagnostics that pushed the three
+                  * nodes into a tall stack; they are still on the health
+                  * endpoint for anyone debugging. */}
+                <span className="sot-ai-node-name">
+                  <i aria-hidden="true" />
+                  <strong>{node.label}</strong>
+                  {node.primary && (
+                    <span className="sot-ai-node-primary">PRIMARY</span>
+                  )}
+                </span>
+                <span
+                  className={`sot-ai-node-state is-${
+                    node.endpoint_reachable ? "up" : "down"
+                  }`}
+                >
+                  {node.endpoint_reachable ? "Online" : "Offline"}
+                </span>
+                <span className="sot-ai-node-state">
+                  {/* Busy and Ready are different facts -- a model held in memory
+                    * versus every required model installed -- so they are shown
+                    * as one state rather than one label meaning either. A request
+                    * running on the node says what it is busy with. */}
+                  {serving.length
+                    ? `Busy · ${serving.join(" + ")}`
+                    : node.model_loaded
+                      ? "Busy"
+                      : node.ready
+                        ? "Ready"
+                        : "Not ready"}
+                </span>
+                <span className="sot-ai-node-latency">
+                  {node.response_time_ms == null
+                    ? "—"
+                    : `${node.response_time_ms} ms`}
+                </span>
+                <span className="sot-ai-node-actions">
+                  {!node.primary && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onMakePrimary(node)}
+                      title={
+                        node.ready
+                          ? `Route AI work to ${node.label} for one hour`
+                          : "This node is failing its model check — you will be asked to confirm"
+                      }
+                    >
+                      {node.ready ? "Set primary" : "Set primary anyway"}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    disabled={busy}
-                    onClick={() => onMakePrimary(node)}
-                    title={
-                      node.ready
-                        ? `Route AI work to ${node.label} for one hour`
-                        : "This node is failing its model check — you will be asked to confirm"
-                    }
+                    className="is-warning"
+                    disabled={busy || !node.endpoint_reachable}
+                    onClick={() => onUnload(node)}
+                    title={`Unload AI models on ${node.label}`}
                   >
-                    {node.ready ? "Set primary" : "Set primary anyway"}
+                    Unload
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="is-warning"
-                  disabled={busy || !node.endpoint_reachable}
-                  onClick={() => onUnload(node)}
-                  title={`Unload AI models on ${node.label}`}
-                >
-                  Unload
-                </button>
-              </span>
-            </article>
-          ))
+                </span>
+              </article>
+            );
+          })
         ) : (
           <p className="sot-empty">Node health has not loaded yet.</p>
         )}
@@ -1902,6 +1918,19 @@ export default function RecruitmentMailPanelRedesign() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [aiStatus, setAiStatus] = useState(null);
   const [aiNodes, setAiNodes] = useState([]);
+  // Which request each node is serving, from the gateway: the nodes endpoint
+  // carries a snapshot and the live socket pushes every change. A snapshot from
+  // before a restart has a different boot id, so the counter starting again
+  // from zero cannot make a fresh one look old.
+  const [aiActivity, setAiActivity] = useState({ boot: "", version: -1, nodes: {} });
+  const acceptAiActivity = useCallback((snapshot) => {
+    if (!snapshot || typeof snapshot.version !== "number") return;
+    setAiActivity((current) =>
+      snapshot.boot !== current.boot || snapshot.version >= current.version
+        ? { boot: snapshot.boot, version: snapshot.version, nodes: snapshot.nodes || {} }
+        : current,
+    );
+  }, []);
   const [refreshingAi, setRefreshingAi] = useState(false);
   const loadInFlight = useRef(null);
   const activeSyncRefreshInFlight = useRef(false);
@@ -1996,6 +2025,7 @@ export default function RecruitmentMailPanelRedesign() {
       }
       if (nodesResult.status === "fulfilled") {
         setAiNodes(nodesResult.value.nodes || []);
+        acceptAiActivity(nodesResult.value.activity);
       }
       if (
         statusResult.status === "rejected" &&
@@ -2014,13 +2044,28 @@ export default function RecruitmentMailPanelRedesign() {
     } finally {
       if (interactive) setRefreshingAi(false);
     }
-  }, []);
+  }, [acceptAiActivity]);
   useEffect(() => {
     const timer = window.setInterval(() => {
       refreshOllama(false);
     }, 60000);
     return () => window.clearInterval(timer);
   }, [refreshOllama]);
+  useEffect(() => subscribeNodeActivity(acceptAiActivity), [acceptAiActivity]);
+  useEffect(
+    () =>
+      // Pushes sent while the socket was down are not replayed, so read the
+      // current snapshot each time it comes back.
+      subscribeMailStatus((status) => {
+        if (status !== "Live") return;
+        request(`/api/ai-recruitment/ollama/activity?_=${Date.now()}`)
+          .then((body) => acceptAiActivity(body.activity))
+          .catch(() => {
+            /* the minute-by-minute node refresh carries it too */
+          });
+      }),
+    [acceptAiActivity],
+  );
   useEffect(() => {
     if (!loading) refreshOllama(false);
   }, [loading, refreshOllama]);
@@ -2500,6 +2545,7 @@ export default function RecruitmentMailPanelRedesign() {
       </header>
       <AiNodeManager
         nodes={aiNodes}
+        activity={aiActivity.nodes}
         busy={busy}
         refreshing={refreshingAi}
         onRefresh={() => refreshOllama(true)}

@@ -4,20 +4,58 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import re
+import time
 import uuid
 from threading import Lock
 from typing import Any
 
-from fastapi import File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import File, Form, Request, UploadFile
+from fastapi.responses import JSONResponse, StreamingResponse
 
+from core import ai_activity
 from core.ocr_policy import processing_mode
 
 logger = logging.getLogger(__name__)
 _booking_confirmation_lock = Lock()
+
+# The live analysis stream: how often it looks for a change, how long it may
+# stay open, and how often it proves it is alive. The keepalive stays well
+# inside nginx's default 60s proxy read timeout on the public site, and the
+# lifetime outlasts the longest analysis the invite endpoint will wait for.
+ANALYSIS_POLL_SECONDS = 0.3
+ANALYSIS_STREAM_SECONDS = 300
+ANALYSIS_KEEPALIVE_SECONDS = 15
+
+
+def _analysis_view(analysis_id: str) -> dict[str, Any]:
+    return ai_activity.analysis_status(analysis_id) or {
+        "analysis_id": analysis_id, "state": "waiting", "node": None, "analysed_by": [],
+    }
+
+
+def _with_analysis(response: Any, analysis_id: str) -> Any:
+    """Add the finished analysis -- which nodes read the upload -- to a response.
+
+    The page follows the analysis live, but the upload's own response is the
+    last word: it arrives after every model call has returned, so the node
+    named as having analysed the upload can never lag behind the work.
+    """
+    analysis = _analysis_view(analysis_id)
+    if isinstance(response, dict):
+        return {**response, "analysis": analysis}
+    if isinstance(response, JSONResponse):
+        try:
+            payload = json.loads(response.body)
+        except ValueError:
+            return response
+        if isinstance(payload, dict):
+            payload["analysis"] = analysis
+            return JSONResponse(payload, status_code=response.status_code)
+    return response
 
 # Invite extraction must always answer with JSON. Nginx gives the app 300s
 # (proxy_read_timeout) before serving its own HTML 504, which the browser
@@ -230,6 +268,66 @@ def install_public_slot_routes(app) -> None:
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
+    @app.get("/public/slots/analysis/{analysis_id}")
+    async def public_slot_analysis_status(analysis_id: str):
+        """Which AI node is working on one booking upload, for the page that sent it.
+
+        Only the node's display name and the analysis state are ever returned:
+        nothing about the candidate, the image or the result. An id that is not
+        known (yet) reads as waiting, since the upload it belongs to may still
+        be arriving, and saying "unknown" would only tell a caller which ids
+        exist.
+        """
+        if not ai_activity.valid_analysis_id(analysis_id):
+            return _json_error("Unknown analysis.", status=404)
+        return JSONResponse(
+            {"status": "ok", "analysis": _analysis_view(analysis_id)},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @app.get("/public/slots/analysis/{analysis_id}/events")
+    async def public_slot_analysis_events(analysis_id: str, request: Request):
+        """The same status as a server-sent event stream, pushed as it changes.
+
+        Closes once the analysis is done, and after a bounded lifetime either
+        way; the page also stops listening as soon as its upload returns.
+        `X-Accel-Buffering: no` keeps nginx from holding events back until the
+        stream ends, and the keepalive comment stays inside its read timeout.
+        """
+        if not ai_activity.valid_analysis_id(analysis_id):
+            return _json_error("Unknown analysis.", status=404)
+        if not ai_activity.open_stream():
+            return _json_error("Too many live updates. The upload continues.", status=429)
+
+        async def events():
+            try:
+                yield "retry: 2000\n\n"
+                last = None
+                deadline = time.monotonic() + ANALYSIS_STREAM_SECONDS
+                keepalive = time.monotonic() + ANALYSIS_KEEPALIVE_SECONDS
+                while time.monotonic() < deadline:
+                    status = _analysis_view(analysis_id)
+                    if status != last:
+                        last = status
+                        keepalive = time.monotonic() + ANALYSIS_KEEPALIVE_SECONDS
+                        yield f"data: {json.dumps(status)}\n\n"
+                        if status["state"] == "done":
+                            return
+                    elif time.monotonic() >= keepalive:
+                        keepalive = time.monotonic() + ANALYSIS_KEEPALIVE_SECONDS
+                        yield ": keepalive\n\n"
+                    if await request.is_disconnected():
+                        return
+                    await asyncio.sleep(ANALYSIS_POLL_SECONDS)
+            finally:
+                ai_activity.close_stream()
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
     @app.post("/public/slots/payment-proof")
     async def public_slot_payment_proof(
         name: str = Form(...),
@@ -242,6 +340,32 @@ def install_public_slot_routes(app) -> None:
         technology: str = Form(default=""),
         interview_round: str = Form(default=""),
         existing_proof_ids: str = Form(default=""),
+        analysis_id: str = Form(default=""),
+    ):
+        # Every model call made while verifying these screenshots is attributed
+        # to this upload, so the page can name the node reading them and the AI
+        # nodes panel can show that node busy with a booking analysis.
+        with ai_activity.booking_analysis(analysis_id) as analysis:
+            response = await _payment_proof(
+                name=name, file=file, files=files, note=note,
+                service_type=service_type, phone=phone, candidate_id=candidate_id,
+                technology=technology, interview_round=interview_round,
+                existing_proof_ids=existing_proof_ids,
+            )
+        return _with_analysis(response, analysis)
+
+    async def _payment_proof(
+        *,
+        name: str,
+        file: UploadFile | None,
+        files: list[UploadFile],
+        note: str,
+        service_type: str,
+        phone: str,
+        candidate_id: str,
+        technology: str,
+        interview_round: str,
+        existing_proof_ids: str,
     ):
         # A split payment arrives as several screenshots (2,000 + 1,000 + 2,000
         # against a 5,000 fee). Every receipt is still verified on its own and
@@ -531,8 +655,16 @@ def install_public_slot_routes(app) -> None:
         return {"status": "ok", "slot": parsed}
 
     @app.post("/public/slots/extract-invite-ai")
-    async def public_slot_extract_invite_ai(file: UploadFile = File(...)):
+    async def public_slot_extract_invite_ai(
+        file: UploadFile = File(...),
+        analysis_id: str = Form(default=""),
+    ):
         """AI-powered interview invite extraction using Ollama vision models."""
+        with ai_activity.booking_analysis(analysis_id) as analysis:
+            response = await _extract_invite_ai(file)
+        return _with_analysis(response, analysis)
+
+    async def _extract_invite_ai(file: UploadFile):
         raw = await file.read()
         mime = file.content_type or "image/jpeg"
         trace_id = _invite_trace_id()

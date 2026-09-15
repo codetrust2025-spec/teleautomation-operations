@@ -8,6 +8,7 @@ from core import recruitment_mail_store as store
 from core.dashboard_access import operator_profile, require_fleet_admin, assert_candidate_row_access
 from core.ai_gateway import AIGatewayError, chat_structured, configured_models, health as ollama_health
 from core.ollama_status import snapshot as ollama_status_snapshot
+from core import ai_activity
 from core import ollama_nodes
 from core import gmail_watch
 from features import candidate_store
@@ -146,7 +147,19 @@ def install_recruitment_mail_routes(app):
             asyncio.to_thread(_node_status,item['id'])
             for item in ollama_nodes.configured_nodes()
         ])
-        return {'status':'ok','primary_node':ollama_nodes.primary_node_id(),'nodes':nodes}
+        # What each node is serving, from the gateway's own record: the same
+        # source the booking page names its node from. Read once, after the
+        # probes, so every node is described at the same moment.
+        activity=ai_activity.node_snapshot()
+        for node in nodes:
+            node['activity']=activity['nodes'].get(node['id'],[])
+        return {'status':'ok','primary_node':ollama_nodes.primary_node_id(),'nodes':nodes,'activity':activity}
+    @app.get('/api/ai-recruitment/ollama/activity')
+    async def ollama_node_activity(request:Request):
+        # Cheap: no node is probed. The panel reads it when its live socket
+        # (re)connects, since pushes sent while it was away are not replayed.
+        _guard();require_fleet_admin(request)
+        return {'status':'ok','activity':ai_activity.node_snapshot()}
     @app.post('/api/ai-recruitment/ollama/nodes/{node_id}/primary')
     async def ollama_set_primary(node_id:str,request:Request,override:bool=False):
         _guard();require_fleet_admin(request)

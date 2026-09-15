@@ -16920,6 +16920,13 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-manual__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
 /* Status */
 .sbs-status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted,#a8b4c4); }
+/* The AI node reading an upload. It takes the size and colour of the words it
+ * replaced in the Save button and the invite status row; only the live dot and
+ * the finished line carry a colour of their own. */
+.sbs-ai-node { white-space: nowrap; }
+.sbs-ai-node__dot { color: #22c55e; font-size: 0.75em; }
+.sbs-ai-node--done { font-size: 0.68rem; color: #6ee7b7; font-weight: 500; white-space: normal; }
+.sbs-detected-compact .sbs-ai-node--done { width: 100%; }
 /* Alerts */
 .sbs-alert { padding: 0.45rem 0.65rem; border-radius: 0.45rem; font-size: 0.75rem; margin: 0; }
 .sbs-alert--error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: #fca5a5; }

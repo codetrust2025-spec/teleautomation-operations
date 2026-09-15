@@ -20,6 +20,7 @@ from typing import Any
 
 from jsonschema import ValidationError, validate as validate_json_schema
 
+from core import ai_activity
 from core import ollama_status
 from core import ollama_nodes
 
@@ -279,6 +280,36 @@ def chat(
     think: bool | str | None = None,
 ) -> AIResult:
     """Call Ollama through the single bounded production gateway."""
+    # The request is reported as it moves -- waiting, on a node, released,
+    # moved to another -- so whatever names the node serving it (the booking
+    # page, the AI nodes panel) reads this function's own decisions.
+    activity = ai_activity.begin_call(workload)
+    try:
+        return _chat(
+            activity,
+            messages=messages, model=model, timeout=timeout, temperature=temperature,
+            images=images, max_retries=max_retries, schema=schema, workload=workload,
+            deadline_monotonic=deadline_monotonic, num_predict=num_predict, think=think,
+        )
+    finally:
+        activity.end()
+
+
+def _chat(
+    activity: ai_activity.Call,
+    *,
+    messages: list[dict[str, Any]],
+    model: str | None,
+    timeout: float | None,
+    temperature: float,
+    images: list[str] | None,
+    max_retries: int | None,
+    schema: dict[str, Any] | None,
+    workload: str,
+    deadline_monotonic: float | None,
+    num_predict: int | None,
+    think: bool | str | None,
+) -> AIResult:
     chosen = (model or configured_models()["text"]).strip()
     if not chosen:
         raise AIGatewayError("No AI model is configured", code="OLLAMA_MODEL_NOT_FOUND")
@@ -401,7 +432,12 @@ def chat(
                     "The Ollama request queue timed out.", code="OLLAMA_QUEUE_TIMEOUT"
                 )
             queued += time.monotonic() - queue_started
+            # From here until the release below, this node is the one doing
+            # the work. Not earlier: selection and the queue only decide
+            # where it will run.
+            activity.running(selected_node)
             try:
+                answered = False
                 try:
                     payload = _request_json(
                         "/api/chat", method="POST", body=body,
@@ -409,8 +445,13 @@ def chat(
                         response_timeout=_remaining(deadline_monotonic, response_timeout),
                         base_url=selected_base_url,
                     )
+                    answered = True
                 finally:
                     _host_slots.release(host_id)
+                    # An answer counts even if it fails validation below: the
+                    # node read the input. A transport failure does not, and
+                    # the request is about to move to another node.
+                    activity.released(answered=answered)
                 content = str((payload.get("message") or {}).get("content") or "").strip()
                 if not content:
                     raise AIGatewayError(

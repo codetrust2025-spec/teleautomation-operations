@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '../Loader.jsx'
 import { SubmitSlotFileDrop } from './SubmitSlotFileDrop.jsx'
 import { bookingSourceMeta } from '../utils/bookingSource.js'
+import { analysedByText, newAnalysisId, watchAnalysis } from './aiAnalysisStatus.js'
 
 const API_BASE = typeof window !== 'undefined' && window.location.port === '3000'
   ? ''
@@ -264,6 +265,23 @@ function PaymentAiResultCard({ ai }) {
   )
 }
 
+/** The node reading an upload, in place of a bare "Analysing…".
+ *
+ * The name is whatever the server reports for this upload: it changes if the
+ * request moves to another node, and it is never filled in from the page's
+ * own idea of where AI work runs.
+ */
+function AiNodeProgress({ status }) {
+  if (status?.state === 'running' && status.node) {
+    return (
+      <span className="sbs-ai-node">
+        <span className="sbs-ai-node__dot" aria-hidden="true">●</span> {status.node} · Analysing…
+      </span>
+    )
+  }
+  return <span className="sbs-ai-node">Waiting for AI node…</span>
+}
+
 /** Bring a field into view and put the cursor in it.
  *
  * `block: 'center'` rather than the default: on a phone the sticky Confirm bar
@@ -377,6 +395,16 @@ export function SubmitSlotPage() {
   const [paymentAiResults, setPaymentAiResults] = useState([])
   const [paymentRejected, setPaymentRejected] = useState([])
   const [paymentAnalysing, setPaymentAnalysing] = useState(false)
+  // The server's report of which AI node is reading each upload, live while it
+  // runs and final once its response arrives.
+  const [paymentAnalysis, setPaymentAnalysis] = useState(null)
+  const [inviteAnalysis, setInviteAnalysis] = useState(null)
+  const stopPaymentWatch = useRef(null)
+  const stopInviteWatch = useRef(null)
+  useEffect(() => () => {
+    stopPaymentWatch.current?.()
+    stopInviteWatch.current?.()
+  }, [])
 
   const effectiveName = name.trim()
   const selected = useMemo(() => {
@@ -484,6 +512,7 @@ export function SubmitSlotPage() {
     setPaymentTotals(null)
     setPaymentAiResults([])
     setPaymentRejected([])
+    setPaymentAnalysis(null)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -510,11 +539,19 @@ export function SubmitSlotPage() {
   async function parseScreenshot(file) {
     if (!file) { setParsedSlot(null); setAiExtraction(null); setAiBlocked(''); return }
     setParsing(true); setError(''); setSuccess(''); setAiExtraction(null); setAiBlocked('')
+    // Named before it is sent, so the node reading it can be followed while
+    // the upload is still in flight.
+    stopInviteWatch.current?.()
+    const analysisId = newAnalysisId()
+    setInviteAnalysis({ state: 'waiting' })
+    stopInviteWatch.current = watchAnalysis(API_BASE, analysisId, setInviteAnalysis)
     try {
       // Try AI extraction first
-      const fd = new FormData(); fd.append('file', file)
+      const fd = new FormData(); fd.append('file', file); fd.append('analysis_id', analysisId)
       const res = await fetch(`${API_BASE}/public/slots/extract-invite-ai`, { method: 'POST', body: fd })
       const data = await res.json()
+      stopInviteWatch.current?.()
+      setInviteAnalysis(data?.analysis?.state === 'done' ? data.analysis : null)
 
       if (res.ok && data.status === 'ok' && data.data) {
         const ext = data.data
@@ -560,6 +597,8 @@ export function SubmitSlotPage() {
       }
     } catch (e) {
       console.warn('AI extraction failed, falling back to OCR:', e)
+      stopInviteWatch.current?.()
+      setInviteAnalysis(null)
     }
 
     // Fallback to existing OCR endpoint
@@ -598,6 +637,10 @@ export function SubmitSlotPage() {
   async function uploadPaymentProof() {
     if (!effectiveName || !paymentFiles.length) { setError('Enter your name and attach at least one payment screenshot first.'); return }
     setBusy(true); setError(''); setSuccess(''); setPaymentRejected([]); setPaymentAnalysing(true)
+    stopPaymentWatch.current?.()
+    const analysisId = newAnalysisId()
+    setPaymentAnalysis({ state: 'waiting' })
+    stopPaymentWatch.current = watchAnalysis(API_BASE, analysisId, setPaymentAnalysis)
     try {
       const fd = new FormData()
       fd.append('name', effectiveName)
@@ -614,11 +657,16 @@ export function SubmitSlotPage() {
       // so instalments uploaded across several attempts still add together.
       paymentFiles.forEach(f => fd.append('files', f))
       fd.append('existing_proof_ids', paymentProofIds.join(','))
+      fd.append('analysis_id', analysisId)
       const res = await fetch(`${API_BASE}/public/slots/payment-proof`, { method: 'POST', body: fd })
       // Not res.json(): a 502 from the proxy arrives as HTML, and parsing it
       // threw into the bare catch below, which called it a network fault. That
       // is the same misreport that hid a working booking on the confirm path.
       const data = await readApiResponse(res)
+      stopPaymentWatch.current?.()
+      // The response is the final word on which node read the screenshots. A
+      // refused upload shows only why it was refused.
+      setPaymentAnalysis(res.ok && data?.analysis?.state === 'done' ? data.analysis : null)
       const rejected = data.rejected || []
       setPaymentRejected(rejected)
       if (!res.ok) {
@@ -644,8 +692,9 @@ export function SubmitSlotPage() {
       // else says what it was, rather than sending the payer to check their
       // connection over a receipt the server actually refused.
       setError(err instanceof TypeError ? 'Network error — try again' : (err?.message || 'Payment upload failed'))
+      setPaymentAnalysis(null)
     }
-    finally { setBusy(false); setPaymentAnalysing(false) }
+    finally { stopPaymentWatch.current?.(); setBusy(false); setPaymentAnalysing(false) }
   }
 
   // Clear the message the moment that field is satisfied, rather than leaving
@@ -1012,7 +1061,7 @@ export function SubmitSlotPage() {
                       {!paymentComplete && paymentFiles.length > 0 && (
                         <button type="button" className="sbs-secondary-btn sbs-pay-save" aria-label={`Save payment proof${paymentFiles.length > 1 ? 's' : ''}`} disabled={busy || parsing || paymentAnalysing} onClick={uploadPaymentProof}>
                           {paymentAnalysing
-                            ? <><Spinner size={12} />&nbsp;Analysing…</>
+                            ? <><Spinner size={12} />&nbsp;<AiNodeProgress status={paymentAnalysis} /></>
                             : `Save${paymentFiles.length > 1 ? ` ${paymentFiles.length}` : ''}`}
                         </button>
                       )}
@@ -1032,6 +1081,9 @@ export function SubmitSlotPage() {
                           <PaymentAiResultCard key={ai.utr_number || ai.transaction_id || index} ai={ai} />
                         ))}
                       </div>
+                      {analysedByText(paymentAnalysis) && (
+                        <span className="sbs-ai-node sbs-ai-node--done">✓ {analysedByText(paymentAnalysis)}</span>
+                      )}
                     </>
                   )}
                   {paymentRejected.map((item, index) => (
@@ -1066,7 +1118,7 @@ export function SubmitSlotPage() {
                 {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
               </div>
 
-              {parsing && <div className="sbs-status sbs-status--loading"><Spinner size={18} /><span>Reading invite with AI… this may take a few minutes</span></div>}
+              {parsing && <div className="sbs-status sbs-status--loading"><Spinner size={18} /><AiNodeProgress status={inviteAnalysis} /></div>}
 
               {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
 
@@ -1082,6 +1134,9 @@ export function SubmitSlotPage() {
                       aiExtraction.confidence_score ? `${aiExtraction.confidence_score}%` : ''
                     ].filter(Boolean).join(' • ')}
                   </span>
+                  {analysedByText(inviteAnalysis) && (
+                    <span className="sbs-ai-node sbs-ai-node--done">✓ {analysedByText(inviteAnalysis)}</span>
+                  )}
                   {aiExtraction.warnings && aiExtraction.warnings.length > 0 && (
                     <div className="sbs-detected-compact__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>
                   )}
