@@ -841,8 +841,30 @@ _QUEUE_ARRIVAL_SQL = """CASE
         THEN GREATEST(COALESCE(sent_at,created_at),created_at)
       ELSE COALESCE(sent_at,created_at) END"""
 
-#: Tier 1 just arrived, tier 2 is the rest of today, tier 3 is history.
+#: A job board addresses nobody: it blasts vacancies, and its subjects say
+#: "interview" as often as a real invitation does. 1,231 of the 2,082 mails
+#: queued on 2026-09-16 were this shape. Naming them is what lets the tier below
+#: promote an invitation without promoting the catalogue it arrived beside.
+_JOB_BOARD_SQL = (
+    r"(sender_email ~* '(naukri|hirist|indeed|shine|foundit|monster|timesjobs|jobrapido|"
+    "ambitionbox|flexjobs|ziprecruiter|glassdoor|jobalert)'"
+    r" OR subject ~* '^(\W*)?job \||job alert|top .*(jobs|roles)|apply now|jobs? (for|picked)')"
+)
+
+#: An interview or an assessment has an hour attached to it, so it is worth
+#: nothing once that hour passes. Measured on the production queue, mail whose
+#: subject names one and whose sender is not a job board averaged 0.59
+#: recruitment relevance against 0.01 for the noise -- 144 mails out of 2,082.
+_TIME_CRITICAL_SQL = (
+    "(subject ~* '(interview|assessment|coding test|online test|walk-?in)' AND NOT "
+    + _JOB_BOARD_SQL + ")"
+)
+
+#: Tier 0 cannot wait, tier 1 just arrived, tier 2 is the rest of today, tier 3
+#: is history. Tier 0 is deliberately narrow: recent, and about this person's
+#: own interview or test.
 _TIER_SQL = f"""CASE
+      WHEN {_QUEUE_ARRIVAL_SQL} >= now()-(%s||' days')::interval AND {_TIME_CRITICAL_SQL} THEN 0
       WHEN {_QUEUE_ARRIVAL_SQL} >= now()-(%s||' hours')::interval THEN 1
       WHEN {_QUEUE_ARRIVAL_SQL} >= (date_trunc('day', now() AT TIME ZONE %s) AT TIME ZONE %s) THEN 2
       ELSE 3 END"""
@@ -884,6 +906,19 @@ def _ingest_freshness_days() -> int:
         return 3
 
 
+def _time_critical_days() -> int:
+    """How recently an interview or assessment mail must have arrived to lead.
+
+    Three days. An invitation for tomorrow can arrive today, and a reminder for
+    today can arrive overnight; beyond that the hour it names has usually gone,
+    and promoting it would only push live mail behind history again.
+    """
+    try:
+        return max(1, min(30, int(os.getenv("AI_MAIL_TIME_CRITICAL_DAYS", "3"))))
+    except (TypeError, ValueError):
+        return 3
+
+
 def _backlog_share() -> int:
     """One claim in N is spent on history, so it can never starve.
 
@@ -903,7 +938,13 @@ def _claim_prefers_backlog() -> bool:
 
 
 def _max_ai_attempts() -> int:
-    """Attempts before a message is parked terminally rather than requeued."""
+    """Attempts before a message is parked terminally rather than requeued.
+
+    Twelve. This existed for weeks without a single caller, so nothing ever
+    stopped: one mail reached 43 attempts, and on 2026-09-16 the 559 messages
+    carrying a retry count had consumed 4,731 model runs between them -- most of
+    the pipeline's capacity spent re-reading mail it had already failed to read.
+    """
     try:
         return max(3, min(50, int(os.getenv("AI_MAIL_MAX_AI_ATTEMPTS", "12"))))
     except (TypeError, ValueError):
@@ -919,6 +960,16 @@ def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[
         cur.execute("""UPDATE mailbox_messages SET processing_status='AI_QUEUED',ai_lease_expires_at=NULL,
               updated_at=now(),ai_last_error_code='LEASE_EXPIRED'
             WHERE processing_status='AI_RUNNING' AND ai_lease_expires_at<now()""")
+        # Mail already past the attempt cap is parked here rather than analysed
+        # once more and parked afterwards. When the cap was first enforced, 120
+        # of the 2,082 queued messages were already over it; making each of them
+        # spend one more model run to learn that would have cost most of a day
+        # of capacity that live mail needed.
+        cur.execute("""UPDATE mailbox_messages SET processing_status='AI_PROCESSING_FAILED',
+              ai_last_error_code='AI_ATTEMPTS_EXHAUSTED',ai_retry_after=NULL,ai_lease_expires_at=NULL,
+              updated_at=now()
+            WHERE processing_status IN ('AI_QUEUED','AI_RETRY_PENDING') AND ai_retry_count>=%s""",
+            (_max_ai_attempts(),))
         # Live mail first, then the backlog -- each oldest-first within itself.
         #
         # Strict `ORDER BY sent_at ASC` is FIFO over the whole table, so a large
@@ -957,11 +1008,15 @@ def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[
         # interview it was announcing.
         live_hours=_live_mail_window_hours()
         fresh_days=_ingest_freshness_days()
+        critical_days=_time_critical_days()
         tier=_TIER_SQL
-        tier_params=(fresh_days,live_hours,fresh_days,_QUEUE_TIMEZONE,_QUEUE_TIMEZONE)
+        tier_params=(fresh_days,critical_days,fresh_days,live_hours,fresh_days,_QUEUE_TIMEZONE,_QUEUE_TIMEZONE)
         if _claim_prefers_backlog():
-            order=f"({tier} = 3) DESC,{tier} ASC"
-            order_params=tier_params+tier_params
+            # Even the turn reserved for history yields to an interview or an
+            # assessment that has just arrived: the backlog will still be there
+            # in an hour, and the interview will not.
+            order=f"({tier} = 0) DESC,({tier} = 3) DESC,{tier} ASC"
+            order_params=tier_params*3
         else:
             order=f"{tier} ASC"
             order_params=tier_params
@@ -1003,10 +1058,17 @@ def schedule_ai_retry(message_id: str, *, succeeded: bool) -> None:
         if succeeded:
             cur.execute("UPDATE mailbox_messages SET ai_retry_after=NULL,ai_lease_expires_at=NULL,ai_last_error_code=NULL,updated_at=now() WHERE id=%s",(message_id,))
         else:
+            # Past the cap the mail is parked rather than requeued: it keeps its
+            # row, its analyses and its error code, and stops consuming model
+            # runs. `AI_ATTEMPTS_EXHAUSTED` says which of the terminal failures
+            # this is, so it can be found and re-opened deliberately.
             cur.execute("""UPDATE mailbox_messages SET ai_retry_count=ai_retry_count+1,
-              ai_retry_after=now()+(LEAST(360,POWER(2,LEAST(ai_retry_count+1,8)))||' minutes')::interval,
-              processing_status='AI_RETRY_PENDING',ai_lease_expires_at=NULL,
-              updated_at=now() WHERE id=%s""",(message_id,))
+              processing_status=CASE WHEN ai_retry_count+1>=%s THEN 'AI_PROCESSING_FAILED' ELSE 'AI_RETRY_PENDING' END,
+              ai_last_error_code=CASE WHEN ai_retry_count+1>=%s THEN 'AI_ATTEMPTS_EXHAUSTED' ELSE ai_last_error_code END,
+              ai_retry_after=CASE WHEN ai_retry_count+1>=%s THEN NULL
+                ELSE now()+(LEAST(360,POWER(2,LEAST(ai_retry_count+1,8)))||' minutes')::interval END,
+              ai_lease_expires_at=NULL,
+              updated_at=now() WHERE id=%s""",(_max_ai_attempts(),_max_ai_attempts(),_max_ai_attempts(),message_id))
 
 
 def is_duplicate_content(candidate_id:str,message_id:str,message_hash:str,body_hash:str,subject:str|None=None)->bool:
