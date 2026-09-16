@@ -69,10 +69,10 @@ class TestTheNameIsStillRequired:
 
         source = inspect.getsource(eng.classify_receiver)
         assert 'name in record["aliases"]' in source
-        assert "_masked_upi_alias_match(masked_upi" in source
+        assert "_masked_record_alias_match(masked_upi" in source
         # and the branch demands both, in one condition
         branch = source[source.index("upi_masked"):]
-        assert branch.index('name in record["aliases"]') < branch.index("_masked_upi_alias_match")
+        assert branch.index('name in record["aliases"]') < branch.index("_masked_record_alias_match")
 
     def test_an_unmasked_identifier_still_wins_outright(self):
         """A real handle is matched on its own terms; the masked path is only
