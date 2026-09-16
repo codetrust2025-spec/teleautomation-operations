@@ -232,9 +232,17 @@ class TestFreshInterviewsAndAssessmentsLead:
         assert [item["id"] for item in claimed] == ["ancient"]
 
     def test_fifo_still_decides_between_two_urgent_mails(self, queue_db):
+        """One claim at a time, because that is the only order the claim fixes.
+
+        A batch is leased by `id=ANY(...)` and returned in whatever order the
+        UPDATE emits, so asserting the order of a two-row claim tests the
+        database's RETURNING and not the queue. The worker claims one at a time
+        for exactly this reason.
+        """
         queue(queue_db, "earlier", subject="Interview scheduled", days_old=2)
         queue(queue_db, "later", subject="Assessment invitation", days_old=1)
 
-        claimed = store.claim_ai_messages(limit=2)
+        first = store.claim_ai_messages(limit=1)
+        second = store.claim_ai_messages(limit=1)
 
-        assert [item["id"] for item in claimed] == ["earlier", "later"]
+        assert [first[0]["id"], second[0]["id"]] == ["earlier", "later"]
