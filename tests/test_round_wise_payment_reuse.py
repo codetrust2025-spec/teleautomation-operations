@@ -145,7 +145,10 @@ def test_invalid_transaction_reference_is_rejected(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path, _previous_booking(status="cancelled"), verification=_verified_payment(utr=""))
     response = _upload(client)
     assert response.status_code == 400
-    assert "valid UTR or transaction ID" in response.json()["message"]
+    # The refusal names the screen that carries the reference, because a
+    # payment summary does not have one to read more carefully.
+    message = response.json()["message"]
+    assert "UTR" in message and "View Details" in message
 
 
 def test_fraud_detector_accepts_phone_argument_and_normal_payment():
