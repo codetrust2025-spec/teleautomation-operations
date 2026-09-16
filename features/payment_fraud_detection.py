@@ -60,7 +60,9 @@ def assess_payment_proof(
     matches = []
     reasons = []
     if not transaction_identities:
-        reasons.append("A valid UTR or transaction ID is required.")
+        reasons.append(
+            "The transaction or UTR reference is not visible. Open the payment in PhonePe / Google Pay, tap View Details, and upload that screenshot -- a payment summary does not show the UTR or Transaction ID."
+        )
     for row in candidate_store._load().get("candidates") or []:
         for proof in candidate_store.list_attachments(
             str(row.get("id") or ""), "payment_proof"
