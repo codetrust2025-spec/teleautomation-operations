@@ -541,6 +541,17 @@ export function InterviewRoster({
                         >
                           {bookingSource.label}
                         </span>
+                        {/* An assessment holds a roster slot like an interview
+                            but is a test the candidate sits alone, inside a
+                            window. The row has to say which it is. */}
+                        {row.booking_type === 'Assessment' && (
+                          <span
+                            className="ops-booking-type ops-booking-type--assessment"
+                            title="Online assessment, booked inside the window the invitation allowed"
+                          >
+                            Assessment
+                          </span>
+                        )}
                       </td>
                       <td data-label="Technology">{row.technology || '—'}</td>
                       <td data-label="Round">{row.interview_round || 'Not specified in email'}</td>

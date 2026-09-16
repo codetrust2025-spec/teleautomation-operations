@@ -105,6 +105,7 @@ _STATUS_CLASSIFICATION = {
     "COMPENSATION_CONFIRMATION": "hr_confirmation",
     "INTERVIEW_UPDATE": "interview_update",
     "INTERVIEW_SHORTLISTED": "interview_shortlisted",
+    "ASSESSMENT_INVITED": "assessment_invited",
     "INTERVIEW_CONFIRMED": "interview_confirmed",
     "INTERVIEW_RESCHEDULED": "interview_rescheduled",
     "INTERVIEW_CANCELLED": "interview_cancelled",
@@ -131,6 +132,7 @@ _CLASSIFICATION_STATUS = {
     "hr_confirmation": "HR Confirmation",
     "interview_update": "Interview In Progress",
     "interview_shortlisted": "Interview Shortlisted",
+    "assessment_invited": "Assessment Pending",
     "interview_confirmed": "Interview Confirmed",
     "interview_rescheduled": "Interview Rescheduled",
     "interview_cancelled": "Interview Cancelled",
@@ -142,6 +144,7 @@ _CLASSIFICATION_STATUS = {
 
 _STATUS_RANK = {
     "Profile Active": 10, "Interview In Progress": 20,
+    "Assessment Pending": 22,
     "Interview Confirmed": 25, "Interview Rescheduled": 25,
     "Interview Cancelled": 20,
     "Interview Shortlisted": 30, "Final Round Cleared": 35, "Rejected": 35, "Selected": 40,

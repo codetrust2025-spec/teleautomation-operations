@@ -151,6 +151,23 @@ _TRANSITION_ASSERTIONS: dict[str, tuple[str, ...]] = {
         r"\bshortlisted for (?:the )?(?:next |technical |hr )?interview\b",
         r"\byou (?:have been|are) invited (?:for|to) (?:an )?interview\b",
     ),
+    # An assessment invitation asks the candidate to sit a test, usually inside
+    # a window rather than at an hour. It is recruitment activity about this
+    # person, so it needs an assertion of its own: without one the model could
+    # only express it as an interview, and the interview vocabulary below --
+    # which requires the word "interview" -- rejected every such mail, forever.
+    #
+    # Each phrasing names the test and addresses this candidate. A job advert
+    # that merely mentions an assessment round matches none of them.
+    "ASSESSMENT_INVITED": (
+        r"\b(?:complete|attempt|take|finish|start)\s+(?:the\s+|your\s+|this\s+)?(?:pending\s+|online\s+|below\s+)*"
+        r"(?:assessment|coding\s+test|aptitude\s+test|technical\s+test|online\s+test)\b",
+        r"\b(?:invitation|invited)\b[^.!?\n]{0,60}\b(?:assessment|coding\s+test|online\s+test)\b",
+        r"\bassessment\s*(?:name|link|invite|invitation)\s*[:\-]",
+        r"\byour\s+(?:online\s+)?(?:assessment|coding\s+test|online\s+test)\b[^.!?\n]{0,60}"
+        r"\b(?:is\s+)?(?:scheduled|ready|available|pending|due|activated)\b",
+        r"\b(?:assessment|coding\s+test|online\s+test)\b[^.!?\n]{0,40}\b(?:start\s*time|end\s*time|time\s*limit)\b",
+    ),
     "INTERVIEW_CONFIRMED": (
         r"\byour (?:l[1-5] )?(?:technical |managerial |hr |virtual |client )?interview.{0,120}\b(?:is |has been )?(?:scheduled|confirmed|arranged|booked)\b",
         r"\b(?:scheduled|confirmed|arranged|booked).{0,120}\byour (?:l[1-5] )?(?:technical |managerial |hr |virtual |client )?interview\b",
@@ -899,6 +916,9 @@ _LIFECYCLE_VALIDATION_REQUIREMENTS: dict[str, set[str]] = {
     "COMPENSATION_CONFIRMATION": {"COMPENSATION_CONFIRMATION"},
     "INTERVIEW_UPDATE": {"INTERVIEW_UPDATE", "INTERVIEW_SHORTLISTED", "INTERVIEW_CONFIRMED"},
     "INTERVIEW_SHORTLISTED": {"INTERVIEW_SHORTLISTED"},
+    # An assessment is proved by its own words only. An interview assertion
+    # must never satisfy it, or a mail about an interview would become a test.
+    "ASSESSMENT_INVITED": {"ASSESSMENT_INVITED"},
     "CANDIDATE_REJECTED": {"CANDIDATE_REJECTED"},
 }
 

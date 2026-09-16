@@ -4376,6 +4376,8 @@ def _duplicate_candidate_slot(
     interview_calendar_uid: str = "",
     interview_calendar_sequence: str = "",
     interview_booking_source: str = "candidate_booked",
+    booking_type: str = "Interview",
+    assessment_key: str = "",
 ) -> dict:
     """Clone an in-progress candidate so a second interview slot keeps prior rows."""
     existing_service = _normalise_service_type(source.get("service_type"), source)
@@ -4414,6 +4416,8 @@ def _duplicate_candidate_slot(
         "interview_source_message_id": _clean_str(interview_source_message_id),
         "interview_source_timezone": _clean_str(interview_source_timezone),
         "interview_booking_source": _clean_str(interview_booking_source).lower() or "candidate_booked",
+        "booking_type": _clean_str(booking_type) or "Interview",
+        "assessment_key": _clean_str(assessment_key),
         "slot_confirmed": True,
         "slots_group_posted": True,
         "interview_attendance_status": "",
@@ -4446,6 +4450,8 @@ def assign_interview_slot(
     interview_calendar_uid: str = "",
     interview_calendar_sequence: str = "",
     interview_booking_source: str = "candidate_booked",
+    booking_type: str = "Interview",
+    assessment_key: str = "",
 ) -> dict:
     """Schedule an existing candidate — first slot updates the record; later slots clone."""
     cid = _clean_str(candidate_id)
@@ -4479,6 +4485,11 @@ def assign_interview_slot(
             interview_calendar_uid=interview_calendar_uid,
             interview_calendar_sequence=interview_calendar_sequence,
             interview_booking_source=interview_booking_source,
+            # An assessment occupies the roster like an interview and must stay
+            # distinguishable on it, so the type and the identity that makes a
+            # reminder idempotent survive the clone.
+            booking_type=booking_type,
+            assessment_key=assessment_key,
         )
         # Report the slot only once storage actually holds it.
         assert_slot_persisted(
@@ -4529,6 +4540,8 @@ def assign_interview_slot(
         "interview_source_message_id": _clean_str(interview_source_message_id),
         "interview_source_timezone": _clean_str(interview_source_timezone),
         "interview_booking_source": _clean_str(interview_booking_source).lower() or "candidate_booked",
+        "booking_type": _clean_str(booking_type) or "Interview",
+        "assessment_key": _clean_str(assessment_key),
     })
     booked = update_candidate(cid, patch, allow_slot_without_rules=True)
     # Report the slot only once storage actually holds it.
