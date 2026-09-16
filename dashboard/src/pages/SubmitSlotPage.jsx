@@ -927,7 +927,10 @@ export function SubmitSlotPage() {
               <div className="sbs-step-head">
                 <div>
                   <h2 className="sbs-step-title">Confirmed upcoming slots</h2>
-                  <p className="sbs-step-sub">{booked.length > 0 ? `${booked.length} interview${booked.length !== 1 ? 's' : ''} scheduled` : 'No confirmed slots yet.'}</p>
+                  {/* "interviews scheduled" undercounted what the list holds:
+                      an assessment is a confirmed slot too, and it sits here
+                      beside them. The wording has to cover both. */}
+                  <p className="sbs-step-sub">{booked.length > 0 ? `${booked.length} slot${booked.length !== 1 ? 's' : ''} scheduled` : 'No confirmed slots yet.'}</p>
                 </div>
               </div>
               {booked.length === 0 ? (
@@ -966,7 +969,19 @@ export function SubmitSlotPage() {
                               </div>
                             </div>
                             <div className="sbs-confirmed-card__right">
-                              {slot.interview_round && <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>}
+                              {/* An assessment has no interview round -- it is
+                                  a test sat alone -- so it is labelled by what
+                                  it is rather than by a round it never had. */}
+                              {slot.booking_type === 'Assessment' ? (
+                                <span
+                                  className="sbs-slot-card__round sbs-slot-card__round--assessment"
+                                  title="Online assessment, booked inside the window the invitation allowed"
+                                >
+                                  Assessment
+                                </span>
+                              ) : (
+                                slot.interview_round && <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
+                              )}
                               <span className="sbs-confirmed-card__status">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
                                 Booked

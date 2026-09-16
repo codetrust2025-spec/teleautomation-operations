@@ -175,3 +175,68 @@ describe('the badge ships with its stylesheet', () => {
     }
   })
 })
+
+/**
+ * An assessment is a confirmed slot too.
+ *
+ * It is booked by the same automation, into the same roster, and it appears in
+ * this list -- but it has no interview round, so a card labelled only by round
+ * showed nothing at all, and the heading counted it as an interview. The
+ * operator could not tell a one-hour test from an interview.
+ */
+describe('assessments in the confirmed list', () => {
+  const MIXED = [
+    {
+      name: 'Sakthivel', technology: 'Automation', interview_round: '',
+      date: '2026-09-15', time: '19:05', time_end: '20:05',
+      interview_booking_source: 'ai_auto_booked', booking_type: 'Assessment',
+    },
+    {
+      name: 'Pujitha', technology: 'Java', interview_round: 'L1',
+      date: '2026-09-16', time: '14:00', time_end: '14:30',
+      interview_booking_source: 'ai_auto_booked', booking_type: 'Interview',
+    },
+  ]
+
+  it('shows the assessment beside the interview', async () => {
+    await openConfirmed(MIXED)
+
+    await waitFor(() => expect(cardFor('Sakthivel')).toBeTruthy())
+    expect(cardFor('Pujitha')).toBeTruthy()
+  })
+
+  it('labels it Assessment where the round would be', async () => {
+    await openConfirmed(MIXED)
+
+    await waitFor(() => expect(within(cardFor('Sakthivel')).getByText('Assessment')).toBeTruthy())
+    expect(within(cardFor('Pujitha')).getByText('L1')).toBeTruthy()
+    expect(within(cardFor('Pujitha')).queryByText('Assessment')).toBeNull()
+  })
+
+  it('keeps the AI Auto-booked badge on both', async () => {
+    await openConfirmed(MIXED)
+
+    await waitFor(() => expect(within(cardFor('Sakthivel')).getByText(/auto-booked/i)).toBeTruthy())
+    expect(within(cardFor('Pujitha')).getByText(/auto-booked/i)).toBeTruthy()
+  })
+
+  it('counts slots rather than interviews', async () => {
+    await openConfirmed(MIXED)
+
+    await waitFor(() => expect(screen.getByText('2 slots scheduled')).toBeTruthy())
+    expect(screen.queryByText(/interviews scheduled/i)).toBeNull()
+  })
+
+  it('still says one slot for a single booking', async () => {
+    await openConfirmed([MIXED[0]])
+
+    await waitFor(() => expect(screen.getByText('1 slot scheduled')).toBeTruthy())
+  })
+
+  it('treats a row booked before the type existed as an interview', async () => {
+    await openConfirmed([{ ...MIXED[1], booking_type: undefined }])
+
+    await waitFor(() => expect(within(cardFor('Pujitha')).getByText('L1')).toBeTruthy())
+    expect(within(cardFor('Pujitha')).queryByText('Assessment')).toBeNull()
+  })
+})
