@@ -132,8 +132,12 @@ jobs:
       - name: Verify migrations are idempotent
         run: test -z "$(python -m core.migrations.runner)"
         env: {DATABASE_URL: "postgresql://business_ci:business_ci@localhost:5432/business_ci"}
-      - name: PostgreSQL append-only audit and concurrent retry guarantees
-        run: python -m pytest tests/test_booking_audit_append_only_pg.py -q
+      # Every `tests/test_*_pg.py` runs here, and the name is the whole of the
+      # wiring: these tests skip themselves when AUDIT_TEST_DATABASE_URL is
+      # unset, so a Postgres test listed nowhere passes the suite by skipping
+      # and proves nothing. A guard test holds the two ends together.
+      - name: PostgreSQL behaviour a fake connection cannot prove
+        run: python -m pytest tests/test_*_pg.py -q
         env: {AUDIT_TEST_DATABASE_URL: "postgresql://business_ci:business_ci@localhost:5432/business_ci"}
       - run: python -m compileall -q core services workers features main.py
       # DATABASE_URL is deliberately NOT set for the suite. The candidate store
