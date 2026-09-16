@@ -40,7 +40,7 @@ class FakeXMLHttpRequest {
 const CANDIDATE = {
   id: "cand-alluraiah",
   name: "alluraiah",
-  phone: "9398494572",
+  phone: "9000000106",
   technology: ".NET",
   reference: "Pavan Kalyan",
   stage: "in_progress",

@@ -22,12 +22,12 @@ class TestRoutingReachesOllama:
     def test_the_infoshare_reactjs_invite_is_recognised(self):
         assert agent.recruiting_invite_signal(
             "Interview schedule for Charan - ReactJS", self.TEAMS,
-            "pushyami.sana@infosharesystems.com") is True
+            "kavya.rao@infosharesystems.com") is True
 
     def test_the_gopichand_invite_still_recognised(self):
         assert agent.recruiting_invite_signal(
-            "Discussion with Gopichand for DevOps Engineer", self.TEAMS,
-            "rvadde@innominds.com") is True
+            "Discussion with Aniket for DevOps Engineer", self.TEAMS,
+            "rmenon@innominds.com") is True
 
     def test_other_stack_named_roles(self):
         for subject in ("Interview schedule for Priya - Java",

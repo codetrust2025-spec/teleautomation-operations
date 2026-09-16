@@ -1,6 +1,6 @@
 """A calendar invite is never dropped on an answer that contradicts itself.
 
-Gangadhar's ServiceNow interview was missed. The mail carried a valid Microsoft
+Nitin's ServiceNow interview was missed. The mail carried a valid Microsoft
 Teams invite -- METHOD:REQUEST, STATUS:CONFIRMED, SEQUENCE:0, the candidate
 listed as an ATTENDEE, DTSTART 2026-09-10T18:30 India Standard Time, organiser
 "Thaga, Mohamed" -- and the relevance model answered:
@@ -56,7 +56,7 @@ class TestTheInviteThatWasMissed:
         value = answer("NOT_ESTABLISHED", "RECIPIENT_HIRING_PROCESS")
         calendar = {
             "calendar_validation_status": "TRUSTED",
-            "calendar": {"method": "REQUEST", "uid": "gangadhar-thaga", "has_dtend": True},
+            "calendar": {"method": "REQUEST", "uid": "nitin-thaga", "has_dtend": True},
             "interview": {"date": "2099-09-10", "meeting_link": "https://teams.microsoft.com/l/meetup-join/test"},
         }
         message = {"subject": "ServiceNow Developer", "body": "Please join the discussion."}
@@ -86,7 +86,7 @@ class TestTheInviteThatWasMissed:
             "calendar": {"method": "REQUEST", "uid": "thin", "has_dtend": False},
             "interview": {"date": "2099-09-10", "meeting_link": "https://teams.microsoft.com/l/meetup-join/test"},
         }
-        message = {"subject": "L1 Discussion with Gangadhar - ServiceNow DevOps"}
+        message = {"subject": "L1 Discussion with Nitin - ServiceNow DevOps"}
         assert evidence_for(calendar, message)["trusted_request"] is False
         assert calendar_invite_verdict(
             answer("NOT_ESTABLISHED", "RECIPIENT_HIRING_PROCESS"),

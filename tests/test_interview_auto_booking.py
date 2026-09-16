@@ -1024,7 +1024,7 @@ def test_an_unrelated_calendar_event_is_still_a_new_booking(monkeypatch):
 
 
 def test_different_calendar_invites_can_share_the_exact_same_time(monkeypatch):
-    """Gangadhar-style parallel invites must not block each other by time."""
+    """Nitin-style parallel invites must not block each other by time."""
     monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
     rows = []
     _candidate, audits = install_store_fakes(monkeypatch, rows=rows)
@@ -1038,16 +1038,16 @@ def test_different_calendar_invites_can_share_the_exact_same_time(monkeypatch):
 
     monkeypatch.setattr(booking.candidate_store, "assign_interview_slot", _assign)
     first = result()
-    first["calendar"] = {"uid": "gangadhar-invite-one", "sequence": 0}
+    first["calendar"] = {"uid": "nitin-invite-one", "sequence": 0}
     second = result()
-    second["calendar"] = {"uid": "gangadhar-invite-two", "sequence": 0}
+    second["calendar"] = {"uid": "nitin-invite-two", "sequence": 0}
 
-    one = execute_event(first, message_id="gangadhar-gm-1", thread_id="gangadhar-thread-1")
-    two = execute_event(second, message_id="gangadhar-gm-2", thread_id="gangadhar-thread-2")
+    one = execute_event(first, message_id="nitin-gm-1", thread_id="nitin-thread-1")
+    two = execute_event(second, message_id="nitin-gm-2", thread_id="nitin-thread-2")
 
     assert one["status"] == two["status"] == "Auto Booked"
     assert [row["interview_calendar_uid"] for row in rows] == [
-        "gangadhar-invite-one", "gangadhar-invite-two",
+        "nitin-invite-one", "nitin-invite-two",
     ]
     assert {(row["date"], row["time"], row["time_end"]) for row in rows} == {
         ("2099-07-20", "15:00", "15:30"),

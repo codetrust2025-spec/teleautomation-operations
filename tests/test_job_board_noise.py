@@ -4,7 +4,7 @@ Measured in production 2026-08-28. Of 191 tracked analyses only 16 reached an
 operator; 130 were refused by the routing gate for lack of a recognised
 evidence meaning. Reading them showed the gate was right: the senders were
 
-    aditi@talent500.co        29   "Shortlisted but your profile is incomplete"
+    anita@talent500.co        29   "Shortlisted but your profile is incomplete"
     mail@timesjobs.com        10   "Your profile has been Shortlisted for EMBA"
     alerts@jobs.shine.com      8   "Your Application has been Shortlisted"
     service@naukri.com         5   "Your daily update: Jobs found & applied"
@@ -28,7 +28,7 @@ from services import recruitment_mail_agent as agent
 
 class TestAggregatorsAreSuppressed:
     @pytest.mark.parametrize("sender", [
-        "aditi@talent500.co",
+        "anita@talent500.co",
         "mail@timesjobs.com",
         "alerts@jobs.shine.com",
         "recruiters@jobs.shine.com",
@@ -62,12 +62,12 @@ class TestAggregatorsAreSuppressed:
 class TestGenuineSendersSurvive:
     @pytest.mark.parametrize("sender", [
         "noreply@ripplehire.com",        # ATS relaying a real employer decision
-        "gonelavn@curatal.com",          # ATS
+        "recruiterone@curatal.com",          # ATS
         "jll@myworkday.com",             # ATS
         "noreply@ambitionhire.ai",       # ATS
         "noreply@wecreateproblems.com",  # assessment platform
         "talentacquisition@cognizant.com",
-        "surapandey@teksystems.com",
+        "rpandey@teksystems.com",
         "noreply@synergytechs.net",
     ])
     def test_employers_and_ats_keep_flowing(self, sender):
@@ -140,7 +140,7 @@ class TestGuardsAreUnchanged:
         check is the only thing standing between job-board marketing and an
         alert, and it has to hold on its own.
         """
-        assert agent.job_board_notification("aditi@talent500.co") is True
+        assert agent.job_board_notification("anita@talent500.co") is True
         assert agent.job_board_notification("mail@timesjobs.com") is True
         assert agent.job_board_notification("recruiters@jobs.shine.com") is True
         assert agent.job_board_notification("hr@innominds.com") is False

@@ -21,7 +21,7 @@ def test_calendar_recovery_reprocesses_only_explicit_message_ids(monkeypatch):
     calls = []
     row = {
         "id": "mail-row", "mailbox_id": "mb1", "mailbox_candidate_id": "legacy-candidate",
-        "email_address": "gangadhar@example.invalid", "provider_message_id": "cgi-message",
+        "email_address": "nitin@example.invalid", "provider_message_id": "cgi-message",
         "provider_thread_id": "thread1", "body_text": "L1 Discussion", "attachments": [],
     }
     monkeypatch.setattr(worker_module.store, "promote_legacy_review_states", lambda: 0)

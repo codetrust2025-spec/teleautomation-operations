@@ -26,7 +26,7 @@ from features import candidate_store as cs
 from features import pending_slot_payment as pending
 
 
-PHONE = "7306994576"
+PHONE = "9000000101"
 TECHNOLOGY = "Java"
 ROUND = "L1"
 
@@ -476,7 +476,7 @@ class TestPaymentRequirementEndpoints:
         # Add a candidate with balance due
         candidate = {
             "id": "c1",
-            "name": "Gopichand",
+            "name": "Aniket",
             "stage": "in_progress",
             "service_type": "profile_service",
             "expected_payment": 20000,
@@ -484,7 +484,7 @@ class TestPaymentRequirementEndpoints:
             "task": "in_progress",
         }
         client = _client(monkeypatch, tmp_path, candidates=[candidate])
-        response = client.get("/public/slots/payment-info?service_type=profile_service&name=Gopichand")
+        response = client.get("/public/slots/payment-info?service_type=profile_service&name=Aniket")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"

@@ -7,7 +7,7 @@ in-memory snapshot, so a snapshot taken before a booking landed carried the
 pre-booking `date`, `time`, `time_end` and `slot_confirmed` back over the row
 that had just been booked — 6 ms after it was written, and reported as success.
 
-In Production this cleared row `b3500fe1b0` (Gopichand / HSBC, 14 Aug 2026
+In Production this cleared row `b3500fe1b0` (Aniket / HSBC, 14 Aug 2026
 1:00-1:45 PM) while the audit already read `Auto Booked`.
 
 These tests drive the real file-backed store, not a fake, because the defect
@@ -37,7 +37,7 @@ def store(monkeypatch, tmp_path):
     return tmp_path
 
 
-def make_candidate(name="Gopichand", phone="9000000001"):
+def make_candidate(name="Aniket", phone="9000000001"):
     return cs.create_candidate({
         "name": name,
         "phone": phone,
@@ -73,7 +73,7 @@ def assert_slot(cid, date, time, time_end):
 # ── a second and third interview for the same candidate ─────────────────────
 
 def test_second_and_third_interview_each_keep_their_own_slot(store):
-    """Gopichand's real case: three interviews, three intact rows."""
+    """Aniket's real case: three interviews, three intact rows."""
     row = make_candidate()
 
     first = cs.assign_interview_slot(
@@ -217,7 +217,7 @@ def test_a_targeted_patch_refuses_to_carry_booking_fields(store):
 
 
 def test_a_targeted_patch_leaves_every_other_row_untouched(store):
-    first = make_candidate(name="Gopichand", phone="9000000001")
+    first = make_candidate(name="Aniket", phone="9000000001")
     second = make_candidate(name="Anil Kumar", phone="9000000002")
     booked = cs.assign_interview_slot(
         candidate_id=second["id"], date="2026-08-14", time="11:00", time_end="11:30",

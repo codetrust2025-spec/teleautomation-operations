@@ -10,7 +10,7 @@ import pytest
 
 from core import recruitment_mail_store as store
 
-UID = "6h71dqlrvrk041f0h0m2inrs95@google.com"
+UID = "syntheticuid000000000001ab@google.com"
 
 
 class FakeCursor:
@@ -54,7 +54,7 @@ def row(**changes):
     value = {
         "id": "evt-covering", "candidate_id": "9317567fd2",
         "interview_date": "2026-08-11", "interview_time": "04:15 PM",
-        "recruiter_email": "ritika@sourcebae.com", "company_domain": "sourcebae.com",
+        "recruiter_email": "neha@sourcebae.com", "company_domain": "sourcebae.com",
         "calendar_uid": None, "calendar_sequence": None,
     }
     value.update(changes)
@@ -64,7 +64,7 @@ def row(**changes):
 
 
 def result(*, classification="interview_confirmed", uid=None, sequence=None,
-           date="2026-08-11", time="04:15 PM", email="ritika@sourcebae.com"):
+           date="2026-08-11", time="04:15 PM", email="neha@sourcebae.com"):
     return {
         "classification": classification,
         "calendar_uid": uid, "calendar_sequence": sequence,
@@ -111,7 +111,7 @@ def test_a_reschedule_is_not_swallowed(stub):
 
 
 def test_a_different_employer_at_the_same_slot_is_separate(stub):
-    stub([row(recruiter_email="rashmi.ravi@winwire.com", company_domain="winwire.com")])
+    stub([row(recruiter_email="swati.sharma@winwire.com", company_domain="winwire.com")])
     assert store.existing_interview_event("9317567fd2", result()) is None
 
 

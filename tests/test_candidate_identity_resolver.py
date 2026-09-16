@@ -34,7 +34,7 @@ def test_name_alias_rows_are_one_identity_without_naming_a_survivor():
     cur = FakeCursor(
         candidates=[
             profile("bbb11111", "Ram Charan M S", phone=""),
-            profile("aaa22222", "Reddy Charan M S", phone="8328646540"),
+            profile("aaa22222", "Reddy Charan M S", phone="9000000102"),
         ],
     )
 
@@ -202,7 +202,7 @@ def test_same_name_different_mailboxes_stay_separate():
             profile("a3", "Vikram Iyer", phone="9333333331"),
             profile("b3", "Vikram Iyer", phone="9333333332"),
         ],
-        mailboxes=[("a3", "vikram.one@gmail.com"), ("b3", "vikram.two@gmail.com")],
+        mailboxes=[("a3", "vikram.one@example.com"), ("b3", "vikram.two@example.com")],
     )
 
     assert not candidate_identity.same_identity(cur, "a3", "b3")
@@ -261,7 +261,7 @@ def test_name_edge_still_joins_when_only_one_identity_is_present():
     cur = FakeCursor(
         candidates=[
             profile("g1", "Ram Charan M S", phone=""),
-            profile("g2", "Reddy Charan M S", phone="8328646540"),
+            profile("g2", "Reddy Charan M S", phone="9000000102"),
         ],
     )
 
@@ -279,7 +279,7 @@ def test_strong_evidence_still_joins_rows_with_different_phones():
             profile("s1", "Someone", phone="9666666661"),
             profile("s2", "Someone Else Entirely", phone="9666666662"),
         ],
-        mailboxes=[("s1", "shared.account@gmail.com"), ("s2", "shared.account@gmail.com")],
+        mailboxes=[("s1", "shared.account@example.com"), ("s2", "shared.account@example.com")],
     )
 
     assert candidate_identity.same_identity(cur, "s1", "s2")

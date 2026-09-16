@@ -79,7 +79,7 @@ def clean_state():
 def rows(*ids):
     return [
         {"id": i, "event_type": "notification_created",
-         "payload": {"classification": "joining_confirmed", "candidate_name": "Gopichand"},
+         "payload": {"classification": "joining_confirmed", "candidate_name": "Aniket"},
          "created_at": "2026-08-29T12:00:00+00:00"}
         for i in ids
     ]

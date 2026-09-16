@@ -34,7 +34,7 @@ def test_profile_rename_propagates_across_same_phone_legacy_rows(monkeypatch):
             **candidate_store._normalise(
             {
                 "name": "KALESHWAR",
-                "phone": "8977294695",
+                "phone": "9000000104",
                 "technology": "React JS",
                 "service_type": "profile_service",
             },
@@ -45,7 +45,7 @@ def test_profile_rename_propagates_across_same_phone_legacy_rows(monkeypatch):
             **candidate_store._normalise(
             {
                 "name": "KALESHWAR",
-                "phone": "8977294695",
+                "phone": "9000000104",
                 "technology": "React JS",
                 "service_type": "profile_service",
                 "payment_proofs": [{"id": "proof-1"}],
@@ -62,14 +62,14 @@ def test_profile_rename_propagates_across_same_phone_legacy_rows(monkeypatch):
     candidate_store.update_candidate(
         "active",
         {
-            "name": "Alluru Kaleswar",
-            "email": "allurukali@gmail.com",
+            "name": "Mehta Bhaskar",
+            "email": "mehta.bhaskar@example.com",
             "technology": "Java Full Stack",
         },
     )
 
-    assert {row["name"] for row in data["candidates"]} == {"Alluru Kaleswar"}
-    assert {row["email"] for row in data["candidates"]} == {"allurukali@gmail.com"}
+    assert {row["name"] for row in data["candidates"]} == {"Mehta Bhaskar"}
+    assert {row["email"] for row in data["candidates"]} == {"mehta.bhaskar@example.com"}
     assert {row["technology"] for row in data["candidates"]} == {"Java Full Stack"}
     assert data["candidates"][1]["payment_proofs"][0]["id"] == "proof-1"
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from features import interview_event_identity as identity
 
-UID = "6h71dqlrvrk041f0h0m2inrs95@google.com"
+UID = "syntheticuid000000000001ab@google.com"
 
 
 def covering_mail(**changes):
@@ -17,7 +17,7 @@ def covering_mail(**changes):
     row = {
         "interview_date": "2026-08-11",
         "interview_time": "04:15 PM",
-        "recruiter_email": "ritika@sourcebae.com",
+        "recruiter_email": "neha@sourcebae.com",
         "company_domain": "sourcebae.com",
         "calendar_uid": None,
         "calendar_sequence": None,
@@ -31,7 +31,7 @@ def invitation(**changes):
     row = {
         "interview_date": "2026-08-11",
         "interview_time": "04:15 PM",
-        "recruiter_email": "ritika@sourcebae.com",
+        "recruiter_email": "neha@sourcebae.com",
         "company_domain": "sourcebae.com",
         "calendar_uid": UID,
         "calendar_sequence": 0,
@@ -65,15 +65,15 @@ def test_a_new_interview_is_not_a_duplicate_of_anything():
 
 
 def test_a_different_time_the_same_day_is_a_different_interview():
-    """Pujitha really did have two Sourcebae interviews: 10:30am and 4:15pm."""
-    morning = invitation(interview_time="10:30 AM", calendar_uid="1033j3ehbnobpcrhvbb6b87q1c@google.com")
+    """Lavanya really did have two Sourcebae interviews: 10:30am and 4:15pm."""
+    morning = invitation(interview_time="10:30 AM", calendar_uid="syntheticuid000000000003ef@google.com")
     assert identity.duplicate_of([morning], invitation()) is None
 
 
 def test_two_employers_at_the_same_hour_stay_separate():
     """A candidate cannot attend both, but merging would silently lose one."""
     other_company = covering_mail(
-        recruiter_email="rashmi.ravi@winwire.com", company_domain="winwire.com"
+        recruiter_email="swati.sharma@winwire.com", company_domain="winwire.com"
     )
     assert identity.duplicate_of([other_company], covering_mail()) is None
 

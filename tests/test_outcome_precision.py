@@ -39,20 +39,20 @@ def test_job_description_with_hr_discussion_is_job_ad_not_hr_confirmation():
 
 def test_genuine_pre_offer_documents_is_hr_confirmation():
     subject = "Pre-Offer Documents !"
-    body = "Hi Gopichand, Minimal documents required for offer release: Please share PAN, Aadhar, Payslips, Degree Certificate."
+    body = "Hi Aniket, Minimal documents required for offer release: Please share PAN, Aadhar, Payslips, Degree Certificate."
     ctx = classify_context(subject, body, sender_email="recruiter@company.com")
     assert ctx["lifecycle_event"] == "HR_CONFIRMATION"
 
 def test_genuine_bgv_is_retained_as_bgv_not_joining_confirmed():
     subject = "Invitation - Digital Employment BGV_RH30116125"
-    body = "Dear Gopichand, You have been invited to complete your digital employment background verification process."
+    body = "Dear Aniket, You have been invited to complete your digital employment background verification process."
     ctx = classify_context(subject, body, sender_email="noreply@digiverifier.com")
     assert ctx["lifecycle_event"] == "BACKGROUND_VERIFICATION"
 
 def test_genuine_final_round_cleared():
     subject = "EY | L2 | React JS | Reddy Charan M S"
     body = "Hi Charan, Thank you for continued interest in working with EY India. We are pleased to inform you that you have successfully cleared the L1 round."
-    ctx = classify_context(subject, body, sender_email="Dhanyalakshmi.J@in.ey.com")
+    ctx = classify_context(subject, body, sender_email="Sunita.K@in.ey.com")
     assert ctx["lifecycle_event"] == "FINAL_ROUND_CLEARED"
 
 def test_genuine_offer_letter():

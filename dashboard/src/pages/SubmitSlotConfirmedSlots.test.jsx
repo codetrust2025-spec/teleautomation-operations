@@ -19,7 +19,7 @@ import { SubmitSlotPage } from './SubmitSlotPage.jsx'
 
 const SLOTS = [
   {
-    name: 'Gopichand', technology: 'Java', interview_round: 'L1',
+    name: 'Aniket', technology: 'Java', interview_round: 'L1',
     date: '2026-08-15', time: '12:00', time_end: '12:30',
     interview_booking_source: 'ai_auto_booked',
   },
@@ -74,8 +74,8 @@ afterEach(() => {
 describe('confirmed slot booking source', () => {
   it('labels an AI auto-booked slot, alongside its stage and Booked status', async () => {
     await openConfirmed()
-    await waitFor(() => expect(cardFor('Gopichand')).toBeTruthy())
-    const card = within(cardFor('Gopichand'))
+    await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
+    const card = within(cardFor('Aniket'))
     expect(card.getByText('L1')).toBeTruthy()
     expect(card.getByText('Booked')).toBeTruthy()
     expect(card.getByText('AI Auto-booked')).toBeTruthy()
@@ -105,8 +105,8 @@ describe('confirmed slot booking source', () => {
 
   it('tones the two real sources apart from each other and from unknown', async () => {
     await openConfirmed()
-    await waitFor(() => expect(cardFor('Gopichand')).toBeTruthy())
-    expect(cardFor('Gopichand').querySelector('.sbs-source-badge').className)
+    await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
+    expect(cardFor('Aniket').querySelector('.sbs-source-badge').className)
       .toContain('sbs-source-badge--auto')
     expect(cardFor('Manu').querySelector('.sbs-source-badge').className)
       .toContain('sbs-source-badge--candidate')
@@ -114,8 +114,8 @@ describe('confirmed slot booking source', () => {
 
   it('keeps the stage badge a separate element from the source badge', async () => {
     await openConfirmed()
-    await waitFor(() => expect(cardFor('Gopichand')).toBeTruthy())
-    const card = cardFor('Gopichand')
+    await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
+    const card = cardFor('Aniket')
     const round = card.querySelector('.sbs-slot-card__round')
     const source = card.querySelector('.sbs-source-badge')
     expect(round).toBeTruthy()
@@ -129,14 +129,14 @@ describe('confirmed slot booking source', () => {
 describe('the rest of the confirmed slots view is unchanged', () => {
   it('keeps stage badges for every round', async () => {
     await openConfirmed()
-    await waitFor(() => expect(cardFor('Gopichand')).toBeTruthy())
+    await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
     expect(within(cardFor('Poojitha')).getByText('L2')).toBeTruthy()
     expect(within(cardFor('Ashok uppuluri')).getByText('Screening')).toBeTruthy()
   })
 
   it('keeps date grouping and per-day slot counts', async () => {
     await openConfirmed()
-    await waitFor(() => expect(cardFor('Gopichand')).toBeTruthy())
+    await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
     const groups = document.querySelectorAll('.sbs-date-group')
     // 15th (2 slots), 17th (1), 18th (1)
     expect(groups.length).toBe(3)
@@ -147,15 +147,15 @@ describe('the rest of the confirmed slots view is unchanged', () => {
 
   it('keeps candidate name and time on the card', async () => {
     await openConfirmed()
-    await waitFor(() => expect(cardFor('Gopichand')).toBeTruthy())
-    const card = cardFor('Gopichand')
-    expect(card.querySelector('.sbs-slot-card__name').textContent).toBe('Gopichand')
+    await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
+    const card = cardFor('Aniket')
+    expect(card.querySelector('.sbs-slot-card__name').textContent).toBe('Aniket')
     expect(card.querySelector('.sbs-slot-card__time').textContent).toMatch(/12:00\s*pm.*12:30\s*pm/i)
   })
 
   it('renders every returned slot, one card each', async () => {
     await openConfirmed()
-    await waitFor(() => expect(cardFor('Gopichand')).toBeTruthy())
+    await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
     expect(document.querySelectorAll('.sbs-confirmed-card').length).toBe(SLOTS.length)
   })
 })
@@ -187,12 +187,12 @@ describe('the badge ships with its stylesheet', () => {
 describe('assessments in the confirmed list', () => {
   const MIXED = [
     {
-      name: 'Sakthivel', technology: 'Automation', interview_round: '',
+      name: 'Dinesh', technology: 'Automation', interview_round: '',
       date: '2026-09-15', time: '19:05', time_end: '20:05',
       interview_booking_source: 'ai_auto_booked', booking_type: 'Assessment',
     },
     {
-      name: 'Pujitha', technology: 'Java', interview_round: 'L1',
+      name: 'Lavanya', technology: 'Java', interview_round: 'L1',
       date: '2026-09-16', time: '14:00', time_end: '14:30',
       interview_booking_source: 'ai_auto_booked', booking_type: 'Interview',
     },
@@ -201,23 +201,23 @@ describe('assessments in the confirmed list', () => {
   it('shows the assessment beside the interview', async () => {
     await openConfirmed(MIXED)
 
-    await waitFor(() => expect(cardFor('Sakthivel')).toBeTruthy())
-    expect(cardFor('Pujitha')).toBeTruthy()
+    await waitFor(() => expect(cardFor('Dinesh')).toBeTruthy())
+    expect(cardFor('Lavanya')).toBeTruthy()
   })
 
   it('labels it Assessment where the round would be', async () => {
     await openConfirmed(MIXED)
 
-    await waitFor(() => expect(within(cardFor('Sakthivel')).getByText('Assessment')).toBeTruthy())
-    expect(within(cardFor('Pujitha')).getByText('L1')).toBeTruthy()
-    expect(within(cardFor('Pujitha')).queryByText('Assessment')).toBeNull()
+    await waitFor(() => expect(within(cardFor('Dinesh')).getByText('Assessment')).toBeTruthy())
+    expect(within(cardFor('Lavanya')).getByText('L1')).toBeTruthy()
+    expect(within(cardFor('Lavanya')).queryByText('Assessment')).toBeNull()
   })
 
   it('keeps the AI Auto-booked badge on both', async () => {
     await openConfirmed(MIXED)
 
-    await waitFor(() => expect(within(cardFor('Sakthivel')).getByText(/auto-booked/i)).toBeTruthy())
-    expect(within(cardFor('Pujitha')).getByText(/auto-booked/i)).toBeTruthy()
+    await waitFor(() => expect(within(cardFor('Dinesh')).getByText(/auto-booked/i)).toBeTruthy())
+    expect(within(cardFor('Lavanya')).getByText(/auto-booked/i)).toBeTruthy()
   })
 
   it('counts slots rather than interviews', async () => {
@@ -236,7 +236,7 @@ describe('assessments in the confirmed list', () => {
   it('treats a row booked before the type existed as an interview', async () => {
     await openConfirmed([{ ...MIXED[1], booking_type: undefined }])
 
-    await waitFor(() => expect(within(cardFor('Pujitha')).getByText('L1')).toBeTruthy())
-    expect(within(cardFor('Pujitha')).queryByText('Assessment')).toBeNull()
+    await waitFor(() => expect(within(cardFor('Lavanya')).getByText('L1')).toBeTruthy())
+    expect(within(cardFor('Lavanya')).queryByText('Assessment')).toBeNull()
   })
 })

@@ -37,12 +37,12 @@ const LIVE = {
   candidate_count: 8,
   by_kind: { missing_resume: 7, missing_phone: 1 },
   works: [
-    work('Badri Thirupathy', 'missing_resume', 20),
-    work('Keerthi Nannapaneni', 'missing_resume', 20),
+    work('Naveen Prakash', 'missing_resume', 20),
+    work('Deepa Shetty', 'missing_resume', 20),
     work('konduru Sai Srinivas', 'missing_resume', 20),
-    work('pujitha', 'missing_resume', 20),
-    work('Uday Kumar Rapolu', 'missing_resume', 20),
-    work('VASANTHI ADAPA', 'missing_resume', 20),
+    work('lavanya', 'missing_resume', 20),
+    work('Arun Kumar Pillai', 'missing_resume', 20),
+    work('ANJALI ADHIKARI', 'missing_resume', 20),
     work('Vekateshwarlu Penugonda', 'missing_resume', 20),
     work('Ravali', 'missing_phone', 50),
   ],
@@ -106,7 +106,7 @@ describe('what each row shows', () => {
     stub(LIVE)
     render(<PendingWorksTab />)
     await waitFor(() => expect(screen.getByText('Ravali')).toBeInTheDocument())
-    for (const name of ['Badri Thirupathy', 'pujitha', 'VASANTHI ADAPA']) {
+    for (const name of ['Naveen Prakash', 'lavanya', 'ANJALI ADHIKARI']) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }
   })
@@ -171,7 +171,7 @@ describe('grouping', () => {
     stub(LIVE)
     render(<PendingWorksTab />)
     await waitFor(() => expect(screen.getByText('Ravali')).toBeInTheDocument())
-    const names = screen.getAllByText(/Badri Thirupathy|Ravali/).map(n => n.textContent)
+    const names = screen.getAllByText(/Naveen Prakash|Ravali/).map(n => n.textContent)
     // Ravali is the only Low priority, so it sorts last.
     expect(names[names.length - 1]).toBe('Ravali')
   })

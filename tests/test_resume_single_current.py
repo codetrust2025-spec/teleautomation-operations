@@ -19,7 +19,7 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(candidate_store, "RESUMES_DIR", str(tmp_path / "resumes"))
     monkeypatch.setattr(candidate_store, "_load_cache", None, raising=False)
     monkeypatch.setattr(candidate_store, "_load_cache_at", 0.0, raising=False)
-    row = candidate_store.create_candidate({"name": "Alluru Kaleswar", "phone": "8977294695"})
+    row = candidate_store.create_candidate({"name": "Mehta Bhaskar", "phone": "9000000104"})
     return candidate_store, row["id"]
 
 

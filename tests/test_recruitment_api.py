@@ -67,10 +67,10 @@ def test_mailbox_api_hides_unauthenticated_placeholder(monkeypatch):
 
 def test_mailbox_api_resolves_authenticated_legacy_candidate_id(monkeypatch):
     monkeypatch.setenv('AI_INTERVIEW_OFFER_TRACKING_ENABLED','true')
-    monkeypatch.setattr(recruitment_mail_api.candidate_store, 'get_candidate', lambda _cid: {'id':'current','name':'Akhil','phone':'9000000001'})
+    monkeypatch.setattr(recruitment_mail_api.candidate_store, 'get_candidate', lambda _cid: {'id':'current','name':'Rohit','phone':'9000000001'})
     monkeypatch.setattr(recruitment_mail_api.candidate_store, 'candidate_identity_ids', lambda _cid: ['legacy','current'])
     monkeypatch.setattr(recruitment_mail_api.store, 'mailboxes_for_candidates', lambda ids: [{
-        'id':'mailbox-2','candidate_id':ids[0],'email_address':'akhil@example.com',
+        'id':'mailbox-2','candidate_id':ids[0],'email_address':'rohit@example.com',
         'connection_status':'CONNECTED','credential_ciphertext':'encrypted-token',
     }])
     monkeypatch.setattr(recruitment_mail_api.store, 'mailbox_stats', lambda _mid: {'important_emails':3})
@@ -78,14 +78,14 @@ def test_mailbox_api_resolves_authenticated_legacy_candidate_id(monkeypatch):
     response=app_client(monkeypatch).get('/api/candidates/current/mailbox')
     assert response.status_code==200
     body=response.json()
-    assert body['mailbox']['email_address']=='akhil@example.com'
+    assert body['mailbox']['email_address']=='rohit@example.com'
     assert 'credential_ciphertext' not in body['mailbox']
 
 
 def test_mailbox_health_api_returns_credential_free_status(monkeypatch):
     monkeypatch.setenv('AI_INTERVIEW_OFFER_TRACKING_ENABLED','true')
     monkeypatch.setattr(recruitment_mail_api.store,'mailbox_health_rows',lambda:[{
-        'id':'mailbox-2','candidate_id':'current','email_address':'akhil@example.com',
+        'id':'mailbox-2','candidate_id':'current','email_address':'rohit@example.com',
         'connection_status':'ERROR','last_error_code':'INVALID_GRANT',
     }])
 
@@ -101,7 +101,7 @@ def test_mailbox_overview_api_returns_bulk_mailboxes_with_stats(monkeypatch):
     monkeypatch.setattr(recruitment_mail_api.store,'mailbox_overview_rows',lambda:[{
         'mailbox': {
             'id':'mailbox-2','candidate_id':'legacy',
-            'email_address':'akhil@example.com','connection_status':'CONNECTED',
+            'email_address':'rohit@example.com','connection_status':'CONNECTED',
         },
         'stats': {'important_emails':3,'latest_sync_status':'COMPLETED'},
     }])

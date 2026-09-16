@@ -31,7 +31,7 @@ export function needsReconnect(mailbox) {
  * expiry banner or the Reconnect button. The page reported a mailbox as busy
  * working when nothing it queued could succeed.
  *
- * mounika0009000@gmail.com on 2026-09-02 is the case this came from: the sync
+ * shalini.rao@example.com on 2026-09-02 is the case this came from: the sync
  * created at 07:38:36Z failed on expired Gmail authorization, the retry stayed
  * QUEUED, and the page showed "Sync Queued" while the desktop alert correctly
  * reported the connection as expired. The alert was right; this was wrong.

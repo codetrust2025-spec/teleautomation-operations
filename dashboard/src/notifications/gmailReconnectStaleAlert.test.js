@@ -1,8 +1,8 @@
 /**
- * The Mounika mismatch: one mailbox, two screens, two different answers.
+ * The Shalini mismatch: one mailbox, two screens, two different answers.
  *
  * On 2026-09-02 the desktop alert said "Gmail connection expired" for
- * mounika0009000@gmail.com while the Mailboxes page showed the same mailbox as
+ * shalini.rao@example.com while the Mailboxes page showed the same mailbox as
  * "Sync Queued / Waiting to start…". Production timestamps:
  *
  *   07:23:37Z  last successful sync
@@ -25,11 +25,11 @@ import { __resetNotificationEvents, notifyGmailReconnect } from './notificationE
 import { mailboxUiStatus, reconnectRequiredMailboxes } from '../utils/mailboxStatus.js'
 
 const EXPIRED = 'Gmail authorization expired or was revoked. Reconnect Gmail to resume automatic monitoring and historical rescans.'
-const MOUNIKA = '95532928-50fb-4139-acf4-8f7a541144ec'
+const SHALINI = '95532928-50fb-4139-acf4-8f7a541144ec'
 
 const expiredMailbox = (overrides = {}) => ({
-  id: MOUNIKA,
-  email_address: 'mounika0009000@gmail.com',
+  id: SHALINI,
+  email_address: 'shalini.rao@example.com',
   connection_status: 'ERROR',
   monitoring_enabled: true,
   last_error_code: 'RuntimeError',
@@ -38,8 +38,8 @@ const expiredMailbox = (overrides = {}) => ({
 })
 
 const recoveredMailbox = (overrides = {}) => ({
-  id: MOUNIKA,
-  email_address: 'mounika0009000@gmail.com',
+  id: SHALINI,
+  email_address: 'shalini.rao@example.com',
   connection_status: 'CONNECTED',
   monitoring_enabled: true,
   last_error_code: null,
@@ -119,7 +119,7 @@ describe('a stale expired alert does not fire after the mailbox recovers', () =>
 
 describe('a genuine expiry is never suppressed', () => {
   it('alerts for an expired mailbox whose retry is queued', () => {
-    // This is the Mounika case. The page called it "Sync Queued"; suppressing
+    // This is the Shalini case. The page called it "Sync Queued"; suppressing
     // on that label would have silenced the one alert that was correct.
     const broken = [expiredMailbox()]
     expect(notifyGmailReconnect(reconnectRequiredMailboxes(broken), broken)).toBe(true)
@@ -128,13 +128,13 @@ describe('a genuine expiry is never suppressed', () => {
   it('alerts when no snapshot is supplied at all', () => {
     // Fails open. No evidence of recovery is not evidence of recovery, and a
     // missed expiry is worse than a repeated one.
-    expect(notifyGmailReconnect([{ id: MOUNIKA }])).toBe(true)
+    expect(notifyGmailReconnect([{ id: SHALINI }])).toBe(true)
   })
 
   it('alerts when the mailbox has dropped out of the snapshot', () => {
     // A mailbox missing from the payload has not been shown to have
     // recovered, so it is left alone rather than silently suppressed.
-    expect(notifyGmailReconnect([{ id: MOUNIKA }], [{ id: 'some-other-mailbox' }])).toBe(true)
+    expect(notifyGmailReconnect([{ id: SHALINI }], [{ id: 'some-other-mailbox' }])).toBe(true)
   })
 
   it('alerts for a revoked mailbox as well as an expired one', () => {

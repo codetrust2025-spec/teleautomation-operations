@@ -17,7 +17,7 @@ import { SubmitSlotPage } from './SubmitSlotPage.jsx'
 
 // Profile-service roster candidates — none of these are "venkat"
 const PROFILE_CANDIDATES = [
-  { id: 'c1', name: 'Gopichand', technology: 'React JS', needs_payment_proof: true, balance_due: 20000 },
+  { id: 'c1', name: 'Aniket', technology: 'React JS', needs_payment_proof: true, balance_due: 20000 },
   { id: 'c2', name: 'Manu', technology: 'Java', needs_payment_proof: false, balance_due: 0 },
 ]
 
@@ -140,8 +140,8 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
 
     // Profile service is default — type a name from the roster
     const nameInput = await screen.findByPlaceholderText(/choose or type your name/i)
-    fireEvent.change(nameInput, { target: { value: 'Gopichand' } })
-    fireEvent.click(await screen.findByRole('option', { name: 'Gopichand' }))
+    fireEvent.change(nameInput, { target: { value: 'Aniket' } })
+    fireEvent.click(await screen.findByRole('option', { name: 'Aniket' }))
 
     // Profile-service candidate with balance_due > 0 shows payment card
     expect(await screen.findByText(/payment due/i)).toBeTruthy()
@@ -171,7 +171,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
 
     // Fill out all round-wise fields
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     const tech = screen.getByPlaceholderText(/choose or type the technology/i)
     fireEvent.change(tech, { target: { value: 'Java' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
@@ -186,7 +186,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
     const uploadBody = calls.uploads[0]
     expect(uploadBody.get('service_type')).toBe('round_wise')
-    expect(uploadBody.get('phone')).toBe('7306994576')
+    expect(uploadBody.get('phone')).toBe('9000000101')
     expect(uploadBody.get('technology')).toBe('Java')
     expect(uploadBody.get('interview_round')).toBe('L1')
   })
@@ -200,7 +200,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     await chooseRoundWise()
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
     expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
@@ -220,8 +220,8 @@ describe('Round-wise payment — upload carries correct service_type', () => {
 
     // Profile service is default
     const nameInput = await screen.findByPlaceholderText(/choose or type your name/i)
-    fireEvent.change(nameInput, { target: { value: 'Gopichand' } })
-    fireEvent.click(await screen.findByRole('option', { name: 'Gopichand' }))
+    fireEvent.change(nameInput, { target: { value: 'Aniket' } })
+    fireEvent.click(await screen.findByRole('option', { name: 'Aniket' }))
 
     expect(await screen.findByText(/payment due/i)).toBeTruthy()
     const payInput = document.querySelectorAll('input[type="file"]')[0]
@@ -239,7 +239,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     await chooseRoundWise()
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Python' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L2' } })
 
@@ -259,7 +259,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
 
     const confirmBody = calls.confirms[0]
     expect(confirmBody.get('service_type')).toBe('round_wise')
-    expect(confirmBody.get('phone')).toBe('7306994576')
+    expect(confirmBody.get('phone')).toBe('9000000101')
     expect(confirmBody.get('technology')).toBe('Python')
     expect(confirmBody.get('interview_round')).toBe('L2')
     expect(confirmBody.get('payment_proof_ids')).toBe('proof-rw-1')
@@ -270,7 +270,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     await chooseRoundWise()
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     // Do NOT type a technology
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
@@ -449,7 +449,7 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     await chooseRoundWise()
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Python' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
@@ -497,7 +497,7 @@ describe('Round-wise payment — no pricing is shown', () => {
     await chooseRoundWise()
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
     // A round-wise proof is filed under the phone, so the upload waits for it.
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
 
     attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
 
@@ -525,7 +525,7 @@ describe('Round-wise payment — no pricing is shown', () => {
     await chooseRoundWise()
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 

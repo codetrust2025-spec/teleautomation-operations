@@ -22,7 +22,7 @@ import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
 const SAVED_ROW = {
   id: 'luxoft_2024_01',
   filename: 'Luxoft-offer.pdf',
-  candidate: 'Badri',
+  candidate: 'Naveen',
   company_name: 'Luxoft',
   date_modified: '2026-08-14',
   size_kb: 412,

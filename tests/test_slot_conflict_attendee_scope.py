@@ -41,18 +41,18 @@ def _slot(name, attendee, *, time="16:00", time_end="16:30", cid=None):
 
 def test_the_same_attendee_cannot_be_in_two_places(roster):
     """The protection that must survive: one person, overlapping interviews."""
-    roster([_slot("Gangadhar", "Bhavana")])
+    roster([_slot("Nitin", "Bhavana")])
 
     conflicts = cs.find_interview_slot_conflicts(
         "2026-08-11", "16:15", "16:45", attendee="Bhavana"
     )
-    assert [c["name"] for c in conflicts] == ["Gangadhar"]
+    assert [c["name"] for c in conflicts] == ["Nitin"]
     assert conflicts[0]["interview_attendee"] == "Bhavana"
 
 
 def test_two_attendees_can_interview_in_parallel(roster):
     """The change: a different attendee is not a clash."""
-    roster([_slot("Gangadhar", "Bhavana")])
+    roster([_slot("Nitin", "Bhavana")])
 
     assert cs.find_interview_slot_conflicts(
         "2026-08-11", "16:15", "16:45", attendee="Tool"
@@ -61,7 +61,7 @@ def test_two_attendees_can_interview_in_parallel(roster):
 
 def test_only_the_named_attendee_is_considered(roster):
     roster([
-        _slot("Gangadhar", "Bhavana", cid="a"),
+        _slot("Nitin", "Bhavana", cid="a"),
         _slot("Someone Else", "Tool", cid="b"),
     ])
 
@@ -71,12 +71,12 @@ def test_only_the_named_attendee_is_considered(roster):
     for_tool = cs.find_interview_slot_conflicts(
         "2026-08-11", "16:15", "16:45", attendee="Tool"
     )
-    assert [c["name"] for c in for_bhavana] == ["Gangadhar"]
+    assert [c["name"] for c in for_bhavana] == ["Nitin"]
     assert [c["name"] for c in for_tool] == ["Someone Else"]
 
 
 def test_attendee_match_is_case_insensitive(roster):
-    roster([_slot("Gangadhar", "Bhavana")])
+    roster([_slot("Nitin", "Bhavana")])
     assert cs.find_interview_slot_conflicts(
         "2026-08-11", "16:15", "16:45", attendee="bhavana"
     )
@@ -85,16 +85,16 @@ def test_attendee_match_is_case_insensitive(roster):
 def test_naming_no_attendee_keeps_the_old_global_behaviour(roster):
     """Every existing caller passes nothing, and must be unaffected."""
     roster([
-        _slot("Gangadhar", "Bhavana", cid="a"),
+        _slot("Nitin", "Bhavana", cid="a"),
         _slot("Someone Else", "Tool", cid="b"),
     ])
 
     conflicts = cs.find_interview_slot_conflicts("2026-08-11", "16:15", "16:45")
-    assert {c["name"] for c in conflicts} == {"Gangadhar", "Someone Else"}
+    assert {c["name"] for c in conflicts} == {"Nitin", "Someone Else"}
 
 
 def test_non_overlapping_times_are_never_a_conflict(roster):
-    roster([_slot("Gangadhar", "Bhavana", time="14:00", time_end="14:30")])
+    roster([_slot("Nitin", "Bhavana", time="14:00", time_end="14:30")])
     assert cs.find_interview_slot_conflicts(
         "2026-08-11", "16:15", "16:45", attendee="Bhavana"
     ) == []
@@ -119,7 +119,7 @@ def test_the_real_pujitha_case_stays_blocked(roster):
     interview is not freed by per-attendee scoping — it needs a different
     attendee or a deliberate override.
     """
-    roster([_slot("Gangadhar", "Bhavana")])
+    roster([_slot("Nitin", "Bhavana")])
 
     conflicts = cs.find_interview_slot_conflicts(
         "2026-08-11", "16:15", "16:45", attendee="Bhavana"

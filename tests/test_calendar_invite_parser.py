@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from services.calendar_invite_parser import parse_calendar, trusted_interview_result
 
 
-def invite(*, attendee="reddycharanms@gmail.com", organizer="sakshi@helius-tech.com", tzid="Asia/Kolkata"):
+def invite(*, attendee="msverma@example.com", organizer="pooja@helius-tech.com", tzid="Asia/Kolkata"):
     future = datetime.now(ZoneInfo("Asia/Kolkata")) + timedelta(days=10)
     start = future.replace(hour=17, minute=30, second=0, microsecond=0)
     end = start + timedelta(minutes=30)
@@ -14,7 +14,7 @@ def invite(*, attendee="reddycharanms@gmail.com", organizer="sakshi@helius-tech.
         f"DTSTART;TZID={tzid}:{start:%Y%m%dT%H%M%S}",
         f"DTEND;TZID={tzid}:{end:%Y%m%dT%H%M%S}",
         "SUMMARY:Interview | React/Frontend Developer | Reddy Charan",
-        f"ORGANIZER;CN=Sakshi Awasthi:mailto:{organizer}",
+        f"ORGANIZER;CN=Pooja Awasthi:mailto:{organizer}",
         f"ATTENDEE;CN=Reddy Charan:mailto:{attendee}",
         "LOCATION:Microsoft Teams Meeting",
         "DESCRIPTION:Join https://teams.microsoft.com/l/meetup-join/room",
@@ -24,11 +24,11 @@ def invite(*, attendee="reddycharanms@gmail.com", organizer="sakshi@helius-tech.
 
 def decoded(**changes):
     value = {
-        "sender_name": "Sakshi Awasthi", "sender_email": "sakshi@helius-tech.com",
-        "recipient_email": "reddycharanms@gmail.com",
+        "sender_name": "Pooja Awasthi", "sender_email": "pooja@helius-tech.com",
+        "recipient_email": "msverma@example.com",
         "subject": "Interview | React/Frontend Developer | Reddy Charan",
         "authentication_results": "mx.google.com; spf=pass smtp.mailfrom=helius-tech.com; dmarc=none header.from=helius-tech.com",
-        "received_spf": "pass (google.com: domain of sakshi@helius-tech.com designates 1.2.3.4 as permitted sender)",
+        "received_spf": "pass (google.com: domain of pooja@helius-tech.com designates 1.2.3.4 as permitted sender)",
     }
     value.update(changes)
     return value
@@ -68,8 +68,8 @@ def test_authenticated_matching_invite_bypasses_ollama_safely():
 def test_authenticated_enterprise_sender_can_name_same_domain_organizer():
     value = decoded(
         sender_email="talent-acquisition@infosys.com",
-        recipient_email="sakthivelthangaraj04@gmail.com",
-        subject="Interview Invite: Sakthivel | Candidate ID: 1010934472",
+        recipient_email="dinesh.kulkarni@example.com",
+        subject="Interview Invite: Dinesh | Candidate ID: 1010934472",
         authentication_results=(
             "dkim=pass header.i=@infosys.com header.d=infosys.com; "
             "dmarc=pass header.from=infosys.com"
@@ -77,8 +77,8 @@ def test_authenticated_enterprise_sender_can_name_same_domain_organizer():
         received_spf="pass domain of infosys.com permitted sender",
     )
     text = invite(
-        attendee="sakthivelthangaraj04@gmail.com",
-        organizer="pallavi33@infosys.com",
+        attendee="dinesh.kulkarni@example.com",
+        organizer="rekha33@infosys.com",
         tzid="Z",
     )
 
@@ -127,7 +127,7 @@ def test_spoofed_or_unaligned_sender_is_not_trusted():
 
 
 def test_wrong_candidate_attendee_is_not_trusted():
-    assert trusted_interview_result(decoded(), attachment(invite(attendee="someoneelse@gmail.com"))) is None
+    assert trusted_interview_result(decoded(), attachment(invite(attendee="someoneelse@example.com"))) is None
 
 
 def test_floating_calendar_time_is_not_trusted_for_booking():
@@ -146,11 +146,11 @@ Link to join: https://teams.microsoft.com/meet/416486720484824
 Mandatory checklist: Experience Letter/Relieving Letter/Appointment Letter of all your previous companies.
 """
     value=decoded(
-        sender_email='shreya.ghosh9@tcs.com',recipient_email='wasanthi.adapa@gmail.com',
+        sender_email='ira.basu9@tcs.com',recipient_email='anjali.adhikari@example.com',
         subject=f'TCS Interview_ {future:%d}th {future:%B%y}',body=body,
-        message_direction='INBOUND',to_metadata=['wasanthi.adapa@gmail.com'],
+        message_direction='INBOUND',to_metadata=['anjali.adhikari@example.com'],
         authentication_results='dkim=none; dmarc=none header.from=tcs.com',
-        received_spf='pass domain of shreya.ghosh9@tcs.com permitted sender',
+        received_spf='pass domain of ira.basu9@tcs.com permitted sender',
     )
     monkeypatch.setenv('AI_INTERVIEW_DEFAULT_TIMEZONE','Asia/Kolkata')
     monkeypatch.setenv('AI_INTERVIEW_DEFAULT_TIMEZONE_DOMAINS','tcs.com')
@@ -175,15 +175,15 @@ def test_plain_text_invite_rejects_outbound_and_unconfigured_timezone(monkeypatc
 def test_authenticated_numeric_date_interview_invite_is_tracked_without_ai():
     value = decoded(
         sender_email='talent-acquisition@infosys.com',
-        recipient_email='sakthivelthangaraj04@gmail.com',
-        subject='Interview Invite: Sakthivel | Candidate ID: 1010934472',
+        recipient_email='dinesh.kulkarni@example.com',
+        subject='Interview Invite: Dinesh | Candidate ID: 1010934472',
         body=(
-            'Interview Invite: Sakthivel\n'
+            'Interview Invite: Dinesh\n'
             'Meeting Date and Time: 25-07-2026 10:30 IST\n'
             'Interview Link: https://teams.microsoft.com/l/meetup-join/example'
         ),
         message_direction='INBOUND',
-        to_metadata=['sakthivelthangaraj04@gmail.com'],
+        to_metadata=['dinesh.kulkarni@example.com'],
         authentication_results='spf=pass smtp.mailfrom=infosys.com; dmarc=pass header.from=infosys.com',
         received_spf='pass domain of infosys.com permitted sender',
     )
@@ -201,8 +201,8 @@ def test_authenticated_numeric_date_interview_invite_is_tracked_without_ai():
 def test_plain_text_invite_delivered_through_an_alias_is_tracked():
     value = decoded(
         sender_email='talent-acquisition@infosys.com',
-        recipient_email='sakthivelthangaraj04@gmail.com',
-        subject='Interview Invite: Sakthivel',
+        recipient_email='dinesh.kulkarni@example.com',
+        subject='Interview Invite: Dinesh',
         body=(
             'Interview Invite\nMeeting Date and Time: 25-07-2026 10:30 IST\n'
             'Interview Link: https://teams.microsoft.com/l/meetup-join/example'
@@ -210,7 +210,7 @@ def test_plain_text_invite_delivered_through_an_alias_is_tracked():
         message_direction='INBOUND',
         # The visible header can name an alias or forwarding address instead
         # of the mailbox that received and authenticated the message.
-        to_metadata=['pallavi33@infosys.com'],
+        to_metadata=['rekha33@infosys.com'],
         authentication_results='spf=pass smtp.mailfrom=infosys.com; dmarc=pass header.from=infosys.com',
         received_spf='pass domain of infosys.com permitted sender',
     )
@@ -220,9 +220,9 @@ def test_plain_text_invite_delivered_through_an_alias_is_tracked():
 
 def test_authenticated_cancelled_enterprise_event_bypasses_ollama_safely():
     value = decoded(
-        sender_name="M, Maneesh",
-        sender_email="maneesh.m.ext@capgemini.com",
-        recipient_email="reddycharanms@gmail.com",
+        sender_name="M, Sameer",
+        sender_email="sameer.m.ext@capgemini.com",
+        recipient_email="msverma@example.com",
         subject="Canceled: L1-CGEMJP00347400-React UI Developer-Reddy Charan M S",
         body=(
             "Your profile has been shortlisted for Capgemini L1 round. "
@@ -334,7 +334,7 @@ INFOSHARE_UID = (
 )
 
 
-def techcarrot_invite(*, attendee="reddycharanms@gmail.com"):
+def techcarrot_invite(*, attendee="msverma@example.com"):
     """The 6 Aug 2026 techcarrot invite, 2:00-2:30 PM IST."""
     return "\r\n".join([
         "BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST", "BEGIN:VEVENT",
@@ -342,9 +342,9 @@ def techcarrot_invite(*, attendee="reddycharanms@gmail.com"):
         "DTSTART;TZID=Asia/Kolkata:20260806T140000",
         "DTEND;TZID=Asia/Kolkata:20260806T143000",
         "SUMMARY:Level 1 Interview | Frontend Developer-Hyderabad | Reddy Charan M S",
-        "ORGANIZER;CN=Geeta Bora:mailto:geeta.bora@techcarrot.ae",
+        "ORGANIZER;CN=Asha Nair:mailto:asha.nair@techcarrot.ae",
         f"ATTENDEE;ROLE=REQ-PARTICIPANT;RSVP=TRUE;CN={attendee}:mailto:{attendee}",
-        "ATTENDEE;ROLE=REQ-PARTICIPANT;CN=Sanu Karimulla Khan:mailto:sanu.khan@techcarrot.ae",
+        "ATTENDEE;ROLE=REQ-PARTICIPANT;CN=Imran Rafi Sheikh:mailto:imran.sheikh@techcarrot.ae",
         "LOCATION:Microsoft Teams Meeting",
         "DESCRIPTION:Dear Charan\, Greetings from techcarrot.",
         "END:VEVENT", "END:VCALENDAR", "",
@@ -353,14 +353,14 @@ def techcarrot_invite(*, attendee="reddycharanms@gmail.com"):
 
 def techcarrot_decoded(**changes):
     value = {
-        "sender_name": "Geeta Bora", "sender_email": "geeta.bora@techcarrot.ae",
-        "recipient_email": "reddycharanms@gmail.com",
+        "sender_name": "Asha Nair", "sender_email": "asha.nair@techcarrot.ae",
+        "recipient_email": "msverma@example.com",
         "subject": "Level 1 Interview | Frontend Developer-Hyderabad | Reddy Charan M S",
         "authentication_results":
             "dkim=none (message not signed) header.d=none;dmarc=none action=none "
             "header.from=techcarrot.ae;",
         "received_spf":
-            "pass (google.com: domain of geeta.bora@techcarrot.ae designates "
+            "pass (google.com: domain of asha.nair@techcarrot.ae designates "
             "2a01:111:f403:c201::3 as permitted sender)",
     }
     value.update(changes)
@@ -372,9 +372,9 @@ def test_techcarrot_invite_parses_with_both_attendees():
     assert value["uid"] == TECHCARROT_UID
     assert value["method"] == "REQUEST"
     assert value["sequence"] == 0
-    assert value["organizer"] == "geeta.bora@techcarrot.ae"
+    assert value["organizer"] == "asha.nair@techcarrot.ae"
     assert value["attendees"] == [
-        "reddycharanms@gmail.com", "sanu.khan@techcarrot.ae",
+        "msverma@example.com", "imran.sheikh@techcarrot.ae",
     ]
     assert value["start"].strftime("%I:%M %p") == "02:00 PM"
     assert value["end"].strftime("%I:%M %p") == "02:30 PM"

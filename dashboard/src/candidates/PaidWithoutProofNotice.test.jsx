@@ -1,7 +1,7 @@
 /**
  * A paid row with no payment proof says so, instead of showing nothing.
  *
- * `pujitha` reads "PROFILE-WISE, Rs 20,000, PAID" with an empty proof cell,
+ * `lavanya` reads "PROFILE-WISE, Rs 20,000, PAID" with an empty proof cell,
  * while the paid rows around her show a VIEW badge. Production says nothing is
  * lost: she has one row, no clones, `payment_proofs` is empty, and her only
  * attachment is a slot screenshot the mail monitor captured for interview
@@ -30,9 +30,9 @@ function showsMissingNotice(row) {
   return (row.payment ?? 0) > 0 && (row.proof_count ?? 0) === 0
 }
 
-const PUJITHA = {
+const LAVANYA = {
   // Her actual production row, via _collapse_profile_candidates.
-  name: 'pujitha',
+  name: 'lavanya',
   payment: 20000,
   payment_status: 'paid',
   proof_count: 0,
@@ -43,7 +43,7 @@ const PUJITHA = {
 
 describe('paid without a payment proof', () => {
   it('renders the notice for the row that prompted this', () => {
-    expect(showsMissingNotice(PUJITHA)).toBe(true)
+    expect(showsMissingNotice(LAVANYA)).toBe(true)
   })
 
   it('the condition it renders under is the one in the component', () => {
@@ -55,40 +55,40 @@ describe('paid without a payment proof', () => {
   })
 
   it('stays quiet when a payment proof exists', () => {
-    expect(showsMissingNotice({ ...PUJITHA, proof_count: 1 })).toBe(false)
+    expect(showsMissingNotice({ ...LAVANYA, proof_count: 1 })).toBe(false)
   })
 
   it('stays quiet when no money is recorded', () => {
     // An unpaid row has nothing to evidence yet, so this is not a gap.
-    expect(showsMissingNotice({ ...PUJITHA, payment: 0, payment_status: 'unpaid' })).toBe(false)
+    expect(showsMissingNotice({ ...LAVANYA, payment: 0, payment_status: 'unpaid' })).toBe(false)
   })
 
   it('does not treat a slot screenshot as a payment proof', () => {
     // Her one attachment is slot booking evidence. Counting it would hide a
     // real gap behind an unrelated file -- worse than the blank cell.
-    const withSlotShot = { ...PUJITHA, slot_screenshot_proofs: [{ id: '1c9f76cff602' }], proof_count: 0 }
+    const withSlotShot = { ...LAVANYA, slot_screenshot_proofs: [{ id: '1c9f76cff602' }], proof_count: 0 }
     expect(showsMissingNotice(withSlotShot)).toBe(true)
   })
 
   it('is separate from the shortfall warning, which cannot fire here', () => {
     // needs_reconciliation compares proofs against the recorded amount; with
     // no proofs there is nothing to compare and it stays false.
-    expect(PUJITHA.payment_needs_reconciliation).toBe(false)
-    expect(showsMissingNotice(PUJITHA)).toBe(true)
+    expect(LAVANYA.payment_needs_reconciliation).toBe(false)
+    expect(showsMissingNotice(LAVANYA)).toBe(true)
     expect(module_).toContain('l.payment_needs_reconciliation &&')
   })
 
   it('never says "no payment proof on record" when proofs exist', () => {
     // The two notices are mutually exclusive by construction: one needs
-    // proof_count === 0, the other proof_count > 0. pujitha has 2, so she gets
+    // proof_count === 0, the other proof_count > 0. lavanya has 2, so she gets
     // the review message and never the absence message.
-    const pujitha = { payment: 20000, proof_count: 2, verified_proof_count: 0 }
+    const lavanya = { payment: 20000, proof_count: 2, verified_proof_count: 0 }
     const missing = (r) => (r.payment ?? 0) > 0 && (r.proof_count ?? 0) === 0
-    expect(missing(pujitha)).toBe(false)
+    expect(missing(lavanya)).toBe(false)
   })
 
   it('explains why attached proofs are not counted, instead of a bare zero', () => {
-    // pujitha's real state after the two uploads: 2 proofs, 0 verified. The
+    // lavanya's real state after the two uploads: 2 proofs, 0 verified. The
     // engine read and priced both and withheld credit because the payee handle
     // is masked. "Verified proofs 0" alone was reported as a broken pipeline.
     expect(module_).toContain('(l.proof_count ?? 0) > 0 && (l.verified_proof_count ?? 0) === 0')

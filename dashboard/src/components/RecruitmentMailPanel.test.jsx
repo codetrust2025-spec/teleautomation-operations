@@ -92,7 +92,7 @@ const payloadFor = (url) => {
           subject: "Frontend interview invitation",
           sender_name: "Recruiter",
           sender_email: "recruiter@example.com",
-          recipient_email: "candidate@gmail.com",
+          recipient_email: "candidate@example.com",
           sent_at: "2026-07-21T08:00:00Z",
           body: "Your frontend interview is scheduled for tomorrow at 3 PM.",
         },
@@ -106,7 +106,7 @@ const payloadFor = (url) => {
           id: "c1",
           name: "Test Candidate",
           phone: "9000000000",
-          email: "test.candidate@gmail.com",
+          email: "test.candidate@example.com",
           stage: "in_progress",
           service_type: "profile_service",
         },
@@ -306,7 +306,7 @@ describe("RecruitmentMailPanel", () => {
       target: { value: "c1" },
     });
     expect(screen.getByLabelText("Gmail address")).toHaveValue(
-      "test.candidate@gmail.com",
+      "test.candidate@example.com",
     );
     expect(screen.getByRole("button", { name: "Connect Gmail" })).toBeEnabled();
   });
@@ -324,7 +324,7 @@ describe("RecruitmentMailPanel", () => {
                   id: "mailbox-legacy",
                   candidate_id: "legacy-candidate-row",
                   canonical_candidate_id: "c1",
-                  email_address: "legacy-linked@gmail.com",
+                  email_address: "legacy-linked@example.com",
                   connection_status: "CONNECTED",
                   monitoring_enabled: true,
                 },
@@ -342,7 +342,7 @@ describe("RecruitmentMailPanel", () => {
       </ConfirmProvider>,
     );
 
-    expect(await screen.findByText("legacy-linked@gmail.com")).toBeInTheDocument();
+    expect(await screen.findByText("legacy-linked@example.com")).toBeInTheDocument();
     expect(
       screen.getByRole("cell", { name: /Test Candidate/ }),
     ).toBeInTheDocument();
@@ -359,14 +359,14 @@ describe("RecruitmentMailPanel", () => {
               {
                 id: "candidate-alpha",
                 name: "Shared Phone One",
-                phone: "8328646540",
+                phone: "9000000102",
                 stage: "in_progress",
                 service_type: "profile_service",
               },
               {
                 id: "candidate-beta",
                 name: "Shared Phone Two",
-                phone: "8328646540",
+                phone: "9000000102",
                 stage: "in_progress",
                 service_type: "profile_service",
               },
@@ -383,7 +383,7 @@ describe("RecruitmentMailPanel", () => {
                 mailbox: {
                   id: "mailbox-alpha",
                   candidate_id: "candidate-alpha",
-                  email_address: "alpha@gmail.com",
+                  email_address: "alpha@example.com",
                   connection_status: "CONNECTED",
                   monitoring_enabled: true,
                 },
@@ -393,7 +393,7 @@ describe("RecruitmentMailPanel", () => {
                 mailbox: {
                   id: "mailbox-beta",
                   candidate_id: "candidate-beta",
-                  email_address: "beta@gmail.com",
+                  email_address: "beta@example.com",
                   connection_status: "CONNECTED",
                   monitoring_enabled: true,
                 },
@@ -411,12 +411,12 @@ describe("RecruitmentMailPanel", () => {
       </ConfirmProvider>,
     );
 
-    await screen.findByText("alpha@gmail.com");
+    await screen.findByText("alpha@example.com");
     // A phone number presented as a candidate id made two distinct candidates
     // read as one during an identity investigation.  The label must match the
     // value it describes.
-    expect(screen.queryByText(/Candidate ID: 8328646540/)).toBeNull();
-    expect(screen.getAllByText("Phone: 8328646540")).toHaveLength(2);
+    expect(screen.queryByText(/Candidate ID: 9000000102/)).toBeNull();
+    expect(screen.getAllByText("Phone: 9000000102")).toHaveLength(2);
     // Two candidates sharing a phone stay distinguishable by their real ids.
     expect(
       screen.getByText("Candidate ID: candidate-alpha"),
@@ -438,7 +438,7 @@ describe("RecruitmentMailPanel", () => {
                 mailbox: {
                   id: "mailbox-relevant",
                   candidate_id: "c1",
-                  email_address: "relevant@gmail.com",
+                  email_address: "relevant@example.com",
                   connection_status: "CONNECTED",
                   monitoring_enabled: true,
                 },
@@ -448,7 +448,7 @@ describe("RecruitmentMailPanel", () => {
                 mailbox: {
                   id: "mailbox-review",
                   candidate_id: "c1",
-                  email_address: "review@gmail.com",
+                  email_address: "review@example.com",
                   connection_status: "CONNECTED",
                   monitoring_enabled: true,
                 },
@@ -465,8 +465,8 @@ describe("RecruitmentMailPanel", () => {
         <RecruitmentMailPanel />
       </ConfirmProvider>,
     );
-    await screen.findByText("relevant@gmail.com");
-    expect(screen.getByText("review@gmail.com")).toBeInTheDocument();
+    await screen.findByText("relevant@example.com");
+    expect(screen.getByText("review@example.com")).toBeInTheDocument();
     expect(
       screen.queryByRole("columnheader", { name: "Relevant Emails" }),
     ).not.toBeInTheDocument();
@@ -501,7 +501,7 @@ describe("RecruitmentMailPanel", () => {
                 mailbox: {
                   id: "m1",
                   candidate_id: "c1",
-                  email_address: "candidate@gmail.com",
+                  email_address: "candidate@example.com",
                   connection_status: "CONNECTED",
                   monitoring_enabled: true,
                 },
@@ -520,7 +520,7 @@ describe("RecruitmentMailPanel", () => {
         <RecruitmentMailPanel />
       </ConfirmProvider>,
     );
-    await screen.findByText("candidate@gmail.com");
+    await screen.findByText("candidate@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Sync Now" }));
     await waitFor(() =>
       expect(screen.getByText(/mailbox sync is queued/i)).toBeInTheDocument(),
@@ -552,7 +552,7 @@ describe("RecruitmentMailPanel", () => {
               mailbox: {
                 id: "mailbox-active",
                 candidate_id: "c1",
-                email_address: "active@gmail.com",
+                email_address: "active@example.com",
                 connection_status: "CONNECTED",
                 monitoring_enabled: true,
               },
@@ -572,7 +572,7 @@ describe("RecruitmentMailPanel", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByText("active@gmail.com")).toBeInTheDocument();
+    expect(screen.getByText("active@example.com")).toBeInTheDocument();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);

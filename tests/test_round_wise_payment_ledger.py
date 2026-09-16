@@ -159,7 +159,7 @@ def test_legacy_round_payment_inherits_existing_candidate_identity(monkeypatch):
     }
     identity = {
         **_round_row("paid-old-round", payment=5000, slot_confirmed=True),
-        "phone": "9010969470",
+        "phone": "9000000105",
         "technology": "ETL",
         "reference": "Referrer One",
     }
@@ -183,7 +183,7 @@ def test_legacy_round_payment_inherits_existing_candidate_identity(monkeypatch):
 
     assert row["id"] == "provisional"
     assert updated["patch"] == {
-        "phone": "9010969470",
+        "phone": "9000000105",
         "technology": "ETL",
         "reference": "Referrer One",
     }

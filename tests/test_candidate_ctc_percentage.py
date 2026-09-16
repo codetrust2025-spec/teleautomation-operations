@@ -19,7 +19,7 @@ def test_profile_service_ctc_is_validated_and_persisted():
         {"service_type": "profile_service", "ctc_percentage": "8.5"},
     )
     row = _normalise(
-        {"name": "Vasanthi", "service_type": "profile_service", "ctc_percentage": value},
+        {"name": "Anjali", "service_type": "profile_service", "ctc_percentage": value},
     )
 
     assert value == 8.5

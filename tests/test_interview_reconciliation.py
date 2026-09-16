@@ -331,7 +331,7 @@ def test_name_alias_rows_reconcile_without_deciding_a_surviving_record(monkeypat
     state = _base_state()
     state["candidates"] = [
         profile_row("mailbox-owner-row", "Ram Charan M S", phone=""),
-        profile_row("booking-clone-row", "Reddy Charan M S", phone="8328646540"),
+        profile_row("booking-clone-row", "Reddy Charan M S", phone="9000000102"),
     ]
     # The stale snapshot that split them: each row is its own canonical.
     state["links"] = [
