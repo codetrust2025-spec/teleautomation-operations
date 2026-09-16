@@ -507,12 +507,12 @@ def test_login_and_logout_preserve_session_behavior_and_emit_audit_events(api_cl
 
 # ── the office public IP changes when the router is reset ────────────────────
 #
-# September 2026: the office reached production as 124.123.169.31 until the
-# 12th and as 124.123.183.195 from the 14th, while
-# OPERATIONS_OFFICE_NETWORK_CIDRS still named the first. Everyone sitting in the
-# office was told to connect to office Wi-Fi. The allowlist was right to refuse
-# an address nobody had approved; what was missing was any way to see which
-# address was being judged.
+# September 2026: the office reached production from one address until the 12th
+# and from another from the 14th, while OPERATIONS_OFFICE_NETWORK_CIDRS still
+# named the first. Everyone sitting in the office was told to connect to office
+# Wi-Fi. The allowlist was right to refuse an address nobody had approved; what
+# was missing was any way to see which address was being judged. The addresses
+# themselves are configuration, so they are not written down here.
 
 
 def test_a_refused_device_is_told_which_address_was_judged():
@@ -566,7 +566,7 @@ def test_a_mobile_network_is_still_refused_after_the_office_moves():
     from core.office_network import verify_office_network
 
     policy = "198.51.100.42/32"
-    for outsider in ("106.219.2.110", "223.181.114.13", "27.57.93.45"):
+    for outsider in ("192.0.2.110", "198.51.100.113", "203.0.113.45"):
         verdict = verify_office_network(outsider, "", office_cidrs=policy, trusted_proxy_cidrs="")
         assert verdict.allowed is False
         assert verdict.observed_ip == outsider

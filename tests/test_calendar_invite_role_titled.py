@@ -62,7 +62,7 @@ def mail(**changes):
             "mx.google.com; spf=pass smtp.mailfrom=sourcebae.com; "
             "dmarc=pass header.from=sourcebae.com"
         ),
-        "received_spf": "pass (google.com: domain of neha@sourcebae.com designates 1.2.3.4)",
+        "received_spf": "pass (google.com: domain of neha@sourcebae.com designates 203.0.113.4)",
     }
     value.update(changes)
     return value
@@ -125,7 +125,7 @@ def test_an_invite_from_a_consumer_mailbox_is_not_an_interview():
         sender_email="friend@example.com",
         subject="Dinner",
         authentication_results="mx.google.com; spf=pass smtp.mailfrom=gmail.com; dmarc=pass header.from=gmail.com",
-        received_spf="pass (google.com: domain of friend@example.com designates 1.2.3.4)",
+        received_spf="pass (google.com: domain of friend@example.com designates 203.0.113.4)",
     )
     payload = attachments(ics(summary="Dinner", organizer="friend@example.com",
                               attendees=("lavanya.rathore@example.com", "friend@example.com")))

@@ -22,6 +22,7 @@ Keep the awkward shape. Replace the person.
 | Teams / Meet | `00000000-1111-4222-8333-444444444444`, `meet.google.com/tst-fake-mtg` | a join URL from a real invite |
 | Calendar id | `syntheticuid000000000001ab@google.com` | the id Google generated |
 | Name | a pseudonym | a real candidate's or recruiter's name |
+| IP address | `192.0.2.x`, `198.51.100.x`, `203.0.113.x` (RFC 5737) | the office's address, or any address a log recorded |
 
 `example.com`, `.invalid` and `.test` are reserved by RFC 2606 and RFC 6761:
 nobody can register them, so a fixture address can never reach a real inbox.
