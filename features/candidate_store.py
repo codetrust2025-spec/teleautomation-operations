@@ -3610,7 +3610,7 @@ def interview_upcoming(
 
 
 def public_booked_interview_slots(*, days: int = 60) -> dict:
-    """Confirmed interview slots for the public submit page (name + time only)."""
+    """Confirmed slots for the public submit page (name, time and type only)."""
     from datetime import date, timedelta
 
     today = date.today()
@@ -3642,6 +3642,11 @@ def public_booked_interview_slots(*, days: int = 60) -> dict:
             # note for older AI-mail rows — never anything the UI knows. An
             # unresolved row yields "" and the page shows plain "Booked".
             "interview_booking_source": interview_booking_source(row),
+            # An assessment holds a confirmed slot exactly as an interview
+            # does, so it belongs in this list -- but the page can only label
+            # it if the payload says which it is. Rows booked before the type
+            # existed have none, and those are interviews.
+            "booking_type": _clean_str(row.get("booking_type")) or "Interview",
         })
     slots.sort(key=_slot_chronological_sort_key)
     return {

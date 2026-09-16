@@ -299,3 +299,52 @@ class TestTheRealStoreKeepsTheType:
                                           time="15:00", time_end="16:00")
 
         assert cs.get_candidate(booked["id"])["booking_type"] == "Interview"
+
+
+class TestTheConfirmedSlotsPayload:
+    """The public confirmed-slots list is where the candidate sees the booking,
+    and it can only label an assessment if the payload says it is one."""
+
+    @pytest.fixture
+    def real_store(self, monkeypatch, tmp_path):
+        from features import candidate_store as cs
+        monkeypatch.setattr(cs, "_FILE", str(tmp_path / "candidates.json"))
+        monkeypatch.setattr(cs, "PROOFS_DIR", str(tmp_path / "proofs"))
+        monkeypatch.setattr(cs, "_load_cache", None)
+        monkeypatch.setattr(cs, "_load_cache_at", 0.0)
+        return cs
+
+    def book(self, cs, name, *, when, booking_type):
+        candidate = cs.create_candidate({
+            "name": name, "phone": f"90000000{len(name):02d}", "technology": "Automation",
+            "service_type": "profile_service", "purpose": "interview",
+        })
+        return cs.assign_interview_slot(
+            candidate_id=candidate["id"], date=when, time="19:05", time_end="20:05",
+            interview_booking_source="ai_auto_booked", booking_type=booking_type,
+            assessment_key="key" if booking_type == "Assessment" else "")
+
+    def test_an_assessment_is_listed_and_typed(self, real_store):
+        cs = real_store
+        from datetime import date, timedelta
+        when = (date.today() + timedelta(days=1)).isoformat()
+        self.book(cs, "Assessment Person", when=when, booking_type="Assessment")
+        self.book(cs, "Interview Person", when=when, booking_type="Interview")
+
+        listed = {slot["name"]: slot for slot in cs.public_booked_interview_slots()["slots"]}
+
+        assert set(listed) == {"Assessment Person", "Interview Person"}
+        assert listed["Assessment Person"]["booking_type"] == "Assessment"
+        assert listed["Interview Person"]["booking_type"] == "Interview"
+        assert listed["Assessment Person"]["interview_booking_source"] == "ai_auto_booked"
+
+    def test_a_row_booked_before_the_type_existed_reads_as_an_interview(self, real_store):
+        cs = real_store
+        from datetime import date, timedelta
+        when = (date.today() + timedelta(days=1)).isoformat()
+        booked = self.book(cs, "Legacy Person", when=when, booking_type="Interview")
+        cs.update_candidate(booked["id"], {"booking_type": ""}, allow_slot_without_rules=True)
+
+        listed = cs.public_booked_interview_slots()["slots"]
+
+        assert [slot["booking_type"] for slot in listed] == ["Interview"]
