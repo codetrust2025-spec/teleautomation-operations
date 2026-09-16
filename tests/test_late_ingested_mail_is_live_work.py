@@ -117,6 +117,13 @@ class RecordingCursor:
     def fetchall(self):
         return []
 
+    def fetchone(self):
+        """The claim counts what is waiting in history before choosing a turn.
+
+        An empty queue is the honest answer for a double that stores nothing,
+        and it keeps the ordinary share in play for these bindings."""
+        return (0,)
+
     def __enter__(self):
         return self
 
@@ -153,7 +160,11 @@ def recorded(monkeypatch):
     monkeypatch.delenv("AI_MAIL_LIVE_WINDOW_HOURS", raising=False)
 
     def claim(*, backlog_turn: bool):
-        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda: backlog_turn)
+        # The claim now tells the rotation how deep history is, so the double
+        # has to accept it: a zero-argument stand-in raises TypeError inside the
+        # claim and the binding below is never reached.
+        monkeypatch.setattr(store, "_claim_prefers_backlog",
+                            lambda history_waiting=None: backlog_turn)
         cursor.calls.clear()
         assert store.claim_ai_messages(limit=1) == []
         select = [call for call in cursor.calls if call[0].lstrip().startswith("SELECT id")]
@@ -210,4 +221,5 @@ class TestTheSeptemberNinthStallCannotReturn:
             assert excluded not in sql
 
     def test_history_keeps_its_guaranteed_share(self):
-        assert "_claim_prefers_backlog()" in _claim_sql()
+        """The share is decided per claim, now from the measured depth."""
+        assert "_claim_prefers_backlog(history_waiting)" in _claim_sql()

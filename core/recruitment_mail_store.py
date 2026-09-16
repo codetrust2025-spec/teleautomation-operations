@@ -933,8 +933,51 @@ def _backlog_share() -> int:
         return 5
 
 
-def _claim_prefers_backlog() -> bool:
-    return (next(_claim_rotation) % _backlog_share()) == _backlog_share() - 1
+def _busy_backlog_percent() -> int:
+    """History's share while it is deep enough to need one.
+
+    Thirty percent. The backlog cleared at 20% too slowly to matter -- 1,861
+    mails at one turn in five -- and every point taken from live mail is a point
+    of delay for an interview, so this is a lift rather than a reversal, and it
+    lasts only while the backlog is deep.
+    """
+    try:
+        return max(10, min(60, int(os.getenv("AI_MAIL_BACKLOG_BUSY_PERCENT", "30"))))
+    except (TypeError, ValueError):
+        return 30
+
+
+def _backlog_relief_below() -> int:
+    """How small history has to get before its share returns to normal."""
+    try:
+        return max(50, min(10000, int(os.getenv("AI_MAIL_BACKLOG_RELIEF_BELOW", "500"))))
+    except (TypeError, ValueError):
+        return 500
+
+
+def _backlog_percent(history_waiting: int | None = None) -> int:
+    """History's share of claims, lifted only while history is deep.
+
+    The lift is measured, not scheduled: the claim counts what is actually
+    waiting in tier 3 and the share follows it, so it returns to normal by
+    itself the moment the backlog is down. Nothing has to remember to undo it.
+    """
+    normal = max(2, round(100 / _backlog_share()))
+    if history_waiting is None or history_waiting < _backlog_relief_below():
+        return normal
+    return max(normal, _busy_backlog_percent())
+
+
+def _claim_prefers_backlog(history_waiting: int | None = None) -> bool:
+    """Whether this turn goes to history first, spread evenly across turns.
+
+    A share of 20% falls on every fifth turn and 30% on turns 3, 6 and 9 of
+    every ten -- never bunched, because a clump of history turns is exactly the
+    delay live mail cannot afford.
+    """
+    percent = _backlog_percent(history_waiting)
+    turn = next(_claim_rotation)
+    return (turn + 1) * percent // 100 > turn * percent // 100
 
 
 def _max_ai_attempts() -> int:
@@ -1011,7 +1054,15 @@ def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[
         critical_days=_time_critical_days()
         tier=_TIER_SQL
         tier_params=(fresh_days,critical_days,fresh_days,live_hours,fresh_days,_QUEUE_TIMEZONE,_QUEUE_TIMEZONE)
-        if _claim_prefers_backlog():
+        # How deep history actually is, read rather than assumed: the share it
+        # gets follows this number, so the lift ends by itself once the backlog
+        # is down and nothing has to remember to undo it.
+        cur.execute(f"""SELECT count(*) FROM mailbox_messages
+              WHERE processing_status IN ('AI_QUEUED','AI_RETRY_PENDING')
+                AND COALESCE(ai_retry_after,now())<=now()
+                AND ({tier})=3""",tier_params)
+        history_waiting=int(cur.fetchone()[0] or 0)
+        if _claim_prefers_backlog(history_waiting):
             # Even the turn reserved for history yields to an interview or an
             # assessment that has just arrived: the backlog will still be there
             # in an hour, and the interview will not.
@@ -1036,6 +1087,17 @@ def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[
         rows=_rows(cur)
     for row in rows:
         row['attachments']=[{**item,'text':item.get('extracted_text') or ''} for item in attachments_for_message(row['id'],include_text=True)]
+    # What the queue is actually doing, in the log, per claim: the tier taken,
+    # how long that mail waited, and the share history is getting. Raising
+    # history's share is only safe while the first number stays small for tier
+    # 0, and this is what makes that visible without a query.
+    for row in rows:
+        arrival=row.get('sent_at') or row.get('created_at')
+        waited=(datetime.now(timezone.utc)-arrival).total_seconds()/60 if arrival else -1
+        logger.info(
+            "AI claim message=%s waited=%.1fmin history_waiting=%d backlog_share=%d%%",
+            row['id'], waited, history_waiting, _backlog_percent(history_waiting),
+        )
     return rows
 
 

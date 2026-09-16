@@ -139,3 +139,58 @@ class TestNothingElseAboutTheQueueChanged:
 
     def test_the_batch_is_still_capped(self):
         assert "max(1,min(limit,20))" in _claim_sql()
+
+
+class TestHistoryGetsMoreWhileItIsDeep:
+    """A backlog of 1,861 clears too slowly at one turn in five, and the share
+    has to come back down by itself -- a temporary setting nobody remembers to
+    undo is a permanent one."""
+
+    def test_a_deep_backlog_lifts_history_to_thirty_percent(self):
+        assert store._backlog_percent(1861) == 30
+
+    def test_it_returns_to_twenty_once_the_backlog_is_small(self):
+        assert store._backlog_percent(499) == 20
+
+    def test_the_threshold_is_five_hundred(self):
+        assert store._backlog_percent(500) == 30
+        assert store._backlog_percent(499) == 20
+
+    def test_an_unknown_depth_is_treated_as_normal(self):
+        """The claim measures it; every other caller gets the ordinary share."""
+        assert store._backlog_percent() == 20
+
+    def test_thirty_percent_is_three_turns_in_ten_evenly_spread(self, monkeypatch):
+        monkeypatch.setattr(store, "_claim_rotation", itertools.count())
+        turns = [store._claim_prefers_backlog(history_waiting=1861) for _ in range(20)]
+        assert sum(turns) == 6
+        assert [i for i, backlog in enumerate(turns) if backlog] == [3, 6, 9, 13, 16, 19]
+
+    def test_twenty_percent_still_falls_every_fifth_turn(self, monkeypatch):
+        monkeypatch.setattr(store, "_claim_rotation", itertools.count())
+        turns = [store._claim_prefers_backlog(history_waiting=10) for _ in range(15)]
+        assert [i for i, backlog in enumerate(turns) if backlog] == [4, 9, 14]
+
+    def test_the_lift_never_lowers_the_ordinary_share(self, monkeypatch):
+        monkeypatch.setenv("AI_MAIL_BACKLOG_SHARE", "2")      # 50% normally
+        monkeypatch.setenv("AI_MAIL_BACKLOG_BUSY_PERCENT", "30")
+        assert store._backlog_percent(5000) == 50
+
+    def test_both_knobs_are_configurable_and_bounded(self, monkeypatch):
+        monkeypatch.setenv("AI_MAIL_BACKLOG_BUSY_PERCENT", "45")
+        assert store._busy_backlog_percent() == 45
+        for raw, expected in (("1", 10), ("99", 60), ("junk", 30), ("", 30)):
+            monkeypatch.setenv("AI_MAIL_BACKLOG_BUSY_PERCENT", raw)
+            assert store._busy_backlog_percent() == expected
+        monkeypatch.setenv("AI_MAIL_BACKLOG_RELIEF_BELOW", "800")
+        assert store._backlog_relief_below() == 800
+        for raw, expected in (("1", 50), ("999999", 10000), ("junk", 500), ("", 500)):
+            monkeypatch.setenv("AI_MAIL_BACKLOG_RELIEF_BELOW", raw)
+            assert store._backlog_relief_below() == expected
+
+    def test_tier_zero_still_leads_a_history_turn(self):
+        """The share decides how often history goes first, never whether an
+        interview does."""
+        sql = _claim_sql()
+        marker = sql.index("= 0) DESC")
+        assert marker < sql.index("= 3) DESC")
