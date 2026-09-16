@@ -294,6 +294,29 @@ def _validate_owner(row: dict[str, Any]) -> None:
         raise ValueError("Add a UPI ID, bank account, or payment phone number.")
 
 
+def _company_identifiers() -> dict[str, set[str]]:
+    """The company's own receiver identifiers, normalised as referrer rows are.
+
+    Imported here rather than at module scope: the payment engine imports both
+    registries, and the company side has no reason to know this one exists.
+    """
+    from features.company_payment_verification import (
+        configured_company_account_numbers,
+        configured_company_phone_numbers,
+        configured_company_upi_ids,
+    )
+
+    return {
+        "upi_id": {normalize_upi(value) for value in configured_company_upi_ids()},
+        "bank_account_identifier": {
+            normalize_digits(value) for value in configured_company_account_numbers()
+        },
+        "normalized_payment_phone_number": {
+            normalize_indian_phone(value) for value in configured_company_phone_numbers()
+        },
+    }
+
+
 def _assert_unique_identifiers(
     candidate: dict[str, Any],
     rows: list[dict[str, Any]],
@@ -309,6 +332,18 @@ def _assert_unique_identifiers(
             "normalized_payment_phone_number"
         ),
     }
+    # One identifier, one owner. An account registered to both the company and a
+    # referrer is not a duplicate the verifier can resolve: it reads as an
+    # ambiguous receiver and refuses the payment, so a receipt paid to a real,
+    # approved account stops being creditable the moment the second registration
+    # is made. Refusing it here is the only place that is still cheap to fix.
+    company = _company_identifiers()
+    for field, value in identifiers.items():
+        if value and value in company.get(field, set()):
+            raise ValueError(
+                f"{field.replace('_', ' ').title()} is already registered as a company "
+                "receiver identifier. One account belongs to one owner."
+            )
     for row in rows:
         normalized = _normalized_account(row)
         if str(normalized.get("id") or "") == exclude_id:
