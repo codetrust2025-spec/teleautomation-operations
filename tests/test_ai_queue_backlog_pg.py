@@ -214,7 +214,7 @@ class TestFreshInterviewsAndAssessmentsLead:
         assert [item["id"] for item in claimed] == ["assessment"]
 
     def test_even_the_backlog_turn_yields_to_it(self, queue_db, monkeypatch):
-        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda: True)
+        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda history_waiting=None: True)
         queue(queue_db, "ancient", subject="Your application update", days_old=40)
         queue(queue_db, "interview", subject="Interview scheduled with ValueLabs", days_old=0.5)
 
@@ -223,7 +223,7 @@ class TestFreshInterviewsAndAssessmentsLead:
         assert [item["id"] for item in claimed] == ["interview"]
 
     def test_a_backlog_turn_still_drains_history_when_nothing_is_urgent(self, queue_db, monkeypatch):
-        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda: True)
+        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda history_waiting=None: True)
         queue(queue_db, "ancient", subject="Your application update", days_old=40)
         queue(queue_db, "today", subject="Thank you for applying", days_old=0.02)
 
