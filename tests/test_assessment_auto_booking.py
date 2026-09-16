@@ -163,6 +163,45 @@ def proposed(status, *, quote, date, time):
     }
 
 
+def test_the_pipeline_reaches_the_assessment_booking(monkeypatch):
+    """Drive `process_message`, because calling the booking module directly is
+    what let a NameError in the hand-off reach production: the mail was
+    classified, the booking crashed, and every test here still passed."""
+    calls = []
+    monkeypatch.setattr(agent.store, "insert_message", lambda mailbox, decoded, score: ({"id": "stored-message"}, True))
+    for name in ("is_duplicate_content", "is_duplicate_offer_attachment", "is_duplicate_thread_status"):
+        monkeypatch.setattr(agent.store, name, lambda *args, **kwargs: False)
+    monkeypatch.setattr(agent.store, "mark_message_status", lambda *a, **k: None)
+    monkeypatch.setattr(agent.store, "save_attachment", lambda mid, attachment: attachment)
+    monkeypatch.setattr(agent.store, "record_analysis", lambda *a, **k: None)
+    monkeypatch.setattr(agent.store, "create_event", lambda cid, mid, result, **meta: {
+        "id": "event-1", "mailbox_message_id": "stored-message", "candidate_id": cid,
+        "classification": "assessment_invited", "primary_status": "ASSESSMENT_INVITED", "notification": {}})
+    monkeypatch.setattr("services.recruitment_notifications.notify_detection", lambda event: None)
+    monkeypatch.setattr(agent, "analyze", lambda decoded, attachments: (
+        {**proposed("ASSESSMENT_INVITED", quote="complete the pending assessment",
+                    date="2026-09-15", time="07:05 PM"),
+         "classification": "assessment_invited", "candidate_status": "Assessment Pending",
+         "primary_status": "ASSESSMENT_INVITED"}, "test-model", 10))
+    import services.assessment_auto_booking as module
+    monkeypatch.setattr(module, "execute_assessment_booking", lambda **kwargs: calls.append(kwargs) or {
+        "status": "Auto Booked", "event_type": "assessment_auto_booked",
+        "booking": {"id": "slot-1", "date": "2026-09-15", "time": "19:05", "time_end": "20:05"},
+        "audit": {"id": "audit-1"}, "notification": {}, "failure_code": None, "block_reason": None})
+
+    agent.process_message(
+        {"id": "mailbox-1", "candidate_id": "candidate-1"},
+        {"provider_message_id": "glider-1", "provider_thread_id": "glider-thread",
+         "sender_email": "assistant@glider.ai", "subject": MESSAGE["subject"],
+         "body": BODY, "sent_at": "2026-09-15T14:00:00Z"},
+        [{"filename": "none.txt", "data": None, "checksum": "checksum-1", "text": ""}],
+    )
+
+    assert calls, "the assessment never reached its booking path"
+    assert calls[0]["message"]["subject"] == MESSAGE["subject"]
+    assert isinstance(calls[0]["message"].get("attachments"), list)
+
+
 class TestTheStatusItself:
     """The mail must reach booking as an assessment, not as an interview."""
 
