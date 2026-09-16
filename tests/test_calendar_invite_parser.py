@@ -28,7 +28,7 @@ def decoded(**changes):
         "recipient_email": "msverma@example.com",
         "subject": "Interview | React/Frontend Developer | Reddy Charan",
         "authentication_results": "mx.google.com; spf=pass smtp.mailfrom=helius-tech.com; dmarc=none header.from=helius-tech.com",
-        "received_spf": "pass (google.com: domain of pooja@helius-tech.com designates 1.2.3.4 as permitted sender)",
+        "received_spf": "pass (google.com: domain of pooja@helius-tech.com designates 203.0.113.4 as permitted sender)",
     }
     value.update(changes)
     return value

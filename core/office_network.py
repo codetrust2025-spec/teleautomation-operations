@@ -27,10 +27,11 @@ class NetworkVerification:
     reason: str
     #: The address the decision was made about. A refused handler is told it so
     #: the office allowlist can be corrected without reading a server log: the
-    #: office public IP changes when the router is reset -- it moved from
-    #: 124.123.169.31 to 124.123.183.195 in September 2026 -- and until the
-    #: refusal named an address, the only symptom was "Connect to Office Wi-Fi"
-    #: while sitting in the office.
+    #: office public IP changes whenever the router is reset -- it did in
+    #: September 2026 -- and until the refusal named an address, the only
+    #: symptom was "Connect to Office Wi-Fi" while sitting in the office. The
+    #: allowlist itself is configuration (OPERATIONS_OFFICE_NETWORK_CIDRS), so
+    #: no office address is written down here.
     observed_ip: str = ""
 
     def audit_payload(self) -> dict[str, str | bool]:

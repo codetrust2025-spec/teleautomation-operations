@@ -16,6 +16,7 @@ would put back exactly what this file exists to keep out.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
 from pathlib import Path
 
@@ -65,6 +66,11 @@ MEETING_URL = re.compile(
     r"(?:teams\.microsoft\.com|meet\.google\.com|zoom\.us)/[^\s\"'<>]*"
     r"(?:[\s\\][^\s\"'<>]*%[^\s\"'<>]*)*")
 CALENDAR_UID = re.compile(r"\b([0-9a-z]{18,})@(?:google\.com|group\.calendar\.google\.com)\b")
+IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+#: RFC 5737 keeps these three ranges for documentation. An address outside them
+#: belongs to somebody: the office router, a handler's phone, a real sender.
+DOCUMENTATION_NETS = tuple(ipaddress.ip_network(cidr) for cidr in
+                           ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"))
 
 #: Real values a test is allowed to carry, each with the reason it has to be
 #: real. Nothing personal to a third party belongs in here.
@@ -234,6 +240,32 @@ def test_no_meeting_carries_a_real_tenant_organiser_or_event():
         "ids that may identify a real tenant, organiser or meeting -- use a "
         "00000000-1111-4222-8333-444444444444 shape, or a syntheticuid… "
         "calendar id:\n  " + "\n  ".join(offences))
+
+
+def test_every_public_address_is_a_documentation_address():
+    """The office allowlist is configuration, not a constant in a test.
+
+    A real public address in a fixture says where the office connects from, or
+    which network a refusal was recorded against. Private, loopback and the
+    RFC 5737 documentation ranges are all fine.
+    """
+    offences = []
+    for path in scanned_files():
+        text = _read(path)
+        for match in IPV4.finditer(text):
+            try:
+                address = ipaddress.ip_address(match.group(0))
+            except ValueError:
+                continue  # a version string, not an address
+            if (address.is_private or address.is_loopback or address.is_multicast
+                    or address.is_reserved or address.is_unspecified):
+                continue
+            if any(address in net for net in DOCUMENTATION_NETS):
+                continue
+            offences.append(f"{_at(path, text, match.start())}  {address}")
+    assert not offences, (
+        "real public addresses -- use 192.0.2.x, 198.51.100.x or 203.0.113.x:\n  "
+        + "\n  ".join(offences))
 
 
 def test_removed_names_have_not_come_back():
