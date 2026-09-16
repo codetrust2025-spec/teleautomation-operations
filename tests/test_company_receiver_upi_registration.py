@@ -720,3 +720,120 @@ class TestOneIdentifierBelongsToOneOwner:
             referrers[0]["id"], {"upi_id": "different.person@ybl", "account_holder_name": "Someone"}, actor="test")
 
         assert added["id"]
+
+
+# ── one canonical receiver, several accounts and several names ───────────────
+#
+# The company is paid at `raviarvind1111@ybl`, at the PhonePe handle derived
+# from its registered phone `8639074573`, and at the CRED handle on the same
+# number. Receipts name it "JOLLU RAVINDER", "J Ravinder", "Ravinder MLR",
+# "Interview support" or "Hyd Job" depending on which app drew them. All of that
+# is one payee and one bank account; the rules below still require a verified
+# identifier on every one of them.
+
+COMPANY_PHONE = "8639074573"
+ALIASES = ("JOLLU RAVINDER", "Jollu Ravinder", "J RAVINDER", "J Ravinder",
+           "Ravinder MLR", "Interview support", "Hyd Job")
+
+
+def _register_canonical(monkeypatch) -> None:
+    monkeypatch.setenv("COMPANY_PAYMENT_UPI_IDS", APPROVED_UPI)
+    monkeypatch.setenv("COMPANY_PAYMENT_PHONE_NUMBERS", COMPANY_PHONE)
+    monkeypatch.setenv("COMPANY_PAYMENT_RECEIVER_NAMES", ",".join(ALIASES))
+
+
+def _paid(monkeypatch, name, identifier, **patch):
+    field = "receiver_phone" if identifier.lstrip("+").isdigit() else "receiver_upi_id"
+    values = {"amount": 5000, "receiver_name": name, "receiver_upi_id": "", "receiver_phone": "",
+              "utr_number": "269080108616", "transaction_id": "T2609161245508194570195"}
+    values[field] = identifier
+    values.update(patch)
+    return _verify(monkeypatch, _receipt(**values))
+
+
+class TestEveryApprovedReceiptVerifies:
+    @pytest.mark.parametrize("name,identifier", [
+        ("J Ravinder", APPROVED_UPI),
+        ("Interview support", APPROVED_UPI),
+        ("Hyd Job", APPROVED_UPI),
+        ("Ravinder MLR", "+918639074573"),
+        ("JOLLU RAVINDER", "XXXXXX4573@ybl"),
+        ("JOLLU RAVINDER", "XXXXXX4573@yescred"),
+        ("Jollu Ravinder", "XXXXXX4573@yescred"),
+    ])
+    def test_it_is_credited_as_a_company_payment(self, monkeypatch, name, identifier):
+        _register_canonical(monkeypatch)
+
+        result = _paid(monkeypatch, name, identifier)
+
+        assert result["verification_state"] == "VERIFIED_COMPANY_PAYMENT", result.get("deterministic_reasons")
+        assert result["booking_eligible"] is True
+        assert result["receiver_type"] == "company"
+
+    def test_a_mask_resolves_through_the_registered_phone(self, monkeypatch):
+        """`4573` is the tail of the company's registered number, so a handle
+        derived from it is the company's at whatever provider drew it."""
+        _register_canonical(monkeypatch)
+
+        result = _paid(monkeypatch, "JOLLU RAVINDER", "XXXXXX4573@yescred")
+
+        assert result["receiver_match"] == "masked_upi_alias"
+        assert result["receiver_match_score"] == 100
+
+
+class TestTheSecurityRulesAreUnchanged:
+    def test_a_ravinder_name_with_an_unknown_handle_still_fails(self, monkeypatch):
+        _register_canonical(monkeypatch)
+
+        result = _paid(monkeypatch, "JOLLU RAVINDER", "someone.else@okicici")
+
+        assert result["booking_eligible"] is not True
+
+    def test_a_ravinder_name_with_a_conflicting_mask_still_fails(self, monkeypatch):
+        """Same payee name, digits that end none of its identifiers."""
+        _register_canonical(monkeypatch)
+
+        result = _paid(monkeypatch, "JOLLU RAVINDER", "XXXXXX9999@yescred")
+
+        assert result["booking_eligible"] is not True
+
+    def test_a_ravinder_name_with_an_unknown_phone_still_fails(self, monkeypatch):
+        _register_canonical(monkeypatch)
+
+        result = _paid(monkeypatch, "Ravinder MLR", "+919000000001")
+
+        assert result["booking_eligible"] is not True
+
+    def test_the_name_alone_still_credits_nothing(self, monkeypatch):
+        _register_canonical(monkeypatch)
+
+        result = _verify(monkeypatch, _receipt(
+            amount=5000, receiver_name="JOLLU RAVINDER", receiver_upi_id="",
+            receiver_phone="", receiver_account=""))
+
+        assert result["booking_eligible"] is not True
+
+    def test_an_alias_is_never_an_identifier_on_its_own(self, monkeypatch):
+        """Registering the business names must not make them credentials."""
+        _register_canonical(monkeypatch)
+
+        result = _verify(monkeypatch, _receipt(
+            amount=5000, receiver_name="Interview support", receiver_upi_id="",
+            receiver_phone="", receiver_account=""))
+
+        assert result["booking_eligible"] is not True
+
+    def test_a_failed_transaction_is_never_credited(self, monkeypatch):
+        _register_canonical(monkeypatch)
+
+        result = _paid(monkeypatch, "J Ravinder", APPROVED_UPI, status="failed")
+
+        assert result["booking_eligible"] is not True
+
+    def test_a_receipt_without_a_reference_is_not_credited(self, monkeypatch):
+        _register_canonical(monkeypatch)
+
+        result = _paid(monkeypatch, "J Ravinder", APPROVED_UPI,
+                       utr_number="", transaction_id="", reference_number="")
+
+        assert result["booking_eligible"] is not True

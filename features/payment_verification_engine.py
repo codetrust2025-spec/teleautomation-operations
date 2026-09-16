@@ -165,6 +165,45 @@ def _is_masked_identifier(value: Any) -> bool:
 _MASKED_VISIBLE_MIN = 4
 
 
+def _masked_record_alias_match(masked: str, record: dict[str, Any]) -> str:
+    """The verified identifier of this payee that a masked handle denotes.
+
+    One payee, one identity, several accounts. The company receives at
+    `raviarvind1111@ybl`, at the PhonePe handle derived from its registered
+    phone `8639074573`, and at the CRED handle on the same number -- all the
+    same person and the same money. A rule that could only resolve a mask
+    against a same-provider UPI refused two of those three, and the receipts it
+    refused were genuine.
+
+    So the digits a mask leaves visible are compared against every verified
+    identifier the record holds: a registered UPI's local part at the same
+    provider, a registered phone, or a registered account number. A phone or an
+    account is provider-independent by nature -- a handle derived from a number
+    can exist at any PSP -- while a UPI local part is only evidence at its own
+    provider.
+
+    This never trusts a mask on its own: the caller pairs it with a receiver
+    name that matches the same record, so a mask is read as this payee's account
+    only when name and digits both agree. Digits that agree with nothing this
+    payee holds still match nothing, which is what keeps `…9999@yescred` out.
+    """
+    local, _, domain = str(masked or "").partition("@")
+    if not domain:
+        return ""
+    visible = local.lstrip("Xx*#•·. ").strip()
+    if len(visible) < _MASKED_VISIBLE_MIN:
+        return ""
+    for registered in record.get("upi_ids") or ():
+        reg_local, _, reg_domain = str(registered or "").partition("@")
+        if reg_domain == domain and reg_local.endswith(visible):
+            return str(registered)
+    if visible.isdigit():
+        for registered in list(record.get("phones") or ()) + list(record.get("accounts") or ()):
+            if str(registered or "").endswith(visible):
+                return str(registered)
+    return ""
+
+
 def _mask_is_comparable(masked: str, registered_ids) -> bool:
     """Can this registry actually check the digits the mask left visible?
 
@@ -353,7 +392,15 @@ def receiver_registry(*, referrer_hint: str = "") -> list[dict[str, Any]]:
         resolve_referrer,
     )
 
-    company_names = _split_env("COMPANY_PAYMENT_RECEIVER_NAMES") or ["J Ravinder", "Jollu Ravinder"]
+    # One payee, several names: the bank prints "JOLLU RAVINDER", PhonePe shows
+    # the display name the account carries, and the business ones appear on
+    # receipts paid to the same account. They are aliases of one canonical
+    # company receiver, never identifiers -- matching still requires a verified
+    # UPI, phone or account on the same record.
+    company_names = _split_env("COMPANY_PAYMENT_RECEIVER_NAMES") or [
+        "J Ravinder", "Jollu Ravinder", "J RAVINDER", "JOLLU RAVINDER",
+        "Ravinder MLR", "Interview support", "Hyd Job",
+    ]
     records = [
         _receiver_record(
             "company",
@@ -592,7 +639,7 @@ def classify_receiver(
             upi_masked
             and name
             and name in record["aliases"]
-            and _masked_upi_alias_match(masked_upi, record["upi_ids"])
+            and _masked_record_alias_match(masked_upi, record)
         ):
             # Reached whatever else was extracted, deliberately. This used to
             # require that no other identifier existed at all, so one stray
@@ -609,6 +656,11 @@ def classify_receiver(
             and name
             and name in record["aliases"]
             and not _mask_is_comparable(masked_upi, record["upi_ids"])
+            # A registered phone or account makes every mask checkable, whatever
+            # provider drew it: the digits either end one of this payee's
+            # numbers or they do not. With one on file the name can no longer
+            # rescue a mask that matched nothing.
+            and not (record.get("phones") or record.get("accounts"))
         ):
             # Name alone, and only where no identifier could be checked.
             #
