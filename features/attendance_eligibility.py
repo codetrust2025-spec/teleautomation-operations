@@ -578,7 +578,15 @@ def mark_attendance(
         if not decision["working_day"] or not decision["eligible"]:
             raise ValueError(decision["reason"])
         if not network.allowed:
-            raise PermissionError("Connect to Office Wi-Fi to mark attendance.")
+            # Naming the address changes nothing about who is allowed in -- the
+            # allowlist still decides -- but it turns "I am in the office and it
+            # says I am not" into a value an admin can check against the policy.
+            seen = str(getattr(network, "observed_ip", "") or "")
+            raise PermissionError(
+                "Connect to Office Wi-Fi to mark attendance."
+                + (f" This device reaches us from {seen}, which is not an approved office network."
+                   if seen else "")
+            )
         record_id = str(uuid.uuid4())
         audit = {
             "source": "authenticated_operations_session",

@@ -25,6 +25,13 @@ class NetworkVerification:
     source: str
     policy_id: str
     reason: str
+    #: The address the decision was made about. A refused handler is told it so
+    #: the office allowlist can be corrected without reading a server log: the
+    #: office public IP changes when the router is reset -- it moved from
+    #: 124.123.169.31 to 124.123.183.195 in September 2026 -- and until the
+    #: refusal named an address, the only symptom was "Connect to Office Wi-Fi"
+    #: while sitting in the office.
+    observed_ip: str = ""
 
     def audit_payload(self) -> dict[str, str | bool]:
         return {
@@ -32,6 +39,7 @@ class NetworkVerification:
             "source": self.source,
             "policy_id": self.policy_id,
             "reason": self.reason,
+            "observed_ip": self.observed_ip,
         }
 
 
@@ -116,5 +124,5 @@ def verify_office_network(
     if not client:
         return NetworkVerification(False, source, policy, "CLIENT_ADDRESS_UNAVAILABLE")
     if _inside(client, office):
-        return NetworkVerification(True, source, policy, "APPROVED_OFFICE_NETWORK")
-    return NetworkVerification(False, source, policy, "OUTSIDE_APPROVED_OFFICE_NETWORK")
+        return NetworkVerification(True, source, policy, "APPROVED_OFFICE_NETWORK", str(client))
+    return NetworkVerification(False, source, policy, "OUTSIDE_APPROVED_OFFICE_NETWORK", str(client))
