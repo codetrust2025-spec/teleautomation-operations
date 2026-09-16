@@ -587,3 +587,136 @@ class TestDuplicateProtectionsIntact:
         assert second.json()["verified_total"] == FEE
         assert second.json()["proof_count"] == 3
         assert second.json()["payment_complete"] is True
+
+
+# ── the CRED handle: a second provider for the same approved receiver ────────
+#
+# Production, 2026-09-16: a genuine ₹5,000 PhonePe receipt paid to
+# "JOLLU RAVINDER" at a masked ``XXXXXX4573@yescred`` was refused as
+# "More Payment Details Required". The probe against the live engine returned
+# receiver_match='name' at score 90 -- the payee name matched, no identifier
+# could be checked, and a name-only match is deliberately not creditable.
+#
+# The company holds accounts at more than one provider. Only ``…1111@ybl`` was
+# registered, so nothing could confirm the CRED account belonged to the company.
+# Registering that account is a configuration act; every rule below is unchanged,
+# and the refusals are pinned harder than the acceptance.
+
+CRED_UPI = "jolluravinder4573@yescred"      # shaped like the real handle; the
+                                            # real VPA is registered in the env
+MASKED_CRED = "XXXXXX4573@yescred"
+
+
+def _cred_receipt(**patch):
+    values = {
+        "amount": 5000,
+        "receiver_name": "JOLLU RAVINDER",
+        "receiver_upi_id": MASKED_CRED,
+        "utr_number": "269080108616",
+        "transaction_id": "T2609161245508194570195",
+    }
+    values.update(patch)
+    return _receipt(**values)
+
+
+class TestTheCredHandleOnceRegistered:
+    def test_the_five_thousand_receipt_verifies(self, monkeypatch):
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+
+        result = _verify(monkeypatch, _cred_receipt())
+
+        assert result["verification_state"] == "VERIFIED_COMPANY_PAYMENT"
+        assert result["booking_eligible"] is True
+        assert result["receiver_match"] == "masked_upi_alias"
+        assert result["receiver_match_score"] == 100
+
+    def test_the_handle_it_resolved_to_is_the_registered_one(self, monkeypatch):
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+        assert engine._masked_upi_alias_match(MASKED_CRED, (APPROVED_UPI, CRED_UPI)) == CRED_UPI
+
+    def test_the_older_ybl_handle_still_verifies_too(self, monkeypatch):
+        """Registering a second account must not unregister the first."""
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+
+        result = _verify(monkeypatch, _receipt(receiver_upi_id="XXXXXX1111@ybl"))
+
+        assert result["verification_state"] == "VERIFIED_COMPANY_PAYMENT"
+
+
+class TestTheRefusalsThatMustSurvive:
+    def test_without_registration_the_same_receipt_is_still_refused(self, monkeypatch):
+        """The production bug, pinned as intended behaviour: the name matches,
+        the identifier cannot be checked, and nothing is credited."""
+        _register_company(monkeypatch, APPROVED_UPI)
+
+        result = _verify(monkeypatch, _cred_receipt())
+
+        assert result["verification_state"] == "INCOMPLETE_PAYMENT_EVIDENCE"
+        assert result["booking_eligible"] is not True
+        assert result["receiver_match"] == "name"
+
+    def test_the_company_name_alone_never_credits_a_payment(self, monkeypatch):
+        """Someone else can be called Ravinder. The name is not an identifier."""
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+
+        result = _verify(monkeypatch, _cred_receipt(receiver_upi_id="", receiver_phone="", receiver_account=""))
+
+        assert result["booking_eligible"] is not True
+        assert result["verification_state"] == "INCOMPLETE_PAYMENT_EVIDENCE"
+
+    def test_a_contradicting_tail_at_the_registered_provider_is_refused(self, monkeypatch):
+        """Same provider, same name, different account: the digits the mask
+        left are evidence, and they disagree."""
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+
+        result = _verify(monkeypatch, _cred_receipt(receiver_upi_id="XXXXXX9999@yescred"))
+
+        assert result["booking_eligible"] is not True
+
+    def test_an_unregistered_provider_is_still_refused(self, monkeypatch):
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+
+        result = _verify(monkeypatch, _cred_receipt(receiver_upi_id="XXXXXX4573@okaxis"))
+
+        assert result["booking_eligible"] is not True
+
+    def test_an_unmasked_handle_nobody_registered_is_refused(self, monkeypatch):
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+
+        result = _verify(monkeypatch, _cred_receipt(receiver_upi_id="someone.else@okicici"))
+
+        assert result["booking_eligible"] is not True
+
+
+class TestOneIdentifierBelongsToOneOwner:
+    """A company identifier registered again under a referrer makes every future
+    receipt to it ambiguous, and an ambiguous receiver is refused -- so a real,
+    approved account silently stops being creditable. It is refused at
+    registration instead."""
+
+    def test_a_referrer_cannot_take_a_company_upi(self, monkeypatch):
+        from features import referrer_registry
+
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+        referrer_registry.materialize_current_referrers(actor="test")
+        referrer = referrer_registry.list_referrers()[0] if referrer_registry.list_referrers() else None
+        if referrer is None:
+            pytest.skip("no referrer available in this isolated registry")
+
+        with pytest.raises(ValueError, match="company receiver identifier"):
+            referrer_registry.add_payment_account(
+                referrer["id"], {"upi_id": CRED_UPI, "account_holder_name": "Someone"}, actor="test")
+
+    def test_an_unrelated_referrer_account_is_still_allowed(self, monkeypatch):
+        from features import referrer_registry
+
+        _register_company(monkeypatch, APPROVED_UPI, CRED_UPI)
+        referrer_registry.materialize_current_referrers(actor="test")
+        referrers = referrer_registry.list_referrers()
+        if not referrers:
+            pytest.skip("no referrer available in this isolated registry")
+
+        added = referrer_registry.add_payment_account(
+            referrers[0]["id"], {"upi_id": "different.person@ybl", "account_holder_name": "Someone"}, actor="test")
+
+        assert added["id"]
