@@ -3522,18 +3522,21 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
                 mailbox=mailbox, message=decoded, event=event, result=result,
             )
             booking = outcome.get("booking") or {}
-            _publish(
-                outcome["event_type"], **common, status=outcome.get("status"),
-                booking_id=booking.get("id"), booking_audit_id=(outcome.get("audit") or {}).get("id"),
-                booking_type="Assessment",
-                interview_date=booking.get("date"), interview_time=booking.get("time"),
-                start_time=booking.get("time"), end_time=booking.get("time_end"),
-                timezone="Asia/Kolkata" if booking.get("date") else None,
-                booking_url=f"/daily-ops?bookingId={booking.get('id')}" if booking.get("id") else "",
-                failure_code=outcome.get("failure_code"),
-                block_reason=(outcome.get("block_reason") or {}).get("reason"),
-                block_reason_code=(outcome.get("block_reason") or {}).get("reason_code"),
-            )
+            # `common` already carries a status -- the candidate's -- so the
+            # booking's own status has to replace it in one payload rather than
+            # arrive as a second keyword.
+            _publish(outcome["event_type"], **{
+                **common, "status": outcome.get("status"),
+                "booking_id": booking.get("id"), "booking_audit_id": (outcome.get("audit") or {}).get("id"),
+                "booking_type": "Assessment",
+                "interview_date": booking.get("date"), "interview_time": booking.get("time"),
+                "start_time": booking.get("time"), "end_time": booking.get("time_end"),
+                "timezone": "Asia/Kolkata" if booking.get("date") else None,
+                "booking_url": f"/daily-ops?bookingId={booking.get('id')}" if booking.get("id") else "",
+                "failure_code": outcome.get("failure_code"),
+                "block_reason": (outcome.get("block_reason") or {}).get("reason"),
+                "block_reason_code": (outcome.get("block_reason") or {}).get("reason_code"),
+            })
             event["auto_booking"] = outcome
             if outcome.get("notification"):
                 event["notification"] = outcome["notification"]
