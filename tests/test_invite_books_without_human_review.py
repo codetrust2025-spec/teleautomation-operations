@@ -20,7 +20,7 @@ def relevance(decision, kind):
 def trusted_invite():
     return {
         "calendar_validation_status": "TRUSTED",
-        "calendar": {"method": "REQUEST", "uid": "gangadhar-uid", "has_dtend": True},
+        "calendar": {"method": "REQUEST", "uid": "nitin-uid", "has_dtend": True},
         "interview": {"date": "2026-09-10", "meeting_link": "https://teams.microsoft.com/l/meetup"},
     }
 

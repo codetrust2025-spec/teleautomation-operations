@@ -30,11 +30,11 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 
 /** The five slots production is actually holding. */
 const FIVE = [
-  { date: '2026-09-09', time: '15:30', name: 'Gopichand' },
-  { date: '2026-09-09', time: '17:00', name: 'Gopichand' },
-  { date: '2026-09-09', time: '18:30', name: 'Gopichand' },
+  { date: '2026-09-09', time: '15:30', name: 'Aniket' },
+  { date: '2026-09-09', time: '17:00', name: 'Aniket' },
+  { date: '2026-09-09', time: '18:30', name: 'Aniket' },
   { date: '2026-09-10', time: '12:00', name: 'Pavan Ravi' },
-  { date: '2026-09-10', time: '15:00', name: 'Gopichand' },
+  { date: '2026-09-10', time: '15:00', name: 'Aniket' },
 ]
 
 function stubSlots(slots, { ok = true, status = 'ok' } = {}) {

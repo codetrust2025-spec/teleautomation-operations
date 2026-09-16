@@ -92,7 +92,7 @@ def _upload(client, images, *, existing=(), field="files"):
     return client.post(
         "/public/slots/payment-proof",
         data={
-            "name": "Gopichand",
+            "name": "Aniket",
             "service_type": "round_wise",
             "phone": PHONE,
             "technology": "Testing",
@@ -107,11 +107,11 @@ def _confirm(client, proof_ids):
     return client.post(
         "/bookings/confirm",
         data={
-            "name": "Gopichand", "service_type": "round_wise", "phone": PHONE,
+            "name": "Aniket", "service_type": "round_wise", "phone": PHONE,
             "technology": "Testing", "interview_round": "L2", "date": "2026-09-02",
             "time": "03:00 PM", "time_end": "04:00 PM",
             "payment_proof_ids": ",".join(proof_ids),
-            "idempotency_key": "gopichand-split-2026-09-02",
+            "idempotency_key": "aniket-split-2026-09-02",
         },
         files={"file": ("invite.jpg", b"interview-invite", "image/jpeg")},
     )
@@ -214,11 +214,11 @@ def test_a_single_screenshot_covering_the_fee_still_books_unchanged(monkeypatch,
     confirmed = client.post(
         "/bookings/confirm",
         data={
-            "name": "Gopichand", "service_type": "round_wise", "phone": PHONE,
+            "name": "Aniket", "service_type": "round_wise", "phone": PHONE,
             "technology": "Testing", "interview_round": "L2", "date": "2026-09-02",
             "time": "03:00 PM", "time_end": "04:00 PM",
             "payment_proof_id": body["proof_id"],
-            "idempotency_key": "gopichand-single-2026-09-02",
+            "idempotency_key": "aniket-single-2026-09-02",
         },
         files={"file": ("invite.jpg", b"interview-invite", "image/jpeg")},
     )

@@ -17,7 +17,7 @@ def test_google_calendar_yearless_day_month_24h_range() -> None:
 
 def test_combined_date_time_does_not_parse_date_as_time_range() -> None:
     parsed = parse_invite_text(
-        "Interview Invite: Sakthivel | Candidate ID: 1010934472\n"
+        "Interview Invite: Dinesh | Candidate ID: 1010934472\n"
         "Tomorrow + 10:30AM ~ 11:15AM\n"
         "Meeting Date and Time: 25-07-2026 10:30 IST\n"
         "Microsoft Teams Meeting"

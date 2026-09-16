@@ -152,12 +152,12 @@ def test_a_stale_whole_store_save_cannot_delete_a_newer_row(cursor):
 def test_the_targeted_patch_writes_one_guarded_update_and_nothing_else(monkeypatch, cursor):
     """The end of the corruption: one row in, one UPDATE out, no DELETE."""
     booked = {
-        "id": "b3500fe1b0", "name": "Gopichand", "date": "2026-08-14",
+        "id": "b3500fe1b0", "name": "Aniket", "date": "2026-08-14",
         "time": "13:00", "time_end": "13:45", "slot_confirmed": True,
         "_store_updated_at": "2026-08-13T14:24:00+05:30",
     }
     other = {
-        "id": "0475c0fbbf", "name": "Gopichand", "date": "2026-08-14",
+        "id": "0475c0fbbf", "name": "Aniket", "date": "2026-08-14",
         "time": "14:00", "time_end": "15:00", "slot_confirmed": True,
         "_store_updated_at": "2026-08-13T09:10:00+05:30",
     }
@@ -205,7 +205,7 @@ def test_the_evidence_write_cannot_revert_a_booking_made_after_the_snapshot(monk
     guard rejects it, so the slot stands.
     """
     unbooked = {
-        "id": "b3500fe1b0", "name": "Gopichand", "date": "", "time": "",
+        "id": "b3500fe1b0", "name": "Aniket", "date": "", "time": "",
         "time_end": "", "slot_confirmed": False,
         "_store_updated_at": "2026-08-13T09:00:00+05:30",
     }
@@ -253,7 +253,7 @@ def test_evidence_reaches_the_row_even_when_the_cache_predates_the_booking(monke
     monkeypatch.setattr(cs, "_load_cache", None)
     monkeypatch.setattr(cs, "_load_cache_at", 0.0)
     cursor.rows = [{
-        "id": "b3500fe1b0", "name": "Gopichand", "date": "", "time": "",
+        "id": "b3500fe1b0", "name": "Aniket", "date": "", "time": "",
         "time_end": "", "slot_confirmed": False, "slot_screenshot_proofs": [],
         "_store_updated_at": "2026-08-13T09:00:00+05:30",
     }]
@@ -262,7 +262,7 @@ def test_evidence_reaches_the_row_even_when_the_cache_predates_the_booking(monke
 
     # Another worker books the interview; the row and its version move on.
     cursor.rows = [{
-        "id": "b3500fe1b0", "name": "Gopichand", "date": "2026-08-14",
+        "id": "b3500fe1b0", "name": "Aniket", "date": "2026-08-14",
         "time": "13:00", "time_end": "13:45", "slot_confirmed": True,
         "slot_screenshot_proofs": [],
         "_store_updated_at": "2026-08-13T14:24:00+05:30",

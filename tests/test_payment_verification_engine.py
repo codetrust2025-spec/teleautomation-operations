@@ -699,7 +699,7 @@ def test_thrilok_exact_full_phone_is_amount_independent(
                     "id": "thrilok-phone",
                     "name": "SAMPLE REFERRER TWO",
                     "referrer_id": "referrer-thrilok",
-                    "payment_phone_number": "+91 99598 85810",
+                    "payment_phone_number": "+91 90000 00110",
                     "verification_status": "VERIFIED",
                 }
             ]
@@ -718,7 +718,7 @@ def test_thrilok_exact_full_phone_is_amount_independent(
             direction="PAID_TO",
             receiver_name="SAMPLE REFERRER TWO",
             receiver_upi_id="",
-            receiver_phone_number="9959885810",
+            receiver_phone_number="9000000110",
             utr_number=f"THRILOK{amount}",
         ),
     )

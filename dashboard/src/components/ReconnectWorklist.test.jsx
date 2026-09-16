@@ -141,10 +141,10 @@ describe('the worklist', () => {
 
 describe('what the screen shows', () => {
   const rows = [
-    row('Ram Charan', 'reddycharanmunthala' + '@' + 'gmail.com', 14.6, { broken: true }),
-    row('Vasanthi', 'wasanthi.adapa' + '@' + 'gmail.com', 6.3, { broken: true }),
-    row('Keerthi', 'keerthinannapaneni24' + '@' + 'gmail.com', 6.1),
-    row('Gopichand', 'gummagopichand3' + '@' + 'gmail.com', 0.2),
+    row('Ram Charan', 'msverma2' + '@' + 'example.com', 14.6, { broken: true }),
+    row('Anjali', 'anjali.adhikari' + '@' + 'example.com', 6.3, { broken: true }),
+    row('Deepa', 'deepa.shetty' + '@' + 'example.com', 6.1),
+    row('Aniket', 'aniket.rane2' + '@' + 'example.com', 0.2),
   ]
 
   it('lists both groups with their counts', () => {
@@ -155,7 +155,7 @@ describe('what the screen shows', () => {
 
   it('names the accounts and the people behind them', () => {
     render(<ReconnectWorklist rows={rows} busy={false} onAction={() => {}} />)
-    expect(screen.getByText('reddycharanmunthala' + '@' + 'gmail.com')).toBeInTheDocument()
+    expect(screen.getByText('msverma2' + '@' + 'example.com')).toBeInTheDocument()
     expect(screen.getByText('Ram Charan')).toBeInTheDocument()
   })
 
@@ -165,7 +165,7 @@ describe('what the screen shows', () => {
   })
 
   it('says today rather than in 1 day for a grant with hours left', () => {
-    // Keerthi was authorised 6.1 days ago, so 0.9 days remain. "in 1 day"
+    // Deepa was authorised 6.1 days ago, so 0.9 days remain. "in 1 day"
     // would read as tomorrow and buy an operator a day that does not exist.
     render(<ReconnectWorklist rows={rows} busy={false} onAction={() => {}} />)
     expect(screen.getByText('expires today')).toBeInTheDocument()
@@ -174,7 +174,7 @@ describe('what the screen shows', () => {
   it('counts the days when there is more than one left', () => {
     render(
       <ReconnectWorklist
-        rows={[row('Uday', 'rapoluudaykumar009' + '@' + 'gmail.com', 5.2)]}
+        rows={[row('Arun', 'arunkumar.pillai' + '@' + 'example.com', 5.2)]}
         busy={false}
         onAction={() => {}}
         withinDays={3}
@@ -185,7 +185,7 @@ describe('what the screen shows', () => {
 
   it('leaves a healthy account off the list', () => {
     render(<ReconnectWorklist rows={rows} busy={false} onAction={() => {}} />)
-    expect(screen.queryByText('gummagopichand3' + '@' + 'gmail.com')).toBeNull()
+    expect(screen.queryByText('aniket.rane2' + '@' + 'example.com')).toBeNull()
   })
 
   it('reconnects through the action the table already uses', () => {
@@ -205,7 +205,7 @@ describe('what the screen shows', () => {
   })
 
   it('says so when there is nothing to do', () => {
-    render(<ReconnectWorklist rows={[row('Fine', 'ok' + '@' + 'gmail.com', 0.5)]}
+    render(<ReconnectWorklist rows={[row('Fine', 'ok' + '@' + 'example.com', 0.5)]}
       busy={false} onAction={() => {}} />)
     expect(screen.getByText('No Gmail account needs reconnecting.')).toBeInTheDocument()
     expect(screen.queryByRole('table')).toBeNull()

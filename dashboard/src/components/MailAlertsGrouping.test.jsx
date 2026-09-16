@@ -31,15 +31,15 @@ class FakeWebSocket {
 }
 
 const row = (over = {}) => ({
-  id: "n-1", candidate_id: "cand-1", candidate_name: "Gopichand",
-  candidate_email: "gopichandgumma21@gmail.com", company_name: "Innominds",
+  id: "n-1", candidate_id: "cand-1", candidate_name: "Aniket",
+  candidate_email: "aniket.rane@example.com", company_name: "Innominds",
   classification: "offer_received", candidate_status: "Offer Received",
   email_subject: "Innominds offer has been released", ai_confidence: 0.95,
   email_received_at: "2026-08-24T12:46:00Z", created_at: "2026-08-28T14:29:00Z",
   is_read: true, is_reviewed: true, ...over,
 });
 
-// Two candidates; Gopichand holds three selection mails, two of them sharing a
+// Two candidates; Aniket holds three selection mails, two of them sharing a
 // company. Grouping must keep all three.
 const SELECTION_ROWS = [
   row({ id: "n-1" }),
@@ -49,9 +49,9 @@ const SELECTION_ROWS = [
   row({ id: "n-3", classification: "background_verification", candidate_status: "BGV",
         company_name: "Digiverifier", email_subject: "Invitation - Digital Employment BGV",
         ai_confidence: 0.85, is_reviewed: false }),
-  row({ id: "n-4", candidate_id: "cand-2", candidate_name: "Yamini Akhil",
-        candidate_email: "akhil.yamani1110@gmail.com", company_name: "Onni Global",
-        email_subject: "Akhil Yamani_Documents" }),
+  row({ id: "n-4", candidate_id: "cand-2", candidate_name: "Yamini Rohit",
+        candidate_email: "rohit.sinha@example.com", company_name: "Onni Global",
+        email_subject: "Rohit Yamani_Documents" }),
 ];
 
 function response(body) { return Promise.resolve({ ok: true, json: () => Promise.resolve(body) }); }
@@ -122,13 +122,13 @@ describe("each candidate appears once", () => {
   it("draws one parent per candidate, not one per mail", async () => {
     await showSelection();
     await waitFor(() => expect(groups().length).toBe(2));
-    expect(headings()).toEqual(["Gopichand", "Yamini Akhil"]);
+    expect(headings()).toEqual(["Aniket", "Yamini Rohit"]);
   });
 
   it("shows the candidate email on the parent and not on every row", async () => {
     await showSelection();
     await waitFor(() => expect(groups().length).toBe(2));
-    const shown = screen.getAllByText("gopichandgumma21@gmail.com");
+    const shown = screen.getAllByText("aniket.rane@example.com");
     expect(shown.length).toBe(1);
     expect(shown[0].closest(".mail-group__head")).toBeTruthy();
   });
@@ -147,16 +147,16 @@ describe("the mails underneath are not deduplicated", () => {
   it("keeps every mail as its own row inside the candidate group", async () => {
     await showSelection();
     await waitFor(() => expect(groups().length).toBe(2));
-    const [gopichand, yamini] = groups();
-    expect(within(gopichand).getAllByRole("row").length).toBe(4); // parent + 3 mails
+    const [aniket, yamini] = groups();
+    expect(within(aniket).getAllByRole("row").length).toBe(4); // parent + 3 mails
     expect(within(yamini).getAllByRole("row").length).toBe(2);
   });
 
   it("preserves each mail's own company, status, subject, confidence and review", async () => {
     await showSelection();
     await waitFor(() => expect(groups().length).toBe(2));
-    const [gopichand] = groups();
-    const mails = within(gopichand).getAllByRole("row").slice(1);
+    const [aniket] = groups();
+    const mails = within(aniket).getAllByRole("row").slice(1);
     const cells = mails.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent));
     expect(cells.map((c) => c[1])).toEqual(["Innominds", "Innominds", "Digiverifier"]);
     expect(cells.map((c) => c[2])).toEqual(["Offer Received", "Joining Confirmed", "BGV"]);

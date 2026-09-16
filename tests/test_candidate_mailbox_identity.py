@@ -16,7 +16,7 @@ def test_duplicate_profile_rows_share_all_mailboxes(monkeypatch):
                 {
                     "id": "legacy-profile",
                     "name": "Reddy Charan M S",
-                    "phone": "8328646540",
+                    "phone": "9000000102",
                     "service_type": "profile_service",
                 },
             ]
@@ -62,7 +62,7 @@ def test_bulk_canonical_mailbox_ids_load_candidates_once(monkeypatch):
             {
                 "id": "legacy-profile",
                 "name": "Reddy Charan M S",
-                "phone": "8328646540",
+                "phone": "9000000102",
                 "service_type": "profile_service",
             },
             {

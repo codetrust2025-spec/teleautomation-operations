@@ -17,7 +17,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { SubmitSlotPage } from './SubmitSlotPage.jsx'
 
 const CANDIDATE = {
-  id: 'cand-1', name: 'Gopichand', needs_payment_proof: true, balance_due: 5000,
+  id: 'cand-1', name: 'Aniket', needs_payment_proof: true, balance_due: 5000,
 }
 
 function screenshot(label) {
@@ -46,7 +46,7 @@ function stubFetch(uploadReplies) {
       calls.confirms.push(options.body)
       return Promise.resolve({
         ok: true, status: 200,
-        json: () => Promise.resolve({ status: 'ok', candidate: { name: 'Gopichand' } }),
+        json: () => Promise.resolve({ status: 'ok', candidate: { name: 'Aniket' } }),
       })
     }
     const body = target.includes('/public/slots/booked')
@@ -61,8 +61,8 @@ function stubFetch(uploadReplies) {
 async function pickCandidate() {
   render(<SubmitSlotPage />)
   const name = await screen.findByPlaceholderText(/choose or type your name/i)
-  fireEvent.change(name, { target: { value: 'Gopichand' } })
-  fireEvent.click(await screen.findByRole('option', { name: 'Gopichand' }))
+  fireEvent.change(name, { target: { value: 'Aniket' } })
+  fireEvent.click(await screen.findByRole('option', { name: 'Aniket' }))
   return screen.findByText(/payment due/i)
 }
 

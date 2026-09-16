@@ -32,7 +32,7 @@ class TestWhatTheMaskStillTells:
 
 class TestWhatItRefuses:
     def test_a_contradicting_tail_matches_nothing(self):
-        """pujitha's actual screenshots: ...4573@ybl against a registered
+        """lavanya's actual screenshots: ...4573@ybl against a registered
         ...1111@ybl. Same provider, same person's name -- and the one part of
         the handle the mask left disagrees. This is the case the whole rule
         exists to refuse."""

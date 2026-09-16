@@ -33,8 +33,8 @@ def test_mail_filter_routes_assertive_calendar_invite_wording():
 
 
 def test_mail_filter_routes_numbered_round_calendar_invite_without_interview_word():
-    subject=('Invitation from an unknown sender: L1 Discussion with Gangadhar for SOMT '
-             '@ Tue Jul 21, 2026 11:30am - 12pm (IST) (candidate@gmail.com)')
+    subject=('Invitation from an unknown sender: L1 Discussion with Nitin for SOMT '
+             '@ Tue Jul 21, 2026 11:30am - 12pm (IST) (candidate@example.com)')
     route=routing_decision(subject,'Data Template Infotech Private Limited',sender_email='organizer@example.com')
     assert route['send_to_ai'] is True
     assert route['context']['qualified'] is True
@@ -396,7 +396,7 @@ def test_candidate_specific_walkin_confirmation_is_routed_to_ai():
     """TEST 2: a candidate-specific confirmed walk-in must still reach AI/validation."""
     route = routing_decision(
         "Walk-in interview confirmation",
-        "Hi Gopichand, your interview with ABC Technologies is confirmed today at 2 PM IST.",
+        "Hi Aniket, your interview with ABC Technologies is confirmed today at 2 PM IST.",
         "ABC Technologies HR", "hr@abctechnologies.invalid",
     )
     assert route["send_to_ai"] is True
@@ -498,7 +498,7 @@ def test_selection_outcome_detection():
 def test_offer_received_outcome_detection():
     route = routing_decision(
         "Congratulations, You're in! Offer letter inside",
-        "Hi Akhil, We are pleased to offer you employment at our company. Please review your attached offer letter.",
+        "Hi Rohit, We are pleased to offer you employment at our company. Please review your attached offer letter.",
         sender_email="no-reply@kekamail.com",
     )
     assert route["send_to_ai"] is True
@@ -509,7 +509,7 @@ def test_final_round_cleared_outcome_detection():
     route = routing_decision(
         "EY | L2 | React JS | Reddy Charan M S",
         "Hi Charan, Thank you for continued interest in working with EY India. We are pleased to inform you that you have successfully cleared the L1 round.",
-        sender_email="Dhanyalakshmi.J@in.ey.com",
+        sender_email="Sunita.K@in.ey.com",
     )
     assert route["send_to_ai"] is True
     assert route["context"]["status"] == "FINAL_ROUND_CLEARED"
@@ -519,7 +519,7 @@ def test_hr_confirmation_and_documentation_outcome_detection():
     route = routing_decision(
         "CAPGEMINI DOCUMENATION",
         "Hi Poojitha, Minimal documents required for offer release: Please share 1. Pan card 2. Aadhar card 3. Degree certificate.",
-        sender_email="mayank.b.mayank@capgemini.com",
+        sender_email="rajat.b.rajat@capgemini.com",
     )
     assert route["send_to_ai"] is True
     assert route["context"]["status"] in {"HR_CONFIRMATION", "DOCUMENT_VERIFICATION"}
@@ -528,7 +528,7 @@ def test_hr_confirmation_and_documentation_outcome_detection():
 def test_joining_and_bgv_outcome_detection():
     route = routing_decision(
         "Invitation - Digital Employment BGV_RH30116125",
-        "Dear Gopichand, You have been invited to complete your digital employment background verification process.",
+        "Dear Aniket, You have been invited to complete your digital employment background verification process.",
         sender_email="noreply@digiverifier.com",
     )
     assert route["send_to_ai"] is True

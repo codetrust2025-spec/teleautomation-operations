@@ -8,7 +8,7 @@ def test_extract_offer_letter_fields_from_embedded_text(monkeypatch):
     ACME Technologies Private Limited
     Date: 24 July 2026
 
-    Dear Sakthivel Thangaraj,
+    Dear Dinesh Kulkarni,
 
     We are pleased to offer you employment with ACME Technologies Private Limited
     as a QA Analyst.
@@ -22,7 +22,7 @@ def test_extract_offer_letter_fields_from_embedded_text(monkeypatch):
     )
 
     assert result["filename"] == "Sakthivel_ACME_Offer.pdf"
-    assert result["candidate"] == "Sakthivel Thangaraj"
+    assert result["candidate"] == "Dinesh Kulkarni"
     assert result["company_name"] == "ACME Technologies Private Limited"
     assert result["size_kb"] == 1
     assert result["analysis_method"] == "embedded_text"
@@ -59,7 +59,7 @@ def test_create_offer_letter_saves_pdf_and_catalog(monkeypatch, tmp_path):
         "extract_offer_letter_fields",
         lambda data, filename: {
             "filename": filename,
-            "candidate": "Sakthivel",
+            "candidate": "Dinesh",
             "company_name": "Infosys",
             "date_modified": "2026-07-24",
             "size_kb": 1,
@@ -73,7 +73,7 @@ def test_create_offer_letter_saves_pdf_and_catalog(monkeypatch, tmp_path):
     row = store.create_offer_letter_from_pdf("Infosys Offer.pdf", b"%PDF-test")
 
     assert row["id"] == "infosys_offer"
-    assert row["candidate"] == "Sakthivel"
+    assert row["candidate"] == "Dinesh"
     assert row["has_pdf"] is True
     assert (tmp_path / "offer-cache" / "infosys_offer.pdf").read_bytes() == b"%PDF-test"
     assert store.find_offer_letter("infosys_offer")["company_name"] == "Infosys"

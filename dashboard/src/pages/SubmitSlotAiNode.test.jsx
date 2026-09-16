@@ -95,7 +95,7 @@ async function startPaymentUpload() {
   fireEvent.click(await screen.findByRole('button', { name: /profile service/i }))
   fireEvent.click(await screen.findByText('Round-wise'))
   fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-  fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+  fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
   fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
   await screen.findByText(/paid in parts\? attach each screenshot/i)

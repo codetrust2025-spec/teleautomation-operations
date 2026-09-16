@@ -1,6 +1,6 @@
 """A missed interview slot books nothing, and a reminder books nothing twice.
 
-Pujitha Venkata Chundru was booked for 2026-09-11, 02:30-04:00 IST, twice, for
+Lavanya Venkata Chundru was booked for 2026-09-11, 02:30-04:00 IST, twice, for
 an interview she had already missed.
 
 The times are not the fault. The Persistent Systems mail says the slot was
@@ -37,7 +37,7 @@ SUBJECT = ("Interview Slot Missed for V1 AI Java React Kafka Mongo "
            "Microservices Role at Persistent Systems")
 BODY = (
     "Interview slot missed for V1 AI Java React Kafka Mongo Microservices Role "
-    "Hi Pujitha Venkata, It looks like you missed your interview slot. You can "
+    "Hi Lavanya Venkata, It looks like you missed your interview slot. You can "
     "reschedule your interview by clicking the button below. Please ensure it is "
     "completed before 10 Sep 2026, 11:00 PM. Sep 10 Thursday, 10th September 2026 "
     "Missed Slot 02:00 PM - 03:30 PM PDT 60 mins Persistent Systems Reschedule "
@@ -157,7 +157,7 @@ class TestOneInterviewIsOneSlot:
         A real sibling requires source evidence, not an assumption that two
         interviews occupying identical minutes must be the same interview.
         """
-        booked = row(interview_calendar_uid="u4ofrugq28i3hva1pqdintqaqg@google.com",
+        booked = row(interview_calendar_uid="syntheticuid000000000002cd@google.com",
                      interview_source_thread_id="thread-google")
         reminder = {"provider_message_id": "1a08d03543262239",
                     "provider_thread_id": "thread-zeko"}
@@ -189,7 +189,7 @@ class TestOneInterviewIsOneSlot:
 
 
 class TestSourceEvidenceMayReleaseABookingNotCreateOne:
-    """The asymmetry that let Pujitha's missed slot stand.
+    """The asymmetry that let Lavanya's missed slot stand.
 
     Both readings agreed the interview was off; the model paraphrased "you
     missed your interview slot" rather than quoting it, so

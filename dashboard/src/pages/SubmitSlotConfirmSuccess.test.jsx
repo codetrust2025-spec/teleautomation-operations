@@ -57,7 +57,7 @@ function stubFetch(confirmReply) {
       return confirmReply()
     }
     if (target.includes('/public/slots/booked')) return reply({ status: 'ok', slots: [] })
-    return reply({ status: 'ok', candidates: [{ id: 'c1', name: 'Gopichand', needs_payment_proof: false, balance_due: 0 }] })
+    return reply({ status: 'ok', candidates: [{ id: 'c1', name: 'Aniket', needs_payment_proof: false, balance_due: 0 }] })
   }))
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() })
   return calls
@@ -69,7 +69,7 @@ async function completedForm() {
   const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
 
   const nameBox = document.querySelector('.sbs-field input')
-  fireEvent.change(nameBox, { target: { value: 'Gopichand' } })
+  fireEvent.change(nameBox, { target: { value: 'Aniket' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
   const invite = [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
@@ -81,7 +81,7 @@ async function completedForm() {
 
 const okReply = () => Promise.resolve({
   ok: true, status: 200, headers: { get: () => 'application/json' },
-  json: () => Promise.resolve({ status: 'ok', candidate: { name: 'Gopichand' } }),
+  json: () => Promise.resolve({ status: 'ok', candidate: { name: 'Aniket' } }),
 })
 
 describe('a booking the backend accepted', () => {
@@ -92,7 +92,7 @@ describe('a booking the backend accepted', () => {
 
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
     await waitFor(() =>
-      expect(screen.getByText(/Slot confirmed for Gopichand/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Slot confirmed for Aniket/i)).toBeInTheDocument(),
     )
     expect(screen.queryByText(/Network error/i)).not.toBeInTheDocument()
   })

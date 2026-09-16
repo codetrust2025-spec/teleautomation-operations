@@ -3,23 +3,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { OriginalEmail, emailParagraphs, linkLabel, meetingLabel } from "./OriginalEmail.jsx";
 
-const TEAMS = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_NzIxMGU1YWMtMGU2NC00ZDk1LTIjZTEtZDNiOTc2MmVkODI5%40thread.v2/0?context=%7b%22Tid%22%3a%22404b1967-6507-45ab-8a6d-7374a3f478be%22%2c%22Oid%22%3a%221b922d1c-ee13-4d54-81f2-31e c3c111a81%22%7d";
+const TEAMS = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_U3ludGhldGljVGVzdE1lZDk1LTIjZTEtZDNiOTc2MmVkODI5%40thread.v2/0?context=%7b%22Tid%22%3a%2200000000-1111-4222-8333-444444444444%22%2c%22Oid%22%3a%2200000000-5555-4666-8777-888 888888888%22%7d";
 
-// The VHS Professional Services mail, as the pipeline stores it.
+// A recruiter mail shaped exactly as the pipeline stores it.
 const BODY = [
-  "<p>Dear Gangadhar,</p>",
+  "<p>Dear Nitin,</p>",
   "<p>As discussed, your Virtual Interview is scheduled at <b>3.30 PM &#8211; 4.15 PM on 15<sup>th</sup> Sep 2026 (Tuesday)</b>.<br>Please join the link before 5 minutes.</p>",
   "<p><b>Interview Scheduled</b><br><b>15<sup>th</sup> Sep 2026 (Tuesday)</b> at 3.30 PM.</p>",
   "<p>Interview link<br>", `<a href="${TEAMS}">${TEAMS}</a></p>`,
-  "<p>Thanks &amp; Regards<br>Prathima Kamisetti<br>HR Technical Recruiter || 9845303472<br>",
-  "VHS Professional Services Pvt ltd<br>3/1, Langford Road, Shantinagar, Richmond Town, Bangalore 560025.</p>",
+  "<p>Thanks &amp; Regards<br>Anita Raghavan<br>HR Technical Recruiter || 9000000109<br>",
+  "Example Staffing Services Pvt Ltd<br>1 Example Street, Test Layout, Bengaluru 560001.</p>",
 ].join("");
 
 const email = {
   subject: "Virtual Technical Interview Scheduled_TCS",
-  sender_name: "prathima.kamisetti",
-  sender_email: "prathima.kamisetti@vhsps.example",
-  recipient_email: "gangadhar.nagaraje.it@gmail.com",
+  sender_name: "anita.raghavan",
+  sender_email: "anita.raghavan@example-staffing.test",
+  recipient_email: "nitin.deshmukh@example.com",
   sent_at: "2026-09-11T07:22:00Z",
   body: BODY,
 };
@@ -42,10 +42,10 @@ describe("original email", () => {
 
     it("shows the sender, who it was to, and when it arrived", () => {
       const { container } = view();
-      expect(screen.getByText("prathima.kamisetti")).toBeInTheDocument();
+      expect(screen.getByText("anita.raghavan")).toBeInTheDocument();
       expect(screen.getByText(`to ${email.recipient_email}`)).toBeInTheDocument();
       expect(screen.getByText("11 Sept 2026, 12:52 pm")).toBeInTheDocument();
-      expect(container.querySelector(".gmail-view__avatar").textContent).toBe("P");
+      expect(container.querySelector(".gmail-view__avatar").textContent).toBe("A");
     });
 
     it("says 'to me' when the recipient is unknown", () => {
@@ -59,7 +59,7 @@ describe("original email", () => {
       const { container } = view();
       const paragraphs = [...container.querySelectorAll(".gmail-view__body p")];
       expect(paragraphs.length).toBeGreaterThanOrEqual(4);
-      expect(paragraphs[0].textContent).toContain("Dear Gangadhar");
+      expect(paragraphs[0].textContent).toContain("Dear Nitin");
     });
 
     it("keeps the bold the recruiter used", () => {
@@ -73,8 +73,8 @@ describe("original email", () => {
     it("keeps the signature on its own lines", () => {
       const { container } = view();
       const text = container.querySelector(".gmail-view__body").textContent;
-      expect(text).toContain("Prathima Kamisetti");
-      expect(text).toContain("VHS Professional Services Pvt ltd");
+      expect(text).toContain("Anita Raghavan");
+      expect(text).toContain("Example Staffing Services Pvt Ltd");
     });
 
     it("says so plainly when there is no body", () => {
@@ -102,14 +102,14 @@ describe("original email", () => {
 
     it("makes a phone number dialable", () => {
       view();
-      expect(screen.getByRole("link", { name: "9845303472" }))
-        .toHaveAttribute("href", "tel:9845303472");
+      expect(screen.getByRole("link", { name: "9000000109" }))
+        .toHaveAttribute("href", "tel:9000000109");
     });
 
     it("links a bare address in plain text", () => {
-      view({ body: "Reply to prathima@vhsps.example when ready." });
-      expect(screen.getByRole("link", { name: "prathima@vhsps.example" }))
-        .toHaveAttribute("href", "mailto:prathima@vhsps.example");
+      view({ body: "Reply to anita@example-staffing.test when ready." });
+      expect(screen.getByRole("link", { name: "anita@example-staffing.test" }))
+        .toHaveAttribute("href", "mailto:anita@example-staffing.test");
     });
 
     it("names the other meeting providers too", () => {

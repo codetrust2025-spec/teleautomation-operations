@@ -43,30 +43,30 @@ def test_decode_uses_html_when_plain_text_is_missing():
 
 def test_decode_uses_complete_html_current_reply_when_plain_alternative_is_incomplete():
     """Exact Zealogics false-negative: plain had only the quoted candidate
-    reply while HTML carried Girish's new L1-interview instruction."""
-    recipient='badrithiru73'+'@'+'gmail.com'
+    reply while HTML carried Suresh's new L1-interview instruction."""
+    recipient='badrithiru73'+'@'+'example.com'
     plain=(
         'EXTERNAL EMAIL: DO NOT CLICK links or attachments unless you recognize the sender.\n'
         'Sent: Tuesday, September 1, 2026 12:53 PM\n'
-        'To: Girish Vishwambharan\n'
+        'To: Suresh Vishwambharan\n'
         'Subject: Re: New Job Opportunity Azure Engineer - Remote\n'
         'Yes I am interested in the following position looking forward for the interview'
     )
     html_body=(
         '<style>P {margin-top:0;margin-bottom:0;}</style>'
         '<p>EXTERNAL EMAIL: DO NOT CLICK links or attachments unless you recognize the sender.</p>'
-        '<p>Hi Badri,</p>'
+        '<p>Hi Naveen,</p>'
         '<p>Your profile got shortlisted for L1 interview,</p>'
         '<p>Please find below AI test link 30min interview duration. Please complete it ASAP</p>'
         '<p><a href="https://example.test/interview">AI interview link</a></p>'
-        '<p>Thanks,<br>Girish</p>'
-        '<div id="divRplyFwdMsg">From: badri thiru &lt;badrithiru73@gmail.com&gt;<br>'
+        '<p>Thanks,<br>Suresh</p>'
+        '<div id="divRplyFwdMsg">From: naveen thiru &lt;naveen.prakash@example.com&gt;<br>'
         'Yes I am interested in the following position looking forward for the interview</div>'
     )
     encode=lambda value:base64.urlsafe_b64encode(value.encode()).decode().rstrip('=')
     raw={'id':'1a05bdd0c0c30ac2','threadId':'1a05bdd0c0c30ac2','labelIds':['INBOX'],'payload':{
         'headers':[
-            {'name':'From','value':'Girish Vishwambharan <girish@zealogics.com>'},
+            {'name':'From','value':'Suresh Vishwambharan <suresh@zealogics.com>'},
             {'name':'To','value':recipient},
             {'name':'Subject','value':'Re: New Job Opportunity Azure Engineer - Remote'},
             {'name':'Date','value':'Tue, 1 Sep 2026 12:56:43 +0530'},

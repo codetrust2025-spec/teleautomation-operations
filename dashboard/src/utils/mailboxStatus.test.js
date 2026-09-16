@@ -29,7 +29,7 @@ const healthRow = (overrides = {}) => {
     id: 'mailbox-1',
     candidate_id: candidateId,
     canonical_candidate_id: candidateId,
-    email_address: 'someone@gmail.com',
+    email_address: 'someone@example.com',
     connection_status: 'ERROR',
     monitoring_enabled: false,
     last_error_code: 'GMAIL_TOKEN_EXPIRED',
@@ -67,7 +67,7 @@ describe('needsReconnect', () => {
 describe('reconnectRequiredMailboxes', () => {
   it('selects only the broken rows and keeps the email as the label', () => {
     const rows = reconnectRequiredMailboxes([
-      healthRow({ id: 'm1', email_address: 'a@gmail.com' }),
+      healthRow({ id: 'm1', email_address: 'a@example.com' }),
       healthRow({
         id: 'm2',
         connection_status: 'CONNECTED',
@@ -76,7 +76,7 @@ describe('reconnectRequiredMailboxes', () => {
     ])
     expect(rows).toHaveLength(1)
     expect(rows[0].id).toBe('m1')
-    expect(rows[0].email).toBe('a@gmail.com')
+    expect(rows[0].email).toBe('a@example.com')
     // No name column exists upstream, so the label must not depend on one.
     expect(rows[0].name).toBe('')
   })
@@ -99,9 +99,9 @@ describe('describeReconnectTargets', () => {
   it('never reports a zero count for real broken mailboxes', () => {
     // The regression: production rows carry no name at all.
     const rows = reconnectRequiredMailboxes([
-      healthRow({ id: 'm1', candidate_id: 'c1', email_address: 'a@gmail.com' }),
-      healthRow({ id: 'm2', candidate_id: 'c2', email_address: 'b@gmail.com' }),
-      healthRow({ id: 'm3', candidate_id: 'c3', email_address: 'c@gmail.com' }),
+      healthRow({ id: 'm1', candidate_id: 'c1', email_address: 'a@example.com' }),
+      healthRow({ id: 'm2', candidate_id: 'c2', email_address: 'b@example.com' }),
+      healthRow({ id: 'm3', candidate_id: 'c3', email_address: 'c@example.com' }),
     ])
     const summary = describeReconnectTargets(rows)
     expect(summary).not.toMatch(/\b0\b/)
@@ -111,26 +111,26 @@ describe('describeReconnectTargets', () => {
 
   it('names the single broken account by its email', () => {
     const rows = reconnectRequiredMailboxes([
-      healthRow({ id: 'm1', email_address: 'manojkamble9882@gmail.com' }),
+      healthRow({ id: 'm1', email_address: 'vikas.joshi@example.com' }),
     ])
-    expect(describeReconnectTargets(rows)).toBe('manojkamble9882@gmail.com')
+    expect(describeReconnectTargets(rows)).toBe('vikas.joshi@example.com')
   })
 
   it('counts accounts, not people, when one candidate has several mailboxes', () => {
     const rows = reconnectRequiredMailboxes([
-      healthRow({ id: 'm1', candidate_id: 'c1', email_address: 'first@gmail.com' }),
-      healthRow({ id: 'm2', candidate_id: 'c1', email_address: 'second@gmail.com' }),
+      healthRow({ id: 'm1', candidate_id: 'c1', email_address: 'first@example.com' }),
+      healthRow({ id: 'm2', candidate_id: 'c1', email_address: 'second@example.com' }),
     ])
     expect(describeReconnectTargets(rows)).toBe(
-      '2 Gmail accounts for first@gmail.com',
+      '2 Gmail accounts for first@example.com',
     )
   })
 
   it('reports both totals when several candidates are affected', () => {
     const rows = reconnectRequiredMailboxes([
-      healthRow({ id: 'm1', candidate_id: 'c1', email_address: 'a@gmail.com' }),
-      healthRow({ id: 'm2', candidate_id: 'c1', email_address: 'b@gmail.com' }),
-      healthRow({ id: 'm3', candidate_id: 'c2', email_address: 'c@gmail.com' }),
+      healthRow({ id: 'm1', candidate_id: 'c1', email_address: 'a@example.com' }),
+      healthRow({ id: 'm2', candidate_id: 'c1', email_address: 'b@example.com' }),
+      healthRow({ id: 'm3', candidate_id: 'c2', email_address: 'c@example.com' }),
     ])
     expect(describeReconnectTargets(rows)).toBe(
       '3 Gmail accounts across 2 candidates',
@@ -139,9 +139,9 @@ describe('describeReconnectTargets', () => {
 
   it('prefers a candidate name when a richer payload supplies one', () => {
     const rows = reconnectRequiredMailboxes([
-      healthRow({ id: 'm1', candidate_name: 'Uday Kumar Rapolu' }),
+      healthRow({ id: 'm1', candidate_name: 'Arun Kumar Pillai' }),
     ])
-    expect(describeReconnectTargets(rows)).toBe('Uday Kumar Rapolu')
+    expect(describeReconnectTargets(rows)).toBe('Arun Kumar Pillai')
   })
 
   it('renders nothing for an empty list rather than a zero', () => {

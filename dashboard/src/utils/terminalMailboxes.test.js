@@ -23,7 +23,7 @@ const daysAgo = (d) => new Date(NOW - d * 86400000).toISOString()
 
 const closed = (over = {}) => ({
   id: 'mb-closed',
-  email_address: 'reddycharanmunthala' + '@' + 'gmail.com',
+  email_address: 'msverma2' + '@' + 'example.com',
   connection_status: 'ERROR',
   last_error_message: 'Gmail authorization expired or was revoked.',
   monitoring_excluded: true,
@@ -33,7 +33,7 @@ const closed = (over = {}) => ({
 
 const active = (over = {}) => ({
   id: 'mb-active',
-  email_address: 'live' + '@' + 'gmail.com',
+  email_address: 'live' + '@' + 'example.com',
   connection_status: 'ERROR',
   last_error_message: 'Gmail authorization expired or was revoked.',
   monitoring_excluded: false,

@@ -12,8 +12,8 @@ June 4 at 7:49 PM
 To: B THRILOKNATH
 thrilokn4@ybl
 State Bank of India
-From: GUMMA GOPI CHAND
-9676306312@superyes
+From: ANIKET RANE
+9000000108@superyes
 UPI reference ID: 615527427709
 """
 
@@ -36,7 +36,7 @@ def test_super_money_receipt_uses_original_and_never_verifies_wrong_amount(monke
             "direction": "PAID_TO",
             "amount_minor": 100000,
             "currency": "INR",
-            "sender_name": "GUMMA GOPI CHAND",
+            "sender_name": "ANIKET RANE",
             "receiver_name": "B THRILOKNATH",
             "receiver_upi_id": "thrilokn4@ybl",
             "utr": "615527427709",

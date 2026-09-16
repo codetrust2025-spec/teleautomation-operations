@@ -37,7 +37,7 @@ def _verified_payment(*, utr: str = UTR) -> dict:
 
 def _previous_booking(*, status: str, phone: str = PHONE, stage: str = "in_progress") -> dict:
     return {
-        "id": "previous-booking", "name": "Gopichand", "phone": phone,
+        "id": "previous-booking", "name": "Aniket", "phone": phone,
         "technology": "Testing", "interview_round": "L1", "reference": "Thrilok",
         "service_type": "round_wise", "interview_scope": "external", "stage": stage,
         "task": "in_progress", "expected_payment": 5000, "payment": 5000,
@@ -77,7 +77,7 @@ def _client(monkeypatch, tmp_path, previous: dict, *, verification: dict | None 
 def _upload(client: TestClient, *, phone: str = PHONE, candidate_id: str = ""):
     return client.post(
         "/public/slots/payment-proof",
-        data={"name": "Gopichand", "service_type": "round_wise", "phone": phone, "candidate_id": candidate_id, "technology": "Testing", "interview_round": "L2"},
+        data={"name": "Aniket", "service_type": "round_wise", "phone": phone, "candidate_id": candidate_id, "technology": "Testing", "interview_round": "L2"},
         files={"file": ("renamed.jpg", b"same-payment-new-file", "image/jpeg")},
     )
 
@@ -85,7 +85,7 @@ def _upload(client: TestClient, *, phone: str = PHONE, candidate_id: str = ""):
 def _confirm(client: TestClient, proof_id: str, *, phone: str = PHONE, candidate_id: str = ""):
     return client.post(
         "/bookings/confirm",
-        data={"name": "Gopichand", "service_type": "round_wise", "phone": phone, "candidate_id": candidate_id, "technology": "Testing", "interview_round": "L2", "date": "2026-08-02", "time": "03:00 PM", "time_end": "04:00 PM", "payment_proof_id": proof_id, "idempotency_key": "gopichand-rebook-2026-08-02"},
+        data={"name": "Aniket", "service_type": "round_wise", "phone": phone, "candidate_id": candidate_id, "technology": "Testing", "interview_round": "L2", "date": "2026-08-02", "time": "03:00 PM", "time_end": "04:00 PM", "payment_proof_id": proof_id, "idempotency_key": "aniket-rebook-2026-08-02"},
         files={"file": ("invite.jpg", b"interview-invite", "image/jpeg")},
     )
 

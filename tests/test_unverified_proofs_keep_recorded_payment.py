@@ -1,6 +1,6 @@
 """Attaching a proof that cannot be verified must not erase a recorded payment.
 
-`pujitha` had a recorded 20,000 and no proofs. Two genuine PhonePe screenshots
+`lavanya` had a recorded 20,000 and no proofs. Two genuine PhonePe screenshots
 were then uploaded. The engine read both, priced both at 10,000, found the
 transaction successful and the receiver name known -- and still withheld credit,
 because the payee handle in the screenshot is masked (``XXXXXX4573@ybl``). That
@@ -95,7 +95,7 @@ class TestTheSavePathRuleMatchesTheRecalculationRule:
         return max(typed if typed is not None else recorded, recorded)
 
     def test_unverified_proofs_do_not_erase_the_recorded_amount(self):
-        # pujitha: two attached proofs, zero verified, 20,000 recorded.
+        # lavanya: two attached proofs, zero verified, 20,000 recorded.
         assert self.decide(proof_total=0, recorded=20000, controlled=False) == 20000
 
     def test_proofs_still_raise_the_total(self):

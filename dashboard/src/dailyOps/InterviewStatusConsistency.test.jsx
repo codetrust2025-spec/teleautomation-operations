@@ -68,7 +68,7 @@ function oneOfEach() {
   const rows = [
     interviewRow('Pending Priya', ''),
     interviewRow('Attended Asha', 'attended'),
-    interviewRow('Missed Manoj', 'not_attended'),
+    interviewRow('Missed Vikas', 'not_attended'),
     interviewRow('Cancelled Chandra', 'cancelled'),
     interviewRow('Moved Meera', 'rescheduled'),
     interviewRow('Repeat Ravi', 're_service'),
@@ -230,7 +230,7 @@ describe('filtering by a status', () => {
 
   it.each([
     ['Attended', 'Attended Asha'],
-    ['Not attended', 'Missed Manoj'],
+    ['Not attended', 'Missed Vikas'],
     ['Cancelled', 'Cancelled Chandra'],
     ['Rescheduled', 'Moved Meera'],
     ['Re-Service', 'Repeat Ravi'],

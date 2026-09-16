@@ -30,21 +30,21 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const EXPIRED = [
   {
     id: 'mb-1',
-    email_address: 'reddycharanmunthala' + '@' + 'gmail.com',
+    email_address: 'msverma2' + '@' + 'example.com',
     connection_status: 'ERROR',
     last_error_message: 'Gmail authorization expired or was revoked. Reconnect Gmail.',
   },
   {
     id: 'mb-2',
-    email_address: 'wasanthi.adapa' + '@' + 'gmail.com',
+    email_address: 'anjali.adhikari' + '@' + 'example.com',
     connection_status: 'ERROR',
     last_error_message: 'Gmail authorization expired or was revoked. Reconnect Gmail.',
   },
 ]
 
 const HEALTHY = [
-  { id: 'mb-3', email_address: 'ok' + '@' + 'gmail.com', connection_status: 'ACTIVE', last_error_message: '' },
-  { id: 'mb-4', email_address: 'fine' + '@' + 'gmail.com', connection_status: 'ACTIVE', last_error_message: null },
+  { id: 'mb-3', email_address: 'ok' + '@' + 'example.com', connection_status: 'ACTIVE', last_error_message: '' },
+  { id: 'mb-4', email_address: 'fine' + '@' + 'example.com', connection_status: 'ACTIVE', last_error_message: null },
 ]
 
 function stubHealth(mailboxes, { ok = true } = {}) {

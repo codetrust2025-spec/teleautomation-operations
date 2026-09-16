@@ -100,7 +100,7 @@ class TestEmployersAndATSAreUntouched:
         "recruiter@spectraforce.com", "recruiter@insightglobal.com",
         "recruiter@2coms.com", "recruiter@adroitinnovative.com",
         # Individuals
-        "recruiter@gmail.com", "candidate@gmail.com",
+        "recruiter@example.com", "candidate@example.com",
     ])
     def test_it_still_reaches_the_model(self, sender):
         assert job_board_notification(sender) is False

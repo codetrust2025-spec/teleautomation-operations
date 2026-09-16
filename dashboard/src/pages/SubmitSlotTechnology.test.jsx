@@ -18,7 +18,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { SubmitSlotPage } from './SubmitSlotPage.jsx'
 
 const CANDIDATES = [
-  { id: 'c1', name: 'Gopichand', technology: 'React JS', needs_payment_proof: false, balance_due: 0 },
+  { id: 'c1', name: 'Aniket', technology: 'React JS', needs_payment_proof: false, balance_due: 0 },
   { id: 'c2', name: 'Manu', technology: 'Java', needs_payment_proof: false, balance_due: 0 },
   { id: 'c3', name: 'Ashok', technology: 'Unspecified', needs_payment_proof: false, balance_due: 0 },
 ]
@@ -109,7 +109,7 @@ describe('Submit slot — round-wise technology', () => {
     expect(tech.value).toBe('Java')
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
     attach(inviteInput(), [screenshot('invite.jpg')])
 
@@ -131,7 +131,7 @@ describe('Submit slot — round-wise technology', () => {
     await chooseRoundWise()
 
     fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'venkat' } })
-    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '7306994576' } })
+    fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
     attach(inviteInput(), [screenshot('invite.jpg')])
     await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())

@@ -36,12 +36,12 @@ class _Cursor:
             self.description = None
             self._rows = [(
                 "gmail-msg-1", "thread-1", "Re: New Job Opportunity Azure Engineer - Remote",
-                "Girish", "girish@zealogics.com", "2026-09-01T07:26:43+00:00",
-                "mailbox-1", "badrithiru73@gmail.com",
+                "Suresh", "suresh@zealogics.com", "2026-09-01T07:26:43+00:00",
+                "mailbox-1", "naveen.prakash@example.com",
             )]
         elif text.startswith("INSERT INTO mail_monitoring_notifications"):
             self.description = [("id",), ("candidate_name",), ("company_name",)]
-            self._rows = [("notification-1", "Badri", "Zealogics")]
+            self._rows = [("notification-1", "Naveen", "Zealogics")]
         else:
             self.description = [("id",)]
             self._rows = []
@@ -85,7 +85,7 @@ def recorder(monkeypatch):
             return False
 
     monkeypatch.setattr(store, "get_connection", lambda: _Ctx())
-    monkeypatch.setattr(store, "_candidate_snapshot", lambda *a, **k: ("Badri", "badrithiru73@gmail.com"))
+    monkeypatch.setattr(store, "_candidate_snapshot", lambda *a, **k: ("Naveen", "naveen.prakash@example.com"))
     monkeypatch.setattr(store, "should_route_to_mail_alert", lambda *a, **k: True)
 
     def _fake_realtime(cur, event_type, payload):

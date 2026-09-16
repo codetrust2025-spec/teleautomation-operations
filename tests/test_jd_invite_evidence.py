@@ -1,4 +1,4 @@
-"""Gangadhar's JD-and-invite failure, with private meeting credentials redacted."""
+"""Nitin's JD-and-invite failure, with private meeting credentials redacted."""
 from copy import deepcopy
 from datetime import datetime
 import json
@@ -20,15 +20,15 @@ JD = ('Job details: Payroll: Vidhai Technologies Pvt Ltd Client: NTT Data Servic
       'Onsite/Remote: Hybrid, Bangalore. Job Description: We are seeking a ServiceNow Developer '
       'with 3+ years of development experience. Roles and Responsibilities: Support, maintain, '
       'develop and customize solutions across ServiceNow ITSM modules using platform best practices.')
-BODY = 'Hi Gangadhar, As discussed, please find the JD and interview invite details below. Kindly acknowledge receipt. ' + ASSERTION + ' ' + MEETING + ' ' + JD
-HTML = '<div>Hi Gangadhar,</div><div><b>Your Client interview scheduled on Wednesday,16</b><sup><b>th</b></sup><b>&nbsp;Sep\'26 at 3:30pm.</b></div><div>' + MEETING + '</div><div>' + JD + '</div>'
+BODY = 'Hi Nitin, As discussed, please find the JD and interview invite details below. Kindly acknowledge receipt. ' + ASSERTION + ' ' + MEETING + ' ' + JD
+HTML = '<div>Hi Nitin,</div><div><b>Your Client interview scheduled on Wednesday,16</b><sup><b>th</b></sup><b>&nbsp;Sep\'26 at 3:30pm.</b></div><div>' + MEETING + '</div><div>' + JD + '</div>'
 
 
 def payload():
     value = model_result('INTERVIEW_CONFIRMED', requires_review=False, risk_flags=[])
     value.update(company={'name': 'Vidhai Technologies Pvt Ltd', 'domain': 'vidhaitech.com'},
                  job={'title': 'ServiceNow Developer', 'employment_type': 'Hybrid', 'location': 'Bangalore'},
-                 candidate={'name': 'Gangadhar', 'email': 'candidate@test.invalid'},
+                 candidate={'name': 'Nitin', 'email': 'candidate@test.invalid'},
                  evidence=[{'source': 'EMAIL_BODY', 'text': ASSERTION, 'meaning': 'INTERVIEW_CONFIRMED'}],
                  interview={'date': '2026-09-16', 'time': '15:30', 'timezone': 'Asia/Kolkata',
                             'mode': 'Microsoft Teams', 'round': None, 'location': None,
@@ -64,7 +64,7 @@ def test_exact_shape_reaches_real_automatic_persistence_path(monkeypatch, html_o
     """Only network responses and storage are fake; processing/gates are real."""
     monkeypatch.setenv('AI_INTERVIEW_AUTO_BOOKING_ENABLED', 'true')
     candidate, audits = install_store_fakes(monkeypatch)
-    candidate['name'] = 'Gangadhar'
+    candidate['name'] = 'Nitin'
     writes = []
     monkeypatch.setattr(booking.candidate_store, 'assign_interview_slot', slot_writer('persisted-slot', capture=writes))
     original_schedule = booking.normalized_schedule

@@ -13,18 +13,18 @@ import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { OriginalEmail, rejoinWrappedUrl } from "./OriginalEmail.jsx";
-import STORED_HTML from "./__fixtures__/vhsInterviewEmail.html?raw";
+import STORED_HTML from "./__fixtures__/wrappedInterviewEmail.html?raw";
 
-const STORED_BODY = "Dear Gangadhar, As discussed, your Virtual Interview is scheduled at 3.30 PM - 4.15 PM on 15th Sep 2026 (Tuesday). Please join the link before 5 minutes. Interview Scheduled 15th Sep 2026 (Tuesday) at 3.30 PM. Interview link https://teams.microsoft.com/l/meetup-join/19%3ameeting_NzIxMGU1YWMtMGU2NC00Z Dk1LTljZTEtZDNiOTc2MmVkODI5%40thread.v2/0?context=%7b%22Tid%22%3a%22404b1967 -6507-45ab-8a6d-7374a3f478be%22%2c%22Oid%22%3a%221b922d1c-ee13-4d54-81f2-31e c3c111a81%22%7d Thanks & Regards Prathima Kamisetti HR Technical Recruiter || 9845303472 VHS Professional Services Pvt ltd 3/1, Langford Road, Shantinagar, Richmond Town, Bangalore 560025.";
+const STORED_BODY = "Dear Nitin, As discussed, your Virtual Interview is scheduled at 3.30 PM - 4.15 PM on 15th Sep 2026 (Tuesday). Please join the link before 5 minutes. Interview Scheduled 15th Sep 2026 (Tuesday) at 3.30 PM. Interview link https://teams.microsoft.com/l/meetup-join/19%3ameeting_U3ludGhldGljVGVzdE1lZ XRpbmdJZE5vdEFSZWFsTWVldGlu%40thread.v2/0?context=%7b%22Tid%22%3a%2200000000 -1111-4222-8333-444444444444%22%2c%22Oid%22%3a%2200000000-5555-4666-8777-888 888888888%22%7d Thanks & Regards Anita Raghavan HR Technical Recruiter || 9000000109 Example Staffing Services Pvt Ltd 1 Example Street, Test Layout, Bengaluru 560001.";
 
-const WHOLE_URL = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_NzIxMGU1YWMtMGU2NC00ZDk1LTljZTEtZDNiOTc2MmVkODI5%40thread.v2/0?context=%7b%22Tid%22%3a%22404b1967-6507-45ab-8a6d-7374a3f478be%22%2c%22Oid%22%3a%221b922d1c-ee13-4d54-81f2-31ec3c111a81%22%7d";
+const WHOLE_URL = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_U3ludGhldGljVGVzdE1lZXRpbmdJZE5vdEFSZWFsTWVldGlu%40thread.v2/0?context=%7b%22Tid%22%3a%2200000000-1111-4222-8333-444444444444%22%2c%22Oid%22%3a%2200000000-5555-4666-8777-888888888888%22%7d";
 
 function view(body = STORED_BODY) {
   return render(<OriginalEmail
     email={{
       subject: "Virtual Technical Interview Scheduled_TCS",
-      sender_name: "prathima.kamisetti",
-      recipient_email: "gangadhar.nagaraje.it@gmail.com",
+      sender_name: "anita.raghavan",
+      recipient_email: "nitin.deshmukh@example.com",
       sent_at: "2026-09-11T07:22:01Z", body,
     }}
     formatWhen={() => "11 Sept 2026, 12:52 pm"}
@@ -65,8 +65,8 @@ describe("the body production actually stores", () => {
 
   it("still links the recruiter's number", () => {
     view();
-    expect(screen.getByRole("link", { name: "9845303472" }))
-      .toHaveAttribute("href", "tel:9845303472");
+    expect(screen.getByRole("link", { name: "9000000109" }))
+      .toHaveAttribute("href", "tel:9000000109");
   });
 
   it("renders it as one paragraph, because that is what was stored", () => {
@@ -87,7 +87,7 @@ describe("rejoining a wrapped URL", () => {
   });
 
   it("stops at ordinary prose", () => {
-    expect(join("see https://x.example/path Thanks & Regards Prathima"))
+    expect(join("see https://x.example/path Thanks & Regards Anita"))
       .toBe("https://x.example/path");
   });
 
@@ -110,8 +110,8 @@ describe("the stored HTML, which is what the sender actually wrote", () => {
     return render(<OriginalEmail
       email={{
         subject: "Virtual Technical Interview Scheduled_TCS",
-        sender_name: "prathima.kamisetti",
-        recipient_email: "gangadhar.nagaraje.it@gmail.com",
+        sender_name: "anita.raghavan",
+        recipient_email: "nitin.deshmukh@example.com",
         sent_at: "2026-09-11T07:22:01Z",
         body: STORED_BODY, body_html: STORED_HTML, ...overrides,
       }}
@@ -129,7 +129,7 @@ describe("the stored HTML, which is what the sender actually wrote", () => {
     const { container } = html();
     const paragraphs = [...container.querySelectorAll(".gmail-view__body p")]
       .map((n) => n.textContent.trim());
-    expect(paragraphs[0]).toContain("Dear Gangadhar");
+    expect(paragraphs[0]).toContain("Dear Nitin");
     expect(paragraphs.some((p) => p.startsWith("Interview Scheduled"))).toBe(true);
     expect(paragraphs.some((p) => p.includes("Thanks"))).toBe(true);
   });
@@ -145,7 +145,7 @@ describe("the stored HTML, which is what the sender actually wrote", () => {
     const { container } = html();
     const bold = [...container.querySelectorAll(".gmail-view__body strong")]
       .map((n) => n.textContent).join(" | ");
-    expect(bold).toContain("Dear Gangadhar");
+    expect(bold).toContain("Dear Nitin");
     expect(bold).toContain("4.15 PM");
     expect(bold).toContain("Interview Scheduled");
   });

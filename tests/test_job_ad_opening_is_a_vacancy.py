@@ -29,14 +29,14 @@ SENDER = "support@zeaiq.zeasale.com"
 
 # Verbatim from the production mails.
 INVITATION = (
-    "INTERVIEW INVITATION - AZURE ENGINEER Hello Badri Thirupathy! We're excited to "
+    "INTERVIEW INVITATION - AZURE ENGINEER Hello Naveen Prakash! We're excited to "
     "invite you for an interview for the Azure Engineer position at Zealogics. "
     "INTERVIEW DETAILS: - Position: Azure Engineer - Please remain on the interview "
     "screen throughout the interview. Opening or switching to other applications or "
     "windows is not permitted."
 )
 REMINDER = (
-    "INTERVIEW REMINDER - AZURE ENGINEER Hello Badri Thirupathy! This is a friendly "
+    "INTERVIEW REMINDER - AZURE ENGINEER Hello Naveen Prakash! This is a friendly "
     "reminder that your interview link for the Azure Engineer position at Zealogics "
     "will expire in 1 hour. Note: This interview link is personal and must not be "
     "shared externally. Do not switch devices/browsers after opening. If you have any "

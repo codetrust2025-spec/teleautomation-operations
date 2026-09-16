@@ -94,7 +94,7 @@ async function roundWiseDetails() {
   fireEvent.click(await screen.findByRole('button', { name: /profile service/i }))
   fireEvent.click(await screen.findByText('Round-wise'))
   fireEvent.change(screen.getByPlaceholderText(/type client name/i), { target: { value: 'Rama krishna' } })
-  fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '8897870998' } })
+  fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000103' } })
   fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Automation Testing' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
   await waitFor(() => expect(paymentInput().disabled).toBe(false))

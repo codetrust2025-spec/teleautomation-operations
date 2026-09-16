@@ -1,6 +1,6 @@
 """The lifecycle sees every booking a person holds, not the one on the list.
 
-Pujitha Venkata Chundru's Persistent Systems interview was booked twice for
+Lavanya Venkata Chundru's Persistent Systems interview was booked twice for
 2026-09-11 02:30-04:00, and clearing it took two separate releases.
 
 Neither symptom was identity resolution, which resolved all seven of her rows
@@ -9,13 +9,13 @@ runs `_collapse_profile_candidates` and returns one row per person -- "newest
 by updated_at". So every gate downstream judged a candidate on a single row:
 
     person            confirmed rows    lifecycle saw
-    yamini akhil                  21                1
-    gangadhar                     20                1
-    gopichand                     14                1
-    pujitha                        4                1
+    yamini rohit                  21                1
+    nitin                     20                1
+    aniket                     14                1
+    lavanya                        4                1
 
 117 confirmed bookings were invisible to duplicate detection, conflict checks,
-cancellation and reschedule. For Pujitha the row on show was an *unconfirmed*
+cancellation and reschedule. For Lavanya the row on show was an *unconfirmed*
 one, so the lifecycle believed she held no bookings at all -- which is why the
 reminder booked a slot the Google invitation had already taken, and why the
 cancellation could only release whichever row the collapse surfaced.
@@ -33,10 +33,10 @@ from features import candidate_store
 from services import interview_auto_booking as booking
 
 
-def row(rid, *, name="pujitha", date="", time="", end="", confirmed=False,
+def row(rid, *, name="lavanya", date="", time="", end="", confirmed=False,
         uid="", thread="", message="", company="", role="", updated="2026-09-01T00:00:00Z"):
     return {
-        "id": rid, "name": name, "phone": "9652603125",
+        "id": rid, "name": name, "phone": "9000000107",
         "date": date, "time": time, "time_end": end,
         "slot_confirmed": confirmed, "updated_at": updated,
         "interview_calendar_uid": uid, "interview_source_thread_id": thread,
@@ -46,8 +46,8 @@ def row(rid, *, name="pujitha", date="", time="", end="", confirmed=False,
     }
 
 
-#: Pujitha's rows as production held them, the two Persistent ones included.
-PUJITHA = [
+#: Lavanya's rows as production held them, the two Persistent ones included.
+LAVANYA = [
     row("1c5954bb22", date="2026-09-03", time="12:00", end="12:30", confirmed=True,
         role="Technical Interview with Ms.Poojitha"),
     row("6a02b44817", date="2026-09-03", time="20:30", end="21:00", confirmed=True,
@@ -57,7 +57,7 @@ PUJITHA = [
     row("a25c66cdab", date="2026-09-08", time="17:00", end="18:00", confirmed=True,
         role="Invenco Fullstack"),
     row("e6c21a3fec", date="2026-09-11", time="02:30", end="04:00", confirmed=True,
-        uid="u4ofrugq28i3hva1pqdintqaqg@google.com", thread="1a089b73a7e73ce9",
+        uid="syntheticuid000000000002cd@google.com", thread="1a089b73a7e73ce9",
         role="V1 AI Java React Kafka Mongo Microservices AI Interview",
         updated="2026-09-10T16:53:27Z"),
     # The collapse showed this one: newest by updated_at, and unconfirmed.
@@ -73,22 +73,22 @@ SLOT = {"date": "2026-09-11", "time": "02:30", "time_end": "04:00"}
 @pytest.fixture
 def person(monkeypatch):
     """The store as it really is: every row, collapsed only for display."""
-    monkeypatch.setattr(candidate_store, "_load", lambda **_: {"candidates": list(PUJITHA)})
+    monkeypatch.setattr(candidate_store, "_load", lambda **_: {"candidates": list(LAVANYA)})
     monkeypatch.setattr(candidate_store, "_with_computed", lambda r: dict(r))
     monkeypatch.setattr(
         candidate_store, "candidate_identity_ids",
-        lambda cid, **kwargs: sorted(r["id"] for r in PUJITHA))
+        lambda cid, **kwargs: sorted(r["id"] for r in LAVANYA))
     # What the screen shows, and what this function used to be handed.
     monkeypatch.setattr(
         candidate_store, "list_candidates",
-        lambda **_: [dict(PUJITHA[-1])])
-    return {"id": "1c5954bb22", "name": "pujitha"}
+        lambda **_: [dict(LAVANYA[-1])])
+    return {"id": "1c5954bb22", "name": "lavanya"}
 
 
 class TestEveryBookingIsVisible:
     def test_the_lifecycle_sees_all_of_them(self, person):
         slots = booking._candidate_slots(person)
-        assert {s["id"] for s in slots} == {r["id"] for r in PUJITHA}
+        assert {s["id"] for s in slots} == {r["id"] for r in LAVANYA}
 
     def test_it_no_longer_reads_the_collapsed_list(self, person):
         """The collapse returns one row; the gates need all six."""
@@ -157,7 +157,7 @@ class TestCancellationCanReachTheHiddenRow:
         slots = booking._candidate_slots(person)
         chosen = booking._resolve_existing_slot(
             slots,
-            result={"calendar": {"uid": "u4ofrugq28i3hva1pqdintqaqg@google.com"}},
+            result={"calendar": {"uid": "syntheticuid000000000002cd@google.com"}},
             message={"provider_thread_id": "1a089b73a7e73ce9"},
             classification="interview_cancelled")
         assert chosen["id"] == "e6c21a3fec"
@@ -168,7 +168,7 @@ class TestCancellationCanReachTheHiddenRow:
         slots = booking._candidate_slots(person)
         chosen = booking._resolve_existing_slot(
             slots,
-            result={"calendar": {"uid": "u4ofrugq28i3hva1pqdintqaqg@google.com"}},
+            result={"calendar": {"uid": "syntheticuid000000000002cd@google.com"}},
             message={"provider_thread_id": "1a089b73a7e73ce9"},
             classification="interview_cancelled")
         assert chosen["id"] not in {"1c5954bb22", "6a02b44817", "497b9a770e", "a25c66cdab"}
@@ -176,9 +176,9 @@ class TestCancellationCanReachTheHiddenRow:
 
 class TestNothingIsRepairedOrRewritten:
     def test_no_stored_row_is_modified(self, person):
-        before = [dict(r) for r in PUJITHA]
+        before = [dict(r) for r in LAVANYA]
         booking._candidate_slots(person)
-        assert PUJITHA == before
+        assert LAVANYA == before
 
     def test_it_only_reads(self):
         import inspect
