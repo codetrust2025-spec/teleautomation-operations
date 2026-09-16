@@ -124,7 +124,7 @@ def test_validation_accepts_the_proof_with_ocr_off(monkeypatch, ocr_off):
         "features.candidate_store._load", lambda: {"candidates": []}
     )
     assessment = assess_payment_proof(IMAGE, result, candidate_name="probe")
-    assert "A valid UTR or transaction ID is required." not in assessment["reasons"]
+    assert not any("UTR" in reason for reason in assessment["reasons"])
 
 
 def test_a_model_that_returns_blank_identifiers_is_not_accepted(monkeypatch, ocr_off):
@@ -144,7 +144,10 @@ def test_a_model_that_returns_blank_identifiers_is_not_accepted(monkeypatch, ocr
     assert payment_transaction_identities(result) == set()
     monkeypatch.setattr("features.candidate_store._load", lambda: {"candidates": []})
     assessment = assess_payment_proof(IMAGE, result, candidate_name="probe")
-    assert "A valid UTR or transaction ID is required." in assessment["reasons"]
+    missing = [reason for reason in assessment["reasons"] if "UTR" in reason]
+    # The refusal has to name the screen that carries the reference: a summary
+    # screenshot has none, so "try again" is not an instruction anyone can follow.
+    assert missing and "View Details" in missing[0]
 
 
 def test_a_truncated_identifier_is_not_silently_accepted(monkeypatch, ocr_off):
@@ -231,3 +234,19 @@ def test_the_payment_backup_has_its_own_variable_too(monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(extractor)
+
+
+def test_the_refusal_tells_the_payer_which_screen_carries_the_reference():
+    """A PhonePe summary shows receiver and amount but no UTR. The only useful
+    refusal names View Details; anything else asks for a clearer photograph of
+    a screen that does not have the number on it."""
+    from features import payment_verification_engine as engine
+
+    reasons = engine._deterministic_reasons_for_test() if hasattr(
+        engine, "_deterministic_reasons_for_test") else None
+    if reasons is None:
+        import inspect
+        source = inspect.getsource(engine)
+        assert "TRANSACTION_REFERENCE_MISSING" in source
+        marker = source.index('if "TRANSACTION_REFERENCE_MISSING" in reason_codes:')
+        assert "View Details" in source[marker:marker + 700]

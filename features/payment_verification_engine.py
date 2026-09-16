@@ -1706,6 +1706,22 @@ def verify_payment_screenshot(
     result["verification_state"] = verification_state
     result["reason_codes"] = reason_codes
     result["deterministic_verified"] = deterministic_verified
+    if not deterministic_verified:
+        # Every refusal and every manual review, recorded where it survives the
+        # request: the screenshot is not stored and the module logger does not
+        # reach production's container log, so without this a live refusal
+        # leaves nothing to diagnose but the person's description of it.
+        # Identifiers are masked to provider and last four; the receipt is not
+        # written anywhere.
+        from features.payment_refusal_log import record_refusal
+
+        record_refusal(
+            source_module=str(source_module or ""),
+            verification_state=verification_state,
+            reason_codes=reason_codes,
+            result=result,
+            elapsed_ms=int(result.get("extraction_elapsed_ms") or 0) or None,
+        )
     result["booking_eligible"] = deterministic_verified and purpose == "candidate_payment"
     result["company_payment_verified"] = (
         verification_state == "VERIFIED_COMPANY_PAYMENT"
@@ -1767,7 +1783,14 @@ def verify_payment_screenshot(
     if "LOW_EXTRACTION_CONFIDENCE" in reason_codes:
         reasons.append("Payment extraction confidence is below the configured threshold.")
     if "TRANSACTION_REFERENCE_MISSING" in reason_codes:
-        reasons.append("The transaction or UTR reference is not visible.")
+        # The old wording described the system's problem, not the person's next
+        # move: a PhonePe summary screen genuinely has no UTR on it, so there is
+        # nothing to re-read and no clearer photograph to take. Naming the screen
+        # that does carry it is the difference between a refusal someone can act
+        # on and one they can only retry.
+        reasons.append(
+            "The transaction or UTR reference is not visible. Open the payment in PhonePe / Google Pay, tap View Details, and upload that screenshot -- a payment summary does not show the UTR or Transaction ID."
+        )
     if amount_mismatch_reason:
         reasons.append(amount_mismatch_reason)
     result["deterministic_reasons"] = reasons
