@@ -164,7 +164,8 @@ def test_client_cannot_spoof_office_ip_in_forwarding_header():
         office_cidrs="203.0.113.0/24", trusted_proxy_cidrs="127.0.0.1/32",
     )
     assert genuine.allowed
-    assert genuine.audit_payload().keys() == {"verified", "source", "policy_id", "reason"}
+    assert genuine.audit_payload().keys() == {
+        "verified", "source", "policy_id", "reason", "observed_ip"}
 
 
 def test_missing_or_malformed_network_configuration_fails_closed():
@@ -502,3 +503,70 @@ def test_login_and_logout_preserve_session_behavior_and_emit_audit_events(api_cl
         ("operations_admin", "Operations Admin", "LOGIN"),
         ("operations_admin", "Operations Admin", "LOGOUT"),
     ]
+
+
+# ── the office public IP changes when the router is reset ────────────────────
+#
+# September 2026: the office reached production as 124.123.169.31 until the
+# 12th and as 124.123.183.195 from the 14th, while
+# OPERATIONS_OFFICE_NETWORK_CIDRS still named the first. Everyone sitting in the
+# office was told to connect to office Wi-Fi. The allowlist was right to refuse
+# an address nobody had approved; what was missing was any way to see which
+# address was being judged.
+
+
+def test_a_refused_device_is_told_which_address_was_judged():
+    from core.office_network import verify_office_network
+
+    refused = verify_office_network(
+        "203.0.113.77", "", office_cidrs="198.51.100.10/32", trusted_proxy_cidrs="")
+
+    assert refused.allowed is False
+    assert refused.observed_ip == "203.0.113.77"
+    assert refused.reason == "OUTSIDE_APPROVED_OFFICE_NETWORK"
+
+
+def test_an_approved_device_records_the_same_address():
+    from core.office_network import verify_office_network
+
+    allowed = verify_office_network(
+        "198.51.100.10", "", office_cidrs="198.51.100.10/32", trusted_proxy_cidrs="")
+
+    assert allowed.allowed is True
+    assert allowed.observed_ip == "198.51.100.10"
+
+
+def test_a_new_office_address_needs_registering_not_guessing():
+    """A changed public IP is refused until it is approved. The allowlist is
+    the only thing that grants access; naming the address does not."""
+    from core.office_network import verify_office_network
+
+    old_policy = "198.51.100.10/32"
+    after_router_reset = verify_office_network("198.51.100.42", "", office_cidrs=old_policy,
+                                               trusted_proxy_cidrs="")
+    once_registered = verify_office_network("198.51.100.42", "",
+                                            office_cidrs=f"{old_policy},198.51.100.42/32",
+                                            trusted_proxy_cidrs="")
+
+    assert after_router_reset.allowed is False
+    assert once_registered.allowed is True
+
+
+def test_several_approved_networks_can_be_configured_at_once():
+    """Two offices, or an office mid-migration between addresses."""
+    from core.office_network import verify_office_network
+
+    policy = "198.51.100.10/32,203.0.113.0/24"
+    assert verify_office_network("198.51.100.10", "", office_cidrs=policy, trusted_proxy_cidrs="").allowed
+    assert verify_office_network("203.0.113.55", "", office_cidrs=policy, trusted_proxy_cidrs="").allowed
+    assert not verify_office_network("192.0.2.9", "", office_cidrs=policy, trusted_proxy_cidrs="").allowed
+
+
+def test_a_mobile_network_is_still_refused_after_the_office_moves():
+    from core.office_network import verify_office_network
+
+    policy = "198.51.100.42/32"
+    for outsider in ("106.219.2.110", "223.181.114.13", "27.57.93.45"):
+        verdict = verify_office_network(outsider, "", office_cidrs=policy, trusted_proxy_cidrs="")
+        assert verdict.allowed is False
+        assert verdict.observed_ip == outsider
