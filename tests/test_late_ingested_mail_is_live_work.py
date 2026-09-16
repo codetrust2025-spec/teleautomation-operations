@@ -60,10 +60,12 @@ class TestArrivalIsWhenTheMailReachedUs:
         assert store._QUEUE_ARRIVAL_SQL.strip().endswith("ELSE COALESCE(sent_at,created_at) END")
 
     def test_both_live_tiers_use_arrival_not_sent_at(self):
-        """Promoting into tier 1 while tier 2 still tiered on `sent_at` would
+        """Every tier reads arrival, including the time-critical one.
+
+        Promoting into tier 1 while tier 2 still tiered on `sent_at` would
         have left the HCLTech mail exactly where it was."""
         stripped = _arrival_free(store._TIER_SQL)
-        assert stripped.count("<arrival>") == 2
+        assert stripped.count("<arrival>") == 3
         assert "COALESCE(sent_at,created_at)" not in stripped
 
     def test_a_null_sent_at_still_cannot_jump_the_queue(self):
@@ -162,27 +164,31 @@ def recorded(monkeypatch):
 
 
 class TestTheClaimBindsTheTierCorrectly:
-    def test_an_ordinary_turn_binds_days_hours_days_zone_zone(self, recorded):
+    def test_an_ordinary_turn_binds_days_days_days_hours_days_zone_zone(self, recorded):
+        """Tier 0 added a fourth arrival and its own day bound, so the order is
+        now: arrival days, the time-critical window, arrival days, the live
+        window in hours, arrival days, and the operator zone twice."""
         _, params = recorded(backlog_turn=False)
-        assert params[:-1] == (3, 2, 3, "Asia/Kolkata", "Asia/Kolkata")
+        assert params[:-1] == (3, 3, 3, 2, 3, "Asia/Kolkata", "Asia/Kolkata")
 
     def test_every_placeholder_in_the_claim_is_bound(self, recorded):
         sql, params = recorded(backlog_turn=False)
         assert sql.count("%s") == len(params)
 
     def test_a_backlog_turn_binds_the_tier_three_times_over(self, recorded):
-        """`(tier = 3) DESC, tier ASC` repeats the expression, so the parameter
-        list has to repeat with it."""
+        """`(tier = 0) DESC, (tier = 3) DESC, tier ASC` repeats the expression
+        three times, so the parameter list has to repeat with it."""
         sql, params = recorded(backlog_turn=True)
         assert sql.count("%s") == len(params)
-        assert params[:-1] == (3, 2, 3, "Asia/Kolkata", "Asia/Kolkata") * 2
+        assert params[:-1] == (3, 3, 3, 2, 3, "Asia/Kolkata", "Asia/Kolkata") * 3
 
     def test_the_day_bound_is_a_day_count_and_the_live_window_is_hours(self, recorded):
         """The failure this guards is silent: swap them and every tier is
         wrong, with no error from Postgres."""
         _, params = recorded(backlog_turn=False)
-        days, hours = params[0], params[1]
-        assert (days, hours) == (store._ingest_freshness_days(), store._live_mail_window_hours())
+        days, critical_days, hours = params[0], params[1], params[3]
+        assert (days, critical_days, hours) == (
+            store._ingest_freshness_days(), store._time_critical_days(), store._live_mail_window_hours())
 
     def test_the_arrival_expression_reaches_the_database(self, recorded):
         sql, _ = recorded(backlog_turn=False)
