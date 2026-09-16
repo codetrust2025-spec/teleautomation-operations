@@ -3514,9 +3514,12 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
         _publish("auto_booking_started", **common, processing_status="Validating Booking")
         try:
             from services.assessment_auto_booking import execute_assessment_booking
+            # `decoded` already carries the extracted attachments; the local
+            # name for them in this function is `attachment_texts`, and reading
+            # the wrong one crashed the booking in production while every test
+            # that called the booking module directly stayed green.
             outcome = execute_assessment_booking(
-                mailbox=mailbox, message={**decoded, "attachments": attachments or []},
-                event=event, result=result,
+                mailbox=mailbox, message=decoded, event=event, result=result,
             )
             booking = outcome.get("booking") or {}
             _publish(
