@@ -525,6 +525,11 @@ def test_claim_query_cannot_select_reconciled_messages(monkeypatch):
         def fetchall(self):
             return []
 
+        def fetchone(self):
+            # The claim counts history before choosing a turn; an empty queue
+            # is the honest answer from a double that stores nothing.
+            return (0,)
+
     class Connection:
         def __enter__(self):
             return self

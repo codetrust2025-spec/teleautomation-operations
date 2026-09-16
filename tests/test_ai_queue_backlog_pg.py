@@ -214,7 +214,7 @@ class TestFreshInterviewsAndAssessmentsLead:
         assert [item["id"] for item in claimed] == ["assessment"]
 
     def test_even_the_backlog_turn_yields_to_it(self, queue_db, monkeypatch):
-        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda: True)
+        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda history_waiting=None: True)
         queue(queue_db, "ancient", subject="Your application update", days_old=40)
         queue(queue_db, "interview", subject="Interview scheduled with ValueLabs", days_old=0.5)
 
@@ -223,7 +223,7 @@ class TestFreshInterviewsAndAssessmentsLead:
         assert [item["id"] for item in claimed] == ["interview"]
 
     def test_a_backlog_turn_still_drains_history_when_nothing_is_urgent(self, queue_db, monkeypatch):
-        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda: True)
+        monkeypatch.setattr(store, "_claim_prefers_backlog", lambda history_waiting=None: True)
         queue(queue_db, "ancient", subject="Your application update", days_old=40)
         queue(queue_db, "today", subject="Thank you for applying", days_old=0.02)
 
@@ -246,3 +246,47 @@ class TestFreshInterviewsAndAssessmentsLead:
         second = store.claim_ai_messages(limit=1)
 
         assert [first[0]["id"], second[0]["id"]] == ["earlier", "later"]
+
+
+class TestTheClaimMeasuresHistoryItself:
+    """The lift follows what is really waiting, so it ends without being told."""
+
+    def test_it_counts_only_history_that_is_ready(self, queue_db, monkeypatch):
+        seen = []
+        monkeypatch.setattr(store, "_claim_prefers_backlog",
+                            lambda history_waiting=None: seen.append(history_waiting) or False)
+        for index in range(3):
+            queue(queue_db, f"old-{index}", subject="Your application update", days_old=20 + index)
+        queue(queue_db, "fresh", subject="Interview scheduled", days_old=0.01)
+        queue(queue_db, "today", subject="Thank you for applying", days_old=0.2)
+
+        store.claim_ai_messages(limit=1)
+
+        assert seen == [3]
+
+    def test_mail_waiting_on_backoff_is_not_counted_as_ready(self, queue_db, monkeypatch):
+        seen = []
+        monkeypatch.setattr(store, "_claim_prefers_backlog",
+                            lambda history_waiting=None: seen.append(history_waiting) or False)
+        queue(queue_db, "ready", subject="Your application update", days_old=30)
+        queue(queue_db, "backing-off", subject="Your application update", days_old=30,
+              status="AI_RETRY_PENDING")
+        with queue_db() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE mailbox_messages SET ai_retry_after=now()+interval '2 hours' WHERE id='backing-off'")
+
+        store.claim_ai_messages(limit=1)
+
+        assert seen == [1]
+
+    def test_a_deep_backlog_turn_still_takes_the_interview_first(self, queue_db, monkeypatch):
+        monkeypatch.setenv("AI_MAIL_BACKLOG_RELIEF_BELOW", "50")   # clamped floor: 2 rows is "deep"
+        monkeypatch.setattr(store, "_backlog_relief_below", lambda: 2)
+        for index in range(4):
+            queue(queue_db, f"old-{index}", subject="Your application update", days_old=25 + index)
+        queue(queue_db, "assessment", subject="Intelliswift invitation for assessment",
+              sender="assistant@glider.ai", days_old=1)
+
+        claimed = [store.claim_ai_messages(limit=1) for _ in range(3)]
+
+        assert claimed[0][0]["id"] == "assessment"
+        assert {item[0]["id"] for item in claimed[1:]} <= {f"old-{index}" for index in range(4)}
