@@ -199,7 +199,7 @@ VISIBLE_STATUSES = [
     "JOINED", "POST_SELECTION_ONBOARDING", "OFFER_DECLINED", "OFFER_REVOKED",
     "JOINING_DATE_UPDATED", "BACKGROUND_VERIFICATION", "DOCUMENT_VERIFICATION",
     "HR_CONFIRMATION", "COMPENSATION_CONFIRMATION", "INTERVIEW_UPDATE", "INTERVIEW_SHORTLISTED",
-    "INTERVIEW_PROPOSED", "OFFER_NEEDS_REVIEW", "JOINING_NEEDS_REVIEW", "SELECTION_NEEDS_REVIEW",
+    "ASSESSMENT_INVITED", "INTERVIEW_PROPOSED", "OFFER_NEEDS_REVIEW", "JOINING_NEEDS_REVIEW", "SELECTION_NEEDS_REVIEW",
     "INTERVIEW_CONFIRMED", "INTERVIEW_RESCHEDULED", "INTERVIEW_CANCELLED",
     "CANDIDATE_REJECTED", "MANUAL_REVIEW_REQUIRED",
 ]
@@ -1076,6 +1076,21 @@ def _entailing_evidence_from_source(
     return []
 
 
+def _source_asserts(sources: dict[str, list[str]], status: str) -> bool:
+    """Whether the verified source says this transition happened, anywhere in it.
+
+    Used to choose *which* status a mail is about, never to satisfy the evidence
+    gate: the gate below still needs a verbatim, entailing excerpt. Reading the
+    whole source rather than one sentence is deliberate here -- a mail that
+    mentions an interview anywhere is not an assessment mail, however it phrases
+    the assessment.
+    """
+    return any(
+        evidence_entails_transition(status, clean_email(raw))
+        for values in sources.values() for raw in values
+    )
+
+
 def _evidence_entails_source_transition(
     item: dict[str, Any], sources: dict[str, list[str]], status: str,
 ) -> bool:
@@ -1579,6 +1594,20 @@ def _validate_result(
                 (value.get("risk_flags") or []) + ["PROPOSAL_NOT_CORROBORATED"]
             ))
         return
+    sources = _source_texts((message or {}).get("subject", ""), (message or {}).get("body", ""), attachments, (message or {}).get("thread_context"))
+    # An assessment invitation is not an interview invitation. Until this status
+    # existed the model had no way to say so, and expressed a test window as an
+    # interview: the guard below then refused it -- correctly, since no sentence
+    # in the mail asserts an interview -- and the mail was retried forever.
+    #
+    # Promote it to the status its own words assert, and only when the source
+    # asserts no interview at all, so an interview mail that happens to mention
+    # an assessment round stays an interview.
+    if (safe_status in {"INTERVIEW_CONFIRMED", "INTERVIEW_RESCHEDULED", "INTERVIEW_SHORTLISTED", "INTERVIEW_UPDATE"}
+            and not _source_asserts(sources, safe_status)
+            and _source_asserts(sources, "ASSESSMENT_INVITED")):
+        value["promoted_from"] = safe_status
+        safe_status = "ASSESSMENT_INVITED"
     # The status is the validated transition. Model-supplied classification and
     # candidate labels are descriptive duplicates and must not contradict it.
     classification = store._STATUS_CLASSIFICATION[safe_status]
@@ -1608,7 +1637,6 @@ def _validate_result(
         {**item, "text": redact_sensitive_text(str(item.get("text") or ""))}
         for item in value.get("evidence") or []
     ]
-    sources = _source_texts((message or {}).get("subject", ""), (message or {}).get("body", ""), attachments, (message or {}).get("thread_context"))
     # Keep only evidence that is verbatim in the source, and require at least
     # one such item — rather than discarding the whole classification because a
     # single item was paraphrased. The verbatim test is what protects against
@@ -3478,6 +3506,38 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
             deliver_persisted(created_realtime_event)
         else:
             _publish("notification_updated", **common)
+    if common["classification"] == "assessment_invited":
+        # An assessment names a window, so its slot is chosen by rule rather
+        # than read from the mail. It books through its own path and appears on
+        # the same roster, typed as an assessment; the interview path below is
+        # untouched by it.
+        _publish("auto_booking_started", **common, processing_status="Validating Booking")
+        try:
+            from services.assessment_auto_booking import execute_assessment_booking
+            outcome = execute_assessment_booking(
+                mailbox=mailbox, message={**decoded, "attachments": attachments or []},
+                event=event, result=result,
+            )
+            booking = outcome.get("booking") or {}
+            _publish(
+                outcome["event_type"], **common, status=outcome.get("status"),
+                booking_id=booking.get("id"), booking_audit_id=(outcome.get("audit") or {}).get("id"),
+                booking_type="Assessment",
+                interview_date=booking.get("date"), interview_time=booking.get("time"),
+                start_time=booking.get("time"), end_time=booking.get("time_end"),
+                timezone="Asia/Kolkata" if booking.get("date") else None,
+                booking_url=f"/daily-ops?bookingId={booking.get('id')}" if booking.get("id") else "",
+                failure_code=outcome.get("failure_code"),
+                block_reason=(outcome.get("block_reason") or {}).get("reason"),
+                block_reason_code=(outcome.get("block_reason") or {}).get("reason_code"),
+            )
+            event["auto_booking"] = outcome
+            if outcome.get("notification"):
+                event["notification"] = outcome["notification"]
+                _publish("notification_updated", **common, booking_id=booking.get("id"), booking_status=outcome.get("status"))
+        except Exception as exc:
+            logger.exception("Automatic assessment booking failed event=%s code=%s", event.get("id"), type(exc).__name__)
+            _publish("mail_processing_failed", **common, processing_status="Processing Failed", error_code=type(exc).__name__)
     if common["classification"] in {"interview_confirmed", "interview_rescheduled", "interview_cancelled"}:
         interview = result.get("interview") or {}
         _publish(
