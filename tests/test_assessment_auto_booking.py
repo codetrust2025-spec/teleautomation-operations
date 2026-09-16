@@ -189,7 +189,10 @@ def test_the_pipeline_reaches_the_assessment_booking(monkeypatch):
         "booking": {"id": "slot-1", "date": "2026-09-15", "time": "19:05", "time_end": "20:05"},
         "audit": {"id": "audit-1"}, "notification": {}, "failure_code": None, "block_reason": None})
 
-    agent.process_message(
+    published = []
+    monkeypatch.setattr(agent, "_publish", lambda event_type, **payload: published.append((event_type, payload)))
+
+    event = agent.process_message(
         {"id": "mailbox-1", "candidate_id": "candidate-1"},
         {"provider_message_id": "glider-1", "provider_thread_id": "glider-thread",
          "sender_email": "assistant@glider.ai", "subject": MESSAGE["subject"],
@@ -200,6 +203,15 @@ def test_the_pipeline_reaches_the_assessment_booking(monkeypatch):
     assert calls, "the assessment never reached its booking path"
     assert calls[0]["message"]["subject"] == MESSAGE["subject"]
     assert isinstance(calls[0]["message"].get("attachments"), list)
+    # Everything after the booking call matters too: the branch catches its own
+    # exceptions, so asserting only that booking was called let a broken
+    # publish -- and with it the whole outcome -- pass as success.
+    assert (event or {}).get("auto_booking", {}).get("status") == "Auto Booked"
+    booked = [payload for name, payload in published if name == "assessment_auto_booked"]
+    assert booked and booked[0]["status"] == "Auto Booked"
+    assert booked[0]["booking_type"] == "Assessment"
+    assert (booked[0]["interview_date"], booked[0]["start_time"]) == ("2026-09-15", "19:05")
+    assert not [name for name, _ in published if name == "mail_processing_failed"]
 
 
 class TestTheStatusItself:
@@ -227,3 +239,63 @@ class TestTheStatusItself:
 
         assert value["status"] == "INTERVIEW_CONFIRMED"
         assert value["classification"] == "interview_confirmed"
+
+
+class TestTheRealStoreKeepsTheType:
+    """Drive the file-backed store, because a booking that loses its type on
+    the way to disk is indistinguishable from an interview on the roster."""
+
+    @pytest.fixture
+    def real_store(self, monkeypatch, tmp_path):
+        from features import candidate_store as cs
+        monkeypatch.setattr(cs, "_FILE", str(tmp_path / "candidates.json"))
+        monkeypatch.setattr(cs, "PROOFS_DIR", str(tmp_path / "proofs"))
+        monkeypatch.setattr(cs, "_load_cache", None)
+        monkeypatch.setattr(cs, "_load_cache_at", 0.0)
+        return cs
+
+    def make(self, cs, name="Test Candidate", phone="9000000001"):
+        return cs.create_candidate({
+            "name": name, "phone": phone, "technology": "Automation",
+            "service_type": "profile_service", "purpose": "interview",
+        })
+
+    def test_an_assessment_booking_is_stored_as_one(self, real_store):
+        cs = real_store
+        candidate = self.make(cs)
+
+        booked = cs.assign_interview_slot(
+            candidate_id=candidate["id"], date="2026-09-15", time="19:05", time_end="20:05",
+            interview_company="Intelliswift", interview_role="Automation",
+            interview_booking_source="ai_auto_booked",
+            booking_type="Assessment", assessment_key="key-1",
+        )
+
+        stored = cs.get_candidate(booked["id"])
+        assert stored["booking_type"] == "Assessment"
+        assert stored["assessment_key"] == "key-1"
+        assert (stored["date"], stored["time"], stored["time_end"]) == ("2026-09-15", "19:05", "20:05")
+
+    def test_a_second_slot_clones_the_type_with_it(self, real_store):
+        cs = real_store
+        candidate = self.make(cs)
+        cs.assign_interview_slot(candidate_id=candidate["id"], date="2026-09-15", time="10:00",
+                                 time_end="11:00", interview_booking_source="ai_auto_booked")
+
+        second = cs.assign_interview_slot(
+            candidate_id=candidate["id"], date="2026-09-15", time="19:05", time_end="20:05",
+            interview_booking_source="ai_auto_booked", booking_type="Assessment", assessment_key="key-2")
+
+        assert second["id"] != candidate["id"]
+        stored = cs.get_candidate(second["id"])
+        assert stored["booking_type"] == "Assessment"
+        assert stored["assessment_key"] == "key-2"
+
+    def test_an_interview_booking_is_still_an_interview(self, real_store):
+        cs = real_store
+        candidate = self.make(cs)
+
+        booked = cs.assign_interview_slot(candidate_id=candidate["id"], date="2026-09-18",
+                                          time="15:00", time_end="16:00")
+
+        assert cs.get_candidate(booked["id"])["booking_type"] == "Interview"

@@ -1274,6 +1274,10 @@ _ALLOWED_FIELDS = {
     # revision find the booking it supersedes instead of creating a second one.
     "interview_calendar_uid", "interview_calendar_sequence",
     "interview_booking_source",
+    # An assessment holds a slot like an interview and must stay distinguishable
+    # on the roster, and its key is what makes a reminder find the booking the
+    # invitation made instead of adding a second one.
+    "booking_type", "assessment_key",
     "booking_idempotency_key",
     "previousBookingId", "reusedPaymentId", "paymentReusedByBookingId",
     "purpose",
@@ -1498,6 +1502,8 @@ def _normalise(record: dict, *, existing: dict | None = None) -> dict:
         "interview_calendar_uid": _clean_str(record.get("interview_calendar_uid", base.get("interview_calendar_uid"))),
         "interview_calendar_sequence": _clean_str(record.get("interview_calendar_sequence", base.get("interview_calendar_sequence"))),
         "interview_booking_source": _clean_str(record.get("interview_booking_source", base.get("interview_booking_source"))).lower(),
+        "booking_type": _clean_str(record.get("booking_type", base.get("booking_type"))) or "Interview",
+        "assessment_key": _clean_str(record.get("assessment_key", base.get("assessment_key"))),
         "booking_idempotency_key": _clean_str(
             record.get("booking_idempotency_key", base.get("booking_idempotency_key"))
         ),
