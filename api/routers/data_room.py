@@ -1,4 +1,6 @@
 """Operations Data Room routes."""
+import os
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from core.operations_api_helpers import (
@@ -26,6 +28,12 @@ async def data_room_list(
         "opportunities": rows,
         "count": len(rows),
         "stats": data_room_store.stats_summary(),
+        # The offer-letter folder is a live Drive location holding candidates'
+        # signed offers. It was a literal in the dashboard source, which a
+        # public repository then published to anyone who read the file. It is
+        # configuration now, served to an authenticated dashboard session and to
+        # nobody else; an unset value simply disables the folder link.
+        "offer_folder_url": os.getenv("OFFER_LETTER_FOLDER_URL", ""),
     }
 @router.get("/data-room/stats")
 async def data_room_stats():

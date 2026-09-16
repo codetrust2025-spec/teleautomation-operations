@@ -4,7 +4,7 @@
 approval. Every fact was verified against the live host on 2026-08-17;
 statements about paths, ports, images and row counts are measured, not assumed.
 
-Host `187.127.169.159`, all commands as `root` unless noted.
+Host: the production KVM, addressed through `$KVM1_SSH` from the operator's environment. Neither the address nor the login belongs in this file -- the repository is public, and every other runbook here already takes them from the environment. Commands run as the deploy user unless a step says otherwise.
 
 ## 0. Facts verified on the live host
 
@@ -268,7 +268,7 @@ The tarball in 7a comes from a clean checkout, never a working directory:
 
 ```bash
 git -C <repo> archive --format=tar "$NEW_SHA" -o /tmp/operations-$NEW_SHA.tar
-scp /tmp/operations-$NEW_SHA.tar root@187.127.169.159:/tmp/
+scp /tmp/operations-$NEW_SHA.tar "$KVM1_SSH":/tmp/
 ```
 
 Do **not** touch `/etc/nginx`, DNS, TLS, `.env.production`, Telegram sessions,

@@ -10,8 +10,8 @@ const API_BASE =
       ? `${window.location.protocol}//${window.location.host}`
       : ''
 
-const DEFAULT_OFFER_FOLDER =
-  'https://drive.google.com/drive/folders/1oHMisQJAudp-4RwAG_oMLsbPStd99g8B'
+// Served by /data-room as `offer_folder_url`; never a literal here.
+const DEFAULT_OFFER_FOLDER = ''
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 

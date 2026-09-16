@@ -1,5 +1,8 @@
-const DEFAULT_OFFER_FOLDER =
-  'https://drive.google.com/drive/folders/1oHMisQJAudp-4RwAG_oMLsbPStd99g8B'
+// The live folder comes from the server (`offer_folder_url` on /data-room),
+// never from this file: a literal here is published by the public repository
+// and baked into the browser bundle. Empty means "no folder configured", and
+// every caller may pass the configured value in explicitly.
+const DEFAULT_OFFER_FOLDER = ''
 
 function extractDriveFolderId(url) {
   const m = String(url || '').match(/\/folders\/([a-zA-Z0-9_-]+)/)
