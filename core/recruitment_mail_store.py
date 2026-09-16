@@ -1381,7 +1381,19 @@ def is_duplicate_offer_attachment(candidate_id:str,message_id:str)->bool:
 
 
 def is_duplicate_thread_status(candidate_id:str,message_id:str,status:str)->bool:
-    """Suppress repeated reminders with the same status in the same Gmail thread."""
+    """Suppress repeated reminders with the same status in the same Gmail thread.
+
+    A reminder repeats an event that still stands. A fresh invitation sent after
+    its booking was cancelled does not: the organiser is rebooking, and the mail
+    that says so is a new interview, not a second copy of the old one.
+
+    Only the booking connects the two. Google gives a cancellation its own
+    thread, so the cancelled invitation and its replacement sit in the thread of
+    the original while the cancellation itself sits outside it -- invisible to a
+    query that reads the thread alone. Reading the thread alone is what dropped a
+    re-invitation sent five minutes after a cancellation: the candidate kept a
+    cancelled slot, gained no new one, and the interview went ahead unbooked.
+    """
     with get_connection() as conn,conn.cursor() as cur:
         cur.execute("""SELECT 1 FROM mailbox_messages current_message
           JOIN mailbox_messages previous_message ON previous_message.provider_thread_id=current_message.provider_thread_id
@@ -1389,7 +1401,12 @@ def is_duplicate_thread_status(candidate_id:str,message_id:str,status:str)->bool
           JOIN ai_recruitment_events e ON e.mailbox_message_id=previous_message.id
           WHERE current_message.id=%s AND current_message.provider_thread_id IS NOT NULL
             AND e.candidate_id=%s AND e.primary_status=%s
-            AND e.review_status NOT IN('FALSE_POSITIVE','DUPLICATE') LIMIT 1""",(message_id,candidate_id,status))
+            AND e.review_status NOT IN('FALSE_POSITIVE','DUPLICATE')
+            AND NOT EXISTS(SELECT 1 FROM interview_auto_booking_audit booked
+              JOIN interview_auto_booking_audit cancelled ON cancelled.booking_id=booked.booking_id
+                AND cancelled.booking_status='Cancelled' AND cancelled.created_at>booked.created_at
+              WHERE booked.gmail_message_id=previous_message.provider_message_id
+                AND booked.booking_id IS NOT NULL) LIMIT 1""",(message_id,candidate_id,status))
         return cur.fetchone() is not None
 
 
