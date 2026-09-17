@@ -1006,6 +1006,40 @@ def _max_ai_attempts() -> int:
         return 12
 
 
+#: Outcomes that are a verdict about the mail, not a failure to read it.
+#:
+#: The evidence guard fires when the quoted evidence does not support the
+#: transition the model claimed; relevance-unresolved means the pipeline could
+#: not establish the mail is recruitment at all. Neither is transient: the same
+#: mail, the same model and the same prompt reach the same answer, so a retry
+#: is a re-run of a question already answered.
+#:
+#: Measured on the production queue, 2026-09-17: 408 messages carried
+#: EVIDENCE_DOES_NOT_ENTAIL_TRANSITION at an average of 5.7 attempts each and
+#: exactly one had ever come back from it; 156 carried
+#: RECRUITMENT_RELEVANCE_UNRESOLVED, average 6.4 attempts, and none had. That is
+#: roughly 3,200 model runs spent, with thousands more scheduled, at a recovery
+#: rate of one in 565 -- against a pipeline that manages about 900 runs a day.
+DETERMINISTIC_AI_FAILURE_CODES = frozenset({
+    "EVIDENCE_DOES_NOT_ENTAIL_TRANSITION",
+    "RECRUITMENT_RELEVANCE_UNRESOLVED",
+})
+
+
+def _deterministic_ai_attempts() -> int:
+    """Attempts allowed for a verdict rather than a failure.
+
+    Two, not one: a node answers deterministically for a given model load, so a
+    second attempt can land on a different node and legitimately differ. Two
+    keeps that chance and stops there, which is where the measured recovery
+    rate said the value had already run out.
+    """
+    try:
+        return max(1, min(12, int(os.getenv("AI_MAIL_DETERMINISTIC_ATTEMPTS", "2"))))
+    except (TypeError, ValueError):
+        return 2
+
+
 def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[str, Any]]:
     """Lease queued semantic work so crashes/timeouts cannot lose or duplicate it."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -1025,6 +1059,16 @@ def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[
               updated_at=now()
             WHERE processing_status IN ('AI_QUEUED','AI_RETRY_PENDING') AND ai_retry_count>=%s""",
             (_max_ai_attempts(),))
+        # The same argument for the smaller budget: a mail already past it
+        # would otherwise spend one more model run to be told again what it was
+        # told the first two times. Its own reason is kept -- that is what makes
+        # the parked set readable afterwards.
+        cur.execute("""UPDATE mailbox_messages SET processing_status='AI_PROCESSING_FAILED',
+              ai_retry_after=NULL,ai_lease_expires_at=NULL,updated_at=now()
+            WHERE processing_status IN ('AI_QUEUED','AI_RETRY_PENDING')
+              AND ai_last_error_code=ANY(%s) AND ai_retry_count>=%s""",
+            (sorted(DETERMINISTIC_AI_FAILURE_CODES),
+             min(_deterministic_ai_attempts(), _max_ai_attempts())))
         # Live mail first, then the backlog -- each oldest-first within itself.
         #
         # Strict `ORDER BY sent_at ASC` is FIFO over the whole table, so a large
@@ -1128,6 +1172,9 @@ def retry_pending_messages(limit: int = 20) -> list[dict[str, Any]]:
 
 
 def schedule_ai_retry(message_id: str, *, succeeded: bool) -> None:
+    deterministic = sorted(DETERMINISTIC_AI_FAILURE_CODES)
+    cap = _max_ai_attempts()
+    determined_cap = min(_deterministic_ai_attempts(), cap)
     with get_connection() as conn, conn.cursor() as cur:
         if succeeded:
             cur.execute("UPDATE mailbox_messages SET ai_retry_after=NULL,ai_lease_expires_at=NULL,ai_last_error_code=NULL,updated_at=now() WHERE id=%s",(message_id,))
@@ -1136,13 +1183,29 @@ def schedule_ai_retry(message_id: str, *, succeeded: bool) -> None:
             # row, its analyses and its error code, and stops consuming model
             # runs. `AI_ATTEMPTS_EXHAUSTED` says which of the terminal failures
             # this is, so it can be found and re-opened deliberately.
+            #
+            # The budget depends on what failed. A verdict about the mail is
+            # not a failure to read it, and re-running the same model over the
+            # same mail asks a question already answered -- so those codes get
+            # `_deterministic_ai_attempts()` and keep their own reason when
+            # parked, because "the evidence did not entail the transition" is
+            # the useful thing to find later; `AI_ATTEMPTS_EXHAUSTED` would
+            # replace it with the fact that it gave up.
             cur.execute("""UPDATE mailbox_messages SET ai_retry_count=ai_retry_count+1,
-              processing_status=CASE WHEN ai_retry_count+1>=%s THEN 'AI_PROCESSING_FAILED' ELSE 'AI_RETRY_PENDING' END,
-              ai_last_error_code=CASE WHEN ai_retry_count+1>=%s THEN 'AI_ATTEMPTS_EXHAUSTED' ELSE ai_last_error_code END,
-              ai_retry_after=CASE WHEN ai_retry_count+1>=%s THEN NULL
+              processing_status=CASE WHEN ai_retry_count+1>=(CASE WHEN ai_last_error_code=ANY(%s)
+                    THEN %s ELSE %s END) THEN 'AI_PROCESSING_FAILED' ELSE 'AI_RETRY_PENDING' END,
+              ai_last_error_code=CASE
+                WHEN ai_last_error_code=ANY(%s) THEN ai_last_error_code
+                WHEN ai_retry_count+1>=%s THEN 'AI_ATTEMPTS_EXHAUSTED'
+                ELSE ai_last_error_code END,
+              ai_retry_after=CASE WHEN ai_retry_count+1>=(CASE WHEN ai_last_error_code=ANY(%s)
+                    THEN %s ELSE %s END) THEN NULL
                 ELSE now()+(LEAST(360,POWER(2,LEAST(ai_retry_count+1,8)))||' minutes')::interval END,
               ai_lease_expires_at=NULL,
-              updated_at=now() WHERE id=%s""",(_max_ai_attempts(),_max_ai_attempts(),_max_ai_attempts(),message_id))
+              updated_at=now() WHERE id=%s""",
+              (deterministic, determined_cap, cap,
+               deterministic, cap,
+               deterministic, determined_cap, cap, message_id))
 
 
 def is_duplicate_content(candidate_id:str,message_id:str,message_hash:str,body_hash:str,subject:str|None=None)->bool:
