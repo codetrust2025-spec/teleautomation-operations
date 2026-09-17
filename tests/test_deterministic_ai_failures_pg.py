@@ -70,7 +70,11 @@ def queue_db(monkeypatch):
         cur.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
     try:
         with connect() as conn, conn.cursor() as cur:
-            for name in ("candidate_mailboxes", "mailbox_messages"):
+            # The claim joins attachments, so the schema has to carry the same
+            # four tables the queue tests build; two of them is a fixture that
+            # passes every test that never claims.
+            for name in ("candidate_mailboxes", "mailbox_messages",
+                         "mailbox_attachments", "mailbox_attachment_cache"):
                 cur.execute(table("001_recruitment_mail_tracking.sql", name))
             for column, kind in (("ai_retry_after", "timestamptz"),
                                  ("ai_retry_count", "integer NOT NULL DEFAULT 0"),
@@ -87,7 +91,7 @@ def queue_db(monkeypatch):
         monkeypatch.setattr(store, "get_connection", connect)
         yield connect
     finally:
-        assert schema.startswith("verdict_test_") and len(schema) == 44
+        assert schema.startswith("verdict_test_") and len(schema) == len("verdict_test_") + 32
         with psycopg2.connect(url) as conn, conn.cursor() as cur:
             cur.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 
