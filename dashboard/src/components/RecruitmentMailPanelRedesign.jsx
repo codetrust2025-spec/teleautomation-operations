@@ -2307,11 +2307,6 @@ export default function RecruitmentMailPanelRedesign() {
   const activeMailboxCount = rows.filter((row) =>
     ["CONNECTED", "SYNC_QUEUED", "SYNCING"].includes(row.uiStatus),
   ).length;
-  // Counted off the rows the table renders, so the card can never disagree
-  // with the badges beside the accounts it is counting.
-  const reconnectRequiredCount = rows.filter(
-    (row) => row.uiStatus === "RECONNECT_REQUIRED",
-  ).length;
   // The sidebar is told about every mailbox, not just the candidate being
   // viewed, and is told on each load so reconnecting an account clears the
   // badge with the row rather than on the sidebar's own next poll.
@@ -2656,48 +2651,13 @@ export default function RecruitmentMailPanelRedesign() {
                 </p>
               </div>
             </div>
-            {/* One row: the counts, the tabs that filter the list, and the
-                controls that search and add to it. They were two rows, and
-                the second pushed the table it acts on further down the
-                page for no reading benefit -- the counts are a sentence
-                long each. */}
+            {/* One row, and every count on it exactly once. The three
+                filters carried the same numbers as the chips beside them
+                -- Total Mailboxes was Linked, Monitoring Active was the
+                note inside it, Pending Gmail was itself -- so the chips
+                went and the tabs kept the counts. Active stays as a
+                reading, outside the tablist because it filters nothing. */}
             <div className="sot-mailbox-toolbar">
-            <section className="sot-mailbox-metrics">
-              <MailboxMetric
-                icon="✉"
-                label="Total Mailboxes"
-                value={rows.length}
-              />
-              <MailboxMetric
-                icon="✓"
-                label="Monitoring Active"
-                value={
-                  rows.filter((row) => row.uiStatus === "CONNECTED").length +
-                  rows.filter((row) =>
-                    ["SYNC_QUEUED", "SYNCING"].includes(row.uiStatus),
-                  ).length
-                }
-                tone="green"
-              />
-              <MailboxMetric
-                icon="!"
-                label="Pending Gmail"
-                value={pendingMailboxCandidates.length}
-                tone="amber"
-              />
-              {/* Only shown when something is actually broken: a permanent
-                  "Reconnect Required 0" is noise next to three live counts.
-                  Counted off the same uiStatus the rows below render, so the
-                  card and the rows cannot disagree. */}
-              {reconnectRequiredCount > 0 && (
-                <MailboxMetric
-                  icon="⚠"
-                  label="Reconnect Required"
-                  value={reconnectRequiredCount}
-                  tone="red"
-                />
-              )}
-            </section>
             {/* Tabs and the controls that act on the list, on one row directly
                 above it. The tablist stays its own element: search and a button
                 are not tabs and must not sit inside it. */}
@@ -2714,8 +2674,7 @@ export default function RecruitmentMailPanelRedesign() {
                   className={mailboxListMode === "linked" ? "active" : ""}
                   onClick={() => setMailboxListMode("linked")}
                 >
-                  Linked <span>{rows.length}</span>
-                  <small>{activeMailboxCount} active</small>
+                  <i aria-hidden="true">&#9993;</i> Linked <span>{rows.length}</span>
                 </button>
                 <button
                   type="button"
@@ -2724,7 +2683,7 @@ export default function RecruitmentMailPanelRedesign() {
                   className={mailboxListMode === "pending" ? "active" : ""}
                   onClick={() => setMailboxListMode("pending")}
                 >
-                  Pending Gmail <span>{pendingMailboxCandidates.length}</span>
+                  <i aria-hidden="true">!</i> Pending Gmail <span>{pendingMailboxCandidates.length}</span>
                 </button>
                 <button
                   type="button"
@@ -2733,9 +2692,16 @@ export default function RecruitmentMailPanelRedesign() {
                   className={mailboxListMode === "reconnect" ? "active" : ""}
                   onClick={() => setMailboxListMode("reconnect")}
                 >
-                  Reconnect <span>{reconnectWorklistTotal}</span>
+                  <i aria-hidden="true">&#8635;</i> Reconnect <span>{reconnectWorklistTotal}</span>
                 </button>
               </div>
+              {/* A reading, not a filter: there is no Active list to show,
+                  so it is a <p> rather than a fourth tab that would do
+                  nothing when pressed. */}
+              <p className="sot-mailbox-status">
+                <i aria-hidden="true" />
+                Active <span>{activeMailboxCount}</span>
+              </p>
               <div className="sot-list-toolbar-actions">
                 <SearchInput value={search} onChange={setSearch} />
                 <button

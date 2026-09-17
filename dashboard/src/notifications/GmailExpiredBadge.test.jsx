@@ -190,20 +190,30 @@ describe('the mailbox summary card', () => {
   )
 
   it('counts the rows the table renders rather than refetching', () => {
+    // The Reconnect Required chip is gone -- every number it carried was
+    // already on a tab -- so the Reconnect tab is where the broken count
+    // shows now. It still derives from the rows in hand.
     expect(panel).toMatch(
-      /reconnectRequiredCount = rows\.filter\(\s*\(row\) => row\.uiStatus === "RECONNECT_REQUIRED",\s*\)\.length/,
+      /reconnectWorklistTotal = useMemo\(\s*\(\) => reconnectWorklist\(/,
     )
+    expect(panel).toMatch(/\[allRows\]/)
   })
 
-  it('sits with the other mailbox metrics', () => {
-    const metrics = panel.slice(panel.indexOf('sot-mailbox-metrics'))
-    expect(metrics).toContain('label="Reconnect Required"')
-    expect(metrics.indexOf('label="Pending Gmail"'))
-      .toBeLessThan(metrics.indexOf('label="Reconnect Required"'))
+  it('sits with the other counts, after Pending Gmail', () => {
+    const row = panel.slice(panel.indexOf('<div className="sot-mailbox-toolbar">'))
+    const tabs = row.slice(0, row.indexOf('sot-list-toolbar-actions'))
+    expect(tabs).toContain('Reconnect <span>{reconnectWorklistTotal}</span>')
+    expect(tabs.indexOf('Pending Gmail')).toBeLessThan(tabs.indexOf('Reconnect <span>'))
   })
 
-  it('is hidden entirely when nothing is broken', () => {
-    expect(panel).toContain('{reconnectRequiredCount > 0 && (')
+  it('shows its zero rather than disappearing', () => {
+    // The chip hid at zero, because a permanent "Reconnect Required 0"
+    // was noise beside three live chips. As a tab it is one of four counts
+    // read together, and a tab that comes and goes is worse than a zero.
+    const row = panel.slice(panel.indexOf('<div className="sot-mailbox-toolbar">'))
+    const tabs = row.slice(0, row.indexOf('sot-list-toolbar-actions'))
+    expect(tabs).not.toContain('reconnectWorklistTotal > 0 &&')
+    expect(panel).not.toContain('reconnectRequiredCount')
   })
 
   it('tells the sidebar about every mailbox, not just the one candidate', () => {

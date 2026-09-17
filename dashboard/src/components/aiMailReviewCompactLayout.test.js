@@ -88,15 +88,15 @@ describe('search and Add Gmail sit above the list', () => {
     expect(toolbar).toContain('+ Add Gmail')
   })
 
-  it('come after the metric chips rather than above them', () => {
-    expect(panel.indexOf('sot-mailbox-metrics'))
-      .toBeLessThan(panel.indexOf('sot-list-toolbar'))
+  it('come after the tabs rather than above them', () => {
+    expect(panel.indexOf('sot-mailbox-view-tabs'))
+      .toBeLessThan(panel.indexOf('sot-list-toolbar-actions'))
   })
 
   it('no longer sit in the section heading', () => {
     const head = panel.slice(
       panel.indexOf('<div className="sot-overview-head">'),
-      panel.indexOf('sot-mailbox-metrics'),
+      panel.indexOf('<div className="sot-mailbox-toolbar">'),
     )
     expect(head).not.toContain('<SearchInput')
     expect(head).not.toContain('+ Add Gmail')
@@ -132,16 +132,32 @@ describe('the metric cards became chips', () => {
     expect(scoped).toMatch(/\.sot-mailboxes-page \.sot-mailbox-metrics \{[^}]*margin: 0 0 10px;/)
   })
 
-  it('still shows all four, reconnect count included', () => {
-    const metrics = panel.slice(panel.indexOf('sot-mailbox-metrics'))
-    for (const label of ['Total Mailboxes', 'Monitoring Active', 'Pending Gmail',
-                         'Reconnect Required']) {
-      expect(metrics).toContain(`label="${label}"`)
+  it('no longer exist: every count they carried is on a tab', () => {
+    // Total Mailboxes was Linked, Monitoring Active was the note inside it,
+    // Pending Gmail was itself, and Reconnect Required was the Reconnect
+    // tab. Four chips repeating four numbers that were already on screen.
+    const row = panel.slice(
+      panel.indexOf('<div className="sot-mailbox-toolbar">'),
+      panel.indexOf('{showAddMailbox && ('),
+    )
+    expect(row).not.toContain('sot-mailbox-metrics')
+    for (const label of ['Total Mailboxes', 'Monitoring Active', 'Reconnect Required']) {
+      expect(row).not.toContain(label)
     }
   })
 
-  it('keeps the reconnect chip hidden when nothing is broken', () => {
-    expect(panel).toContain('{reconnectRequiredCount > 0 && (')
+  it('says each number once, and only the filters are clickable', () => {
+    const row = panel.slice(
+      panel.indexOf('<div className="sot-mailbox-toolbar">'),
+      panel.indexOf('{showAddMailbox && ('),
+    )
+    expect(row.match(/Pending Gmail/g) || []).toHaveLength(1)
+    expect(row.match(/\{rows\.length\}/g) || []).toHaveLength(1)
+    expect(row.match(/activeMailboxCount/g) || []).toHaveLength(1)
+    // Active is a reading: there is no Active list, so it is not a tab.
+    const status = row.slice(row.indexOf('sot-mailbox-status'))
+    expect(status.slice(0, 200)).not.toContain('role="tab"')
+    expect(status.slice(0, 200)).not.toContain('onClick')
   })
 
   it('stays a single row on desktop', () => {
@@ -215,13 +231,13 @@ describe('the counts, tabs and controls share one row', () => {
   // were 110px from the top of the chips to the bottom of the toolbar, and the
   // single row is 58px. jsdom reports both as zero, so what is pinned here is
   // the structure and the rules that produce it.
-  it('wraps all three in one toolbar', () => {
+  it('wraps the tabs, the reading and the controls in one toolbar', () => {
     const row = panel.slice(
       panel.indexOf('<div className="sot-mailbox-toolbar">'),
       panel.indexOf('{showAddMailbox && ('),
     )
-    expect(row).toContain('className="sot-mailbox-metrics"')
     expect(row).toContain('className="sot-mailbox-view-tabs"')
+    expect(row).toContain('className="sot-mailbox-status"')
     expect(row).toContain('sot-list-toolbar-actions')
   })
 
