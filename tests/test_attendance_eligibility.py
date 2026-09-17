@@ -570,3 +570,105 @@ def test_a_mobile_network_is_still_refused_after_the_office_moves():
         verdict = verify_office_network(outsider, "", office_cidrs=policy, trusted_proxy_cidrs="")
         assert verdict.allowed is False
         assert verdict.observed_ip == outsider
+
+
+# ── check-out: the end of the day, over the same API as its start ───────────
+#
+# The gate lives in features/daily_checkout.py and is tested there. What these
+# pin is the contract the panel is written against: the reading never writes,
+# a refusal comes back as 409 carrying every blocker, and the identity is the
+# session's rather than anything the request body claims.
+
+
+def test_checkout_status_reads_without_writing(api_client, monkeypatch):
+    client, attendance_api = api_client
+    monkeypatch.setattr(attendance_api, "verify_office_network",
+                        lambda *_args: type("N", (), {"allowed": True, "observed_ip": ""})())
+    monkeypatch.setattr(attendance_api.daily_checkout, "check_out", lambda *a, **k: pytest.fail(
+        "reading the panel must never end someone's day"))
+    monkeypatch.setattr(attendance_api.daily_checkout, "status",
+                        lambda profile, network, **_k: {"status": "ok", "can_check_out": True,
+                                                        "blockers": []})
+
+    response = signed_in(client).get("/attendance/checkout")
+
+    assert response.status_code == 200
+    assert response.json()["can_check_out"] is True
+
+
+def test_checkout_uses_the_session_identity_not_the_request(api_client, monkeypatch):
+    client, attendance_api = api_client
+    captured = {}
+    monkeypatch.setattr(attendance_api, "verify_office_network",
+                        lambda *_args: type("N", (), {"allowed": True, "observed_ip": ""})())
+
+    def fake_check_out(profile, network):
+        captured.update(profile)
+        return {"status": "checked_out", "checkout": {"checked_out_at": "2026-09-17T13:35:00Z"}}
+
+    monkeypatch.setattr(attendance_api.daily_checkout, "check_out", fake_check_out)
+    response = signed_in(client).post(
+        "/attendance/checkout",
+        json={"account_id": "handler:someone-else", "checked_out_at": "2000-01-01T00:00:00Z"},
+    )
+
+    assert response.status_code == 200
+    assert captured["account_id"] == "handler:employee-a"
+
+
+def test_an_unfinished_day_is_a_conflict_carrying_every_blocker(api_client, monkeypatch):
+    """409, not 403: nothing is wrong with who is asking."""
+    client, attendance_api = api_client
+    from features import daily_checkout
+
+    monkeypatch.setattr(attendance_api, "verify_office_network",
+                        lambda *_args: type("N", (), {"allowed": True, "observed_ip": ""})())
+
+    def refuse(profile, network):
+        raise daily_checkout.CheckoutBlocked([
+            {"kind": daily_checkout.INTERVIEW_OUTCOME_PENDING, "summary": "outcome missing",
+             "count": 1, "items": [{"name": "Sample Candidate"}]},
+            {"kind": daily_checkout.DAILY_TASKS_PENDING, "summary": "tasks open",
+             "count": 1, "items": []},
+        ])
+
+    monkeypatch.setattr(attendance_api.daily_checkout, "check_out", refuse)
+    response = signed_in(client).post("/attendance/checkout")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert [b["kind"] for b in detail["blockers"]] == [
+        daily_checkout.INTERVIEW_OUTCOME_PENDING, daily_checkout.DAILY_TASKS_PENDING]
+
+
+def test_an_account_without_attendance_is_refused(api_client, monkeypatch):
+    client, attendance_api = api_client
+    monkeypatch.setattr(attendance_api, "verify_office_network",
+                        lambda *_args: type("N", (), {"allowed": True, "observed_ip": ""})())
+
+    def refuse(profile, network):
+        raise PermissionError("Check-out is only available to handler accounts.")
+
+    monkeypatch.setattr(attendance_api.daily_checkout, "check_out", refuse)
+    response = signed_in(client, username="operations_admin", role="admin").post("/attendance/checkout")
+
+    assert response.status_code == 403
+
+
+def test_checkout_needs_a_session_at_all(api_client):
+    client, _ = api_client
+    client.cookies.clear()
+
+    assert client.get("/attendance/checkout").status_code == 401
+    assert client.post("/attendance/checkout").status_code == 401
+
+
+def test_checkout_is_judged_on_the_same_network_reading_as_marking(api_client, monkeypatch):
+    """One helper, so the two can never drift apart."""
+    import inspect
+
+    from api.routers import attendance as attendance_api
+
+    source = inspect.getsource(attendance_api)
+    assert source.count("verify_office_network(") == 1
+    assert source.count("_network(request)") == 3

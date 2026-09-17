@@ -40,7 +40,15 @@ describe('attendance and earnings panel', () => {
     render(<AttendancePanel />)
     expect(screen.queryByRole('heading', { name: 'Public holidays' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Salary recommendations' })).not.toBeInTheDocument()
-    expect(fetch).not.toHaveBeenCalled()
+    // A handler's panel reads its own check-out state and nothing else. It
+    // used to fetch nothing at all, so this asserts the admin endpoints stay
+    // unreached rather than that the panel is silent.
+    const urls = fetch.mock.calls.map(([url]) => String(url))
+    for (const admin of ['/attendance/holidays', '/attendance/salary-recommendations',
+      '/attendance/admin/users', '/attendance/admin/overview']) {
+      expect(urls.some(url => url.includes(admin))).toBe(false)
+    }
+    expect(urls.every(url => url.includes('/attendance/checkout'))).toBe(true)
   })
 
   it('loads credential-safe admin data without rendering credentials', async () => {
