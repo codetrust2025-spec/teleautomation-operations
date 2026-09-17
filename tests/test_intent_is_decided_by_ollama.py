@@ -47,8 +47,8 @@ WEBINAR_BODY = (
     "began to change. Her son's behaviour improved. Their home became calmer. "
     "Join our FREE Interview with Imran Baig, India's most trusted handwriting "
     "analysis coach. 27th August 2026 Thursday, 3:30 PM IST. "
-    "Zoom Link: https://us06web.zoom.us/meeting/register/fq4D "
-    "Meeting ID: 816 2814 9138 Passcode: QiaHRqJbu. "
+    "Zoom Link: https://us06web.zoom.us/meeting/register/test "
+    "Meeting ID: 000 0000 0001 Passcode: TestPass0. "
     "With love and warmth, Indu and Mitesh. Unsubscribe."
 )
 
@@ -58,7 +58,7 @@ INTERVIEW_SUBJECT = "Your interview with Altimetrik is scheduled"
 INTERVIEW_BODY = (
     "Dear Candidate, Your technical interview has been scheduled for "
     "27th August 2026 at 3:30 PM IST. Please join the interview using the link "
-    "below. Zoom Link: https://us06web.zoom.us/j/123 Meeting ID: 816 2814 9138."
+    "below. Zoom Link: https://us06web.zoom.us/j/123 Meeting ID: 000 0000 0001."
 )
 
 

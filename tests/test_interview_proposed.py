@@ -16,8 +16,8 @@ from tests.legacy_detection import legacy_rules_first  # noqa: F401
 class TestRoutingReachesOllama:
     """A structured invite must not be filtered out before the model sees it."""
 
-    TEAMS = ("Microsoft Teams meeting Join: https://teams.microsoft.com/meet/23471932663212 "
-             "Meeting ID: 234 719 326 632 12 Passcode: re7Dc7si")
+    TEAMS = ("Microsoft Teams meeting Join: https://teams.microsoft.com/meet/00000000000001 "
+             "Meeting ID: 000 000 000 000 01 Passcode: TestPass0")
 
     def test_the_infoshare_reactjs_invite_is_recognised(self):
         assert agent.recruiting_invite_signal(

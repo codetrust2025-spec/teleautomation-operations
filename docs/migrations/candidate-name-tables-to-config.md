@@ -110,3 +110,28 @@ to no contact detail, in a file that also explains what they are. The fixture
 cleanup removed the addresses, phone numbers and meeting links that made the
 old data a dossier. So this is worth doing when the naming tables are next
 touched for a functional reason — not as a security emergency.
+
+## Decision, 2026-09-17: deferred
+
+Re-checked against today's code: all eight tables are still there, unchanged,
+and the design above still describes them accurately.
+
+Deferred anyway, for one reason that does not go away with more care:
+
+**Phase 1 removes nothing.** It reads the values from a file and keeps the
+embedded table as the fallback, so every name stays in the repository exactly
+as it is now. The exposure only changes at Phase 2, and Phase 2's precondition
+is a golden equivalence fixture generated from the real candidate names plus a
+config file deployed to the volume. So the whole cost lands before any benefit
+does, and the benefit at the end is removing first names that carry no contact
+details -- the addresses, phone numbers, resumes and meeting links that made the
+old fixtures a dossier are already gone, and a CI guard keeps them gone.
+
+Against that: Phase 2 adds a new way for production to fail at start-up, over
+data that decides whether two rows are one person and whether a candidate is
+charged.
+
+What would change this answer: one of these tables needing a functional edit
+anyway (a new alias, a new free-service candidate), an outside contributor
+gaining repository access, or a decision to rewrite history -- at which point
+doing this in the same window costs almost nothing extra.

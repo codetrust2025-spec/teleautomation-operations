@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+from itertools import groupby
 from pathlib import Path
 
 import pytest
@@ -268,6 +269,44 @@ def test_every_public_address_is_a_documentation_address():
         + "\n  ".join(offences))
 
 
+#: A meeting id is a room; a passcode is the key to it. A fixture that carries
+#: both is a working invitation to somebody's real call.
+MEETING_PASSCODE = re.compile(r"passcode:\s*([A-Za-z0-9]{5,})", re.I)
+#: The other Teams form: a plain numeric room in the URL and again in the
+#: body. Digit entropy says nothing useful here, so a synthetic id has to
+#: read as one -- every run of the same digit at least three long.
+TEAMS_ROOM = re.compile(r"teams\.microsoft\.com/meet/(\d{8,})")
+
+
+def test_no_meeting_passcode_is_a_real_one():
+    offences = []
+    for path in scanned_files():
+        text = _read(path)
+        for match in MEETING_PASSCODE.finditer(text):
+            code = match.group(1)
+            if code.lower().startswith(("test", "example", "sample", "fake", "synthetic")):
+                continue
+            offences.append(_at(path, text, match.start()))
+    assert not offences, (
+        "meeting passcodes that are not obviously synthetic -- use TestPass0:\n  "
+        + "\n  ".join(offences))
+
+
+def test_no_teams_room_number_is_a_real_one():
+    offences = []
+    for path in scanned_files():
+        body = _read(path)
+        for match in TEAMS_ROOM.finditer(body):
+            room = match.group(1)
+            runs = ["".join(group) for _, group in groupby(room)]
+            if len(set(room)) <= 3 or all(len(run) >= 3 for run in runs):
+                continue
+            offences.append(f"{_at(path, body, match.start())}  {room}")
+    assert not offences, (
+        "Teams room numbers that are not obviously synthetic -- use a run-of-"
+        "three shape like 000111222333444:" + chr(10) + "  " + (chr(10) + "  ").join(offences))
+
+
 def test_removed_names_have_not_come_back():
     offences = []
     for path in scanned_files():
@@ -292,7 +331,11 @@ def test_the_address_rule_itself(value, synthetic):
 
 @pytest.mark.parametrize("digits,synthetic", [
     ("9000000101", True), ("9876543210", True), ("9111111111", True),
-    ("9845303472", False), ("8328646540", False), ("7306994576", False),
+    # Keypad walks: real in shape, so the rule has something to reject, and
+    # nobody's number. This file is excluded from its own scan -- a negative
+    # case has to fail SAFE_MOBILE, so the scan would always flag it -- which
+    # is exactly why the examples here must never be lifted from real data.
+    ("7412589630", False), ("8523697410", False), ("9632587410", False),
 ])
 def test_the_mobile_rule_itself(digits, synthetic):
     assert bool(SAFE_MOBILE.match(digits)) is synthetic
