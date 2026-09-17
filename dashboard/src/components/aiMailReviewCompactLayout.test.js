@@ -187,3 +187,54 @@ describe('responsive', () => {
     expect(scoped).toMatch(/\.sot-mailboxes-page \.sot-header-actions \{[^}]*flex-wrap: wrap;/)
   })
 })
+
+describe('the counts, tabs and controls share one row', () => {
+  // The stylesheet is checked out with CRLF on Windows, so every assertion
+  // below reads a copy with one kind of line ending.
+  const sheet = css.split(String.fromCharCode(13)).join('')
+
+  // Measured in a browser against this stylesheet, 1440px wide: the two rows
+  // were 110px from the top of the chips to the bottom of the toolbar, and the
+  // single row is 58px. jsdom reports both as zero, so what is pinned here is
+  // the structure and the rules that produce it.
+  it('wraps all three in one toolbar', () => {
+    const row = panel.slice(
+      panel.indexOf('<div className="sot-mailbox-toolbar">'),
+      panel.indexOf('{showAddMailbox && ('),
+    )
+    expect(row).toContain('className="sot-mailbox-metrics"')
+    expect(row).toContain('className="sot-mailbox-view-tabs"')
+    expect(row).toContain('sot-list-toolbar-actions')
+  })
+
+  it('lays that toolbar out as a row', () => {
+    const rule = sheet.slice(sheet.indexOf('.sot-mailbox-toolbar {'))
+    expect(rule.slice(0, 160)).toContain('display: flex')
+    expect(rule.slice(0, 160)).toContain('flex-wrap: wrap')
+  })
+
+  it('keeps search and Add Gmail hard right', () => {
+    const actions = sheet.slice(
+      sheet.indexOf('.sot-mailbox-toolbar .sot-list-toolbar-actions {'))
+    expect(actions.slice(0, 200)).toContain('margin-left: auto')
+  })
+
+  it('never lets the inner toolbar wrap on desktop, which is what made two rows', () => {
+    const inner = sheet.slice(sheet.indexOf('.sot-mailbox-toolbar .sot-list-toolbar {'))
+    expect(inner.slice(0, 420)).toContain('flex-wrap: nowrap')
+  })
+
+  it('gives the search a floor rather than letting it collapse', () => {
+    // At 1440 with a fourth chip it shrank to 92px before this, which is not a
+    // search box.
+    const search = sheet.slice(
+      sheet.indexOf('.sot-mailbox-toolbar .sot-list-toolbar-actions .sot-search {'))
+    expect(search.slice(0, 300)).toContain('min-width: 150px')
+  })
+
+  it('drops that floor below the tablet breakpoint, where it is wider than the screen', () => {
+    const mobile = sheet.slice(sheet.indexOf('/* Tablet and narrower'))
+    expect(mobile.slice(0, 520)).toContain('.sot-mailbox-toolbar .sot-list-toolbar')
+    expect(mobile.slice(0, 520)).toContain('min-width: 0')
+  })
+})

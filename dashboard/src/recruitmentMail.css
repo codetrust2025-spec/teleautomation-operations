@@ -2686,3 +2686,138 @@
   color: var(--sot-muted, #8da0bd);
   background: rgba(148, 163, 184, 0.12);
 }
+
+/* ── Candidate Gmail: counts, tabs and controls on one row ──────────────────
+   The counts were a row of cards and the tabs a row beneath them, which spent
+   two rows of height saying what fits in one and pushed the table further from
+   the controls that act on it. The parts keep their own elements -- the
+   tablist must not contain a search box -- and this only lays them out. */
+.sot-mailbox-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 12px 0 2px;
+}
+/* The counts become one chip group with hairlines between them: three separate
+   bordered cards at this size read as three buttons. */
+.sot-mailbox-toolbar .sot-mailbox-metrics {
+  display: flex;
+  grid-template-columns: none;
+  gap: 0;
+  margin: 0;
+  flex: 0 0 auto;
+  border: 1px solid #203550;
+  border-radius: 10px;
+  background: #101d2d;
+  overflow: hidden;
+}
+.sot-mailbox-toolbar .sot-mailbox-metric {
+  min-height: 0;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.sot-mailbox-toolbar .sot-mailbox-metric + .sot-mailbox-metric {
+  border-left: 1px solid #203550;
+}
+.sot-mailbox-toolbar .sot-mailbox-metric > span {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+.sot-mailbox-toolbar .sot-mailbox-metric small {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.sot-mailbox-toolbar .sot-mailbox-metric strong {
+  font-size: 17px;
+  line-height: 1.1;
+}
+/* Takes the rest of the row, so search and Add Gmail stay hard right. The
+   base rule wraps; here it must not, or the actions drop to a second line and
+   the row this change exists to remove comes back. */
+.sot-mailbox-toolbar .sot-list-toolbar {
+  flex: 1 1 420px;
+  align-items: center;
+  flex-wrap: nowrap;
+  margin: 0;
+  /* Never narrower than the tabs plus a usable search box. Below that the row
+     above wraps and the counts take their own line, which is the intended
+     fallback -- shrinking past it pushed Add Gmail off the card instead. */
+  min-width: 420px;
+}
+/* The tabs keep their natural width and the gap before the actions absorbs
+   what is left. Letting them shrink instead broke "Pending Gmail" and the
+   "22 active" note onto second lines. */
+.sot-mailbox-toolbar .sot-mailbox-view-tabs {
+  flex: 0 0 auto;
+}
+.sot-mailbox-toolbar .sot-mailbox-view-tabs button {
+  white-space: nowrap;
+}
+/* The search is what gives way first when the row is tight: wide enough to
+   type an address into, and allowed to shrink before anything is pushed out. */
+.sot-mailbox-toolbar .sot-list-toolbar-actions .sot-search {
+  width: clamp(150px, 18vw, 260px);
+  /* A floor, not zero: allowed to shrink to this and no further, so a fourth
+     chip wraps the row rather than leaving a 92px box nobody can type into. */
+  min-width: 150px;
+}
+.sot-mailbox-toolbar .sot-list-toolbar-actions {
+  margin-left: auto;
+  padding-bottom: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* The separating rule belongs to the whole row now, not to the tab strip. */
+.sot-mailboxes-page .sot-mailbox-toolbar {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sot-border, #21344d);
+}
+.sot-mailboxes-page .sot-mailbox-toolbar .sot-list-toolbar {
+  border-bottom: 0;
+}
+
+@media (max-width: 1180px) {
+  /* Laptop and narrower: the counts take their own line rather than squeezing
+     the search box, and the grid rule above no longer applies to them. */
+  .sot-mailbox-toolbar .sot-mailbox-metrics {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Tablet and narrower: the 420px floor is wider than the screen itself, so
+     it goes and the tabs and controls stack the way they did before this row
+     existed. Without this the card ran 170px past the right edge on a phone. */
+  .sot-mailbox-toolbar .sot-list-toolbar {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .sot-mailbox-toolbar .sot-list-toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .sot-mailbox-toolbar .sot-list-toolbar-actions .sot-search {
+    flex: 1 1 auto;
+    width: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Phone: the chip group scrolls sideways instead of forcing the card wider
+     than the screen. */
+  .sot-mailbox-toolbar {
+    gap: 10px;
+  }
+  .sot-mailbox-toolbar .sot-mailbox-metrics {
+    overflow-x: auto;
+  }
+  .sot-mailbox-toolbar .sot-mailbox-metric {
+    padding: 6px 10px;
+  }
+}
