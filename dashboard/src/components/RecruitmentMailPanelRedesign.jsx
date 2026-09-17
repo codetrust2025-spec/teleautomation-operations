@@ -2675,6 +2675,12 @@ export default function RecruitmentMailPanelRedesign() {
                 </p>
               </div>
             </div>
+            {/* One row: the counts, the tabs that filter the list, and the
+                controls that search and add to it. They were two rows, and
+                the second pushed the table it acts on further down the
+                page for no reading benefit -- the counts are a sentence
+                long each. */}
+            <div className="sot-mailbox-toolbar">
             <section className="sot-mailbox-metrics">
               <MailboxMetric
                 icon="✉"
@@ -2760,6 +2766,7 @@ export default function RecruitmentMailPanelRedesign() {
                   {showAddMailbox ? "Cancel" : "+ Add Gmail"}
                 </button>
               </div>
+            </div>
             </div>
             {showAddMailbox && (
               <form
