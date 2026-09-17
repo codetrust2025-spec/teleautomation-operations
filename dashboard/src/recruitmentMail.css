@@ -2701,40 +2701,6 @@
 }
 /* The counts become one chip group with hairlines between them: three separate
    bordered cards at this size read as three buttons. */
-.sot-mailbox-toolbar .sot-mailbox-metrics {
-  display: flex;
-  grid-template-columns: none;
-  gap: 0;
-  margin: 0;
-  flex: 0 0 auto;
-  border: 1px solid #203550;
-  border-radius: 10px;
-  background: #101d2d;
-  overflow: hidden;
-}
-.sot-mailbox-toolbar .sot-mailbox-metric {
-  min-height: 0;
-  padding: 7px 14px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.sot-mailbox-toolbar .sot-mailbox-metric + .sot-mailbox-metric {
-  border-left: 1px solid #203550;
-}
-.sot-mailbox-toolbar .sot-mailbox-metric > span {
-  width: 24px;
-  height: 24px;
-  font-size: 11px;
-}
-.sot-mailbox-toolbar .sot-mailbox-metric small {
-  font-size: 10px;
-  letter-spacing: 0.02em;
-}
-.sot-mailbox-toolbar .sot-mailbox-metric strong {
-  font-size: 17px;
-  line-height: 1.1;
-}
 /* Takes the rest of the row, so search and Add Gmail stay hard right. The
    base rule wraps; here it must not, or the actions drop to a second line and
    the row this change exists to remove comes back. */
@@ -2820,4 +2786,53 @@
   .sot-mailbox-toolbar .sot-mailbox-metric {
     padding: 6px 10px;
   }
+}
+
+/* Active is a reading, not a filter, so it is quieter than the tabs beside it
+   and carries no hit area. The dot is the tone the removed chip used. */
+.sot-mailbox-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 0 4px;
+  color: var(--sot-text-dim, #94a3b8);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.sot-mailbox-status > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sot-green, #22c55e);
+}
+.sot-mailbox-status > span {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgb(34 197 94 / 14%);
+  color: var(--sot-green, #22c55e);
+  font-variant-numeric: tabular-nums;
+}
+/* The tab icons carry the tone the chips used to: the row reads at a glance
+   without three bordered boxes to do it. */
+.sot-mailbox-toolbar .sot-mailbox-view-tabs button > i {
+  margin-right: 6px;
+  font-style: normal;
+  opacity: 0.75;
+}
+.sot-mailbox-toolbar .sot-mailbox-view-tabs button:nth-child(2) > i {
+  color: var(--sot-amber, #f59e0b);
+  opacity: 1;
+}
+/* Hairlines instead of boxes: one row of items, separated rather than framed. */
+.sot-mailbox-toolbar .sot-list-toolbar {
+  gap: 10px;
+}
+.sot-mailbox-toolbar .sot-mailbox-status::before {
+  content: "";
+  width: 1px;
+  height: 18px;
+  margin-right: 10px;
+  background: var(--sot-border, #21344d);
 }
