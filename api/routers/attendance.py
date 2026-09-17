@@ -12,6 +12,7 @@ from core import dashboard_auth_vps as auth
 from core.ist_time import IST
 from core.office_network import verify_office_network
 from features import attendance_eligibility as attendance
+from features import daily_checkout
 
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
@@ -74,16 +75,48 @@ async def attendance_status(request: Request):
 @router.post("/mark")
 async def attendance_mark(request: Request):
     profile = _profile(request)
-    network = verify_office_network(
-        request.client.host if request.client else "",
-        request.headers.get("x-forwarded-for", ""),
-    )
     try:
-        return await _call(attendance.mark_attendance, profile, network)
+        return await _call(attendance.mark_attendance, profile, _network(request))
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _network(request: Request):
+    """The same verification attendance marking uses, read the same way."""
+    return verify_office_network(
+        request.client.host if request.client else "",
+        request.headers.get("x-forwarded-for", ""),
+    )
+
+
+@router.get("/checkout")
+async def attendance_checkout_status(request: Request):
+    """What check-out would do, without doing it: the panel polls this."""
+    profile = _profile(request)
+    try:
+        return await _call(daily_checkout.status, profile, _network(request))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/checkout")
+async def attendance_checkout(request: Request):
+    profile = _profile(request)
+    try:
+        return await _call(daily_checkout.check_out, profile, _network(request))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except daily_checkout.CheckoutBlocked as exc:
+        # 409, not 403: nothing is wrong with who is asking, the day is simply
+        # not finished. The body carries every blocker so the checklist on the
+        # page can render them all at once.
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "The working day is not finished yet.",
+                    "blockers": exc.blockers},
+        ) from exc
 
 
 @router.get("/holidays")

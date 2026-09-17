@@ -47,3 +47,14 @@
 .attendance-list__row button.attendance-approve { border-color: #2563eb; background: #2563eb; color: #fff; }
 .attendance-findings { margin: 12px 0 0; color: #94a3b8; font-size: 12px; }
 @media (max-width: 760px) { .attendance-summary-grid { grid-template-columns: 1fr; } .attendance-holiday-form { grid-template-columns: 1fr; } .attendance-list__row, .attendance-page__header { align-items: stretch; flex-direction: column; } .attendance-list__row--recommendation > div { width: 100%; } .attendance-list__row--recommendation button { flex: 1; } .attendance-modal { padding: 30px 20px 24px; } }
+
+/* Daily check-out: the checklist is the feature, so it reads as a list of
+   things to do rather than as an error state. */
+.attendance-checkout__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.attendance-checkout__item { border: 1px solid var(--line, #e2e8f0); border-radius: 10px; padding: 10px 12px; background: var(--surface-2, #f8fafc); }
+.attendance-checkout__summary { margin: 0; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.attendance-checkout__action { display: block; margin-top: 2px; opacity: 0.75; }
+.attendance-checkout__items { margin: 6px 0 0; padding-left: 22px; display: grid; gap: 2px; }
+.attendance-checkout__items li { font-size: 0.92em; opacity: 0.85; }
+.attendance-checkout__ready, .attendance-checkout__done { margin: 0; font-weight: 600; color: var(--ok, #15803d); }
+.attendance-checkout__item.is-office_network_required, .attendance-checkout__item.is-attendance_not_marked { border-color: var(--warn, #f59e0b); }

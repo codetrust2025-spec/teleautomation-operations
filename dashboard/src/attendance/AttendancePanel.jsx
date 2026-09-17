@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { API } from '../config.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useAttendance } from './AttendanceContext.jsx'
+import { DailyCheckout } from './DailyCheckout.jsx'
 
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
@@ -173,6 +174,8 @@ export function AttendancePanel() {
         <article className="attendance-stat"><span>Attendance Success</span><strong>{ratioLabel}</strong><small>{eligibility ? `${eligibility.attended_working_days} / ${eligibility.required_working_days} Working Days` : '—'}</small></article>
         <article className="attendance-stat"><span>Attendance eligibility tier</span><strong>{eligibility ? money.format(eligibility.eligibility_amount) : '—'}</strong><small>Salary changes require payroll-admin approval</small></article>
       </section>}
+
+      {!isAdmin && <DailyCheckout />}
 
       {!isAdmin && <section className="attendance-section">
         <div className="attendance-section__head"><div><h3>Your verified attendance</h3><p>{eligibility ? `${formatDate(eligibility.period_start)} – ${formatDate(eligibility.period_end)}` : 'Current evaluation period'}</p></div></div>
