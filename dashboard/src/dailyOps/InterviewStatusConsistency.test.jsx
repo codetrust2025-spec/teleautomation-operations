@@ -211,7 +211,8 @@ describe('the counters come from the API', () => {
     fireEvent.click(tab('Scheduled'))
     fireEvent.click(screen.getByRole('button', { name: 'Filter interviews by date' }))
     const calendar = screen.getByRole('dialog', { name: 'Choose a date' })
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(within(calendar).getByRole(
+      'button', { name: /Monday.*7 September.*2026/ }))
 
     await waitFor(() => expect(tab('Cancelled').textContent).toMatch(/Cancelled\s*2/))
     expect(tab('Pending').textContent).toMatch(/Pending\s*0/)
@@ -264,7 +265,8 @@ describe('filtering by a status', () => {
     await waitFor(() => expect(rowNames()).toHaveLength(1))
     fireEvent.click(screen.getByRole('button', { name: 'Filter interviews by date' }))
     const calendar = screen.getByRole('dialog', { name: 'Choose a date' })
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(within(calendar).getByRole(
+      'button', { name: /Monday.*7 September.*2026/ }))
     await waitFor(() => expect(rowNames()).toHaveLength(1))
     expect(rowNames()[0]).toMatch(/Cancelled Chandra/)
   })

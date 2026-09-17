@@ -160,12 +160,26 @@ describe('the date control replaces the month dropdown', () => {
     expect(screen.queryByRole('dialog', { name: 'Choose a date' })).toBeNull()
   })
 
-  it('offers Today, Yesterday and Tomorrow', async () => {
+  it('offers no quick picks that repeat the Period row', async () => {
+    // Today sat in both places, and Yesterday/Tomorrow repeated two cells of
+    // the grid directly underneath them. The calendar is the date control; the
+    // Period row is the range control.
     await renderPanel()
     const calendar = await openCalendar()
 
     for (const label of ['Yesterday', 'Today', 'Tomorrow']) {
-      expect(within(calendar).getByRole('button', { name: label })).toBeInTheDocument()
+      expect(within(calendar).queryByRole('button', { name: label })).toBeNull()
+    }
+    expect(within(calendar).getByRole('grid')).toBeInTheDocument()
+  })
+
+  it('still reaches those days through the grid', async () => {
+    await renderPanel()
+    const calendar = await openCalendar()
+
+    for (const parts of [['Monday', '7 September'], ['Tuesday', '8 September'],
+                         ['Wednesday', '9 September']]) {
+      expect(dayCell(calendar, ...parts, '2026')).toBeInTheDocument()
     }
   })
 })
@@ -176,7 +190,7 @@ describe('choosing a day filters the table by that exact day', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
 
     await waitFor(() => expect(lastRosterCall().searchParams.get('date')).toBe(YESTERDAY))
     expect(lastRosterCall().pathname).toMatch(/\/interviews\/daily$/)
@@ -187,7 +201,7 @@ describe('choosing a day filters the table by that exact day', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
 
     await waitFor(() => expect(dateTrigger()).toHaveTextContent('7 Sept 2026'))
   })
@@ -196,7 +210,7 @@ describe('choosing a day filters the table by that exact day', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
 
     await waitFor(() => expect(lastGlobalCall().searchParams.get('from')).toBe(YESTERDAY))
     expect(lastGlobalCall().searchParams.get('to')).toBe(YESTERDAY)
@@ -219,7 +233,7 @@ describe('choosing a day filters the table by that exact day', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Today' }))
+    fireEvent.click(dayCell(calendar, 'Tuesday', '8 September', '2026'))
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose a date' })).toBeNull())
   })
@@ -267,7 +281,7 @@ describe('the chosen day survives', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
     await waitFor(() => expect(dateTrigger()).toHaveTextContent('7 Sept 2026'))
 
     fireEvent.click(screen.getByRole('button', { name: /Refresh|Updating/ }))
@@ -305,7 +319,7 @@ describe('the period presets keep working alongside it', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
     await waitFor(() => expect(dateTrigger()).toHaveTextContent('7 Sept 2026'))
 
     fireEvent.click(screen.getByRole('tab', { name: 'Last 7 days' }))
@@ -321,7 +335,7 @@ describe('the period presets keep working alongside it', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Today' }))
+    fireEvent.click(dayCell(calendar, 'Tuesday', '8 September', '2026'))
 
     await waitFor(() => expect(lastRosterCall().searchParams.get('date')).toBe(TODAY))
     expect(screen.getByRole('tab', { name: 'Today' })).toHaveAttribute('aria-selected', 'true')
@@ -354,7 +368,7 @@ describe('a day with nothing on it', () => {
     await renderPanel()
 
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
 
     await waitFor(() => expect(screen.getByText(/No interviews on/)).toBeInTheDocument())
     expect(screen.getByText(/No interviews on/)).toHaveTextContent('7 Sep')
@@ -365,7 +379,7 @@ describe('a day with nothing on it', () => {
 
     fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Nikhila' } })
     const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
 
     await waitFor(() => expect(screen.getByText(/attendee Nikhila/)).toBeInTheDocument())
   })
@@ -375,11 +389,11 @@ describe('a day with nothing on it', () => {
     await renderPanel()
 
     let calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.click(dayCell(calendar, 'Wednesday', '9 September', '2026'))
     await waitFor(() => expect(screen.getByText(/No interviews on/)).toBeInTheDocument())
 
     calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Yesterday' }))
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
     await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
     expect(screen.queryByText(/No interviews on/)).toBeNull()
   })

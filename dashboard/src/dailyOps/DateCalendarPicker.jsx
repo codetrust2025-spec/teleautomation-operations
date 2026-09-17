@@ -187,15 +187,9 @@ export function DateCalendarPicker({
 
   // Yesterday/Today/Tomorrow rides on the tooltip rather than on a pill in the
   // trigger. The controls row is already wider than its container at 1440px,
-  // and a pill costs ~58px of it to repeat what the quick picks inside the
-  // calendar say anyway — and squeezed the date itself into an ellipsis.
+  // and a pill costs ~58px of it to repeat what the date already says — and
+  // squeezed the date itself into an ellipsis.
   const triggerTitle = relative ? `${triggerText} · ${relative}` : triggerText
-
-  const quickPicks = [
-    { id: 'yesterday', label: 'Yesterday', iso: addDaysIso(today, -1) },
-    { id: 'today', label: 'Today', iso: today },
-    { id: 'tomorrow', label: 'Tomorrow', iso: addDaysIso(today, 1) },
-  ]
 
   const popover = open && position && createPortal(
     <div
@@ -206,19 +200,6 @@ export function DateCalendarPicker({
       aria-modal="false"
       aria-label="Choose a date"
     >
-      <div className="ops-datepicker__quick">
-        {quickPicks.map(pick => (
-          <button
-            key={pick.id}
-            type="button"
-            className={`ops-datepicker__quick-btn${selected === pick.iso ? ' is-active' : ''}`}
-            onClick={() => pickDate(pick.iso)}
-          >
-            {pick.label}
-          </button>
-        ))}
-      </div>
-
       <div className="ops-datepicker__nav">
         <button type="button" className="ops-datepicker__step" onClick={() => stepView(-1)} aria-label="Previous month">&#8249;</button>
         <select
