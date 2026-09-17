@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { reconnectWorklist } from "../utils/mailboxStatus.js";
+import { ExpiryCountdown } from "./ExpiryCountdown.jsx";
 import "./ReconnectWorklist.css";
 
 /**
@@ -18,22 +19,21 @@ import "./ReconnectWorklist.css";
  * table renders, so this list and the badges beside those accounts cannot
  * disagree.
  */
-function whenLabel(days, { alreadyExpired = false } = {}) {
-  if (alreadyExpired) {
-    // Google can revoke before the seven days are up -- a password change or a
-    // user withdrawing access -- so a broken mailbox may still have time left
-    // on the clock. Reporting "expires today" for an account that has already
-    // stopped collecting mail would be plainly wrong.
-    if (days === null || days === undefined || days > 0) return "authorisation revoked";
-    const overdue = Math.abs(Math.round(days));
-    return overdue < 1
-      ? "expired today"
-      : `expired ${overdue} day${overdue === 1 ? "" : "s"} ago`;
-  }
-  if (days === null || days === undefined) return "unknown";
-  if (days < 1) return "expires today";
-  const left = Math.round(days);
-  return `expires in ${left} day${left === 1 ? "" : "s"}`;
+/**
+ * What to print instead of the countdown, or "" to let it count.
+ *
+ * Google can revoke before the seven days are up -- a password change, or the
+ * account holder withdrawing access -- so a broken mailbox may still have time
+ * left on the clock. A countdown over an account that has already stopped
+ * collecting mail would be plainly wrong, so the broken list says so instead.
+ * Once the clock has run out too, the countdown's own "Expired" is the truth
+ * and is left to say it.
+ */
+function overrideLabel(row, { alreadyExpired = false } = {}) {
+  if (!alreadyExpired) return "";
+  const expiresAt = row.grantExpiresAt;
+  if (!Number.isFinite(expiresAt)) return "authorisation revoked";
+  return expiresAt > Date.now() ? "authorisation revoked" : "";
 }
 
 function Group({ title, hint, rows, busy, onAction, tone }) {
@@ -62,9 +62,11 @@ function Group({ title, hint, rows, busy, onAction, tone }) {
                 <td data-label="Candidate">{row.candidateName || "—"}</td>
                 <td data-label="Gmail">{row.email_address}</td>
                 <td data-label="Grant">
-                  <span className={`sot-reconnect-when is-${tone}`}>
-                    {whenLabel(row.grantDaysRemaining, { alreadyExpired: tone === "expired" })}
-                  </span>
+                  <ExpiryCountdown
+                    className={`sot-reconnect-when is-${tone}`}
+                    expiresAt={row.grantExpiresAt}
+                    override={overrideLabel(row, { alreadyExpired: tone === "expired" })}
+                  />
                 </td>
                 <td data-label="Action">
                   <button

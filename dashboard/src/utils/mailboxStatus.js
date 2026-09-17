@@ -159,6 +159,7 @@ export function reconnectWorklist(mailboxes, { withinDays = 2, now = Date.now() 
   const decorate = (mailbox) => ({
     ...mailbox,
     grantDaysRemaining: grantDaysRemaining(mailbox, now),
+    grantExpiresAt: grantExpiresAt(mailbox),
   })
   // needsReconnect and expiringSoon both already exclude terminal mailboxes,
   // so the worklist inherits the rule rather than restating it.
@@ -170,4 +171,70 @@ export function reconnectWorklist(mailboxes, { withinDays = 2, now = Date.now() 
     .map(decorate)
     .sort((a, b) => (a.grantDaysRemaining ?? 0) - (b.grantDaysRemaining ?? 0))
   return { expired, expiring, total: expired.length + expiring.length }
+}
+
+/** One second, one minute, one hour and one day, in milliseconds. */
+const SECOND = 1000
+const MINUTE = 60 * SECOND
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+
+/**
+ * When this mailbox's grant dies, as a timestamp, or null when unknown.
+ *
+ * The server sends `grant_expires_at`; the fall back to `authorized_at` plus
+ * the grant length is what keeps a page loaded before that field existed --
+ * or served by an older release during a deploy -- counting down instead of
+ * blanking.
+ */
+export function grantExpiresAt(mailbox) {
+  const sent = Date.parse(mailbox?.grant_expires_at || '')
+  if (Number.isFinite(sent)) return sent
+  const authorised = Date.parse(mailbox?.authorized_at || '')
+  return Number.isFinite(authorised) ? authorised + GMAIL_GRANT_DAYS * DAY : null
+}
+
+/**
+ * How long is left, in the unit a person reading it would use.
+ *
+ *   more than a day   Expires in 2 days
+ *   less than a day   Expires in 18h 42m
+ *   less than an hour Expires in 42m 18s
+ *   nothing left      Expired
+ *
+ * Every part rounds down, so the label never claims more time than remains:
+ * 47 hours left is "1 day", not "2 days".
+ */
+export function formatExpiry(remainingMs) {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 'Expired'
+  if (remainingMs < HOUR) {
+    const minutes = Math.floor(remainingMs / MINUTE)
+    const seconds = Math.floor((remainingMs % MINUTE) / SECOND)
+    return `Expires in ${minutes}m ${seconds}s`
+  }
+  if (remainingMs < DAY) {
+    const hours = Math.floor(remainingMs / HOUR)
+    const minutes = Math.floor((remainingMs % HOUR) / MINUTE)
+    return `Expires in ${hours}h ${minutes}m`
+  }
+  const days = Math.floor(remainingMs / DAY)
+  return `Expires in ${days} day${days === 1 ? '' : 's'}`
+}
+
+/**
+ * How long to wait before the label could change: a second while seconds are
+ * on screen, half a minute while minutes are, five minutes while days are.
+ *
+ * A single one-second interval would redraw every row on the page all week to
+ * change a number once a day.
+ */
+export function expiryTickMs(remainingMs) {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null
+  if (remainingMs < HOUR) return SECOND
+  // Near a unit boundary the slow cadence would hold a stale label: at 1h 2s
+  // left, a thirty-second step still reads "1h 0m" when 48 seconds remain. So
+  // the wait is shortened to land just past the boundary, where the next unit
+  // takes over and sets its own pace.
+  if (remainingMs < DAY) return Math.min(30 * SECOND, remainingMs - HOUR + 1)
+  return Math.min(5 * MINUTE, remainingMs - DAY + 1)
 }

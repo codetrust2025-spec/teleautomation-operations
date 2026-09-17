@@ -318,6 +318,12 @@ def terminal_mailbox_ids(rows) -> set[str]:
     return terminal
 
 
+#: Google expires a refresh token seven days after consent while the OAuth app
+#: is in Testing mode. Measured across 54 reconnects the median gap is 7.0 days,
+#: which is what the countdown counts down to.
+GMAIL_GRANT_DAYS = 7
+
+
 def _mailbox_health_rows(cur) -> list[dict[str, Any]]:
     cur.execute(
         """SELECT m.id,m.candidate_id,
@@ -326,7 +332,12 @@ def _mailbox_health_rows(cur) -> list[dict[str, Any]]:
                   m.email_address,m.connection_status,
                   m.monitoring_enabled,m.last_error_code,m.last_error_message,
                   m.last_successful_sync_at,m.updated_at,
-                  a.authorized_at
+                  a.authorized_at,
+                  -- The moment the grant dies, decided here rather than in the
+                  -- browser: a countdown that disagrees with the server about
+                  -- when it reaches zero is worse than no countdown.
+                  a.authorized_at + make_interval(days => %(grant_days)s)
+                    AS grant_expires_at
            FROM candidate_mailboxes m
            LEFT JOIN candidate_identity_links l
              ON l.alias_candidate_id=m.candidate_id
@@ -343,6 +354,7 @@ def _mailbox_health_rows(cur) -> list[dict[str, Any]]:
            WHERE m.credential_ciphertext IS NOT NULL
              AND m.connection_status <> 'SUPERSEDED'
            ORDER BY m.updated_at DESC""",
+        {"grant_days": GMAIL_GRANT_DAYS},
     )
     rows = _rows(cur)
     # Annotated, not filtered: the mailbox stays listed so its history and

@@ -159,19 +159,22 @@ describe('what the screen shows', () => {
     expect(screen.getByText('Ram Charan')).toBeInTheDocument()
   })
 
-  it('says how long each has been broken', () => {
+  it('says a grant whose clock has run out is expired', () => {
     render(<ReconnectWorklist rows={rows} busy={false} onAction={() => {}} />)
-    expect(screen.getByText(/expired 8 days ago/)).toBeInTheDocument()
+    expect(screen.getAllByText('Expired').length).toBeGreaterThan(0)
   })
 
-  it('says today rather than in 1 day for a grant with hours left', () => {
-    // Deepa was authorised 6.1 days ago, so 0.9 days remain. "in 1 day"
-    // would read as tomorrow and buy an operator a day that does not exist.
+  it('counts the hours rather than saying today, for a grant with hours left', () => {
+    // Deepa was authorised 6.1 days ago, so 21h 36m remain. "in 1 day" would
+    // read as tomorrow and buy an operator a day that does not exist; the hour
+    // is what decides whether this waits until after lunch.
     render(<ReconnectWorklist rows={rows} busy={false} onAction={() => {}} />)
-    expect(screen.getByText('expires today')).toBeInTheDocument()
+    expect(screen.getByText('Expires in 21h 36m')).toBeInTheDocument()
   })
 
-  it('counts the days when there is more than one left', () => {
+  it('counts whole days down, never up, when more than a day is left', () => {
+    // 1.8 days left is one whole day and change. Rounding it to two would
+    // promise a day that is not there.
     render(
       <ReconnectWorklist
         rows={[row('Arun', 'arunkumar.pillai' + '@' + 'example.com', 5.2)]}
@@ -180,7 +183,20 @@ describe('what the screen shows', () => {
         withinDays={3}
       />,
     )
-    expect(screen.getByText('expires in 2 days')).toBeInTheDocument()
+    expect(screen.getByText('Expires in 1 day')).toBeInTheDocument()
+  })
+
+  it('says revoked, not expired, when a broken grant still has time on it', () => {
+    // Google can revoke early. A countdown over an account that has already
+    // stopped collecting mail would be worse than no countdown.
+    render(
+      <ReconnectWorklist
+        rows={[row('Naveen', 'naveen.prakash' + '@' + 'example.com', 1.2, { broken: true })]}
+        busy={false}
+        onAction={() => {}}
+      />,
+    )
+    expect(screen.getByText('authorisation revoked')).toBeInTheDocument()
   })
 
   it('leaves a healthy account off the list', () => {
