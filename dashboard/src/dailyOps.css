@@ -1777,3 +1777,70 @@
 @media(max-width:600px){
   .ops-datepicker__popover{width:min(280px,calc(100vw - 16px))}
 }
+
+/* ── Daily Ops top bar on one line ──────────────────────────────────────────
+   Measured at 1440 before this: title 160 + KPI cards 685 + booking card 470 +
+   pending pill 87 came to 1410 in a 1388-wide bar, so the booking card and the
+   pill wrapped to a second line and the bar stood 160px tall. Nothing here
+   removes a count, a click or a filter; it takes the ~120px the row was short
+   out of padding, gaps and the booking card's fixed 470px minimum. */
+@media (min-width: 901px) {
+  .ops-topbar {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .ops-topbar__kpis {
+    gap: 6px;
+    flex: 0 1 auto;
+  }
+  .ops-topbar__kpis .ops-dash-kpi {
+    min-width: 0;
+    max-width: none;
+    gap: 6px;
+    padding: 3px 8px;
+  }
+  /* The booking card keeps its donut, its total and the way into the analytics
+     modal. The per-candidate legend and the level chips are what made it 470px
+     wide and as tall as three KPI cards; both are in the modal behind the same
+     button, so the row shows the shape and the modal keeps the detail. */
+  .ops-topbar .ops-booking-pie {
+    /* Out of its 470px minimum: with the legend and the levels gone there is
+       nothing left to hold that width open. Below 900px an existing rule
+       already drops it to the donut alone, and below 600px hides it. */
+    min-width: 0;
+    min-height: 0;
+    gap: 9px;
+    padding: 4px 4px 4px 7px;
+  }
+  .ops-topbar .ops-booking-pie__chart {
+    width: 44px;
+    height: 44px;
+    box-shadow: 0 0 16px rgb(59 130 246 / 12%);
+  }
+  .ops-topbar .ops-booking-pie__chart > span {
+    width: 31px;
+    height: 31px;
+  }
+  .ops-topbar .ops-booking-pie__chart strong { font-size: 13px; }
+  .ops-topbar .ops-booking-pie__chart small { font-size: 6px; margin-top: 2px; }
+  .ops-topbar .ops-booking-pie__details { gap: 0; }
+  .ops-topbar .ops-booking-pie__legend,
+  .ops-topbar .ops-booking-pie__levels { display: none; }
+  .ops-topbar .ops-booking-pie__title {
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .ops-topbar .ops-booking-pie__open { width: 26px; }
+  .ops-topbar .ops-booking-pie__open::after { font-size: 13px; }
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  /* Below this the seven cards, the card and the pill genuinely do not fit.
+     The right-hand group wraps as a unit and keeps its own alignment rather
+     than the cards breaking across two lines. */
+  .ops-topbar__right {
+    flex: 1 1 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
