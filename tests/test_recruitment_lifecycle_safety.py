@@ -97,7 +97,7 @@ def test_virtual_interview_invite_with_concrete_schedule_is_confirmed():
     body = (
         "Hello Charan, Please join the Virtual Interview at 12.30 pm on "
         "21st July, 2026. Microsoft Teams meeting "
-        "https://teams.microsoft.com/meet/428762767388459 Meeting ID: 428 762."
+        "https://teams.microsoft.com/meet/000111222333444 Meeting ID: 428 762."
     )
     result = classify_context(subject, body, sender_email="recruiter@example.com")
     route = prefilter_decision(subject, body, sender_email="recruiter@example.com")
@@ -111,7 +111,7 @@ def test_virtual_interview_invite_with_concrete_schedule_is_confirmed():
         "date": "2026-07-21", "time": "12:30 PM",
         "end_time": None, "duration_minutes": None, "timezone": None,
         "mode": "Microsoft Teams", "round": None, "location": None,
-        "meeting_link": "https://teams.microsoft.com/meet/428762767388459",
+        "meeting_link": "https://teams.microsoft.com/meet/000111222333444",
     }
 
 

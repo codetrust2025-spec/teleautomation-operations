@@ -72,7 +72,7 @@ class TestTheWebinarStillAssertsAnInterviewAndStillCannotBook:
         "Dear friend, she started practicing GraphoTherapy and everything changed. "
         "Join our FREE Interview with Imran Baig, India's most trusted handwriting "
         "analysis coach. 27th August 2026 Thursday, 3:30 PM IST. "
-        "Zoom Link: https://us06web.zoom.us/meeting/register/fq4D Meeting ID: 816 2814 9138."
+        "Zoom Link: https://us06web.zoom.us/meeting/register/test Meeting ID: 000 0000 0001."
     )
 
     def _context(self):

@@ -142,7 +142,7 @@ We are delighted to invite you for a discussion. The interview will be video bas
 Interview Details:
 Date: {future:%d}th {future:%B%y}
 Time: 2:30 PM - 3 PM
-Link to join: https://teams.microsoft.com/meet/416486720484824
+Link to join: https://teams.microsoft.com/meet/000111222333444
 Mandatory checklist: Experience Letter/Relieving Letter/Appointment Letter of all your previous companies.
 """
     value=decoded(
