@@ -355,7 +355,9 @@ export function SearchInput({ value, onChange }) {
 }
 
 export function ActionMenu({ row, busy, onAction }) {
-  const reconnect = row.uiStatus === "RECONNECT_REQUIRED";
+  // Reconnect is not offered here: a row that needs it shows the warning
+  // row directly beneath, with the same button on it. Two clicks apart,
+  // same action, same condition -- the visible one is the one to keep.
   const selectAction = (event, action) => {
     event.currentTarget.closest("details")?.removeAttribute("open");
     onAction(action, row);
@@ -391,15 +393,6 @@ export function ActionMenu({ row, busy, onAction }) {
             ? "Pause Monitoring"
             : "Resume Monitoring"}
         </button>
-        {reconnect && (
-          <button
-            disabled={busy}
-            className="danger"
-            onClick={(event) => selectAction(event, "reconnect")}
-          >
-            Reconnect Gmail
-          </button>
-        )}
         <button
           disabled={busy}
           className="danger"
@@ -1400,20 +1393,18 @@ function AiNodeManager({
   nodes,
   activity = {},
   busy,
-  refreshing,
-  onRefresh,
   onMakePrimary,
   onUnload,
 }) {
-  // Collapsed by default. The node grid is three cards tall and sits between
-  // the page header and the mailbox list, which is the space the list needs;
-  // an operator reads it when a node misbehaves, not on every visit. The
-  // summary keeps the fact that would send them looking, so collapsing hides
-  // the detail rather than the state.
+  // Open on every load. It was collapsed to keep the mailbox list above the
+  // fold -- the grid is three cards tall and sits between the header and the
+  // list -- but node health is read often enough here that hiding it behind a
+  // click cost more than the scroll does. Still a disclosure: one click
+  // collapses it for the rest of the visit.
   const online = nodes.filter((node) => node.endpoint_reachable).length;
   const primary = nodes.find((node) => node.primary);
   return (
-    <details className="sot-ai-nodes" aria-label="Ollama AI nodes">
+    <details className="sot-ai-nodes" aria-label="Ollama AI nodes" open>
       <summary>
         <strong>AI nodes</strong>
         <span
@@ -1423,21 +1414,6 @@ function AiNodeManager({
             ? `${online}/${nodes.length} online${primary ? ` · ${primary.label}` : ""}`
             : "none configured"}
         </span>
-        <button
-          type="button"
-          onClick={(event) => {
-            // Inside a summary, a click would toggle the panel as well.
-            event.preventDefault();
-            event.stopPropagation();
-            onRefresh();
-          }}
-          disabled={busy || refreshing}
-          aria-label="Refresh AI node health"
-        >
-          <ButtonContent loading={refreshing} loadingLabel="Checking">
-            Refresh
-          </ButtonContent>
-        </button>
       </summary>
       <div className="sot-ai-node-grid">
         {nodes.length ? (
@@ -2533,8 +2509,15 @@ export default function RecruitmentMailPanelRedesign() {
               ? formatTime(updatedAt)
               : <InlineLoader label="Loading data…" />}
           </span>
+          {/* The only Refresh on the page. It used to reload candidates and
+              mailboxes while the AI panel carried a second button for node
+              health, so which one an operator wanted depended on what they
+              were looking at. This does both. */}
           <button
-            onClick={() => load({ showLoader: true })}
+            onClick={() => {
+              load({ showLoader: true });
+              refreshOllama(true);
+            }}
             disabled={busy || refreshingAi || loading}
           >
             <ButtonContent loading={loading} loadingLabel="Refreshing">
@@ -2547,8 +2530,6 @@ export default function RecruitmentMailPanelRedesign() {
         nodes={aiNodes}
         activity={aiActivity.nodes}
         busy={busy}
-        refreshing={refreshingAi}
-        onRefresh={() => refreshOllama(true)}
         onMakePrimary={makePrimaryNode}
         onUnload={unloadNodeModels}
       />

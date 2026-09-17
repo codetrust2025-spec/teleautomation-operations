@@ -28,9 +28,13 @@ describe('AI nodes collapse', () => {
     expect(panel).not.toContain('<section className="sot-ai-nodes"')
   })
 
-  it('is collapsed by default', () => {
+  it('is open on every load, and still collapsible', () => {
+    // It was collapsed to keep the mailbox list above the fold. Node health
+    // turned out to be read often enough that a click to see it cost more
+    // than the scroll does, so the default changed; it is still a <details>,
+    // so one click puts it away for the rest of the visit.
     const tag = panel.match(/<details className="sot-ai-nodes"[^>]*>/)[0]
-    expect(tag).not.toMatch(/\bopen\b/)
+    expect(tag).toMatch(/\bopen\b/)
   })
 
   it('still says whether the nodes are healthy while collapsed', () => {
@@ -43,14 +47,28 @@ describe('AI nodes collapse', () => {
     expect(css).toMatch(/\.sot-ai-nodes-glance\.is-degraded \{[^}]*--sot-amber/)
   })
 
-  it('keeps Refresh from toggling the panel it sits in', () => {
-    // Scoped to the AI-nodes disclosure: the page has an earlier <summary>
-    // (the row action menu), so an unanchored search finds the wrong one.
+  it('carries no Refresh of its own', () => {
+    // There were two on the page: this one refreshed node health, the header
+    // one refreshed candidates and mailboxes, and which to press depended on
+    // what you happened to be looking at. The header button does both now.
     const nodes = panel.slice(panel.indexOf('<details className="sot-ai-nodes"'))
     const summary = nodes.slice(nodes.indexOf('<summary>'), nodes.indexOf('</summary>'))
-    expect(summary).toContain('event.preventDefault()')
-    expect(summary).toContain('event.stopPropagation()')
-    expect(summary).toContain('onRefresh()')
+    expect(summary).not.toContain('Refresh')
+    expect(summary).not.toContain('onRefresh')
+  })
+
+  it('leaves exactly one Refresh button on the page', () => {
+    // The visible label, not the word: the file also says "Refreshing" as a
+    // loading state and "Refresh record" in the evidence panel, which is a
+    // different screen.
+    expect(panel.match(/↻ Refresh/g) || []).toHaveLength(1)
+  })
+
+  it('makes that one Refresh reload node health as well', () => {
+    const header = panel.slice(panel.indexOf('The only Refresh on the page'))
+    const button = header.slice(0, header.indexOf('</button>'))
+    expect(button).toContain('load({ showLoader: true })')
+    expect(button).toContain('refreshOllama(true)')
   })
 
   it('replaces the native marker with one that still reads as expandable', () => {
@@ -236,5 +254,26 @@ describe('the counts, tabs and controls share one row', () => {
     const mobile = sheet.slice(sheet.indexOf('/* Tablet and narrower'))
     expect(mobile.slice(0, 520)).toContain('.sot-mailbox-toolbar .sot-list-toolbar')
     expect(mobile.slice(0, 520)).toContain('min-width: 0')
+  })
+})
+
+
+describe('one control per action', () => {
+  it('offers Reconnect Gmail once per row, on the warning rather than in the menu', () => {
+    // Both appeared only when uiStatus is RECONNECT_REQUIRED and both called
+    // onAction('reconnect', row): the same action on the same row, two
+    // clicks apart. The banner sits next to the sentence explaining why, so
+    // it is the one that stayed.
+    expect(panel.match(/Reconnect Gmail/g) || []).toHaveLength(1)
+    const menu = panel.slice(panel.indexOf('export function ActionMenu'))
+    expect(menu.slice(0, menu.indexOf('</details>'))).not.toContain('Reconnect Gmail')
+  })
+
+  it('keeps the row actions that are not offered anywhere else', () => {
+    const menu = panel.slice(panel.indexOf('export function ActionMenu'))
+    const body = menu.slice(0, menu.indexOf('</details>'))
+    for (const action of ['Pause Monitoring', 'Resume Monitoring']) {
+      expect(body).toContain(action)
+    }
   })
 })
