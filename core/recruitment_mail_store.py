@@ -2856,6 +2856,11 @@ def list_notifications(
             else:
                 where.append(f"{field}=%s")
                 params.append(value)
+    booking_result = str(filters.get("booking_result") or "").strip().lower()
+    booking_clause, booking_params = booking_result_sql(booking_result)
+    if booking_clause:
+        where.append(booking_clause)
+        params.extend(booking_params)
     for field in ("is_read", "is_reviewed"):
         if filters.get(field) is not None:
             where.append(f"{field}=%s")
@@ -2909,12 +2914,63 @@ def list_notifications(
                      ORDER BY created_at {order}""",
                 params + candidate_ids,
             )
-            return reconcile_booking_claims(_rows(cur)), total
+            # `total` counts candidates here, so only rows are dropped from it.
+            return _booking_result_page(
+                reconcile_booking_claims(_rows(cur)), total, booking_result, total_counts_rows=False,
+            )
         cur.execute(f"SELECT count(*) FROM mail_monitoring_notifications WHERE {clause}", params)
         total = int(cur.fetchone()[0])
         cur.execute(f"SELECT * FROM mail_monitoring_notifications WHERE {clause} ORDER BY created_at {order} LIMIT %s OFFSET %s", params + [page, skip])
         rows = _rows(cur)
-    return reconcile_booking_claims(rows), total
+    return _booking_result_page(reconcile_booking_claims(rows), total, booking_result)
+
+
+def booking_result_sql(booking_result: str) -> tuple[str, list[Any]]:
+    """The Booking result filter on Mail Alerts, as a WHERE clause.
+
+    "booked" is what the roster holds: a booked status together with the
+    booking it names, and an invite whose interview was already booked.
+    "blocked" is every alert whose latest booking attempt created no slot
+    and says why -- the same test the Reason line on the screen uses --
+    less those duplicates, which are booked. Alerts that are not a booking
+    outcome at all, such as shortlists, selections and cancellations, are
+    in neither. Anything else asked for filters nothing, the way an
+    unknown alert type does, rather than emptying the screen.
+    """
+    if booking_result == "booked":
+        placeholders = ", ".join("%s" for _ in BOOKED_BOOKING_STATUSES)
+        return (
+            f"((booking_status IN ({placeholders}) AND COALESCE(booking_id,'') <> '')"
+            " OR booking_status = %s)",
+            [*BOOKED_BOOKING_STATUSES, DUPLICATE_IGNORED_STATUS],
+        )
+    if booking_result == "blocked":
+        return (
+            "((COALESCE(booking_block_reason_code,'') <> '' OR COALESCE(booking_block_reason,'') <> '')"
+            " AND COALESCE(booking_status,'') <> %s)",
+            [DUPLICATE_IGNORED_STATUS],
+        )
+    return "", []
+
+
+def _booking_result_page(rows, total, booking_result, *, total_counts_rows=True):
+    """One page of the list, with the total it is shown under."""
+    kept = _without_released_bookings(rows, booking_result)
+    if total_counts_rows:
+        total = max(0, total - (len(rows) - len(kept)))
+    return kept, total
+
+
+def _without_released_bookings(rows, booking_result):
+    """A booking the roster no longer has is not a successful booking.
+
+    `reconcile_booking_claims` releases such a claim as the row is read,
+    after the query has already chosen it; under Successfully booked the
+    released row is dropped rather than listed as "AI Retry Pending".
+    """
+    if booking_result != "booked":
+        return rows
+    return [row for row in rows if not (isinstance(row, dict) and row.get("booking_claim_released"))]
 
 
 def list_notification_candidates() -> list[dict[str, Any]]:
@@ -2956,6 +3012,12 @@ def list_notification_candidates() -> list[dict[str, Any]]:
 # candidates screen is the quietest way in: it clears the row and writes no
 # audit and no notification at all.
 BOOKED_BOOKING_STATUSES = ("Auto Booked", "Approved & Booked", "Rescheduled")
+
+# Written by interview_auto_booking when an invite's interview is already on
+# the roster. Nothing was blocked -- the interview is booked -- so the
+# Booking result filter files it with the bookings, where its green
+# "Already Booked" badge already puts it.
+DUPLICATE_IGNORED_STATUS = "Duplicate Ignored"
 
 # Not "Cancelled": nobody cancelled these. The booking they named is simply not
 # there any more, and a human has to decide what that means.

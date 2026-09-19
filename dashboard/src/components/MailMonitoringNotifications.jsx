@@ -42,6 +42,20 @@ export const CLASSIFICATION_GROUPS = [
   { value: SELECTION_GROUP, label: "Selection Related", classifications: JOB_CONFIRMED_CLASSIFICATIONS },
   { value: "interview", label: "Interview Related", classifications: AUTO_BOOKING_CLASSIFICATIONS },
 ];
+// What automatic booking made of an alert. The server decides which rows
+// are which (`booking_result_sql`), so the list, its paging and its total
+// all agree; alerts that are not booking outcomes are in neither.
+export const BOOKING_RESULTS = [
+  { value: "booked", label: "Successfully booked" },
+  { value: "blocked", label: "Blocked" },
+];
+// Every filter at rest. The "All" card resets to exactly this: it used to
+// rebuild the object by hand, drop the candidate and alert-type keys, and send
+// both as the string "undefined" -- a candidate filter no row can match, so
+// "All" emptied the table.
+export const EMPTY_FILTERS = Object.freeze({
+  search: "", classificationGroup: "", candidateId: "", bookingResult: "", priority: "", read: "",
+});
 // Above this many options a native select stops being browsable and the filter
 // needs real type-ahead.
 const CANDIDATE_TYPEAHEAD_THRESHOLD = 20;
@@ -282,7 +296,7 @@ export function MailMonitoringNotifications() {
   const [clearing, setClearing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
-  const [filters, setFilters] = useState({ search: "", classificationGroup: "", candidateId: "", priority: "", read: "" });
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   // Candidates that actually have alerts. Fetched once; the filter matches on
   // candidate_id, so the options have to be ids this table really holds.
   const [candidates, setCandidates] = useState([]);
@@ -291,7 +305,7 @@ export function MailMonitoringNotifications() {
   const pendingRenders = useRef(new Map());
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: "20", offset: String(page * 20), sort: "newest" });
-    for (const [key, value] of Object.entries({ search:filters.search,classification_group:filters.classificationGroup,candidate_id:filters.candidateId,priority:filters.priority,is_read:filters.read,group_by:filters.classificationGroup === SELECTION_GROUP ? "candidate" : "" })) if (value !== "") params.set(key, String(value));
+    for (const [key, value] of Object.entries({ search:filters.search,classification_group:filters.classificationGroup,candidate_id:filters.candidateId,booking_result:filters.bookingResult,priority:filters.priority,is_read:filters.read,group_by:filters.classificationGroup === SELECTION_GROUP ? "candidate" : "" })) if (value !== "") params.set(key, String(value));
     return params.toString();
   }, [filters, page]);
   const load = useCallback(async ({ silent = false } = {}) => {
@@ -415,7 +429,7 @@ export function MailMonitoringNotifications() {
   return <section className="mail-monitoring-page">
     <header className="mail-monitoring-page__head"><div><p className="mail-eyebrow">AI MAIL MONITORING</p><h1>Mail Monitoring Notifications</h1><p>Candidate job-status alerts with live delivery and automatic validation.</p></div><div className="mail-monitoring-page__actions"><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
     <div className="mail-summary mail-summary--compact">
-      <button onClick={() => { setPage(0);setFilters({ search:"", classification:"", priority:"", read:"" }); }}><strong>{summary.visible_total || 0}</strong><span>All</span></button>
+      <button onClick={() => { setPage(0);setFilters(EMPTY_FILTERS);setCandidateQuery(""); }}><strong>{summary.visible_total || 0}</strong><span>All</span></button>
       <button onClick={() => { setPage(0);setFilters((value) => ({ ...value, priority:"retry_pending", read:"" })); }}><strong>{summary.ai_retry_pending || 0}</strong><span>AI retry pending</span></button>
       <button onClick={() => { setPage(0);setFilters((value) => ({ ...value, read:"false", priority:"" })); }}><strong>{summary.unread || 0}</strong><span>Unread</span></button>
     </div>
@@ -452,6 +466,10 @@ export function MailMonitoringNotifications() {
       <select aria-label="Alert type filter" value={filters.classificationGroup} onChange={set("classificationGroup")}>
         <option value="">All alert types</option>
         {CLASSIFICATION_GROUPS.map((group) => <option value={group.value} key={group.value}>{group.label}</option>)}
+      </select>
+      <select aria-label="Booking result filter" value={filters.bookingResult} onChange={set("bookingResult")}>
+        <option value="">All booking results</option>
+        {BOOKING_RESULTS.map((result) => <option value={result.value} key={result.value}>{result.label}</option>)}
       </select>
     </div>
     <div className={`mail-table-wrap${loading ? " is-loading" : ""}`}>{loading && <OverlayLoader label="Loading notifications…" />}<table className={`mail-table${grouped ? " mail-table--grouped" : ""}`}><thead><tr><th>Candidate</th><th>Company</th><th>Detected status</th><th>Email subject</th><th>Confidence</th><th>Mail received</th><th>Tool detected</th><th>Automation</th><th>Action</th></tr></thead>
