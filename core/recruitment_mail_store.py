@@ -2981,6 +2981,8 @@ def reconcile_booking_claims(rows):
     Mail Alerts cannot disagree with Confirmed Slots and Daily Ops whatever put
     them out of step.
     """
+    from services import booking_block_reasons
+
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -2998,6 +3000,15 @@ def reconcile_booking_claims(rows):
         # "Automatically Booked" in the list, detail dialog and alert bell.
         if row.get('booking_status') == RELEASED_BOOKING_STATUS:
             _project_released_booking_title(row)
+        # What a person reads about a blocked booking: a title, a reason and
+        # what to do, rebuilt from the stored codes on every read so that a
+        # rewording reaches alerts written before it. The codes themselves
+        # stay on the row for the Technical details.
+        # Only on blocked rows: a row with nothing to correct comes back as
+        # it went in.
+        explanation = booking_block_reasons.explain_notification(row)
+        if explanation:
+            row['booking_block'] = explanation
     claims = [
         row for row in (rows or [])
         if isinstance(row, dict)

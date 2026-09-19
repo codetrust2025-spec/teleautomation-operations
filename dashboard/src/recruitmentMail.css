@@ -2347,6 +2347,64 @@
   margin: 6px 0 0;
 }
 
+/* A blocked booking leads the dialog: what happened, why, and what to do.
+   Amber when something needs doing, quiet blue when nothing does. The codes
+   behind it sit in a closed Technical details section, so they are there for
+   whoever debugs and invisible to everyone else. */
+.mail-block {
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-left: 3px solid #f59e0b;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.06);
+}
+.mail-block--info {
+  border-color: rgba(96, 165, 250, 0.24);
+  border-left-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.06);
+}
+.mail-block__line {
+  margin: 0;
+  line-height: 1.5;
+}
+.mail-block__line + .mail-block__line {
+  margin-top: 8px;
+}
+.mail-block__label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted, #94a3b8);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mail-block__technical {
+  margin-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding-top: 8px;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+}
+.mail-block__technical > summary {
+  cursor: pointer;
+  font-size: 11px;
+  list-style: revert;
+}
+/* Two classes deep, to outrank the dialog's roomy `.mail-detail dl`. */
+.mail-detail .mail-block__codes {
+  margin: 8px 0 0;
+  gap: 6px;
+}
+.mail-detail .mail-block__codes div {
+  padding: 6px 8px;
+}
+.mail-block__technical code {
+  font-size: 11px;
+  word-break: break-all;
+}
+
 /* After the base rule, not before it: same specificity, so source order is
    what decides which one applies. */
 @media (max-width: 900px) {
