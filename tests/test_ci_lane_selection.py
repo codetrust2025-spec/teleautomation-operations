@@ -41,8 +41,8 @@ class TestTheFastLaneIsNarrow:
         [
             "dashboard/src/App.jsx",
             "dashboard/src/index.css",
-            "dashboard/src/components/OcrToggle.jsx",
-            "dashboard/src/utils/mailAlertSound.js",
+            "dashboard/src/components/ConfirmDialog.jsx",
+            "dashboard/src/utils/istTime.js",
             "dashboard/src/OperationsSidebarOrder.test.js",
         ],
     )
@@ -153,3 +153,76 @@ class TestItFailsSafe:
     )
     def test_matching_is_anchored_not_substring(self, path: str) -> None:
         assert lane(path) == "full"
+
+
+class TestRiskDomainsAlwaysTakeTheFullLane:
+    """Booking, payments, Gmail automation and sign-in never skip the checks.
+
+    The owner's rule for the fast lane: never for these domains, whatever layer
+    the change is in. Logic files are matched by folder and by name, so a new
+    file in one of these domains needs no edit to the rule to be caught.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # booking
+            "dashboard/src/pages/SubmitSlotPage.jsx",
+            "dashboard/src/dailyOps/InterviewRoster.jsx",
+            "dashboard/src/dailyOps/dateRangePresets.js",
+            "dashboard/src/utils/bookingSource.js",
+            "dashboard/src/components/CandidatesPanel.jsx",
+            # payments
+            "dashboard/src/candidates/PayoutModal.jsx",
+            "dashboard/src/candidates/paymentProofs.js",
+            "dashboard/src/candidates/EarningsBreakdown.jsx",
+            "dashboard/src/candidates/ReferrerPaymentAccounts.jsx",
+            "dashboard/src/ownership.js",
+            # Gmail automation
+            "dashboard/src/components/RecruitmentMailPanelRedesign.jsx",
+            "dashboard/src/components/MailMonitoringNotifications.jsx",
+            "dashboard/src/components/ReconnectWorklist.jsx",
+            "dashboard/src/components/OcrToggle.jsx",
+            "dashboard/src/components/PureOllamaToggle.jsx",
+            "dashboard/src/components/AiNodeProgress.jsx",
+            "dashboard/src/components/ExpiryCountdown.jsx",
+            "dashboard/src/utils/mailboxStatus.js",
+            "dashboard/src/utils/mailAlertSound.js",
+            # sign-in and credentials
+            "dashboard/src/components/AuthGate.jsx",
+            "dashboard/src/components/LoginScreen.jsx",
+            "dashboard/src/components/ChangePasswordModal.jsx",
+            "dashboard/src/context/AuthContext.jsx",
+            "dashboard/src/components/DataRoomVaultSection.jsx",
+            "dashboard/src/utils/dataRoomCredentialsApi.js",
+            "dashboard/src/utils/offerLetterUrls.js",
+            "dashboard/src/config.js",
+            # a file that does not exist yet is caught by its name
+            "dashboard/src/components/NewPaymentWidget.jsx",
+            "dashboard/src/utils/gmailQuota.js",
+        ],
+    )
+    def test_their_logic_takes_the_full_lane(self, path: str) -> None:
+        assert lane(path) == "full"
+
+    def test_and_so_does_its_test(self) -> None:
+        assert lane("dashboard/src/components/MailMonitoringNotifications.test.jsx") == "full"
+
+    def test_one_risk_file_takes_the_whole_change_with_it(self) -> None:
+        assert lane("dashboard/src/index.css", "dashboard/src/candidates/PayoutModal.jsx") == "full"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "dashboard/src/dailyOps.css",
+            "dashboard/src/recruitmentMail.css",
+            "dashboard/src/candidates/CompanyExpenditure.css",
+        ],
+    )
+    def test_their_stylesheets_stay_on_the_fast_lane(self, path: str) -> None:
+        # Presentation cannot change what these screens do; the dashboard job
+        # still runs the whole suite and the production build.
+        assert lane(path) == "frontend"
+
+    def test_the_rule_itself_is_never_fast_laned(self) -> None:
+        assert lane("scripts/ci_lane.sh") == "full"

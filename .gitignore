@@ -12,3 +12,6 @@ data/
 logs/
 local-preview.*.log
 .env.*
+
+# scripts/layout_harness.py output (local tool)
+.layout-harness/

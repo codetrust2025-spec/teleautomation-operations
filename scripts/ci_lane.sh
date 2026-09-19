@@ -26,6 +26,15 @@ ALLOW='^dashboard/src/.*[.](js|jsx|css)$'
 # not visible in a screenshot.
 DENY='^dashboard/src/(notifications|attendance)/'
 
+# Frontend logic in the domains every release must cross-check, whatever layer
+# the change sits in: booking and payments, Gmail automation, and sign-in and
+# credentials. Matched by folder and by name, so a new file in one of these
+# domains is caught without an edit here. Only .js/.jsx: a stylesheet cannot
+# change what these screens do, and the dashboard job still tests and builds
+# every change on either lane.
+RISK_DIRS='^dashboard/src/(pages|dailyOps|candidates)/'
+RISK_NAMES='(booking|slot|payment|payout|paid|earning|expenditure|referrer|upi|mail|reconnect|ocr|ollama|ainode|aianalysis|expiry|candidate|interview|roster|auth|login|password|credential|dataroom|vault|offerletter|ownership|config)'
+
 lane=frontend
 seen=0
 
@@ -45,6 +54,13 @@ while IFS= read -r path || [ -n "$path" ]; do
   fi
   if printf '%s\n' "$path" | grep -Eq "$DENY"; then
     echo "full lane: $path is realtime/attendance code" >&2
+    lane=full
+    break
+  fi
+  if printf '%s\n' "$path" | grep -Eq '[.]jsx?$' \
+     && { printf '%s\n' "$path" | grep -Eq "$RISK_DIRS" \
+          || printf '%s\n' "${path##*/}" | grep -Eiq "$RISK_NAMES"; }; then
+    echo "full lane: $path is booking, payment, mail or sign-in logic" >&2
     lane=full
     break
   fi
