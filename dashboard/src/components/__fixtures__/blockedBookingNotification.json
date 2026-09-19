@@ -1,0 +1,26 @@
+{
+  "_comment": "A stored Mail Alerts row and the explanation the backend gives for it. tests/test_booking_block_reasons.py holds services/booking_block_reasons.py to booking_block; MailMonitoringNotifications.test.jsx renders it.",
+  "row": {
+    "classification": "interview_cancelled",
+    "candidate_status": "Automatic Booking Blocked",
+    "booking_status": "Blocked",
+    "booking_block_reason": "Interview round could not be identified",
+    "booking_block_reason_code": "ROUND_NOT_FOUND",
+    "booking_failure_code": "BOOKING_AMBIGUOUS",
+    "recommended_action": "Multiple active interview slots match this candidate; the source email does not identify one safely.",
+    "interview_date": "2026-08-31",
+    "interview_time": "11:00 AM"
+  },
+  "booking_block": {
+    "title": "Booking not cancelled",
+    "reason": "This email cancels an interview, but the candidate has more than one booking it could refer to, so nothing was cancelled.",
+    "action": "Open the candidate in Daily Ops and cancel the right booking by hand.",
+    "needs_action": true,
+    "technical": {
+      "reason_code": "ROUND_NOT_FOUND",
+      "internal_code": "BOOKING_AMBIGUOUS",
+      "booking_status": "Blocked",
+      "message": "Multiple active interview slots match this candidate; the source email does not identify one safely."
+    }
+  }
+}

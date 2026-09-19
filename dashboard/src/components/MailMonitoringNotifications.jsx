@@ -82,16 +82,44 @@ export function mailStatusTone(item = {}) {
   return "neutral";
 }
 
-// Why a booking was blocked, as the backend decided it. Never reconstructed
-// here from the status text: the row must show the actual decision, and only
-// the validator knows which of several blocks applied.
+// Why a booking was blocked, as the backend decided and explained it: a title,
+// a reason and what to do, in plain words. Never reconstructed here from the
+// status text or the codes -- only the backend knows which of several blocks
+// applied, and how the same cause reads for an email that creates, changes or
+// cancels a booking. The codes travel along for Technical details only.
 export function blockingReason(item = {}) {
+  if (item.booking_block?.reason) return item.booking_block;
   if (!item.booking_block_reason && !item.booking_block_reason_code) return null;
+  // Without an explanation the stored sentence is still shown, and a code
+  // still never becomes the reason a person reads.
   return {
-    text: item.booking_block_reason || "Booking awaits automatic validation",
-    code: item.booking_block_reason_code || "",
-    internal: item.booking_failure_code || "",
+    title: "Booking not completed",
+    reason: item.booking_block_reason || "Automatic booking didn't go through.",
+    action: "",
+    needs_action: true,
+    technical: {
+      reason_code: item.booking_block_reason_code || null,
+      internal_code: item.booking_failure_code || null,
+      booking_status: item.booking_status || null,
+      message: null,
+    },
   };
+}
+
+// The codes behind a block, for whoever is debugging it. Closed by default:
+// nobody needs them to understand what happened or what to do.
+function TechnicalDetails({ technical = {} }) {
+  const rows = [
+    ["Reason code", technical.reason_code, true],
+    ["Internal code", technical.internal_code, true],
+    ["Booking status", technical.booking_status, false],
+    ["System message", technical.message, false],
+  ].filter(([, value]) => value);
+  if (!rows.length) return null;
+  return <details className="mail-block__technical">
+    <summary>Technical details</summary>
+    <dl className="mail-block__codes">{rows.map(([label, value, isCode]) => <div key={label}><dt>{label}</dt><dd>{isCode ? <code>{value}</code> : value}</dd></div>)}</dl>
+  </details>;
 }
 
 async function request(path, options = {}) {
@@ -199,6 +227,7 @@ function NotificationDetail({ item, onClose }) {
   // Mounted only while open, so the dialog is open for its whole life.
   const dialogRef = useDialogA11y(true, onClose);
   const originalEmail = item.event_detail?.received_email;
+  const block = blockingReason(item);
   // Empty when the invite is already IST, so the extra line appears only when
   // the reader actually has to convert something.
   const istInterviewTime = formatScheduleIstDateTime(
@@ -208,7 +237,7 @@ function NotificationDetail({ item, onClose }) {
   );
   return <div className="mail-detail-backdrop" role="presentation" onClick={(event) => event.target === event.currentTarget && onClose()}>
     <section ref={dialogRef} className="mail-detail" role="dialog" aria-modal="true" aria-label="Mail monitoring notification">
-      <header><div><h3>{item.candidate_status || human(item.classification)}</h3><p>{item.candidate_name || "Candidate"} · {item.company_name || "Company unavailable"}</p></div><button type="button" onClick={onClose} aria-label="Close">×</button></header>
+      <header><div><h3>{block ? block.title : (item.candidate_status || human(item.classification))}</h3><p>{item.candidate_name || "Candidate"} · {item.company_name || "Company unavailable"}</p></div><button type="button" onClick={onClose} aria-label="Close">×</button></header>
       <OriginalEmail
         email={originalEmail}
         loading={item.detail_loading}
@@ -218,15 +247,12 @@ function NotificationDetail({ item, onClose }) {
         fallbackReceivedAt={item.email_received_at}
         formatWhen={when}
       />
-      <dl><div><dt>Email</dt><dd>{item.email_subject || "No subject"}</dd></div><div><dt>From</dt><dd>{item.sender_name || item.sender_email || "Unknown"}</dd></div><div><dt>Mail received</dt><dd>{when(item.email_received_at)}</dd></div><div><dt>Tool detected</dt><dd>{when(item.created_at)}</dd></div><div><dt>AI confidence</dt><dd>{confidence(item.ai_confidence)}</dd></div>{item.interview_date && <div><dt>Interview</dt><dd>{formatScheduleDateTime(item.interview_date, item.interview_time, item.interview_timezone)}</dd></div>}{istInterviewTime && <div><dt>IST Time</dt><dd>{istInterviewTime}</dd></div>}{item.interview_round && <div><dt>Round</dt><dd>{item.interview_round}</dd></div>}{(() => {
-        const reason = blockingReason(item);
-        if (!reason) return null;
-        return <>
-          <div><dt>Blocking reason</dt><dd>{reason.text}</dd></div>
-          <div><dt>Reason code</dt><dd><code>{reason.code}</code>{reason.internal && reason.internal !== reason.code ? <> · <code>{reason.internal}</code></> : null}</dd></div>
-          <div><dt>Attempted booking</dt><dd>{item.booking_status || "Not attempted"} — no slot was created</dd></div>
-        </>;
-      })()}</dl>
+      {block && <section className={`mail-block${block.needs_action ? "" : " mail-block--info"}`} aria-label="Booking decision">
+        <p className="mail-block__line"><span className="mail-block__label">Reason</span>{block.reason}</p>
+        {block.action && <p className="mail-block__line"><span className="mail-block__label">What to do</span>{block.action}</p>}
+        <TechnicalDetails technical={block.technical} />
+      </section>}
+      <dl><div><dt>Email</dt><dd>{item.email_subject || "No subject"}</dd></div><div><dt>From</dt><dd>{item.sender_name || item.sender_email || "Unknown"}</dd></div><div><dt>Mail received</dt><dd>{when(item.email_received_at)}</dd></div><div><dt>Tool detected</dt><dd>{when(item.created_at)}</dd></div><div><dt>AI confidence</dt><dd>{confidence(item.ai_confidence)}</dd></div>{item.interview_date && <div><dt>Interview</dt><dd>{formatScheduleDateTime(item.interview_date, item.interview_time, item.interview_timezone)}</dd></div>}{istInterviewTime && <div><dt>IST Time</dt><dd>{istInterviewTime}</dd></div>}{item.interview_round && <div><dt>Round</dt><dd>{item.interview_round}</dd></div>}</dl>
       <div className="mail-detail__copy">
         <strong>Summary</strong>
         <p>{item.ai_summary || "No summary available."}</p>
@@ -234,10 +260,10 @@ function NotificationDetail({ item, onClose }) {
           <summary>Detection reason</summary>
           <p>{item.ai_reason || "Contextual classification"}</p>
         </details>
-        <details className="mail-detail__aside" open>
+        {!block && <details className="mail-detail__aside" open>
           <summary>Recommended action</summary>
           <p>{item.recommended_action || "Processed automatically; no operator decision is required."}</p>
-        </details>
+        </details>}
       </div>
       <footer>
         {item.booking_id && <button type="button" onClick={() => { onClose(); navigate("daily-ops", { bookingId: item.booking_id, candidateId: item.candidate_id }); }}>View booking</button>}
@@ -459,8 +485,8 @@ export function MailMonitoringNotifications() {
         // until you know why, and making that a click away hides it.
         return <span
           className="mail-status__reason"
-          title={reason.internal ? `${reason.text} (${reason.code} / ${reason.internal})` : `${reason.text} (${reason.code})`}
-        >Reason: {reason.text}</span>;
+          title={reason.action ? `What to do: ${reason.action}` : undefined}
+        >Reason: {reason.reason}</span>;
       })()}</td><td>{item.email_subject || "(no subject)"}</td><td>{confidence(item.ai_confidence)}</td><td>{when(item.email_received_at)}</td><td>{when(item.created_at)}</td><td>{human(item.booking_status || item.automation_state || "AUTOMATED")}</td><td onClick={(event) => event.stopPropagation()}><button onClick={() => openNotification(item)}>Open</button><button onClick={() => act(item,item.is_read ? "unread" : "read")}>{item.is_read ? "Unread" : "Read"}</button><button onClick={() => act(item,"dismiss")}>Dismiss</button></td></tr>)}
       </tbody>)}
       {!loading && !items.length && <tbody><tr><td colSpan={9} className="mail-empty">No notifications match these filters.</td></tr></tbody>}

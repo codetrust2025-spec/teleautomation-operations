@@ -804,13 +804,16 @@ def test_a_blocked_booking_tells_the_notification_why(monkeypatch):
     assert outcome["failure_code"] == "PAYMENT_VALIDATION_FAILED"
     assert outcome["block_reason"]["reason_code"] == "PAYMENT_NOT_CLEARED"
     reason = outcome["notification"]["block_reason"]
-    assert reason["reason"] == "Payment is not cleared for this interview"
+    # The validator said which requirement failed; the words say the same.
+    assert reason["reason"] == (
+        "The candidate's payment is below the amount needed for a booking, so no slot was created."
+    )
     assert reason["reason_code"] == "PAYMENT_NOT_CLEARED"
     # The exact validator branch survives alongside the operator-facing text.
     assert reason["internal_code"] == "PAYMENT_VALIDATION_FAILED"
 
 
-def test_a_duplicate_booking_names_the_round_it_clashes_with(monkeypatch):
+def test_a_duplicate_booking_says_it_is_already_booked(monkeypatch):
     monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
     install_store_fakes(monkeypatch, rows=[{
         "id": "c1", "slot_confirmed": True,
@@ -822,7 +825,9 @@ def test_a_duplicate_booking_names_the_round_it_clashes_with(monkeypatch):
 
     assert outcome["failure_code"] == "DUPLICATE_BOOKING"
     assert outcome["notification"]["block_reason"]["reason_code"] == "DUPLICATE_BOOKING"
-    assert "Candidate already has a booking for this round" in (
+    # Duplicates are found by the calendar event or source mail, never by the
+    # round, so the words no longer claim a round.
+    assert "is already booked, so another slot was not created" in (
         outcome["notification"]["block_reason"]["reason"]
     )
 
@@ -836,7 +841,10 @@ def test_a_low_confidence_block_reads_as_confidence_not_as_a_schedule_problem(mo
     assert outcome["failure_code"] == "LOW_CONFIDENCE"
     assert outcome["notification"]["block_reason"] == {
         "reason_code": "LOW_CONFIDENCE",
-        "reason": "AI confidence is below the required threshold",
+        "reason": (
+            "The system wasn't sure enough about this email to act on it "
+            "automatically, so no slot was created."
+        ),
         "internal_code": "LOW_CONFIDENCE",
     }
 
@@ -849,7 +857,7 @@ def test_a_past_interview_block_names_the_date_that_already_passed(monkeypatch):
 
     assert outcome["failure_code"] == "PAST_INTERVIEW"
     assert outcome["notification"]["block_reason"]["reason"] == (
-        "Interview date is in the past (2 Jan 2020, 9:30 AM)"
+        "This interview time (2 Jan 2020, 9:30 AM) has already passed, so no slot was created."
     )
 
 

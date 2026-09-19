@@ -986,6 +986,7 @@ def _execute_auto_booking(
             display_status=historical["display_status"], detail=historical["message"],
             block_reason=booking_block_reasons.describe(
                 historical["failure_code"], interview=(result.get("interview") or {}),
+                classification=classification, detail=historical["message"],
             ),
         ) if notification.get("id") and not preserve_notification else notification
         logger.info(
@@ -1218,6 +1219,7 @@ def _execute_auto_booking(
         # instead of leaving the UI to infer it from a status string.
         block_reason = booking_block_reasons.describe(
             exc.code, schedule=schedule, interview=(result.get("interview") or {}),
+            classification=classification, detail=exc.message,
         )
         updated_notification = mail_store.attach_booking_to_notification(
             notification.get("id"), audit_id=audit["id"], booking_id=None,
@@ -1255,6 +1257,7 @@ def _execute_auto_booking(
             # a manual-review action.
             block_reason=booking_block_reasons.describe(
                 code, interview=(result.get("interview") or {}),
+                classification=classification,
             ),
         ) if notification.get("id") and not preserve_notification else notification
         logger.exception("Interview booking processing failed correlation_id=%s code=%s", correlation_id, code)

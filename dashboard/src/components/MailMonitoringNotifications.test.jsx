@@ -1,8 +1,9 @@
 import React from "react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MailMonitoringNotifications, MailNotificationBell, mailStatusTone, blockingReason } from "./MailMonitoringNotifications.jsx";
 import { ConfirmProvider } from "../context/ConfirmContext.jsx";
+import BLOCKED from "./__fixtures__/blockedBookingNotification.json";
 
 class FakeWebSocket {
   static OPEN = 1;
@@ -212,95 +213,121 @@ describe("mail monitoring notifications", () => {
 });
 
 describe("blocked booking reasons", () => {
+  // A stored alert and the explanation the backend gives for it -- the report's
+  // own case, a cancellation that matched more than one booking. The Python
+  // suite holds the backend to this same fixture, so these tests cannot pass
+  // against wording the backend no longer produces.
   const blocked = {
     ...notification,
+    ...BLOCKED.row,
     id: "notification-blocked",
-    classification: "interview_confirmed",
-    candidate_status: "Automatic Booking Blocked",
-    booking_status: "Blocked",
-    booking_block_reason: "No available slot matches the invite time (3 Aug 2026, 4:30 PM)",
-    booking_block_reason_code: "NO_MATCHING_SLOT",
-    booking_failure_code: "SLOT_CONFLICT",
+    booking_block: BLOCKED.booking_block,
   };
+  const RAW_CODE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/;
 
-  beforeEach(() => {
-    vi.stubGlobal("WebSocket", FakeWebSocket);
+  function serve(rows) {
     vi.stubGlobal("fetch", vi.fn((url) => {
       if (String(url).includes("/config")) return response({ enabled: true });
       if (String(url).includes("/summary")) return response({ summary: { unread: 0, new_offers: 0, selections: 0, joining_confirmations: 0, needs_review: 1 } });
-      if (String(url).includes("/notifications")) return response({ notifications: [blocked], total: 1 });
+      if (String(url).includes("/notifications")) return response({ notifications: rows, total: rows.length });
       return response({ status: "ok" });
     }));
+  }
+
+  async function openBlocked() {
+    renderNotifications();
+    fireEvent.click(await screen.findByText("Automatic Booking Blocked"));
+    return screen.findByRole("dialog");
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    serve([blocked]);
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-  it("takes the reason from the backend rather than inferring it", () => {
+  it("takes the explanation from the backend rather than inferring it", () => {
     // A status of "Blocked" says nothing about which check failed, so the
     // component must never manufacture a reason of its own.
     expect(blockingReason({ candidate_status: "Automatic Booking Blocked" })).toBeNull();
-    expect(blockingReason(blocked)).toEqual({
-      text: "No available slot matches the invite time (3 Aug 2026, 4:30 PM)",
-      code: "NO_MATCHING_SLOT",
-      internal: "SLOT_CONFLICT",
-    });
+    expect(blockingReason(blocked)).toEqual(BLOCKED.booking_block);
   });
 
-  it("falls back to manual review when only a code arrives", () => {
-    expect(blockingReason({ booking_block_reason_code: "MANUAL_REVIEW_REQUIRED" })).toEqual({
-      text: "Booking awaits automatic validation",
-      code: "MANUAL_REVIEW_REQUIRED",
-      internal: "",
-    });
+  it("never shows a code as the reason, even without an explanation", () => {
+    const reason = blockingReason({ booking_block_reason_code: "MANUAL_REVIEW_REQUIRED" });
+    expect(reason.title).not.toMatch(RAW_CODE);
+    expect(reason.reason).not.toMatch(RAW_CODE);
+    expect(reason.technical.reason_code).toBe("MANUAL_REVIEW_REQUIRED");
   });
 
-  it("shows the reason in the row without opening the notification", async () => {
+  it("shows the plain reason in the row without opening the notification", async () => {
     renderNotifications();
-    const reason = await screen.findByText(/^Reason: No available slot matches the invite time/);
-    expect(reason).toBeInTheDocument();
+    const reason = await screen.findByText(`Reason: ${BLOCKED.booking_block.reason}`);
     // Same cell as the badge, so the two are read together.
     expect(reason.closest("td")).toContainElement(screen.getByText("Automatic Booking Blocked"));
+    expect(reason.textContent).not.toMatch(RAW_CODE);
   });
 
-  it("offers the technical codes as a tooltip", async () => {
+  it("offers what to do on hover, not the codes", async () => {
     renderNotifications();
-    const reason = await screen.findByText(/^Reason: No available slot matches/);
-    expect(reason).toHaveAttribute(
-      "title",
-      "No available slot matches the invite time (3 Aug 2026, 4:30 PM) (NO_MATCHING_SLOT / SLOT_CONFLICT)",
-    );
+    const reason = await screen.findByText(`Reason: ${BLOCKED.booking_block.reason}`);
+    expect(reason).toHaveAttribute("title", `What to do: ${BLOCKED.booking_block.action}`);
+    expect(reason.getAttribute("title")).not.toMatch(RAW_CODE);
   });
 
   it("clamps a long reason instead of stretching the table", async () => {
     renderNotifications();
-    const reason = await screen.findByText(/^Reason: No available slot matches/);
+    const reason = await screen.findByText(`Reason: ${BLOCKED.booking_block.reason}`);
     expect(reason).toHaveClass("mail-status__reason");
   });
 
-  it("repeats the reason, both codes and the attempted result in the detail view", async () => {
-    renderNotifications();
-    fireEvent.click(await screen.findByText("Automatic Booking Blocked"));
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("Blocking reason");
-    expect(dialog).toHaveTextContent("No available slot matches the invite time (3 Aug 2026, 4:30 PM)");
-    expect(dialog).toHaveTextContent("NO_MATCHING_SLOT");
-    expect(dialog).toHaveTextContent("SLOT_CONFLICT");
-    expect(dialog).toHaveTextContent("Attempted booking");
-    // Detected candidate, round and schedule stay visible alongside the reason.
+  it("leads the detail view with the decision in plain words", async () => {
+    const dialog = await openBlocked();
+    expect(within(dialog).getByRole("heading", { name: BLOCKED.booking_block.title })).toBeInTheDocument();
+    const decision = within(dialog).getByRole("region", { name: "Booking decision" });
+    expect(decision).toHaveTextContent(`Reason${BLOCKED.booking_block.reason}`);
+    expect(decision).toHaveTextContent(`What to do${BLOCKED.booking_block.action}`);
+    // The detected candidate stays visible alongside the decision.
     expect(dialog).toHaveTextContent("Rahul Kumar");
   });
 
-  it("shows no reason row for a booking that succeeded", async () => {
-    vi.stubGlobal("fetch", vi.fn((url) => {
-      if (String(url).includes("/config")) return response({ enabled: true });
-      if (String(url).includes("/summary")) return response({ summary: { unread: 0, new_offers: 0, selections: 0, joining_confirmations: 0, needs_review: 0 } });
-      if (String(url).includes("/notifications")) return response({
-        notifications: [{ ...blocked, candidate_status: "Interview Automatically Booked", booking_status: "Auto Booked", booking_block_reason: null, booking_block_reason_code: null, booking_failure_code: null }],
-        total: 1,
-      });
-      return response({ status: "ok" });
-    }));
+  it("keeps the codes behind a closed Technical details section", async () => {
+    const dialog = await openBlocked();
+    const technical = within(dialog).getByText("Technical details").closest("details");
+    expect(technical.open).toBe(false);
+    expect(technical).toHaveTextContent("ROUND_NOT_FOUND");
+    expect(technical).toHaveTextContent("BOOKING_AMBIGUOUS");
+    expect(technical).toHaveTextContent("Blocked");
+    // Everywhere else in the dialog: no code, and none of the old labels.
+    const outside = dialog.cloneNode(true);
+    outside.querySelector(".mail-block__technical").remove();
+    expect(outside.textContent).not.toMatch(RAW_CODE);
+    for (const label of ["Blocking reason", "Reason code", "Attempted booking"]) {
+      expect(outside.textContent).not.toContain(label);
+    }
+  });
+
+  it("gives one action, and it is the decision's", async () => {
+    const dialog = await openBlocked();
+    // The stored recommended action is the validator's own sentence -- a
+    // reason, not an action -- so it moves to Technical details.
+    expect(within(dialog).queryByText("Recommended action")).toBeNull();
+    expect(dialog.querySelector(".mail-block__technical")).toHaveTextContent(BLOCKED.row.recommended_action);
+  });
+
+  it("marks a block with nothing to do as information, not a warning", async () => {
+    serve([{ ...blocked, booking_block: { ...BLOCKED.booking_block, needs_action: false } }]);
+    const dialog = await openBlocked();
+    expect(within(dialog).getByRole("region", { name: "Booking decision" })).toHaveClass("mail-block--info");
+  });
+
+  it("shows no reason and keeps the recommended action for a booking that succeeded", async () => {
+    serve([{ ...blocked, candidate_status: "Interview Automatically Booked", booking_status: "Auto Booked", booking_block_reason: null, booking_block_reason_code: null, booking_failure_code: null, booking_block: null, recommended_action: "Verify the offer with the candidate." }]);
     renderNotifications();
-    await screen.findByText("Interview Automatically Booked");
+    fireEvent.click(await screen.findByText("Interview Automatically Booked"));
+    const dialog = await screen.findByRole("dialog");
     expect(screen.queryByText(/^Reason:/)).toBeNull();
+    expect(within(dialog).queryByRole("region", { name: "Booking decision" })).toBeNull();
+    expect(dialog).toHaveTextContent("Recommended action");
   });
 });
