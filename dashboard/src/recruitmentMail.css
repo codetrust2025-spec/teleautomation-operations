@@ -2220,6 +2220,14 @@
     grid-template-columns: 1fr;
   }
 }
+/* Beside the sidebar, from about 900px to 1024px, the search box is narrower
+   than its placeholder at the 16px index.css sets there, and the text was cut
+   off mid-letter. End it with an ellipsis instead. The placeholder takes the
+   rule as well as the input, since browsers do not all pass it down. */
+.mail-filters input,
+.mail-filters input::placeholder {
+  text-overflow: ellipsis;
+}
 
 .mail-live--live {
   background: rgba(34, 197, 94, 0.12);

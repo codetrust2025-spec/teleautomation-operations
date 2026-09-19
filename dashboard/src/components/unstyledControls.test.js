@@ -136,6 +136,12 @@ describe('the filter row fits its controls', () => {
   it('stacks them on narrow viewports', () => {
     expect(/@media[^{]*max-width: 900px[^{]*\{\s*\.mail-filters--compact\s*\{\s*grid-template-columns: 1fr/.test(css)).toBe(true)
   })
+
+  it('ends a search placeholder that does not fit with an ellipsis', () => {
+    // From about 900px to 1024px "Search candidate, email, company or subject"
+    // is wider than the search box, and it was cut off mid-letter.
+    expect(/\.mail-filters input::placeholder[^{]*\{[^}]*text-overflow: ellipsis/.test(css)).toBe(true)
+  })
 })
 
 describe('the monitoring page keeps its rules', () => {
