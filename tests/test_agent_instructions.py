@@ -21,9 +21,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 INSTRUCTIONS = ROOT / "CLAUDE.md"
 
+# The pin opens straight after the Operations PR, so both repositories' CI
+# run at the same time; nothing merges until both have passed.
 STAGES = [
-    "ops_pr", "ops_ci", "ops_merge",
-    "preflight", "pin", "pin_ci", "pin_merge",
+    "ops_pr", "pin", "ops_ci", "pin_ci",
+    "ops_merge", "preflight", "pin_merge",
     "sync", "build", "deploy", "verify",
 ]
 
