@@ -423,7 +423,7 @@ def _plain_text_interview_result(decoded: dict[str, Any]) -> dict[str, Any] | No
     }
 
 
-def _is_employer_invitation(sender: str, recipient: str, invite: dict[str, Any]) -> bool:
+def employer_invitation_shape(sender: str, recipient: str, attendee_count: int) -> bool:
     """An outside organisation inviting this candidate to a small meeting.
 
     This is what separates a recruiting invitation from everything else in a
@@ -436,6 +436,11 @@ def _is_employer_invitation(sender: str, recipient: str, invite: dict[str, Any])
       not an employer;
     * the meeting is small — a webinar or careers open day is authenticated and
       external and still is not an interview.
+
+    Public because the contradiction tie-breaker in
+    `services.calendar_interview_evidence` has to ask the same question after
+    the model has answered. It used to ask it again with a word list of its
+    own, and vetoed invitations this function had already accepted.
     """
     sender_domain = _domain(sender)
     recipient_domain = _domain(recipient)
@@ -443,8 +448,11 @@ def _is_employer_invitation(sender: str, recipient: str, invite: dict[str, Any])
         return False
     if sender_domain in _CONSUMER_MAIL_DOMAINS:
         return False
-    attendees = invite.get("attendees") or []
-    return 0 < len(attendees) <= _MAX_INTERVIEW_ATTENDEES
+    return 0 < attendee_count <= _MAX_INTERVIEW_ATTENDEES
+
+
+def _is_employer_invitation(sender: str, recipient: str, invite: dict[str, Any]) -> bool:
+    return employer_invitation_shape(sender, recipient, len(invite.get("attendees") or []))
 
 
 def _accepts_as_interview(
