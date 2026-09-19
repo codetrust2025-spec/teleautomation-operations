@@ -101,21 +101,29 @@ export function mailStatusTone(item = {}) {
 // status text or the codes -- only the backend knows which of several blocks
 // applied, and how the same cause reads for an email that creates, changes or
 // cancels a booking. The codes travel along for Technical details only.
+const FALLBACK_TITLES = {
+  interview_cancelled: "Cancellation not applied",
+  interview_rescheduled: "Booking not updated",
+};
 export function blockingReason(item = {}) {
   if (item.booking_block?.reason) return item.booking_block;
   if (!item.booking_block_reason && !item.booking_block_reason_code) return null;
-  // Without an explanation the stored sentence is still shown, and a code
-  // still never becomes the reason a person reads.
+  // Without an explanation there is nothing precise to say about why, so the
+  // reason stays general and whatever was stored goes to Technical details: an
+  // older alert's stored sentence can be exactly the wording this panel hides.
+  // A code still never becomes the reason a person reads.
   return {
-    title: "Booking not completed",
-    reason: item.booking_block_reason || "Automatic booking didn't go through.",
-    action: "",
+    title: /assessment/i.test(item.candidate_status || "")
+      ? "Assessment not booked"
+      : FALLBACK_TITLES[item.classification] || "Booking not created",
+    reason: "We couldn't finish this automatically.",
+    action: "Please review the email and update Daily Ops if needed.",
     needs_action: true,
     technical: {
       reason_code: item.booking_block_reason_code || null,
       internal_code: item.booking_failure_code || null,
       booking_status: item.booking_status || null,
-      message: null,
+      message: item.booking_block_reason || null,
     },
   };
 }

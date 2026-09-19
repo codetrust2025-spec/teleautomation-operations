@@ -260,6 +260,24 @@ describe("blocked booking reasons", () => {
     expect(reason.technical.reason_code).toBe("MANUAL_REVIEW_REQUIRED");
   });
 
+  it("keeps an old stored sentence out of the reason when there is no explanation", () => {
+    // Alerts written before the rewording stored sentences like this one,
+    // which described a cancellation that matched no booking as a round problem.
+    const stored = "Interview round could not be identified";
+    const reason = blockingReason({ classification: "interview_cancelled", booking_block_reason: stored, booking_block_reason_code: "ROUND_NOT_FOUND" });
+    expect(reason.reason).not.toContain(stored);
+    expect(reason.action).toBeTruthy();
+    expect(reason.technical.message).toBe(stored);
+  });
+
+  it("titles a fallback by what the email tried to do", () => {
+    const block = { booking_block_reason_code: "ROUND_NOT_FOUND" };
+    expect(blockingReason({ ...block, classification: "interview_cancelled" }).title).toBe("Cancellation not applied");
+    expect(blockingReason({ ...block, classification: "interview_rescheduled" }).title).toBe("Booking not updated");
+    expect(blockingReason({ ...block, classification: "interview_confirmed" }).title).toBe("Booking not created");
+    expect(blockingReason({ ...block, candidate_status: "Assessment Needs a Slot" }).title).toBe("Assessment not booked");
+  });
+
   it("shows the plain reason in the row without opening the notification", async () => {
     renderNotifications();
     const reason = await screen.findByText(`Reason: ${BLOCKED.booking_block.reason}`);

@@ -25,6 +25,7 @@ corrects every alert already written, not only new ones.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 # Reason codes. Deliberately coarser than the validator's internal codes: these
@@ -136,12 +137,18 @@ def format_schedule(date: Any, time: Any = None) -> str:
 # identified" about an email that matched no booking, or several; none of them
 # was about a round.
 #
+# Every reason and every action is one short sentence of everyday English.
+# People read these between other work, and the earlier wording -- "applied",
+# "conflicting update", "set aside for a person to check" -- was accurate and
+# still had to be read twice. The tests hold every sentence to one sentence,
+# a word limit, and a list of words nobody says out loud.
+#
 # The same cause also reads differently depending on what the email was trying
-# to do: a mail cancelling an interview cannot fail to "create a slot". Each
+# to do: a mail cancelling an interview cannot fail to "create a booking". Each
 # sentence therefore names its consequence through {result}, and each action
 # its manual fallback through {manual}, both taken from the email's own
-# classification. {when} names the interview time where knowing it changes
-# what a person does.
+# classification. {when} names the interview time only where the time is the
+# point: a time that has passed, a time that clashed.
 #
 # An action promises an automatic retry only where one happens: the outcomes
 # that `recruitment_automation.outcome_for` makes final -- duplicate, stale,
@@ -149,61 +156,64 @@ def format_schedule(date: Any, time: Any = None) -> str:
 # to that.
 
 NO_ACTION = "No action needed."
-_RETRY = "The system will try again automatically."
-_RETRY_THEN_MANUAL = f"{_RETRY} If it's still not done, {{manual}}."
+_RETRY_THEN_MANUAL = "We'll try again automatically; if it still fails, {manual}."
+# After the person fixes what the booking was waiting for.
+_THEN_RETRY = "then we'll try again automatically."
 
 _OUTCOMES = {
     "create": {
         "title": "Booking not created",
-        "result": "no slot was created",
-        "manual": "book the slot by hand in Daily Ops",
-        "verb": "book",
+        "result": "no booking was created",
+        "manual": "book it in Daily Ops",
     },
     "change": {
-        "title": "Booking not changed",
-        "result": "the booking was not changed",
-        "manual": "update the booking by hand in Daily Ops",
-        "verb": "update",
+        "title": "Booking not updated",
+        "result": "the booking was not updated",
+        "manual": "update the booking in Daily Ops",
     },
     "cancel": {
-        "title": "Booking not cancelled",
-        "result": "the booking was not cancelled",
-        "manual": "cancel the booking by hand in Daily Ops",
-        "verb": "cancel",
+        "title": "Cancellation not applied",
+        "result": "nothing was cancelled",
+        "manual": "cancel the booking in Daily Ops",
     },
     "assessment": {
         "title": "Assessment not booked",
-        "result": "no slot was booked",
-        "manual": "book the assessment by hand in Daily Ops",
-        "verb": "book",
+        "result": "the assessment was not booked",
+        "manual": "book the assessment in Daily Ops",
     },
 }
 ALREADY_BOOKED_TITLE = "Already booked"
 
 _UNCLEAR_SCHEDULE = (
     "The email doesn't give a clear interview date and time, so {result}.",
-    f"{_RETRY} If it's still not done, {{manual}} using the date and time in the email.",
+    _RETRY_THEN_MANUAL,
 )
 
 # (reason, what to do), keyed on the validator's own code.
 _BY_INTERNAL_CODE: dict[str, tuple[str, str]] = {
     # Final outcomes. Nothing retries these, so nothing promises to.
+    #
+    # No time here: the duplicate check matches on the calendar event, and a
+    # booking that moved keeps its event, so the email's time can be one the
+    # booking no longer has.
     "DUPLICATE_BOOKING": (
-        "This interview{when} is already booked, so another slot was not created.",
+        "This interview is already booked, so it was not booked again.",
         NO_ACTION,
     ),
+    # Both past-interview alerts production held on 19 Sep 2026 were real
+    # interviews missing from Daily Ops: one invite arrived a minute before the
+    # start and was processed two minutes after it, the other came nine
+    # minutes into the call. "No action needed" told nobody to look.
     "PAST_INTERVIEW": (
         "This interview time{when} has already passed, so {result}.",
-        NO_ACTION,
+        "If the interview took place, make sure it's in Daily Ops.",
     ),
     "STALE_INTERVIEW_EVENT": (
-        "A newer email about this interview has already been applied, so this "
-        "older or conflicting update was not used.",
-        "No action needed. If the booking looks wrong, check the latest email "
-        "for this interview.",
+        "A newer interview update was already processed, so this older email was ignored.",
+        NO_ACTION,
     ),
     "NOT_ACTIONABLE": (
-        "The system decided this email needs no booking change, so {result}.",
+        "This email doesn't need a booking change.",
         NO_ACTION,
     ),
     # The email did not give a schedule that can be booked.
@@ -215,85 +225,98 @@ _BY_INTERNAL_CODE: dict[str, tuple[str, str]] = {
     "MEDIUM_CONFIDENCE_INCOMPLETE": _UNCLEAR_SCHEDULE,
     "MISSING_TIMEZONE": (
         "The email doesn't say which time zone the interview is in, so {result}.",
-        _UNCLEAR_SCHEDULE[1],
+        _RETRY_THEN_MANUAL,
     ),
     "INVALID_TIMEZONE": (
-        "The email's time zone wasn't recognised, so {result}.",
-        _UNCLEAR_SCHEDULE[1],
+        "We didn't recognise the time zone in the email, so {result}.",
+        _RETRY_THEN_MANUAL,
     ),
     "CROSS_DAY_INTERVIEW": (
-        "The interview's start and end fall on different days, so {result}.",
+        "The interview starts and ends on different days, so {result}.",
         "Check the times in the email, then {manual}.",
     ),
     "HISTORICAL_SCHEDULE_INCOMPLETE": (
-        "This older email doesn't give a clear interview date, so it was kept "
-        "for reference only.",
-        "No action needed, unless the interview is still coming up. If it is, "
-        "book it by hand in Daily Ops.",
+        "This is an old email without a clear interview date, so {result}.",
+        "If the interview is still coming up, {manual}.",
     ),
     # Who, and whether the system may act at all.
     "CANDIDATE_MAPPING_FAILED": (
-        "This email couldn't be matched to a candidate, so {result}.",
+        "We couldn't tell which candidate this email is for, so {result}.",
         "Check that this Gmail account is linked to the right candidate, then {manual}.",
     ),
     "LOW_CONFIDENCE": (
-        "The system wasn't sure enough about this email to act on it "
-        "automatically, so {result}.",
+        "We weren't sure enough about this email to act on it, so {result}.",
         _RETRY_THEN_MANUAL,
     ),
     "AI_NOT_VALIDATED": (
-        "The email's details couldn't be confirmed, so {result}.",
+        "We could not confirm the interview details automatically, so {result}.",
         _RETRY_THEN_MANUAL,
     ),
     "MISSING_EVIDENCE": (
-        "The email doesn't contain enough detail to support this booking, so {result}.",
-        "Check the email, and if it's a real interview, {manual}.",
+        "The email doesn't have enough interview details, so {result}.",
+        "Review the email, and if the interview is real, {manual}.",
     ),
+    # Retired, but still stored on older alerts. The one production held had
+    # been booked by hand since, so the action must not ask for a second
+    # booking.
     "AI_REQUIRES_REVIEW": (
-        "This email was set aside for a person to check, so {result}.",
-        "Check the email, and if it's a real interview, {manual}.",
+        "We could not confirm the interview details automatically.",
+        "Please review the email and update Daily Ops if needed.",
     ),
     "AUTO_BOOKING_DISABLED": (
-        "Automatic booking is switched off, so {result}.",
-        "Ask an admin to switch automatic booking back on, or {manual}.",
+        "Automatic booking is turned off, so {result}.",
+        "Ask an admin to turn it back on, or {manual}.",
     ),
     # Saving failed after every check passed.
     "BOOKING_NOT_PERSISTED": (
-        "The booking couldn't be saved, so {result}.",
-        f"Please report this problem. {_RETRY} If it's still not done, {{manual}}.",
+        "The booking couldn't be saved because of a system error.",
+        "We'll try again automatically; if it still fails, {manual} and report the problem.",
     ),
     # Retired: overlapping interviews are allowed now, but alerts from before
     # that still carry the code.
     "SLOT_CONFLICT": (
-        "This time{when} clashed with another booking for the candidate, so {result}.",
-        "Check the candidate's bookings, and if this interview is still "
-        "needed, {manual}.",
+        "This time{when} clashed with another booking for this candidate, so {result}.",
+        "Check the candidate's bookings, and {manual} if it's missing.",
     ),
 }
 
 # An email that changes or cancels an interview has to be matched to the
 # booking it is about. These are the two ways that fails.
+#
+# The validator raises BOOKING_AMBIGUOUS both when two bookings match equally
+# and when none of several matches at all. All three alerts production held on
+# 19 Sep 2026 were the second kind: none of those interviews had a booking. So no
+# action here assumes the right booking exists.
 _UPDATES_AN_EXISTING_BOOKING: dict[tuple[str, str], tuple[str, str]] = {
     ("BOOKING_NOT_FOUND", "cancel"): (
-        "This email cancels an interview, but no active booking was found for "
-        "it, so nothing was cancelled.",
-        "No action needed if this interview was never booked. If it still "
-        "appears in Daily Ops, cancel it there by hand.",
+        "We could not find an active booking that matches this cancellation.",
+        "If this interview is still in Daily Ops, cancel it there.",
     ),
     ("BOOKING_NOT_FOUND", "change"): (
-        "This email changes an interview, but no existing booking was found "
-        "for it, so nothing was changed.",
-        "If the interview is going ahead, book the new time by hand in Daily Ops.",
+        "We could not find an active booking that matches this update.",
+        "If the interview is going ahead, book the new time in Daily Ops.",
     ),
     ("BOOKING_AMBIGUOUS", "cancel"): (
-        "This email cancels an interview, but the candidate has more than one "
-        "booking it could refer to, so nothing was cancelled.",
-        "Open the candidate in Daily Ops and cancel the right booking by hand.",
+        "We found more than one booking for this candidate, so we could not "
+        "tell which interview to cancel.",
+        "If this interview is in Daily Ops, cancel it there.",
     ),
     ("BOOKING_AMBIGUOUS", "change"): (
-        "This email changes an interview, but the candidate has more than one "
-        "booking it could refer to, so nothing was changed.",
-        "Open the candidate in Daily Ops and update the right booking by hand.",
+        "We found more than one booking for this candidate, so we could not "
+        "tell which interview to update.",
+        "Update this interview in Daily Ops, or book it there if it's missing.",
+    ),
+}
+
+# The same failure when an alert kept only the coarse ROUND_NOT_FOUND.
+_UNMATCHED: dict[str, tuple[str, str]] = {
+    "cancel": (
+        "We couldn't match this email to one of the candidate's bookings, so {result}.",
+        "If this interview is in Daily Ops, cancel it there.",
+    ),
+    "change": (
+        "We couldn't match this email to one of the candidate's bookings, so {result}.",
+        "Update this interview in Daily Ops, or book it there if it's missing.",
     ),
 }
 
@@ -302,33 +325,33 @@ _UPDATES_AN_EXISTING_BOOKING: dict[tuple[str, str], tuple[str, str]] = {
 # two together.
 _ASSESSMENT: dict[str, tuple[str, str]] = {
     "ASSESSMENT_WITHOUT_DATE": (
-        "The assessment email doesn't give a date, so no slot was booked.",
-        "Check the email for the assessment date or deadline, then {manual}.",
+        "The assessment email doesn't give a date, so it was not booked.",
+        "Check the email for the date or deadline, then {manual}.",
     ),
     "ASSESSMENT_WINDOW_CLOSED": (
-        "The time allowed for this assessment has already ended, so no slot was booked.",
-        "No action needed, unless the deadline was extended. If it was, {manual}.",
+        "The assessment deadline has already passed, so it was not booked.",
+        "If the deadline was extended, {manual}.",
     ),
     "ASSESSMENT_TIME_PASSED": (
-        "The assessment time has already passed, so no slot was booked.",
+        "The assessment time has already passed, so it was not booked.",
         NO_ACTION,
     ),
     "ASSESSMENT_WINDOW_TOO_SHORT": (
-        "The time allowed is shorter than the assessment itself, so no slot fits.",
-        "Check the dates in the email, and if the assessment is still needed, {manual}.",
+        "There isn't enough time before the deadline to fit the assessment.",
+        "Check the dates in the email, and {manual} if it's still needed.",
     ),
     "ASSESSMENT_SLOT_CONFLICT": (
-        "The assessment time is already taken by another booking, so no slot was booked.",
+        "The assessment time clashes with another booking, so it was not booked.",
         "Check the candidate's bookings, then {manual}.",
     ),
     "ASSESSMENT_NO_FREE_SLOT": (
-        "There's no free time before the assessment deadline, so no slot was booked.",
+        "There's no free time left before the assessment deadline, so it was not booked.",
         "Free up time in the candidate's bookings, or {manual}.",
     ),
 }
 
 _UNEXPECTED = (
-    "Something went wrong while handling this email, so {result}.",
+    "Something went wrong while processing this email, so {result}.",
     _RETRY_THEN_MANUAL,
 )
 
@@ -339,14 +362,10 @@ _BY_REASON_CODE: dict[str, tuple[str, str]] = {
     PAST_INTERVIEW_DATE: _BY_INTERNAL_CODE["PAST_INTERVIEW"],
     NO_MATCHING_SLOT: _BY_INTERNAL_CODE["SLOT_CONFLICT"],
     CANDIDATE_NOT_FOUND: _BY_INTERNAL_CODE["CANDIDATE_MAPPING_FAILED"],
-    ROUND_NOT_FOUND: (
-        "This email couldn't be matched to a single existing booking, so {result}.",
-        "Open the candidate in Daily Ops and {verb} the right booking by hand.",
-    ),
     LOW_CONFIDENCE: _BY_INTERNAL_CODE["LOW_CONFIDENCE"],
     INCOMPLETE_EVIDENCE: _BY_INTERNAL_CODE["AI_NOT_VALIDATED"],
     DUPLICATE_INVITE: (
-        "This invite was already received, so it wasn't booked again.",
+        "We already received this invite, so it was not booked again.",
         NO_ACTION,
     ),
     AI_RETRY_PENDING: _UNEXPECTED,
@@ -356,34 +375,49 @@ _BY_REASON_CODE: dict[str, tuple[str, str]] = {
 }
 
 # The payment check reports one of these instructions, written by
-# `candidate_store.slot_confirm_block_reason`; each is already a plain
-# instruction, so it is used as the action rather than paraphrased.
+# `candidate_store.slot_confirm_block_reason` for Daily Ops. They are shown as
+# they are under Technical details; the action says the same thing more
+# plainly, keeping the amount, which is the part a person needs.
 _OWNER_MISSING = "Assign an owner"
 _PAYMENT_SHORT = "Record at least"
-_REQUIREMENT_INSTRUCTIONS = (
-    _OWNER_MISSING, _PAYMENT_SHORT, "Confirm the slot screenshot", "Set the interview date",
-)
+_SCREENSHOT_MISSING = "Confirm the slot screenshot"
+_DATE_MISSING = "Set the interview date"
+_AMOUNT = re.compile(r"₹[\d,]+")
 
 
 def _requirements(detail: Any) -> tuple[str, str]:
     """PAYMENT_VALIDATION_FAILED, which is not always about payment.
 
-    The same check refuses a slot when nobody owns the candidate, and every
+    The same check refuses a booking when nobody owns the candidate, and every
     such alert used to say "Payment is not cleared".
     """
     instruction = str(detail or "").strip()
     if instruction.startswith(_OWNER_MISSING):
-        reason = "No owner is assigned to this candidate yet, so {result}."
-    elif instruction.startswith(_PAYMENT_SHORT):
-        reason = "The candidate's payment is below the amount needed for a booking, so {result}."
-    else:
-        reason = "The candidate's booking requirements aren't met yet, so {result}."
-    if instruction.startswith(_REQUIREMENT_INSTRUCTIONS):
-        # Braces in stored text must not be read as template fields.
-        first = instruction.replace("{", "{{").replace("}", "}}")
-    else:
-        first = "Update the candidate's payment and owner details."
-    return reason, f"{first} {_RETRY} If it's still not done, {{manual}}."
+        return (
+            "This candidate doesn't have an owner yet, so {result}.",
+            f"Assign an owner to the candidate, {_THEN_RETRY}",
+        )
+    if instruction.startswith(_PAYMENT_SHORT):
+        amount = _AMOUNT.search(instruction)
+        record = f"Record at least {amount.group(0)} as received" if amount else "Record the candidate's payment"
+        return (
+            "The candidate hasn't paid enough yet for a booking, so {result}.",
+            f"{record}, {_THEN_RETRY}",
+        )
+    if instruction.startswith(_SCREENSHOT_MISSING):
+        return (
+            "The slot screenshot isn't marked as posted in the WhatsApp group yet, so {result}.",
+            f"Confirm the slot screenshot was posted in the Interview slots WhatsApp group, {_THEN_RETRY}",
+        )
+    if instruction.startswith(_DATE_MISSING):
+        return (
+            "The candidate's interview date isn't set yet, so {result}.",
+            f"Set the interview date, {_THEN_RETRY}",
+        )
+    return (
+        "Some booking details for this candidate are missing, so {result}.",
+        f"Update the candidate's payment and owner details, {_THEN_RETRY}",
+    )
 
 
 def _code(value: Any) -> str:
@@ -429,11 +463,10 @@ def explain(
     reason_key = _code(reason_code)
     internal_key = _code(internal_code)
     outcome = _outcome(reason_key, internal_key, classification, candidate_status)
+    matching = "cancel" if outcome == "cancel" else "change"
 
     if internal_key in {"BOOKING_NOT_FOUND", "BOOKING_AMBIGUOUS"}:
-        parts = _UPDATES_AN_EXISTING_BOOKING[
-            (internal_key, "cancel" if outcome == "cancel" else "change")
-        ]
+        parts = _UPDATES_AN_EXISTING_BOOKING[(internal_key, matching)]
     elif internal_key == "PAYMENT_VALIDATION_FAILED" or (
         not internal_key and reason_key == PAYMENT_NOT_CLEARED
     ):
@@ -445,6 +478,8 @@ def explain(
     elif reason_key in _BY_INTERNAL_CODE:
         # Assessment blocks store validator-style codes in the reason column.
         parts = _BY_INTERNAL_CODE[reason_key]
+    elif reason_key == ROUND_NOT_FOUND:
+        parts = _UNMATCHED[matching]
     elif reason_key in _BY_REASON_CODE:
         parts = _BY_REASON_CODE[reason_key]
     else:

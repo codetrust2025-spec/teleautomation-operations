@@ -806,7 +806,7 @@ def test_a_blocked_booking_tells_the_notification_why(monkeypatch):
     reason = outcome["notification"]["block_reason"]
     # The validator said which requirement failed; the words say the same.
     assert reason["reason"] == (
-        "The candidate's payment is below the amount needed for a booking, so no slot was created."
+        "The candidate hasn't paid enough yet for a booking, so no booking was created."
     )
     assert reason["reason_code"] == "PAYMENT_NOT_CLEARED"
     # The exact validator branch survives alongside the operator-facing text.
@@ -827,7 +827,7 @@ def test_a_duplicate_booking_says_it_is_already_booked(monkeypatch):
     assert outcome["notification"]["block_reason"]["reason_code"] == "DUPLICATE_BOOKING"
     # Duplicates are found by the calendar event or source mail, never by the
     # round, so the words no longer claim a round.
-    assert "is already booked, so another slot was not created" in (
+    assert "is already booked, so it was not booked again" in (
         outcome["notification"]["block_reason"]["reason"]
     )
 
@@ -842,8 +842,7 @@ def test_a_low_confidence_block_reads_as_confidence_not_as_a_schedule_problem(mo
     assert outcome["notification"]["block_reason"] == {
         "reason_code": "LOW_CONFIDENCE",
         "reason": (
-            "The system wasn't sure enough about this email to act on it "
-            "automatically, so no slot was created."
+            "We weren't sure enough about this email to act on it, so no booking was created."
         ),
         "internal_code": "LOW_CONFIDENCE",
     }
@@ -857,7 +856,7 @@ def test_a_past_interview_block_names_the_date_that_already_passed(monkeypatch):
 
     assert outcome["failure_code"] == "PAST_INTERVIEW"
     assert outcome["notification"]["block_reason"]["reason"] == (
-        "This interview time (2 Jan 2020, 9:30 AM) has already passed, so no slot was created."
+        "This interview time (2 Jan 2020, 9:30 AM) has already passed, so no booking was created."
     )
 
 

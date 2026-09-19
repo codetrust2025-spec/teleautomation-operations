@@ -12,9 +12,9 @@
     "interview_time": "11:00 AM"
   },
   "booking_block": {
-    "title": "Booking not cancelled",
-    "reason": "This email cancels an interview, but the candidate has more than one booking it could refer to, so nothing was cancelled.",
-    "action": "Open the candidate in Daily Ops and cancel the right booking by hand.",
+    "title": "Cancellation not applied",
+    "reason": "We found more than one booking for this candidate, so we could not tell which interview to cancel.",
+    "action": "If this interview is in Daily Ops, cancel it there.",
     "needs_action": true,
     "technical": {
       "reason_code": "ROUND_NOT_FOUND",
