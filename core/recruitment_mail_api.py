@@ -441,7 +441,8 @@ def install_recruitment_mail_routes(app):
         priority:str|None=None, is_read:bool|None=None, is_reviewed:bool|None=None,
         confidence_min:float|None=None, confidence_max:float|None=None,
         date_from:date|None=None, date_to:date|None=None, sort:str='newest',
-        group_by:str|None=None, limit:int=50, offset:int=0,
+        group_by:str|None=None, booking_result:str|None=None,
+        limit:int=50, offset:int=0,
     ):
         _guard();require_fleet_admin(request)
         filters={
@@ -451,6 +452,7 @@ def install_recruitment_mail_routes(app):
             'priority':priority,'is_read':is_read,'is_reviewed':is_reviewed,
             'confidence_min':confidence_min,'confidence_max':confidence_max,
             'date_from':date_from,'date_to':date_to,'sort':sort,
+            'booking_result':booking_result,
         }
         # group_by=candidate makes the page unit the candidate, so the grouped
         # Selection view can show every mail a candidate has without one of

@@ -115,13 +115,22 @@ describe('selects keep a dropdown indicator', () => {
 })
 
 describe('the filter row fits its controls', () => {
-  it('declares a column for each of the three filters', () => {
-    // Mail Alerts renders search, candidate and alert type. A grid declared for
-    // two leaves the third wrapping onto a row of its own, which is how the
-    // "compact" variants were wrong in the first place.
+  it('declares a column for each of the four filters', () => {
+    // Mail Alerts renders search, candidate, alert type and booking result. A
+    // grid declared for fewer leaves the last wrapping onto a row of its own,
+    // which is how the "compact" variants were wrong in the first place.
     const block = css.split('.mail-filters--compact {')[1].split('}')[0]
     const columns = block.match(/grid-template-columns:([^;]+);/)[1]
-    expect(columns.match(/minmax\(/g).length).toBe(3)
+    // repeat(3, minmax(...)) is three columns, not one.
+    const repeated = [...columns.matchAll(/repeat\((\d+),/g)].reduce((sum, m) => sum + Number(m[1]), 0)
+    const single = (columns.replace(/repeat\(\d+,\s*minmax\([^)]*\)\)/g, '').match(/minmax\(/g) || []).length
+    expect(repeated + single).toBe(4)
+  })
+
+  it('goes two by two before a label would be cut off', () => {
+    // Beside the sidebar, four across leaves "All booking results" clipped
+    // from 901px up to about 1130px.
+    expect(/@media[^{]*max-width: 1180px[^{]*\{\s*\.mail-filters--compact\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/.test(css)).toBe(true)
   })
 
   it('stacks them on narrow viewports', () => {

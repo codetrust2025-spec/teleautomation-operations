@@ -1,7 +1,7 @@
 import React from "react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MailMonitoringNotifications, MailNotificationBell, mailStatusTone, blockingReason } from "./MailMonitoringNotifications.jsx";
+import { MailMonitoringNotifications, MailNotificationBell, mailStatusTone, blockingReason, BOOKING_RESULTS } from "./MailMonitoringNotifications.jsx";
 import { ConfirmProvider } from "../context/ConfirmContext.jsx";
 import BLOCKED from "./__fixtures__/blockedBookingNotification.json";
 
@@ -329,5 +329,99 @@ describe("blocked booking reasons", () => {
     expect(screen.queryByText(/^Reason:/)).toBeNull();
     expect(within(dialog).queryByRole("region", { name: "Booking decision" })).toBeNull();
     expect(dialog).toHaveTextContent("Recommended action");
+  });
+});
+
+describe("booking result filter", () => {
+  let listRequests;
+  let summaryRequests;
+
+  beforeEach(() => {
+    listRequests = [];
+    summaryRequests = [];
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    vi.stubGlobal("fetch", vi.fn((url) => {
+      const path = String(url);
+      if (path.includes("/notifications?")) {
+        listRequests.push(new URL(path, "http://test.invalid").searchParams);
+        return response({ notifications: [notification], total: 1 });
+      }
+      if (path.includes("/summary")) {
+        summaryRequests.push(path);
+        return response({ summary: { visible_total: 109, ai_retry_pending: 17, unread: 0 } });
+      }
+      if (path.includes("/candidates")) return response({ candidates: [{ candidate_id: "c1", candidate_name: "Asha Rao" }] });
+      return response({ enabled: true, status: "ok" });
+    }));
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  const lastList = () => listRequests[listRequests.length - 1];
+  const bookingFilter = () => screen.getByRole("combobox", { name: "Booking result filter" });
+
+  it("sits last in the filter row with the three labels", async () => {
+    renderNotifications();
+    await screen.findByText("Rahul Kumar");
+    const row = bookingFilter().closest(".mail-filters");
+    const controls = [...row.querySelectorAll("input, select")].map((control) => control.getAttribute("aria-label"));
+    expect(controls).toEqual(["Search notifications", "Candidate filter", "Alert type filter", "Booking result filter"]);
+    expect([...bookingFilter().options].map((option) => option.textContent))
+      .toEqual(["All booking results", "Successfully booked", "Blocked"]);
+    expect(BOOKING_RESULTS.map((result) => result.value)).toEqual(["booked", "blocked"]);
+  });
+
+  it("asks the server for booked or blocked alerts, and for everything again", async () => {
+    renderNotifications();
+    await screen.findByText("Rahul Kumar");
+    expect(lastList().has("booking_result")).toBe(false);
+    fireEvent.change(bookingFilter(), { target: { value: "booked" } });
+    await waitFor(() => expect(lastList().get("booking_result")).toBe("booked"));
+    fireEvent.change(bookingFilter(), { target: { value: "blocked" } });
+    await waitFor(() => expect(lastList().get("booking_result")).toBe("blocked"));
+    fireEvent.change(bookingFilter(), { target: { value: "" } });
+    await waitFor(() => expect(lastList().has("booking_result")).toBe(false));
+  });
+
+  it("combines with the candidate, alert type and search filters", async () => {
+    renderNotifications();
+    await screen.findByText("Rahul Kumar");
+    await screen.findByRole("option", { name: "Asha Rao" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Candidate filter" }), { target: { value: "c1" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Alert type filter" }), { target: { value: "interview" } });
+    fireEvent.change(screen.getByLabelText("Search notifications"), { target: { value: "Java" } });
+    fireEvent.change(bookingFilter(), { target: { value: "blocked" } });
+    await waitFor(() => expect(lastList().get("booking_result")).toBe("blocked"));
+    expect(lastList().get("candidate_id")).toBe("c1");
+    expect(lastList().get("classification_group")).toBe("interview");
+    expect(lastList().get("search")).toBe("Java");
+    // A new filter always starts from the first page.
+    expect(lastList().get("offset")).toBe("0");
+  });
+
+  it("leaves the summary counts global", async () => {
+    renderNotifications();
+    await screen.findByText("Rahul Kumar");
+    fireEvent.change(bookingFilter(), { target: { value: "booked" } });
+    await waitFor(() => expect(lastList().get("booking_result")).toBe("booked"));
+    // The cards count everything, whatever the table is filtered to.
+    expect(summaryRequests.every((path) => !path.includes("?"))).toBe(true);
+    expect(screen.getByRole("button", { name: /109\s*All/ })).toBeInTheDocument();
+  });
+
+  it("is cleared by the All card, with every other filter", async () => {
+    renderNotifications();
+    await screen.findByText("Rahul Kumar");
+    await screen.findByRole("option", { name: "Asha Rao" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Candidate filter" }), { target: { value: "c1" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Alert type filter" }), { target: { value: "interview" } });
+    fireEvent.change(bookingFilter(), { target: { value: "blocked" } });
+    await waitFor(() => expect(lastList().get("booking_result")).toBe("blocked"));
+    fireEvent.click(screen.getByRole("button", { name: /109\s*All/ }));
+    await waitFor(() => expect(lastList().has("booking_result")).toBe(false));
+    // It used to send candidate_id=undefined, which no row matches, so "All"
+    // emptied the table.
+    expect(lastList().toString()).not.toContain("undefined");
+    for (const key of ["candidate_id", "classification_group", "search"]) expect(lastList().has(key)).toBe(false);
+    expect(bookingFilter()).toHaveValue("");
   });
 });

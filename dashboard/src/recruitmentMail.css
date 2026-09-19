@@ -2195,11 +2195,23 @@
 .mail-summary--compact {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
-/* Search, candidate, alert type. Declared for the three controls the screen
-   actually renders: the previous two-column version left the third wrapping
-   onto a row of its own while the other two shared the first. */
+/* Search, candidate, alert type, booking result. Declared for the four
+   controls the screen actually renders: a template one short leaves the last
+   control wrapping onto a row of its own, which is what the two-column
+   version did to the third. */
 .mail-filters--compact {
-  grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(150px, 1fr);
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(150px, 1fr));
+}
+/* Four across needs the width to keep every label whole. Beside the 232px
+   sidebar the row is the viewport less 324px: at 1025px a dropdown gets
+   about 135px, 95px of it for text, and "All booking results" needs 115px;
+   at 1024px and below index.css raises every select to 16px, and it needs
+   160px. Two by two keeps each label whole until the phone layout below
+   stacks them. */
+@media (max-width: 1180px) {
+  .mail-filters--compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 /* Narrow viewports stack them instead, since three controls across a phone
    leaves each too small to read its own label. */
