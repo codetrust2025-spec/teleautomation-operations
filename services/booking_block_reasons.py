@@ -202,8 +202,8 @@ _BY_INTERNAL_CODE: dict[str, tuple[str, str]] = {
     ),
     # Both past-interview alerts production held on 19 Sep 2026 were real
     # interviews missing from Daily Ops: one invite arrived a minute before the
-    # start and was processed two minutes after it, the other came nine
-    # minutes into the call. "No action needed" told nobody to look.
+    # start and was processed two minutes after it, the other arrived nine
+    # minutes after the start. "No action needed" told nobody to look.
     "PAST_INTERVIEW": (
         "This interview time{when} has already passed, so {result}.",
         "If the interview took place, make sure it's in Daily Ops.",
@@ -284,9 +284,9 @@ _BY_INTERNAL_CODE: dict[str, tuple[str, str]] = {
 # booking it is about. These are the two ways that fails.
 #
 # The validator raises BOOKING_AMBIGUOUS both when two bookings match equally
-# and when none of several matches at all. All three alerts production held on
-# 19 Sep 2026 were the second kind: none of those interviews had a booking. So no
-# action here assumes the right booking exists.
+# and when none of several matches at all. In all three alerts production held
+# on 19 Sep 2026 the interview being cancelled had no booking, while others
+# stood beside it. So no action here assumes the right booking exists.
 _UPDATES_AN_EXISTING_BOOKING: dict[tuple[str, str], tuple[str, str]] = {
     ("BOOKING_NOT_FOUND", "cancel"): (
         "We could not find an active booking that matches this cancellation.",

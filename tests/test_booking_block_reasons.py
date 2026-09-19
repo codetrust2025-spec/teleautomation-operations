@@ -297,10 +297,9 @@ def test_matching_an_existing_booking_is_never_called_a_round_problem(code):
 
 @pytest.mark.parametrize("code", ["BOOKING_NOT_FOUND", "BOOKING_AMBIGUOUS"])
 def test_a_cancellation_that_matched_nothing_never_points_at_a_booking(code):
-    """BOOKING_AMBIGUOUS is also raised when none of several bookings matches,
-    and all three alerts production held on 19 Sep 2026 were that: the interviews
-    being cancelled had no booking. "Cancel the right booking by hand" sent a
-    person looking for one, with others standing beside it."""
+    """In all three alerts production held on 19 Sep 2026 the interview being
+    cancelled had no booking, while the candidate had others. "Cancel the right
+    booking by hand" sent a person looking for one that did not exist."""
     action = reasons.explain("ROUND_NOT_FOUND", code, classification="interview_cancelled")["action"]
     assert action.startswith("If this interview is")
     assert "cancel it there" in action
@@ -333,8 +332,9 @@ def test_an_old_review_alert_does_not_ask_for_a_second_booking():
 
 
 def test_already_booked_never_names_the_email_s_time():
-    """The duplicate check matches on the calendar event, and a booking that
-    moved keeps its event: Uday's alert said 3 Sep, and his booking is 4 Sep."""
+    """The duplicate check matches on the calendar event or the source mail,
+    and a booking that moved keeps both, so the email's time can be one the
+    booking no longer has."""
     explanation = reasons.explain("DUPLICATE_BOOKING", "DUPLICATE_BOOKING",
                                   classification="interview_confirmed", date="2026-09-03", time="14:30")
     assert explanation["reason"] == "This interview is already booked, so it was not booked again."
