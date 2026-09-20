@@ -1551,7 +1551,7 @@ def calendar_invite_recovery_discovery(*, limit: int = 500) -> dict[str, Any]:
     empty = {
         "summary": {
             "total": 0, "recovery_candidates": 0, "already_represented": 0,
-            "stale_or_cancelled": 0, "already_assessed": 0,
+            "cancelled_or_superseded": 0, "past_never_booked": 0, "already_assessed": 0,
         },
         "records": [],
     }

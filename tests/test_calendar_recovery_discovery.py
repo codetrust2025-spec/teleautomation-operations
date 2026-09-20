@@ -1,11 +1,17 @@
 from core import recruitment_mail_store as store
 
 from datetime import datetime, timezone
-from services.calendar_recovery_discovery import classify_records
+from services.calendar_recovery_discovery import DISCOVERY_LABELS as LABELS, classify_records
+
+# One event, spelled out once: the tests differ only in method, uid and day.
+ICS = chr(10).join([
+    'BEGIN:VCALENDAR', 'METHOD:{method}', 'BEGIN:VEVENT', 'UID:{uid}', 'SEQUENCE:0',
+    'DTSTART:{date}T090000Z', 'DTEND:{date}T100000Z', 'END:VEVENT', 'END:VCALENDAR',
+])
 
 
-def classify(*, slots=(), audits=(), extra=(), date='20260911', method='REQUEST'):
-    row = dict(mailbox_message_id='m', mailbox_id='box', canonical_candidate_id='alias')
+def classify(*, slots=(), audits=(), extra=(), date='20260911', method='REQUEST', **fields):
+    row = dict(mailbox_message_id='m', mailbox_id='box', canonical_candidate_id='alias', **fields)
     cal = dict(row, extracted_text=f'BEGIN:VCALENDAR\nMETHOD:{method}\nBEGIN:VEVENT\nUID:uid\nSEQUENCE:0\nDTSTART:{date}T090000Z\nDTEND:{date}T100000Z\nEND:VEVENT\nEND:VCALENDAR')
     return classify_records([row], calendars=[cal, *extra], slots=slots, audits=audits,
                             links={'alias': 'person'}, now=datetime(2026, 9, 10, 12, tzinfo=timezone.utc))['records'][0]
@@ -30,13 +36,13 @@ def test_matching_uid_but_wrong_persisted_schedule_is_not_already_represented():
 
 
 def test_past_source_calendar_is_not_a_recovery_candidate():
-    assert classify(date='20260909')['discovery_state'] == 'STALE_OR_CANCELLED'
+    assert classify(date='20260909')['discovery_state'] == 'PAST_NEVER_BOOKED'
 
 
 def test_unprocessed_source_cancellation_supersedes_ignored_confirmation():
     cancellation = dict(mailbox_message_id='cancel', mailbox_id='box', extracted_text='BEGIN:VCALENDAR\nMETHOD:CANCEL\nBEGIN:VEVENT\nUID:uid\nSEQUENCE:1\nEND:VEVENT\nEND:VCALENDAR')
-    assert classify(extra=[cancellation])['discovery_state'] == 'STALE_OR_CANCELLED'
-    assert classify(method='CANCEL')['discovery_state'] == 'STALE_OR_CANCELLED'
+    assert classify(extra=[cancellation])['discovery_state'] == 'CANCELLED_OR_SUPERSEDED'
+    assert classify(method='CANCEL')['discovery_state'] == 'CANCELLED_OR_SUPERSEDED'
 
 
 def test_other_mailbox_cancellation_does_not_supersede_persons_invite():
@@ -54,8 +60,62 @@ def test_calendar_recovery_discovery_is_read_only_without_postgres(monkeypatch):
             "total": 0,
             "recovery_candidates": 0,
             "already_represented": 0,
-            "stale_or_cancelled": 0,
+            "cancelled_or_superseded": 0,
+            "past_never_booked": 0,
             "already_assessed": 0,
         },
         "records": [],
+    }
+def test_a_past_invite_with_no_booking_is_its_own_state():
+    """Filed with the cancellations, it read as history working correctly. It
+    may be an interview that happened and was never recorded."""
+    row = classify(date='20260909', ignore_reason='IGNORED_LOW_CONFIDENCE',
+                   sent_at='2026-09-08T10:00:00+00:00', candidate_name='Synthetic',
+                   company_name='Example')
+
+    assert row['discovery_state'] == 'PAST_NEVER_BOOKED'
+    assert row['label'] == LABELS['PAST_NEVER_BOOKED']
+    # Who, where, when it was due, when the mail came, and why nothing holds it.
+    assert (row['candidate_name'], row['company']) == ('Synthetic', 'Example')
+    assert row['start_ist'].startswith('2026-09-09T14:30')
+    assert row['sent_at'] == '2026-09-08T10:00:00+00:00'
+    assert row['reason'] == ('Interview start is in the past and no confirmed slot holds it; '
+                             'the mail was set aside as IGNORED_LOW_CONFIDENCE.')
+
+
+def test_a_past_invite_says_what_it_can_when_the_mail_gave_no_reason():
+    assert classify(date='20260909')['reason'] == (
+        'Interview start is in the past and no confirmed slot holds it.'
+    )
+
+
+def test_a_candidate_with_no_alert_is_named_from_the_roster():
+    row = classify(date='20260909', slots=[dict(id='person', name='Roster Only')])
+    assert row['candidate_name'] == 'Roster Only'
+
+
+def test_a_cancelled_invite_stays_separate_even_when_its_time_has_passed():
+    """The two buckets must not collapse back into one: a cancellation that is
+    also old is still a cancellation."""
+    row = classify(date='20260909', method='CANCEL')
+    assert row['discovery_state'] == 'CANCELLED_OR_SUPERSEDED'
+    assert row['label'] == LABELS['CANCELLED_OR_SUPERSEDED']
+
+
+def test_the_summary_counts_the_two_kinds_apart():
+    def record(name, date, method='REQUEST'):
+        row = dict(mailbox_message_id=name, mailbox_id='box', canonical_candidate_id='alias')
+        ics = ICS.format(method=method, uid=name, date=date)
+        return row, dict(row, extracted_text=ics)
+
+    rows, cals = zip(record('past', '20260909'), record('gone', '20260909', 'CANCEL'),
+                     record('ahead', '20260911'))
+    report = classify_records(list(rows), calendars=list(cals), slots=[], audits=[],
+                              links={'alias': 'person'},
+                              now=datetime(2026, 9, 10, 12, tzinfo=timezone.utc))
+
+    assert report['summary'] == {
+        'total': 3, 'recovery_candidates': 1, 'already_represented': 0,
+        'cancelled_or_superseded': 1, 'past_never_booked': 1,
+        'already_assessed': 0, 'unresolved': 0,
     }

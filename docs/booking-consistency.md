@@ -46,7 +46,11 @@ compares source UID/SEQUENCE and source cancellations, timezone-normalized time,
 canonical person and actual confirmed slots. An audit row is not enough to mark
 an invite represented. The endpoint never calls AI, leases mail, or reprocesses
 it. `RECOVERY_CANDIDATE` means source evidence needs the normal AI, payment and
-lifecycle checks, not that booking has been authorized. Worker allowlists and
+lifecycle checks, not that booking has been authorized. An invite with no
+booking is reported as one of two states, never one: `CANCELLED_OR_SUPERSEDED`
+for a revision that was called off or replaced, and `PAST_NEVER_BOOKED` for an
+interview that has gone by with nothing holding its hour -- which may be one
+that happened and was never recorded. Worker allowlists and
 Claude's classifier/relevance rules are unchanged.
 
 ## Release verification

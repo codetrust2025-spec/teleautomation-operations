@@ -1,10 +1,36 @@
-"""Read-only discovery, not permission to replay historical mail."""
+"""Read-only discovery, not permission to replay historical mail.
+
+An invite with no booking behind it is two different things, and they were
+filed together. A cancelled or superseded revision is history working
+correctly: nothing should hold that hour. An invite whose interview has gone by
+with no booking at all is the opposite -- it may be an interview that happened
+and was never recorded, and calling it stale is how two of them stayed
+invisible for weeks. They are separate states now, so the second kind can be
+looked at.
+
+Nothing here books, cancels, reschedules or edits anything.
+"""
 from collections import Counter
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from services.calendar_invite_parser import parse_calendar
 from services.recruitment_identity import resolve
+
+CANCELLED_OR_SUPERSEDED = "CANCELLED_OR_SUPERSEDED"
+PAST_NEVER_BOOKED = "PAST_NEVER_BOOKED"
+ALREADY_REPRESENTED = "ALREADY_REPRESENTED"
+RECOVERY_CANDIDATE = "RECOVERY_CANDIDATE"
+UNRESOLVED = "UNRESOLVED"
+
+#: What each state is called where a person reads it.
+DISCOVERY_LABELS = {
+    CANCELLED_OR_SUPERSEDED: "Cancelled / superseded",
+    PAST_NEVER_BOOKED: "Past interview — never booked",
+    ALREADY_REPRESENTED: "Already booked",
+    RECOVERY_CANDIDATE: "Recovery candidate",
+    UNRESOLVED: "Unresolved",
+}
 
 
 def classify_records(records, *, calendars, slots, audits, links, now=None):
@@ -15,14 +41,19 @@ def classify_records(records, *, calendars, slots, audits, links, now=None):
         calendar = parse_calendar(source.get('extracted_text') or '')
         if calendar:
             parsed.append((source, calendar))
+    names = {str(row.get('id')): row.get('name') for row in slots if row.get('name')}
     output = []
     for source in records:
         row = dict(source)
         person = resolve(row.get('canonical_candidate_id') or '', links)
         row['canonical_candidate_id'] = person
         matches = [cal for m, cal in parsed if m['mailbox_message_id'] == row['mailbox_message_id']]
-        row['discovery_state'] = 'UNRESOLVED'
+        row['discovery_state'] = UNRESOLVED
         row['reason'] = 'Calendar evidence missing or ambiguous; no automatic recovery authorized.'
+        # Who and where, so a past invite reads on its own without another query.
+        row['candidate_name'] = (row.get('candidate_name') or names.get(person)
+                                 or names.get(row.get('canonical_candidate_id') or '') or '')
+        row['company'] = row.get('company_name') or ''
         if len(matches) == 1:
             cal = matches[0]
             uid = str(cal.get('uid') or '').casefold()
@@ -55,21 +86,29 @@ def classify_records(records, *, calendars, slots, audits, links, now=None):
                          and str(s.get('time') or '')[:5] == local_start.strftime('%H:%M')
                          and str(s.get('time_end') or '')[:5] == local_end.strftime('%H:%M')]
             if cancelled or superseded:
-                row.update(discovery_state='STALE_OR_CANCELLED', reason='Cancelled or superseded calendar revision.')
+                row.update(discovery_state=CANCELLED_OR_SUPERSEDED,
+                           reason='Cancelled or superseded calendar revision.')
             elif persisted:
-                row.update(discovery_state='ALREADY_REPRESENTED', booking_ids=[s['id'] for s in persisted],
+                row.update(discovery_state=ALREADY_REPRESENTED, booking_ids=[s['id'] for s in persisted],
                            reason='Confirmed persisted slot matches person, UID, revision and exact schedule.')
             elif start and start <= now:
-                row.update(discovery_state='STALE_OR_CANCELLED', reason='Interview start is in the past.')
+                # Why no booking exists, as far as this report can see: the mail
+                # was set aside, and the interview has gone by since.
+                ignored = str(row.get('ignore_reason') or '').strip()
+                row.update(discovery_state=PAST_NEVER_BOOKED,
+                           reason='Interview start is in the past and no confirmed slot holds it'
+                                  + (f'; the mail was set aside as {ignored}.' if ignored else '.'))
             elif start and end and uid:
-                row.update(discovery_state='RECOVERY_CANDIDATE',
+                row.update(discovery_state=RECOVERY_CANDIDATE,
                            reason='Future calendar not represented by a confirmed slot; AI, payment and lifecycle checks still required.')
+        row['label'] = DISCOVERY_LABELS.get(row['discovery_state'], row['discovery_state'])
         output.append(row)
     counts = Counter(r['discovery_state'] for r in output)
-    return {'summary': {'total': len(output), 'recovery_candidates': counts['RECOVERY_CANDIDATE'],
-                       'already_represented': counts['ALREADY_REPRESENTED'],
-                       'stale_or_cancelled': counts['STALE_OR_CANCELLED'],
-                       'already_assessed': 0, 'unresolved': counts['UNRESOLVED']}, 'records': output}
+    return {'summary': {'total': len(output), 'recovery_candidates': counts[RECOVERY_CANDIDATE],
+                       'already_represented': counts[ALREADY_REPRESENTED],
+                       'cancelled_or_superseded': counts[CANCELLED_OR_SUPERSEDED],
+                       'past_never_booked': counts[PAST_NEVER_BOOKED],
+                       'already_assessed': 0, 'unresolved': counts[UNRESOLVED]}, 'records': output}
 
 
 def load_report(*, limit=500):
@@ -84,8 +123,13 @@ def load_report(*, limit=500):
         links = dict(cur.fetchall())
         cur.execute("""SELECT m.id AS mailbox_message_id,m.mailbox_id,m.provider_message_id,
                  m.subject,m.sent_at,m.ignore_reason,m.processing_status,
-                 b.candidate_id AS canonical_candidate_id
+                 b.candidate_id AS canonical_candidate_id,
+                 n.candidate_name,n.company_name
             FROM mailbox_messages m JOIN candidate_mailboxes b ON b.id=m.mailbox_id
+            LEFT JOIN LATERAL (
+                SELECT candidate_name,company_name FROM mail_monitoring_notifications x
+                 WHERE x.gmail_message_id=m.provider_message_id ORDER BY x.created_at LIMIT 1
+            ) n ON true
             WHERE m.processing_status IN ('AUTO_IGNORE','IGNORED_NOT_OFFER_RELATED','IGNORED_LOW_CONFIDENCE')
               AND m.ignore_reason=ANY(%s)
               AND EXISTS(SELECT 1 FROM mailbox_attachments a WHERE a.mailbox_message_id=m.id
