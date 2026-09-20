@@ -1562,8 +1562,8 @@ def _normalise(record: dict, *, existing: dict | None = None) -> dict:
         "purpose":          _normalise_purpose(record.get("purpose"), base),
         "date":             _clean_str(record.get("date", base.get("date"))),
         "logged_date":      _clean_str(record.get("logged_date", base.get("logged_date"))),
-        "time":             _clean_str(record.get("time", base.get("time"))),
-        "time_end":         _clean_str(record.get("time_end", base.get("time_end"))),
+        "time":             normalise_interview_clock(record.get("time", base.get("time"))),
+        "time_end":         normalise_interview_clock(record.get("time_end", base.get("time_end"))),
         "expenses":         _clean_str(record.get("expenses", base.get("expenses"))),
         "notes":            sanitize_candidate_notes(_clean_str(record.get("notes", base.get("notes")))),
         "interview_attendee": _canonical_reference_name(
@@ -2696,6 +2696,29 @@ def _slot_chronological_sort_key(row: dict) -> tuple:
     return (day, time_mins, (row.get("name") or "").lower())
 
 
+def normalise_interview_clock(value: str) -> str:
+    """A slot time as the schema promises it: "HH:MM", 24 hour.
+
+    The roster stored whatever was typed. Production held a 3pm and a 4pm,
+    booked by hand for the same afternoon, and every reader that parses rather
+    than sorts -- the exact-schedule match in the calendar recovery report, the
+    "had this started?" guard on missed-interview mail, anything using
+    strptime -- silently failed on them while the sort key coped. Sorting was
+    never the contract; the shape is.
+
+    Anything unreadable is handed back as it came, so no import loses a value
+    it cannot express. `_validate_interview_slot_times` is where a booking
+    refuses one.
+    """
+    raw = _clean_str(value)
+    if not raw:
+        return ""
+    minutes = _interview_time_sort_key(raw)[0]
+    if minutes >= 24 * 60:
+        return raw
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 def _slot_range_minutes(time: str, time_end: str = "") -> tuple[int, int] | None:
     """Start/end minutes since midnight; default 1hr when end missing or invalid."""
     start = _interview_time_sort_key(time or "")[0]
@@ -2908,10 +2931,12 @@ def slot_row_matches(row: dict | None, *, date: str, time: str, time_end: str) -
     """True when a stored row really holds this confirmed slot."""
     if not isinstance(row, dict):
         return False
+    # Compared as times, not as strings: the row stores the canonical "HH:MM"
+    # and a caller may be holding the "02:00 PM" it submitted.
     return (
         _clean_str(row.get("date"))[:10] == _clean_str(date)[:10]
-        and _clean_str(row.get("time")) == _clean_str(time)
-        and _clean_str(row.get("time_end")) == _clean_str(time_end)
+        and normalise_interview_clock(row.get("time")) == normalise_interview_clock(time)
+        and normalise_interview_clock(row.get("time_end")) == normalise_interview_clock(time_end)
         and _coerce_bool(row.get("slot_confirmed"))
     )
 
@@ -4399,6 +4424,9 @@ def _validate_interview_slot_times(start: str, end: str) -> None:
         raise ValueError("Interview start time is required")
     if not slot_end:
         raise ValueError("Interview end time is required")
+    for label, value in (("start", slot_start), ("end", slot_end)):
+        if _interview_time_sort_key(value)[0] >= 24 * 60:
+            raise ValueError(f"Interview {label} time must be a time of day, like 15:00 or 3:00 PM")
     if _interview_time_sort_key(slot_end)[0] <= _interview_time_sort_key(slot_start)[0]:
         raise ValueError("End time must be after start time")
 
