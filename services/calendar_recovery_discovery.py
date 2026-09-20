@@ -81,16 +81,40 @@ def classify_records(records, *, calendars, slots, audits, links, now=None):
             superseded = superseded or any(version(s) > cal['sequence'] for s in same_interview)
             local_start = start.astimezone(ZoneInfo('Asia/Kolkata')) if start else None
             local_end = end.astimezone(ZoneInfo('Asia/Kolkata')) if end else None
-            persisted = [s for s in same_interview if version(s) == cal['sequence'] and local_start and local_end
-                         and str(s.get('date') or '')[:10] == local_start.date().isoformat()
-                         and str(s.get('time') or '')[:5] == local_start.strftime('%H:%M')
-                         and str(s.get('time_end') or '')[:5] == local_end.strftime('%H:%M')]
+            def holds_exactly(slot):
+                return (local_start and local_end
+                        and str(slot.get('date') or '')[:10] == local_start.date().isoformat()
+                        and str(slot.get('time') or '')[:5] == local_start.strftime('%H:%M')
+                        and str(slot.get('time_end') or '')[:5] == local_end.strftime('%H:%M'))
+
+            persisted = [s for s in same_interview if version(s) == cal['sequence'] and holds_exactly(s)]
+            matched_by = 'calendar event'
+            if not persisted:
+                # A slot booked by hand carries no calendar id, so the UID can
+                # never match and the invite reads as unbooked: Keerthi's 21 Sep
+                # interview was reported as having no booking the day before it,
+                # while the booking sat in Daily Ops. The schedule can still be
+                # matched, and strictly -- the same person, the same day, the
+                # same start and the same end, on a row that claims no calendar
+                # event of its own, so this can never shadow a different
+                # meeting that happens to share the hour.
+                persisted = [s for s in slots
+                             if s.get('slot_confirmed')
+                             and not str(s.get('interview_calendar_uid') or '').strip()
+                             and owners.get(s['id'], resolve(s.get('canonical_candidate_id') or s['id'], links)) == person
+                             and holds_exactly(s)]
+                if persisted:
+                    matched_by = 'exact schedule'
             if cancelled or superseded:
                 row.update(discovery_state=CANCELLED_OR_SUPERSEDED,
                            reason='Cancelled or superseded calendar revision.')
             elif persisted:
                 row.update(discovery_state=ALREADY_REPRESENTED, booking_ids=[s['id'] for s in persisted],
-                           reason='Confirmed persisted slot matches person, UID, revision and exact schedule.')
+                           matched_by=matched_by,
+                           reason=('Confirmed persisted slot matches person, UID, revision and exact schedule.'
+                                   if matched_by == 'calendar event' else
+                                   'A confirmed slot with no calendar id of its own holds exactly this '
+                                   'person, day, start and end.'))
             elif start and start <= now:
                 # Why no booking exists, as far as this report can see: the mail
                 # was set aside, and the interview has gone by since.

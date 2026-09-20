@@ -1,3 +1,5 @@
+import pytest
+
 from core import recruitment_mail_store as store
 
 from datetime import datetime, timezone
@@ -119,3 +121,51 @@ def test_the_summary_counts_the_two_kinds_apart():
         'cancelled_or_superseded': 1, 'past_never_booked': 1,
         'already_assessed': 0, 'unresolved': 0,
     }
+
+
+# ── A booking made by hand still represents the invite ──────────────────────
+
+def hand_booked(**overrides):
+    """A slot as Daily Ops writes it: no calendar id of its own."""
+    return dict({"id": "person", "slot_confirmed": True, "date": "2026-09-11",
+                 "time": "14:30", "time_end": "15:30"}, **overrides)
+
+
+def test_a_hand_booked_slot_represents_the_invite_it_matches_exactly():
+    """A production interview was reported as having no booking the day before
+    it, while the booking sat in Daily Ops: it had been typed in, so it carries
+    no calendar id and the UID could never match."""
+    row = classify(slots=[hand_booked()])
+
+    assert row["discovery_state"] == "ALREADY_REPRESENTED"
+    assert row["booking_ids"] == ["person"]
+    assert row["matched_by"] == "exact schedule"
+    assert "no calendar id of its own" in row["reason"]
+
+
+def test_a_slot_claiming_another_calendar_event_never_matches_on_the_hour():
+    """Two meetings can share an hour. A row that names a different event is
+    not this invite, however well the clock lines up."""
+    assert classify(slots=[hand_booked(interview_calendar_uid="other-uid")],
+                    audits=[dict(booking_id="person", candidate_id="alias")]
+                    )["discovery_state"] == "RECOVERY_CANDIDATE"
+
+
+@pytest.mark.parametrize("difference", [
+    dict(time="14:00"), dict(time_end="15:00"), dict(date="2026-09-12"),
+    dict(slot_confirmed=False),
+])
+def test_anything_less_than_the_exact_schedule_is_not_a_match(difference):
+    assert classify(slots=[hand_booked(**difference)])["discovery_state"] == "RECOVERY_CANDIDATE"
+
+
+def test_another_persons_slot_at_the_same_time_is_not_a_match():
+    assert classify(slots=[hand_booked(id="someone-else")])["discovery_state"] == "RECOVERY_CANDIDATE"
+
+
+def test_the_calendar_event_is_still_the_first_way_to_match():
+    row = classify(slots=[hand_booked(id="s", interview_calendar_uid="uid")],
+                   audits=[dict(booking_id="s", candidate_id="alias")])
+
+    assert row["discovery_state"] == "ALREADY_REPRESENTED"
+    assert row["matched_by"] == "calendar event"
