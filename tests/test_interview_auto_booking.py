@@ -1233,3 +1233,101 @@ def test_reschedule_never_moves_the_only_slot_of_a_different_calendar_event(monk
     outcome = execute(value)
     assert outcome["failure_code"] == "BOOKING_NOT_FOUND"
     assert moved == [], "an unrelated calendar event must never be rescheduled"
+# ── A missed interview is not a licence to cancel the next one ──────────────
+
+MISSED_INTERVIEW_MAIL = {
+    "provider_message_id": "gm-missed", "provider_thread_id": "gt1",
+    "subject": "Missed Interview Opportunity (Specialist, AI SRE Engineer / EY)",
+    "body": (
+        "Hi GOPICHAND, Looks like you missed your interview for the "
+        "\"Specialist, AI SRE Engineer\" role at \"EY\". No problem, we can help "
+        "you get it rescheduled quickly."
+    ),
+    "sent_at": "2026-09-03T14:02:00+00:00",  # 7:32 PM IST
+}
+
+
+def execute_mail(value, message):
+    return booking.execute_auto_booking(
+        mailbox={"id": "mb1", "candidate_id": "c1", "email_address": "candidate@test.invalid"},
+        message=message,
+        event={"mailbox_message_id": "mm-missed", "notification": {"id": "n1", "email_analysis_id": "ma1"}},
+        result=value, correlation_id="corr-missed",
+    )
+
+
+def _cancellation():
+    return result("interview_cancelled", date=None, time=None, timezone=None, round=None)
+
+
+def test_a_missed_interview_mail_never_cancels_a_booking_that_had_not_started(monkeypatch):
+    """Production read this mail as a cancellation on 11 Sep for an interview
+    missed on 3 Sep, and every booking the candidate held by then was a later
+    one. A single match would have cancelled a live interview."""
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    later = {"id": "slot-later", "name": "Rahul", "slot_confirmed": True,
+             "date": "2026-09-07", "time": "19:30"}
+    _candidate, audits = install_store_fakes(monkeypatch, rows=[later])
+    cancelled = []
+    monkeypatch.setattr(
+        booking.candidate_store, "cancel_interview_slot",
+        lambda **kwargs: cancelled.append(kwargs) or {"id": kwargs["candidate_id"]},
+    )
+
+    outcome = execute_mail(_cancellation(), MISSED_INTERVIEW_MAIL)
+
+    assert outcome["failure_code"] == "BOOKING_NOT_FOUND"
+    assert cancelled == [], "an interview that had not started cannot have been missed"
+    assert audits[-1]["booking_status"] == "Blocked"
+
+
+def test_a_missed_interview_mail_still_releases_the_interview_it_is_about(monkeypatch):
+    """Pujitha's Persistent Systems slot stayed confirmed for an interview the
+    mail said she had missed. Releasing that one is what reading these mails as
+    cancellations is for, and it still happens."""
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    missed = {"id": "slot-missed", "name": "Rahul", "slot_confirmed": True,
+              "date": "2026-09-03", "time": "12:30"}
+    install_store_fakes(monkeypatch, rows=[missed])
+    monkeypatch.setattr(booking.candidate_store, "cancel_interview_slot",
+                        lambda **kwargs: {"id": kwargs["candidate_id"]})
+
+    outcome = execute_mail(_cancellation(), MISSED_INTERVIEW_MAIL)
+
+    assert outcome["status"] == "Cancelled"
+    assert outcome["booking"]["id"] == "slot-missed"
+
+
+def test_a_missed_interview_mail_chooses_the_interview_that_had_started(monkeypatch):
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    rows = [
+        {"id": "slot-missed", "name": "Rahul", "slot_confirmed": True,
+         "date": "2026-09-03", "time": "12:30"},
+        {"id": "slot-later", "name": "Rahul", "slot_confirmed": True,
+         "date": "2026-09-09", "time": "18:30"},
+    ]
+    install_store_fakes(monkeypatch, rows=rows)
+    monkeypatch.setattr(booking.candidate_store, "cancel_interview_slot",
+                        lambda **kwargs: {"id": kwargs["candidate_id"]})
+
+    outcome = execute_mail(_cancellation(), MISSED_INTERVIEW_MAIL)
+
+    assert outcome["status"] == "Cancelled"
+    assert outcome["booking"]["id"] == "slot-missed"
+
+
+def test_a_plain_cancellation_still_reaches_a_booking_that_has_not_happened(monkeypatch):
+    """The guard reads the mail, not the classification."""
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    upcoming = {"id": "slot-upcoming", "name": "Rahul", "slot_confirmed": True,
+                "date": "2099-08-06", "time": "15:30"}
+    install_store_fakes(monkeypatch, rows=[upcoming])
+    monkeypatch.setattr(booking.candidate_store, "cancel_interview_slot",
+                        lambda **kwargs: {"id": kwargs["candidate_id"]})
+    plain = {**MISSED_INTERVIEW_MAIL, "subject": "Interview canceled: Thu, August 27",
+             "body": "The interview has been cancelled by the organiser."}
+
+    outcome = execute_mail(_cancellation(), plain)
+
+    assert outcome["status"] == "Cancelled"
+    assert outcome["booking"]["id"] == "slot-upcoming"

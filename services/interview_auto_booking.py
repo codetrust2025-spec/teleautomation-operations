@@ -419,10 +419,52 @@ def _reference_schedule(result: dict[str, Any], classification: str) -> dict[str
     return {"date": local.date().isoformat(), "time": local.strftime("%H:%M")}
 
 
+# "Looks like you missed your interview ... we can help you get it rescheduled
+# quickly." A mail like this may release the booking it is about -- a missed
+# interview must not stay confirmed, which is why the source parser reads it as
+# a cancellation at all -- but it is about an interview that has already
+# happened. Gopichand's was read on 11 Sep for an interview missed on 3 Sep,
+# and every booking he held by then was a later one, any of which a single
+# match would have cancelled.
+_MISSED_INTERVIEW = re.compile(
+    r"missed (?:your|the|his|her|their|this|an?) interview"
+    r"|missed interview"
+    r"|did\s?n[o’']?t (?:attend|join|show up)"
+    r"|no[\s-]show"
+    r"|(?:were|was) not able to attend",
+    re.IGNORECASE,
+)
+
+
+def _reads_as_missed_interview(message: dict[str, Any]) -> bool:
+    text = " ".join(str(message.get(key) or "") for key in ("subject", "body"))
+    return bool(_MISSED_INTERVIEW.search(text))
+
+
+def _started_before(row: dict[str, Any], moment: datetime) -> bool:
+    """Whether a booking had already started then. An unreadable time has not."""
+    try:
+        day = date.fromisoformat(str(row.get("date") or "")[:10])
+        clock = datetime.strptime(str(row.get("time") or "")[:5], "%H:%M").time()
+    except ValueError:
+        return False
+    return datetime.combine(day, clock, ZoneInfo("Asia/Kolkata")) <= moment
+
+
 def _resolve_existing_slot(
     slots: list[dict[str, Any]], *, result: dict[str, Any], message: dict[str, Any], classification: str,
 ) -> dict[str, Any]:
     """Resolve one slot using stable interview identity; never pick an arbitrary recent row."""
+    if slots and classification == "interview_cancelled" and _reads_as_missed_interview(message):
+        arrived = interview_lifecycle._sent_at(message.get("sent_at")) or datetime.now(ZoneInfo("Asia/Kolkata"))
+        already_started = [row for row in slots if _started_before(row, arrived)]
+        if not already_started:
+            raise BookingValidationError(
+                "BOOKING_NOT_FOUND",
+                "This mail reports a missed interview, and none of this candidate's "
+                "bookings had started when it arrived.",
+            )
+        slots = already_started
     if not slots:
         raise BookingValidationError("BOOKING_NOT_FOUND", "No active interview booking was found.")
     calendar_uid = _calendar_uid(result)
