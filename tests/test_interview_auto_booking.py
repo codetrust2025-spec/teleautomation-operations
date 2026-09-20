@@ -1430,3 +1430,44 @@ def test_two_bookings_that_match_equally_are_still_ambiguous(monkeypatch):
 
     assert outcome["failure_code"] == "BOOKING_AMBIGUOUS"
     assert cancelled == []
+# ── A cancelled interview is history, not a booking ─────────────────────────
+
+CANCELLED_ROW = {
+    "id": "slot-cancelled", "name": "Rahul", "slot_confirmed": True,
+    "date": "2099-07-20", "time": "15:00", "time_end": "15:30",
+    "interview_calendar_uid": CAPGEMINI_ATS_UID,
+    "interview_attendance_status": "cancelled",
+}
+
+
+def test_a_re_invitation_after_a_cancellation_books_again(monkeypatch):
+    """Cancelling from Daily Ops leaves the schedule and the calendar id on the
+    row, so the duplicate check matched it and refused the new invitation."""
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    install_store_fakes(monkeypatch, rows=[dict(CANCELLED_ROW)])
+    monkeypatch.setattr(booking.candidate_store, "assign_interview_slot", slot_writer("slot-new"))
+    value = result()
+    value["calendar"] = {"uid": CAPGEMINI_ATS_UID, "method": "REQUEST", "sequence": 2}
+
+    outcome = execute(value)
+
+    assert outcome["status"] == "Auto Booked"
+    assert outcome["booking"]["id"] == "slot-new"
+
+
+def test_a_cancellation_cannot_release_an_interview_already_cancelled(monkeypatch):
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    _candidate, audits = install_store_fakes(monkeypatch, rows=[dict(CANCELLED_ROW)])
+    released = []
+    monkeypatch.setattr(
+        booking.candidate_store, "cancel_interview_slot",
+        lambda **kwargs: released.append(kwargs) or {"id": kwargs["candidate_id"]},
+    )
+    value = _cancellation()
+    value["calendar"] = {"uid": CAPGEMINI_ATS_UID, "method": "CANCEL", "sequence": 3}
+
+    outcome = execute(value)
+
+    assert outcome["failure_code"] == "BOOKING_NOT_FOUND"
+    assert released == []
+    assert audits[-1]["booking_status"] == "Blocked"

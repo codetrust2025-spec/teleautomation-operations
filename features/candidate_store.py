@@ -794,6 +794,29 @@ def row_interview_attendance_status(row: dict) -> str:
     return ""
 
 
+#: An interview that was called off. The row keeps its date and time as the
+#: record of what was booked, and the hour is free again.
+ENDED_INTERVIEW_STATUSES = frozenset({"cancelled"})
+
+
+def slot_still_stands(row: dict) -> bool:
+    """True when this row holds an interview that is still on.
+
+    `slot_confirmed` alone stopped answering that when cancelling from Daily
+    Ops began leaving the schedule in place -- on purpose, so a cancelled
+    interview keeps its own history. Every reader that means "this hour is
+    taken" or "this is the booking that mail is about" has to ask this instead;
+    `candidate_has_confirmed_slot` still answers the different question of
+    whether the row already holds a booking of its own, which is what the
+    payment and slot-clone paths need.
+    """
+    if not _coerce_bool(row.get("slot_confirmed")):
+        return False
+    if row_interview_attendance_status(row) in ENDED_INTERVIEW_STATUSES:
+        return False
+    return len(_clean_str(row.get("date"))[:10]) == 10
+
+
 def _interview_attendance_counts(rows: list[dict]) -> dict[str, int]:
     """One counter per stored status, plus Pending for the rows carrying none.
 
@@ -2721,7 +2744,10 @@ def find_interview_slot_conflicts(
     for raw in _load().get("candidates") or []:
         if raw.get("stage") in {"dropped", "fail"}:
             continue
-        if not _coerce_bool(raw.get("slot_confirmed")):
+        # A cancelled interview keeps its schedule but not its hour: holding
+        # the time against a new booking would lose a real interview to a slot
+        # nobody is sitting.
+        if not slot_still_stands(raw):
             continue
         cid = _clean_str(raw.get("id") or "")
         if exclude and cid == exclude:

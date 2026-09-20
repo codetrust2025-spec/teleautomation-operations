@@ -410,7 +410,13 @@ def _candidate_slots(candidate: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _confirmed_slots(candidate: dict[str, Any]) -> list[dict[str, Any]]:
-    return [row for row in _candidate_slots(candidate) if row.get("slot_confirmed") and row.get("date")]
+    """The bookings this candidate still holds.
+
+    A cancelled interview keeps its date and time as history, so it is not one
+    of these: it is not a duplicate to refuse a re-invitation against, not an
+    hour to clash with, and not a row a later cancellation can release.
+    """
+    return [row for row in _candidate_slots(candidate) if candidate_store.slot_still_stands(row)]
 
 
 def _same_text(left: Any, right: Any) -> bool:

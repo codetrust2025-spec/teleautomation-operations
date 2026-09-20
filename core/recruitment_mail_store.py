@@ -3024,6 +3024,26 @@ DUPLICATE_IGNORED_STATUS = "Duplicate Ignored"
 RELEASED_BOOKING_STATUS = "AI_RETRY_PENDING"
 
 
+#: Daily Ops cancelled the interview and kept its schedule. Not the same as a
+#: slot that vanished, which is what RELEASED_BOOKING_STATUS describes.
+CANCELLED_BOOKING_STATUS = "Cancelled"
+
+
+def _project_cancelled_booking_title(row):
+    """A cancelled interview is not pending a retry.
+
+    The released projection says "AI Retry Pending", which is right for a
+    booking that is simply gone and wrong for this one: the interview has an
+    outcome, and nothing is going to book it again.
+    """
+    if row.get('candidate_status') in {
+        'Interview Automatically Booked', 'Interview Manually Approved & Booked',
+        'Interview Rescheduled',
+    }:
+        row.setdefault('historical_candidate_status', row['candidate_status'])
+        row['candidate_status'] = 'Interview Cancelled'
+
+
 def _project_released_booking_title(row):
     """Keep the historical title available without presenting it as live truth."""
     if row.get('candidate_status') in {
@@ -3084,7 +3104,17 @@ def reconcile_booking_claims(rows):
 
         for row in claims:
             booked = candidate_store.get_candidate(str(row["booking_id"]).strip())
+            # Cancelled counts as gone: the row keeps its schedule, but a mail
+            # may not go on reporting "Automatically Booked" for an interview
+            # Daily Ops shows as cancelled.
+            if booked and candidate_store.slot_still_stands(booked):
+                continue
             if booked and candidate_store.candidate_has_confirmed_slot(booked):
+                # The booking is still there with its schedule, so it was
+                # cancelled rather than released.
+                row["booking_status"] = CANCELLED_BOOKING_STATUS
+                row["booking_claim_cancelled"] = True
+                _project_cancelled_booking_title(row)
                 continue
             row["booking_status"] = RELEASED_BOOKING_STATUS
             row["booking_claim_released"] = True
