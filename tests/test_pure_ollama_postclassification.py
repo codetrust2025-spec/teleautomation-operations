@@ -99,7 +99,8 @@ def test_real_pipeline_respects_mode_and_persists_only_proven_interview(monkeypa
     writes, states = [], []
     monkeypatch.setattr(booking.candidate_store, 'assign_interview_slot', slot_writer('pure-slot', capture=writes))
     original = booking.normalized_schedule
-    monkeypatch.setattr(booking, 'normalized_schedule', lambda v: original(v, now=datetime(2026, 9, 11, tzinfo=ZoneInfo('Asia/Kolkata'))))
+    monkeypatch.setattr(booking, 'normalized_schedule', lambda v, **kwargs: original(
+        v, **{**kwargs, 'now': datetime(2026, 9, 11, tzinfo=ZoneInfo('Asia/Kolkata'))}))
     mail = message(sender='recruiter@' + agent._JOB_BOARD_DOMAINS[0])
     relevance = dict(decision='ESTABLISHED', message_kind='RECIPIENT_HIRING_PROCESS', confidence=100,
                      evidence=[dict(source='EMAIL_BODY', text=ASSERTION)], reason='Candidate interview.')

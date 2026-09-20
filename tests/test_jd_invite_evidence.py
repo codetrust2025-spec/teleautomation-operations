@@ -68,8 +68,8 @@ def test_exact_shape_reaches_real_automatic_persistence_path(monkeypatch, html_o
     writes = []
     monkeypatch.setattr(booking.candidate_store, 'assign_interview_slot', slot_writer('persisted-slot', capture=writes))
     original_schedule = booking.normalized_schedule
-    monkeypatch.setattr(booking, 'normalized_schedule', lambda value: original_schedule(
-        value, now=datetime(2026, 9, 11, tzinfo=ZoneInfo('Asia/Kolkata'))))
+    monkeypatch.setattr(booking, 'normalized_schedule', lambda value, **kwargs: original_schedule(
+        value, **{**kwargs, 'now': datetime(2026, 9, 11, tzinfo=ZoneInfo('Asia/Kolkata'))}))
     relevance = {'decision': 'ESTABLISHED', 'message_kind': 'RECIPIENT_HIRING_PROCESS', 'confidence': 100,
                  'evidence': [{'source': 'EMAIL_BODY', 'text': ASSERTION}], 'reason': 'Explicit interview.'}
     outputs = iter([relevance, payload(), payload()])
