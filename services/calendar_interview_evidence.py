@@ -114,7 +114,26 @@ def contradiction_resolution(
         (decision == "NOT_ESTABLISHED" and kind == "RECIPIENT_HIRING_PROCESS")
         or (decision == "ESTABLISHED" and kind != "RECIPIENT_HIRING_PROCESS")
     )
-    if not contradictory:
+    # A label the model is sure of is still only a label. Ten interviews were
+    # dropped in silence on a confident NOT_ESTABLISHED with some other kind --
+    # Cognizant L2, an EY L1 discussion, a Perficient round, a screening round
+    # with the candidate's own CV attached -- every one an authenticated
+    # employer REQUEST naming this candidate, and none of them carrying a
+    # marketing word anywhere. The model had nothing to read: those bodies are
+    # Teams boilerplate, a disclaimer, an attachment.
+    #
+    # Where the invitation itself is that strong, the answer is weighed against
+    # it rather than accepted on its own. This adds no booking rule: the same
+    # test below decides, marketing still wins first, and anything short of a
+    # trusted employer invitation with hiring or role context is untouched.
+    invitation_outweighs_the_label = (
+        decision == "NOT_ESTABLISHED"
+        and evidence["trusted_request"]
+        and evidence["employer_invitation"]
+        and (evidence["hiring_context"] or evidence["role_context"])
+        and not evidence["clear_marketing"]
+    )
+    if not (contradictory or invitation_outweighs_the_label):
         return "IGNORE"
     if evidence["clear_marketing"] and kind in {
         "MARKETING_OR_TRAINING", "PUBLIC_EVENT", "NEWSLETTER", "JOB_ADVERTISEMENT",

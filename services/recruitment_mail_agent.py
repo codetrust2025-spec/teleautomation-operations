@@ -2116,17 +2116,14 @@ def calendar_invite_verdict(
     # never RECIPIENT_HIRING_PROCESS.
     # An explicit NOT_ESTABLISHED is required: a missing or unreadable decision
     # is not a contradiction, it is junk, and junk still fails closed.
-    if (
-        (decision == "NOT_ESTABLISHED" and kind == CANDIDATE_HIRING_MESSAGE_KIND)
-        or (decision == "ESTABLISHED" and kind != CANDIDATE_HIRING_MESSAGE_KIND)
-    ):
-        # This is a deterministic evidence tie-breaker, not another model
-        # decision: authenticated invite structure plus hiring/role context
-        # can safely overcome a contradictory label; a clear webinar remains
-        # ignored; every other ambiguity returns to the automatic retry queue.
-        from services.calendar_interview_evidence import contradiction_resolution
-        return contradiction_resolution(relevance, calendar_result, message)
-    return "IGNORE"
+    # Everything that is not an outright BOOK goes to the deterministic
+    # tie-breaker: authenticated invite structure plus hiring/role context can
+    # overcome a label the model got wrong, whether that label contradicts
+    # itself or is confidently negative; a clear webinar remains ignored; every
+    # other ambiguity returns to the automatic retry queue. Junk -- a missing or
+    # unreadable decision -- still fails closed there.
+    from services.calendar_interview_evidence import contradiction_resolution
+    return contradiction_resolution(relevance, calendar_result, message)
 
 
 def calendar_invite_needs_review(relevance: dict[str, Any]) -> bool:
