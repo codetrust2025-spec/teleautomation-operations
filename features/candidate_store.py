@@ -24,7 +24,7 @@ Schema (one row):
         "slot_confirmed_at": ISO timestamp when slot was confirmed (blank ok),
         "slots_group_posted": true after slot screenshot posted in Interview slots WA group,
         "interview_attendee": "Nikhila | Bhavana | Tool — who supported the live interview (set when marking attendance)",
-        "interview_attendance_status": "attended | not_attended | cancelled | rescheduled | re_service | blank (pending)",
+        "interview_attendance_status": "attended | not_attended | cancelled | rescheduled | released_for_reschedule | re_service | blank (pending)",
         "interview_attendance_remark": "optional note when logging attendance",
         "interview_attended": legacy bool — true when status is attended,
         "interview_attended_at": ISO timestamp when attendance was logged,
@@ -178,11 +178,17 @@ VALID_PURPOSES = {"interview_support", "work_support", "experience_docs", "other
 VALID_INTERVIEW_ROUNDS = frozenset({
     "L1", "L2", "HR", "Final", "Screening",
 })
+#: The sitting is off and the hour is free, but no replacement has been booked
+#: yet. "rescheduled" cannot say that: a row moved to its new time in place
+#: carries that marker too, and it is the live booking.
+RELEASED_FOR_RESCHEDULE_STATUS = "released_for_reschedule"
+
 INTERVIEW_ATTENDANCE_STATUSES = frozenset({
     "attended",
     "not_attended",
     "cancelled",
     "rescheduled",
+    RELEASED_FOR_RESCHEDULE_STATUS,
     # Admin-only marker that grants one free repeat interview. It is never
     # surfaced on the candidate portal and never counts as attendance.
     "re_service",
@@ -794,9 +800,13 @@ def row_interview_attendance_status(row: dict) -> str:
     return ""
 
 
-#: An interview that was called off. The row keeps its date and time as the
-#: record of what was booked, and the hour is free again.
-ENDED_INTERVIEW_STATUSES = frozenset({"cancelled"})
+#: An interview that will not be sat at this time. The row keeps its date and
+#: time as the record of what was booked, and the hour is free again.
+#: `rescheduled` is deliberately absent: the automatic path moves a row to its
+#: new time in place and leaves that marker on it, so the row is still the live
+#: booking. A rescheduled sitting whose hour really is free says so with
+#: RELEASED_FOR_RESCHEDULE_STATUS, or carries a link to its replacement.
+ENDED_INTERVIEW_STATUSES = frozenset({"cancelled", RELEASED_FOR_RESCHEDULE_STATUS})
 
 
 def slot_still_stands(row: dict) -> bool:
@@ -814,7 +824,52 @@ def slot_still_stands(row: dict) -> bool:
         return False
     if row_interview_attendance_status(row) in ENDED_INTERVIEW_STATUSES:
         return False
-    return len(_clean_str(row.get("date"))[:10]) == 10
+    if _clean_str(row.get("superseded_by_booking_id")):
+        return False
+    if len(_clean_str(row.get("date"))[:10]) != 10:
+        return False
+    return bool(_clean_str(row.get("time")))
+
+
+def mark_slot_superseded(candidate_id: str, *, by_booking_id: str, at: str | None = None) -> dict | None:
+    """Point a given-up booking at the one that replaced it.
+
+    The old row keeps everything it had -- its date, its time, its notes, its
+    attendance marker -- and stops holding the hour. The first replacement
+    wins: a later booking does not rewrite which one took its place.
+    """
+    cid, replacement = _clean_str(candidate_id), _clean_str(by_booking_id)
+    if not cid or not replacement or cid == replacement:
+        return None
+    data = _load()
+    rows = data.get("candidates") or []
+    for index, raw in enumerate(rows):
+        if str(raw.get("id")) != cid or _clean_str(raw.get("superseded_by_booking_id")):
+            continue
+        row = dict(raw)
+        row["superseded_by_booking_id"] = replacement
+        row["superseded_at"] = _clean_str(at) or _now_iso()
+        row["updated_at"] = _now_iso()
+        rows[index] = row
+        data["candidates"] = rows
+        _save(data)
+        return _with_computed(row)
+    return None
+
+
+def release_slot_for_reschedule(candidate_id: str, *, by: str = "", remark: str = "") -> dict | None:
+    """Give up the hour without pretending a replacement exists yet.
+
+    Between "the panel cancelled" and "the new invitation arrived" the roster
+    had nothing honest to say: leaving the row confirmed held an hour nobody
+    would sit, and cancelling it read as an interview that is not happening.
+    """
+    return set_interview_attendance(
+        candidate_id,
+        status=RELEASED_FOR_RESCHEDULE_STATUS,
+        remark=remark,
+        by=by or "system",
+    )
 
 
 def _interview_attendance_counts(rows: list[dict]) -> dict[str, int]:
@@ -1538,6 +1593,17 @@ def _normalise(record: dict, *, existing: dict | None = None) -> dict:
         ),
         "paymentReusedByBookingId": _clean_str(
             record.get("paymentReusedByBookingId", base.get("paymentReusedByBookingId"))
+        ),
+        # The booking that replaced this one, and when. Written by
+        # `mark_slot_superseded`; kept here so a later edit cannot drop it.
+        "superseded_by_booking_id": _clean_str(
+            record.get("superseded_by_booking_id", base.get("superseded_by_booking_id"))
+        ),
+        "superseded_at": _clean_str(record.get("superseded_at", base.get("superseded_at"))),
+        # What the row held before it was moved: one entry per previous
+        # sitting, so moving a slot in place loses no history.
+        "interview_previous_sittings": list(
+            record.get("interview_previous_sittings", base.get("interview_previous_sittings")) or []
         ),
         # Once a row's received total has been derived from adjudicated proofs,
         # it stays proof-controlled: later proof changes, including reductions
@@ -2684,6 +2750,10 @@ def _filter_upcoming_only_rows(rows: list[dict]) -> list[dict]:
         # it, which is the same omission the counters had.
         if row_interview_attendance_status(row) in INTERVIEW_ATTENDANCE_STATUSES:
             continue
+        # A row replaced by another booking carries no status of its own, and
+        # the interview it describes is not the one being sat.
+        if not slot_still_stands(row):
+            continue
         out.append(row)
     out.sort(key=_slot_chronological_sort_key)
     return out
@@ -2694,7 +2764,7 @@ def _split_pending_interviews_by_slot_phase(rows: list[dict]) -> tuple[list[dict
     scheduled: list[dict] = []
     awaiting: list[dict] = []
     for raw in rows:
-        if row_interview_attendance_status(raw):
+        if row_interview_attendance_status(raw) or not slot_still_stands(raw):
             continue
         row = dict(raw)
         slot_date = (row.get("date") or "").strip()[:10]
@@ -3645,7 +3715,7 @@ def public_booked_interview_slots(*, days: int = 60) -> dict:
     rows = _interview_rows_for_range(start, end)
     slots: list[dict] = []
     for row in rows:
-        if row_interview_attendance_status(row):
+        if not slot_still_stands(row):
             continue
         slot_date = (row.get("date") or "").strip()[:10]
         slot_time = (row.get("time") or "").strip()
@@ -3991,7 +4061,8 @@ def set_interview_attendance(
                     r["interview_attendee"] = normalise_interview_attendee_name(fallback)
             else:
                 r["interview_attendee"] = row_interview_attendee(r)
-        elif resolved_status in {"cancelled", "rescheduled", RE_SERVICE_STATUS}:
+        elif resolved_status in {"cancelled", "rescheduled", RELEASED_FOR_RESCHEDULE_STATUS,
+                                 RE_SERVICE_STATUS}:
             # No attendee: nobody sat these interviews. The note is kept
             # because the form requires one for every status change, and
             # dropping it for Re-Service discarded what an admin had just been
@@ -4652,10 +4723,57 @@ def update_interview_slot(
     ):
         if value is not None:
             patch[key] = _clean_str(value)
+    moved = (_clean_str(existing.get("date"))[:10] != day
+             or _clean_str(existing.get("time")) != slot_time)
     rescheduled = update_candidate(cid, patch, allow_slot_without_rules=True)
+    if moved:
+        # The row now describes a different sitting, so the marker from the
+        # last one would read as this one's outcome -- a live future booking
+        # sitting in the Rescheduled tab, out of Upcoming. It moves to the
+        # row's own history instead, and the booking goes back to pending.
+        rescheduled = _carry_sitting_into_history(cid, previous=existing) or rescheduled
     # A reschedule that did not survive the write must not read as rescheduled.
     assert_slot_persisted(cid, date=day, time=slot_time, time_end=time_end)
     return rescheduled
+
+
+def _carry_sitting_into_history(cid: str, *, previous: dict) -> dict | None:
+    """Record what the row held before the move, then clear the marker."""
+    data = _load()
+    rows = data.get("candidates") or []
+    for index, raw in enumerate(rows):
+        if str(raw.get("id")) != _clean_str(cid):
+            continue
+        row = dict(raw)
+        status = row_interview_attendance_status(previous)
+        remark = _clean_str(previous.get("interview_attendance_remark"))
+        if status or remark:
+            row["interview_previous_sittings"] = [
+                *(row.get("interview_previous_sittings") or []),
+                {
+                    "date": _clean_str(previous.get("date"))[:10],
+                    "time": _clean_str(previous.get("time")),
+                    "time_end": _clean_str(previous.get("time_end")),
+                    "interview_attendance_status": status,
+                    "interview_attendance_remark": remark,
+                    "recorded_by": _clean_str(previous.get("interview_attended_by")),
+                    "moved_at": _now_iso(),
+                },
+            ]
+        row["interview_attendance_status"] = ""
+        row["interview_attended"] = False
+        row["interview_attendance_remark"] = ""
+        row["interview_attended_at"] = ""
+        row["interview_attended_by"] = ""
+        # It is the live booking again, so it is nobody's predecessor.
+        row["superseded_by_booking_id"] = ""
+        row["superseded_at"] = ""
+        row["updated_at"] = _now_iso()
+        rows[index] = row
+        data["candidates"] = rows
+        _save(data)
+        return _with_computed(row)
+    return None
 
 
 def cancel_confirmed_interview_slot_by_name(

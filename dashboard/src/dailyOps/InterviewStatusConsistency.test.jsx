@@ -40,7 +40,8 @@ const NOW = '2026-09-08T06:00:00Z'
 const TODAY = '2026-09-08'
 
 /** What the backend actually stores, mirrored from candidate_store.py. */
-const BACKEND_STATUSES = ['attended', 'not_attended', 'cancelled', 'rescheduled', 're_service']
+const BACKEND_STATUSES = ['attended', 'not_attended', 'cancelled', 'rescheduled',
+  'released_for_reschedule', 're_service']
 
 let calls
 let payload
@@ -71,6 +72,7 @@ function oneOfEach() {
     interviewRow('Missed Vikas', 'not_attended'),
     interviewRow('Cancelled Chandra', 'cancelled'),
     interviewRow('Moved Meera', 'rescheduled'),
+    interviewRow('Waiting Wasim', 'released_for_reschedule'),
     interviewRow('Repeat Ravi', 're_service'),
   ]
   return {
@@ -82,9 +84,13 @@ function oneOfEach() {
     not_attended_count: 1,
     cancelled_count: 1,
     rescheduled_count: 1,
+    released_for_reschedule_count: 1,
     re_service_count: 1,
   }
 }
+
+/** How many rows `oneOfEach` holds: one per status, Pending included. */
+const EVERY_STATUS = oneOfEach().interviews.length
 
 function mockFetch() {
   calls = []
@@ -190,7 +196,7 @@ describe('the counters come from the API', () => {
 
   it('counts Scheduled as every row in the roster', async () => {
     await renderPanel()
-    expect(tab('Scheduled').textContent).toMatch(/Scheduled\s*6/)
+    expect(tab('Scheduled').textContent).toMatch(new RegExp(`Scheduled\s*${EVERY_STATUS}`))
   })
 
   it('does not fold Re-Service into Pending', async () => {
@@ -222,7 +228,7 @@ describe('the counters come from the API', () => {
 describe('filtering by a status', () => {
   it('narrows the table to Cancelled rows', async () => {
     await renderPanel()
-    expect(rowNames()).toHaveLength(6)
+    expect(rowNames()).toHaveLength(EVERY_STATUS)
 
     fireEvent.click(tab('Cancelled'))
     await waitFor(() => expect(rowNames()).toHaveLength(1))
@@ -248,7 +254,7 @@ describe('filtering by a status', () => {
     fireEvent.click(tab('Cancelled'))
     await waitFor(() => expect(rowNames()).toHaveLength(1))
     fireEvent.click(tab('Cancelled'))
-    await waitFor(() => expect(rowNames()).toHaveLength(6))
+    await waitFor(() => expect(rowNames()).toHaveLength(EVERY_STATUS))
   })
 
   it('Scheduled shows everything', async () => {
@@ -256,7 +262,7 @@ describe('filtering by a status', () => {
     fireEvent.click(tab('Cancelled'))
     await waitFor(() => expect(rowNames()).toHaveLength(1))
     fireEvent.click(tab('Scheduled'))
-    await waitFor(() => expect(rowNames()).toHaveLength(6))
+    await waitFor(() => expect(rowNames()).toHaveLength(EVERY_STATUS))
   })
 
   it('survives a reload of the same filter', async () => {
@@ -304,7 +310,7 @@ describe('the roster fallback carries every counter', () => {
     expect(counts.cancelled_count).toBe(1)
     expect(counts.rescheduled_count).toBe(1)
     expect(counts.re_service_count).toBe(1)
-    expect(counts.count).toBe(6)
+    expect(counts.count).toBe(EVERY_STATUS)
   })
 
   it('shows the roster counts when the global summary is unavailable', async () => {

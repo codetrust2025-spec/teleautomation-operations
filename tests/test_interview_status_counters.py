@@ -17,6 +17,12 @@ import pytest
 from features import candidate_store as cs
 
 
+def booking(row_id: str, status: str, **overrides) -> dict:
+    """A roster row as the range query hands it over: a confirmed slot."""
+    return {"id": row_id, "interview_attendance_status": status, "slot_confirmed": True,
+            "date": "2099-08-06", "time": "15:30", "time_end": "16:00", **overrides}
+
+
 def rows(*statuses: str) -> list[dict]:
     return [{"interview_attendance_status": status} for status in statuses]
 
@@ -24,7 +30,8 @@ def rows(*statuses: str) -> list[dict]:
 class TestTheStatusSetIsTheSourceOfTruth:
     def test_the_six_statuses_are_what_the_dashboard_shows(self):
         assert cs.INTERVIEW_ATTENDANCE_STATUSES == frozenset({
-            "attended", "not_attended", "cancelled", "rescheduled", "re_service",
+            "attended", "not_attended", "cancelled", "rescheduled",
+            "released_for_reschedule", "re_service",
         })
 
     def test_pending_is_the_absence_of_one_not_a_member(self):
@@ -44,13 +51,14 @@ class TestCountingIsExact:
     def test_each_status_counts_once(self):
         counts = cs._interview_attendance_counts(rows(
             "attended", "attended", "not_attended", "cancelled",
-            "rescheduled", "re_service", "",
+            "rescheduled", "released_for_reschedule", "re_service", "",
         ))
         assert counts == {
             "attended_count": 2,
             "not_attended_count": 1,
             "cancelled_count": 1,
             "rescheduled_count": 1,
+            "released_for_reschedule_count": 1,
             "re_service_count": 1,
             "pending_count": 1,
         }
@@ -143,8 +151,16 @@ class TestEveryStoredStatusCountsAsResolved:
 
     def test_a_re_service_row_is_not_upcoming(self):
         upcoming = cs._filter_upcoming_only_rows([
-            {"id": "a", "interview_attendance_status": "re_service"},
-            {"id": "b", "interview_attendance_status": ""},
+            booking("a", "re_service"),
+            booking("b", ""),
+        ])
+        assert [row["id"] for row in upcoming] == ["b"]
+
+    def test_a_booking_replaced_by_another_is_not_upcoming(self):
+        """It carries no status of its own; the replacement is what ended it."""
+        upcoming = cs._filter_upcoming_only_rows([
+            booking("a", "", superseded_by_booking_id="b"),
+            booking("b", ""),
         ])
         assert [row["id"] for row in upcoming] == ["b"]
 
@@ -155,7 +171,7 @@ class TestEveryStoredStatusCountsAsResolved:
         ) == []
 
     def test_a_row_with_no_status_is_upcoming(self):
-        rows_in = [{"id": "x", "interview_attendance_status": ""}]
+        rows_in = [booking("x", "")]
         assert cs._filter_upcoming_only_rows(rows_in) == rows_in
 
     def test_the_schema_note_lists_every_status(self):

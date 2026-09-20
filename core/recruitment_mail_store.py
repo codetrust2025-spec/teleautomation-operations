@@ -3027,21 +3027,34 @@ RELEASED_BOOKING_STATUS = "AI_RETRY_PENDING"
 #: Daily Ops cancelled the interview and kept its schedule. Not the same as a
 #: slot that vanished, which is what RELEASED_BOOKING_STATUS describes.
 CANCELLED_BOOKING_STATUS = "Cancelled"
+#: The sitting gave up its hour: replaced by another booking, or released while
+#: the new invitation is awaited.
+RESCHEDULED_BOOKING_STATUS = "Rescheduled"
 
 
-def _project_cancelled_booking_title(row):
-    """A cancelled interview is not pending a retry.
+def _reads_as_rescheduled(booked) -> bool:
+    from features import candidate_store
+
+    return bool(
+        str(booked.get("superseded_by_booking_id") or "").strip()
+        or candidate_store.row_interview_attendance_status(booked)
+        in {"rescheduled", candidate_store.RELEASED_FOR_RESCHEDULE_STATUS}
+    )
+
+
+def _project_booking_title(row, title):
+    """Say what happened to the booking without losing what the alert said.
 
     The released projection says "AI Retry Pending", which is right for a
-    booking that is simply gone and wrong for this one: the interview has an
-    outcome, and nothing is going to book it again.
+    booking that is simply gone and wrong for these: the interview has an
+    outcome, and nothing is going to book this row again.
     """
     if row.get('candidate_status') in {
         'Interview Automatically Booked', 'Interview Manually Approved & Booked',
         'Interview Rescheduled',
     }:
         row.setdefault('historical_candidate_status', row['candidate_status'])
-        row['candidate_status'] = 'Interview Cancelled'
+        row['candidate_status'] = title
 
 
 def _project_released_booking_title(row):
@@ -3110,11 +3123,20 @@ def reconcile_booking_claims(rows):
             if booked and candidate_store.slot_still_stands(booked):
                 continue
             if booked and candidate_store.candidate_has_confirmed_slot(booked):
-                # The booking is still there with its schedule, so it was
-                # cancelled rather than released.
+                # The booking is still there with its schedule, so it was not
+                # released: either the interview was cancelled, or this sitting
+                # gave up its hour and another booking has it.
+                if _reads_as_rescheduled(booked):
+                    row["booking_status"] = RESCHEDULED_BOOKING_STATUS
+                    row["booking_claim_rescheduled"] = True
+                    row["superseded_by_booking_id"] = (
+                        booked.get("superseded_by_booking_id") or ""
+                    )
+                    _project_booking_title(row, "Interview Rescheduled")
+                    continue
                 row["booking_status"] = CANCELLED_BOOKING_STATUS
                 row["booking_claim_cancelled"] = True
-                _project_cancelled_booking_title(row)
+                _project_booking_title(row, "Interview Cancelled")
                 continue
             row["booking_status"] = RELEASED_BOOKING_STATUS
             row["booking_claim_released"] = True

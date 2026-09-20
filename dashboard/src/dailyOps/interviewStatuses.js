@@ -36,6 +36,10 @@ export const INTERVIEW_STATUSES = [
   { value: 'not_attended', filterValue: 'not_attended', label: 'Not attended', tone: 'missed', countKey: 'not_attended_count', kpiTone: 'red' },
   { value: 'cancelled', filterValue: 'cancelled', label: 'Cancelled', tone: 'cancelled', countKey: 'cancelled_count', kpiTone: 'slate' },
   { value: 'rescheduled', filterValue: 'rescheduled', label: 'Rescheduled', tone: 'rescheduled', countKey: 'rescheduled_count', kpiTone: 'purple' },
+  // The sitting is off and the hour is free again, with no replacement booked
+  // yet. Rescheduled cannot say that: a booking moved to its new time in place
+  // keeps that marker and is still the live interview.
+  { value: 'released_for_reschedule', filterValue: 'released_for_reschedule', label: 'Awaiting new slot', tone: 'rescheduled', countKey: 'released_for_reschedule_count', kpiTone: 'purple' },
   // Admin-only: grants one free repeat interview. Never shown to candidates,
   // but it is a stored status and so it counts and filters like the rest.
   { value: 're_service', filterValue: 're_service', label: 'Re-Service', tone: 'reservice', countKey: 're_service_count', kpiTone: 'yellow' },

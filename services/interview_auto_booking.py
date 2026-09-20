@@ -595,6 +595,36 @@ def _guard_existing_slot_order(row, *, result, message):
         raise BookingValidationError('STALE_INTERVIEW_EVENT', 'This transition predates the source of the target booking.')
 
 
+def _link_replaced_slots(candidate: dict[str, Any], *, booking: dict[str, Any],
+                         result: dict[str, Any], message: dict[str, Any]) -> None:
+    """Point the interview's given-up rows at the booking that replaced them.
+
+    A slot released for a reschedule, or cancelled and then re-invited, keeps
+    its schedule and stops holding the hour; this is what says which booking
+    took its place. Best effort: the booking is already written, and a failure
+    here must not undo it.
+    """
+    new_id = str(booking.get("id") or "").strip()
+    uid = _calendar_uid(result)
+    thread = str(message.get("provider_thread_id") or "").strip()
+    if not new_id or not (uid or thread):
+        return
+    for row in _candidate_slots(candidate):
+        row_id = str(row.get("id") or "")
+        if row_id == new_id or candidate_store.slot_still_stands(row):
+            continue
+        same_interview = (
+            (uid and _same_text(row.get("interview_calendar_uid"), uid))
+            or (thread and _same_text(row.get("interview_source_thread_id"), thread))
+        )
+        if not same_interview:
+            continue
+        try:
+            candidate_store.mark_slot_superseded(row_id, by_booking_id=new_id)
+        except Exception:
+            logger.exception("Could not link booking %s to the slot it replaced", new_id)
+
+
 def _booking_metadata(result: dict[str, Any], message: dict[str, Any], schedule: dict[str, str] | None) -> dict[str, str]:
     return {
         "interview_company": str((result.get("company") or {}).get("name") or ""),
@@ -1213,6 +1243,7 @@ def _execute_auto_booking(
                 ("Approved & Booked", "slot_manually_booked")
                 if manual_reviewer else ("Auto Booked", "slot_auto_booked")
             )
+            _link_replaced_slots(candidate, booking=booking, result=result, message=message)
         elif booking is None and classification == "interview_rescheduled":
             target = _resolve_existing_slot(slots, result=result, message=message, classification=classification)
             previous = dict(target)
