@@ -297,18 +297,91 @@ def _plain_text_interview_cancellation_result(
     }
 
 
+# Month spellings accepted in plain-text invitations, in either order.
+_MONTH_WORD = (
+    r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?"
+    r"|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
+# The year is optional in both orders, and TCS writes it with no separator at
+# all ("15th September26"), so none is required. It must not swallow the hour
+# of a following clock time: "Sep 3 10:30 AM" is the 3rd at half past ten, not
+# the year 2010.
+_YEAR = r"(?:[\s,]*(\d{2,4})\b(?!\s*:))?"
+# A month name must not be the start of an ordinary word - "3 Marching orders"
+# names no date - but "September26" must still end it.
+_MONTH_END = r"(?![a-z])"
+# "3 September 2026" / "3rd Sep, 26" / "15th September26" / "3rd September"
+_DAY_FIRST = re.compile(
+    r"\b([0-3]?\d)(?:st|nd|rd|th)?\b[\s,]+" + _MONTH_WORD + _MONTH_END + _YEAR, re.I,
+)
+# "September 3, 2026" / "Sep 3"
+_MONTH_FIRST = re.compile(
+    r"\b" + _MONTH_WORD + _MONTH_END + r"[\s,]+([0-3]?\d)(?:st|nd|rd|th)?\b" + _YEAR, re.I,
+)
+
+
+def _nearest_occurrence(reference: datetime, month: int, day: int) -> datetime | None:
+    """The instance of month/day closest to the message's own send date.
+
+    An invitation that omits the year means the next one coming up, which is
+    also how a December mail about a January interview has to read.
+    """
+    base = reference.date() if isinstance(reference, datetime) else reference
+    best: tuple[int, datetime] | None = None
+    for year in (base.year - 1, base.year, base.year + 1):
+        try:
+            candidate = datetime(year, month, day)
+        except ValueError:
+            continue  # 29 February outside a leap year
+        delta = abs((candidate.date() - base).days)
+        if best is None or delta < best[0]:
+            best = (delta, candidate)
+    # Nothing within a year of the message is not a reading of that message.
+    if best is None or best[0] > 366:
+        return None
+    return best[1]
+
+
 def _plain_date(text: str, reference: datetime) -> datetime | None:
-    match = re.search(
-        r"\b([0-3]?\d)(?:st|nd|rd|th)?\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s,]*(\d{2,4})\b",
-        text, re.I,
-    )
-    if match:
-        day, month_name, year_text = match.groups()
+    """The interview day from plain text, in either month order.
+
+    Recruiters write the day both ways - "3rd September 2026" and
+    "September 3, 2026" - and routinely leave the year out altogether
+    ("Interview scheduled on 3rd Sep at 5:00 PM IST"). Only the day-first
+    spelling carrying an explicit year was read here, so every other wording
+    yielded no date at all.
+
+    That is not a harmless miss. When routing does not send a message to the
+    AI, this parser is the only thing that can classify it, so an unread date
+    drops an authenticated invitation as not recruitment-related and the slot
+    is never booked.
+
+    A missing year is resolved against `reference`, the message's own send
+    time. Nothing is guessed between two competing readings: a spelling that
+    states its year still wins, an all-numeric date keeps its existing
+    day-first-only handling, and a date that resolves into the past is still
+    refused by the booking validator downstream.
+    """
+    found: list[tuple[int, int, int, str | None]] = []
+    for pattern, order in ((_DAY_FIRST, "dmy"), (_MONTH_FIRST, "mdy")):
+        for hit in pattern.finditer(text):
+            first, second, year_text = hit.group(1), hit.group(2), hit.group(3)
+            day_text, month_name = (first, second) if order == "dmy" else (second, first)
+            month = _MONTHS.get(month_name[:3].lower())
+            if month:
+                found.append((hit.start(), int(day_text), month, year_text))
+    if found:
+        # A spelling that states its year is preferred over one that does not,
+        # so text which already parsed still parses to exactly the same day.
+        dated = [row for row in found if row[3]]
+        _, day, month, year_text = min(dated or found, key=lambda row: row[0])
+        if not year_text:
+            return _nearest_occurrence(reference, month, day)
         year = int(year_text)
         if year < 100:
             year += 2000
         try:
-            return datetime(year, _MONTHS[month_name[:3].lower()], int(day))
+            return datetime(year, month, day)
         except ValueError:
             return None
 
