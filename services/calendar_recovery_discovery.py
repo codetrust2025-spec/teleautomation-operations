@@ -33,9 +33,14 @@ DISCOVERY_LABELS = {
 }
 
 
-def classify_records(records, *, calendars, slots, audits, links, now=None):
+def classify_records(records, *, calendars, slots, audits, links, now=None, families=None):
     now = now or datetime.now(timezone.utc)
     owners = {a['booking_id']: resolve(a['candidate_id'], links) for a in audits if a.get('booking_id')}
+    # Which rows each person owns, as the roster itself answers it. An
+    # audit row only exists for a slot the booking service wrote, and the
+    # identity links only hold what has been linked: a slot typed into
+    # Daily Ops has neither, so without this it belongs to nobody.
+    families = families or {}
     parsed = []
     for source in calendars:
         calendar = parse_calendar(source.get('extracted_text') or '')
@@ -98,10 +103,12 @@ def classify_records(records, *, calendars, slots, audits, links, now=None):
                 # same start and the same end, on a row that claims no calendar
                 # event of its own, so this can never shadow a different
                 # meeting that happens to share the hour.
+                kin = families.get(person) or ()
                 persisted = [s for s in slots
                              if s.get('slot_confirmed')
                              and not str(s.get('interview_calendar_uid') or '').strip()
-                             and owners.get(s['id'], resolve(s.get('canonical_candidate_id') or s['id'], links)) == person
+                             and (owners.get(s['id'], resolve(s.get('canonical_candidate_id') or s['id'], links)) == person
+                                  or str(s.get('id')) in kin)
                              and holds_exactly(s)]
                 if persisted:
                     matched_by = 'exact schedule'
@@ -172,6 +179,14 @@ def load_report(*, limit=500):
         cur.execute('SELECT booking_id,candidate_id FROM interview_auto_booking_audit WHERE booking_id=ANY(%s)',
                     ([s['id'] for s in slots if s.get('slot_confirmed')],))
         audits = _rows(cur)
-    report = classify_records(records, calendars=calendars, slots=slots, audits=audits, links=links)
+    families = {}
+    for person in {r.get('canonical_candidate_id') for r in records if r.get('canonical_candidate_id')}:
+        try:
+            families[resolve(person, links)] = set(
+                candidate_store.candidate_identity_ids(str(person), include_name_matches=False))
+        except Exception:
+            continue
+    report = classify_records(records, calendars=calendars, slots=slots, audits=audits, links=links,
+                              families=families)
     report['coverage'] = {'complete': complete}
     return report

@@ -12,11 +12,12 @@ ICS = chr(10).join([
 ])
 
 
-def classify(*, slots=(), audits=(), extra=(), date='20260911', method='REQUEST', **fields):
+def classify(*, slots=(), audits=(), extra=(), date='20260911', method='REQUEST', families=None, **fields):
     row = dict(mailbox_message_id='m', mailbox_id='box', canonical_candidate_id='alias', **fields)
     cal = dict(row, extracted_text=f'BEGIN:VCALENDAR\nMETHOD:{method}\nBEGIN:VEVENT\nUID:uid\nSEQUENCE:0\nDTSTART:{date}T090000Z\nDTEND:{date}T100000Z\nEND:VEVENT\nEND:VCALENDAR')
     return classify_records([row], calendars=[cal, *extra], slots=slots, audits=audits,
-                            links={'alias': 'person'}, now=datetime(2026, 9, 10, 12, tzinfo=timezone.utc))['records'][0]
+                            links={'alias': 'person'}, families=families,
+                            now=datetime(2026, 9, 10, 12, tzinfo=timezone.utc))['records'][0]
 
 
 def test_audit_alone_does_not_prove_a_persisted_booking():
@@ -68,6 +69,8 @@ def test_calendar_recovery_discovery_is_read_only_without_postgres(monkeypatch):
         },
         "records": [],
     }
+
+
 def test_a_past_invite_with_no_booking_is_its_own_state():
     """Filed with the cancellations, it read as history working correctly. It
     may be an interview that happened and was never recorded."""
@@ -169,3 +172,23 @@ def test_the_calendar_event_is_still_the_first_way_to_match():
 
     assert row["discovery_state"] == "ALREADY_REPRESENTED"
     assert row["matched_by"] == "calendar event"
+
+
+def test_a_hand_booked_slot_is_matched_through_the_rosters_own_identity():
+    """A slot typed into Daily Ops has no audit row and no identity link, so
+    the report could not tell whose it was. The roster can: this is the set the
+    booking service itself uses to find a candidate's bookings."""
+    slot = hand_booked(id="typed-in")
+
+    assert classify(slots=[slot])["discovery_state"] == "RECOVERY_CANDIDATE"
+    assert classify(slots=[slot], families={"person": {"typed-in"}})["discovery_state"] == "ALREADY_REPRESENTED"
+
+
+def test_the_family_never_excuses_a_different_schedule():
+    assert classify(slots=[hand_booked(id="typed-in", time="09:00")],
+                    families={"person": {"typed-in"}})["discovery_state"] == "RECOVERY_CANDIDATE"
+
+
+def test_the_family_never_excuses_a_row_claiming_another_calendar_event():
+    assert classify(slots=[hand_booked(id="typed-in", interview_calendar_uid="other-uid")],
+                    families={"person": {"typed-in"}})["discovery_state"] == "RECOVERY_CANDIDATE"
