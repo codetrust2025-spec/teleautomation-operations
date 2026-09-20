@@ -2125,10 +2125,18 @@ def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) 
             merged["resume_count"] = len(all_resumes)
             merged["latest_resume"] = max(all_resumes.values(), key=lambda item: item.get("uploaded_at") or "")
         # Merge each typed collection independently across legacy profile clones.
+        # Each clone is re-read against the group's payment rather than its own:
+        # the money for a profile is recorded on one slot row, so a screenshot
+        # uploaded against any other clone looks like it belongs to a candidate
+        # who never paid, and an untyped legacy upload is then filed as
+        # unclassifiable instead of as the payment proof it is.
         all_proofs = {}
         slot_proofs = {}
+        review_queue = {}
         for r in group:
-            attachments = partition_candidate_attachments(r)
+            attachments = partition_candidate_attachments(
+                r, context={**r, "payment": max_payment}
+            )
             for item in attachments["payment_proofs"]:
                 pid = item.get("id")
                 if not pid or pid in all_proofs:
@@ -2143,11 +2151,22 @@ def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) 
                 item = dict(item)
                 item.setdefault("candidate_id", r.get("id"))
                 slot_proofs[pid] = item
+            for item in attachments["attachment_review_queue"]:
+                pid = item.get("id")
+                if not pid or pid in review_queue:
+                    continue
+                item = dict(item)
+                item.setdefault("candidate_id", r.get("id"))
+                review_queue[pid] = item
         if all_proofs:
             merged["payment_proofs"] = list(all_proofs.values())
             merged["proof_count"] = len(all_proofs)
         if slot_proofs:
             merged["slot_screenshot_proofs"] = list(slot_proofs.values())
+        # Always replaced, never inherited from the representative row: an
+        # attachment the group's view has just reclassified must not stay
+        # queued, and a sibling's queued attachment must not stay invisible.
+        merged["attachment_review_queue"] = list(review_queue.values())
         result.append(merged)
     result.sort(key=lambda r: (r.get("date") or "", r.get("updated_at") or ""), reverse=True)
     return result
