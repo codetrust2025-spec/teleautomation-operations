@@ -1237,11 +1237,11 @@ def test_reschedule_never_moves_the_only_slot_of_a_different_calendar_event(monk
 
 MISSED_INTERVIEW_MAIL = {
     "provider_message_id": "gm-missed", "provider_thread_id": "gt1",
-    "subject": "Missed Interview Opportunity (Specialist, AI SRE Engineer / EY)",
+    "subject": "Missed Interview Opportunity (Platform Engineer / Example)",
     "body": (
-        "Hi GOPICHAND, Looks like you missed your interview for the "
-        "\"Specialist, AI SRE Engineer\" role at \"EY\". No problem, we can help "
-        "you get it rescheduled quickly."
+        "Hi Rahul, Looks like you missed your interview for the "
+        "\"Platform Engineer\" role at \"Example\". No problem, we can help you "
+        "get it rescheduled quickly."
     ),
     "sent_at": "2026-09-03T14:02:00+00:00",  # 7:32 PM IST
 }
@@ -1261,9 +1261,9 @@ def _cancellation():
 
 
 def test_a_missed_interview_mail_never_cancels_a_booking_that_had_not_started(monkeypatch):
-    """Production read this mail as a cancellation on 11 Sep for an interview
-    missed on 3 Sep, and every booking the candidate held by then was a later
-    one. A single match would have cancelled a live interview."""
+    """Production read a mail like this as a cancellation on 11 Sep for an
+    interview missed on 3 Sep, and every booking that candidate held by then was
+    a later one. A single match would have cancelled a live interview."""
     monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
     later = {"id": "slot-later", "name": "Rahul", "slot_confirmed": True,
              "date": "2026-09-07", "time": "19:30"}
@@ -1282,9 +1282,10 @@ def test_a_missed_interview_mail_never_cancels_a_booking_that_had_not_started(mo
 
 
 def test_a_missed_interview_mail_still_releases_the_interview_it_is_about(monkeypatch):
-    """Pujitha's Persistent Systems slot stayed confirmed for an interview the
-    mail said she had missed. Releasing that one is what reading these mails as
-    cancellations is for, and it still happens."""
+    """A production slot stayed confirmed for an interview the mail said the
+    candidate had missed. Releasing that one is what reading these mails as
+    cancellations is for, and it still happens -- the real case arrived at
+    4:10 AM IST for a slot that had started at 2:30 AM IST."""
     monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
     missed = {"id": "slot-missed", "name": "Rahul", "slot_confirmed": True,
               "date": "2026-09-03", "time": "12:30"}

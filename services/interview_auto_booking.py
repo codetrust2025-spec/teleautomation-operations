@@ -423,8 +423,8 @@ def _reference_schedule(result: dict[str, Any], classification: str) -> dict[str
 # quickly." A mail like this may release the booking it is about -- a missed
 # interview must not stay confirmed, which is why the source parser reads it as
 # a cancellation at all -- but it is about an interview that has already
-# happened. Gopichand's was read on 11 Sep for an interview missed on 3 Sep,
-# and every booking he held by then was a later one, any of which a single
+# happened. One was read on 11 Sep for an interview missed on 3 Sep, and every
+# booking that candidate held by then was a later one, any of which a single
 # match would have cancelled.
 _MISSED_INTERVIEW = re.compile(
     r"missed (?:your|the|his|her|their|this|an?) interview"
