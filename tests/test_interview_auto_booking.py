@@ -606,18 +606,27 @@ def test_reschedule_resolves_correct_slot_from_thread_not_first_row(monkeypatch)
     assert audits[-1]["previous_booking"]["id"] == "slot2"
 
 
-def test_cancellation_with_multiple_unidentified_slots_is_blocked(monkeypatch):
+def test_cancellation_matching_none_of_several_slots_is_blocked(monkeypatch):
+    """Blocked either way. The code says which failure it was: nothing here
+    identifies a booking, and every stored alert that read "more than one
+    booking" was this -- the interview being cancelled had none."""
     monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
     rows = [
         {"id": "slot1", "name": "Rahul", "slot_confirmed": True, "date": "2026-07-19", "time": "14:00"},
         {"id": "slot2", "name": "Rahul", "slot_confirmed": True, "date": "2026-07-20", "time": "15:00"},
     ]
     install_store_fakes(monkeypatch, rows=rows)
+    cancelled = []
+    monkeypatch.setattr(
+        booking.candidate_store, "cancel_interview_slot",
+        lambda **kwargs: cancelled.append(kwargs) or {"id": kwargs["candidate_id"]},
+    )
     value = result("interview_cancelled", date=None, time=None, timezone=None, round=None)
     value["company"]["name"] = None
     value["job"]["title"] = None
     outcome = execute(value)
-    assert outcome["failure_code"] == "BOOKING_AMBIGUOUS"
+    assert outcome["failure_code"] == "BOOKING_NOT_FOUND"
+    assert cancelled == []
 
 
 def test_cancellation_resolves_new_gmail_thread_by_stable_requisition_id(monkeypatch):
@@ -1332,3 +1341,92 @@ def test_a_plain_cancellation_still_reaches_a_booking_that_has_not_happened(monk
 
     assert outcome["status"] == "Cancelled"
     assert outcome["booking"]["id"] == "slot-upcoming"
+# ── Late is not the same as past ────────────────────────────────────────────
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def _ist(hour, minute):
+    return datetime(2026, 9, 16, hour, minute, tzinfo=IST)
+
+
+class _FrozenClock(datetime):
+    """The booking service reads the wall clock itself; this stands still."""
+
+    @classmethod
+    def now(cls, tz=None):
+        frozen = _ist(16, 10)
+        return frozen.astimezone(tz) if tz else frozen
+
+
+def test_an_invite_that_arrived_before_the_interview_is_booked_even_when_we_are_late():
+    """Production: the invite arrived at 5:29 PM for a 5:30 PM interview and
+    processing finished at 5:32. It was refused, and the interview never
+    reached Daily Ops."""
+    value = result(date="2026-09-16", time="05:30 PM", timezone="Asia/Kolkata")
+
+    schedule = booking.normalized_schedule(value, now=_ist(17, 32), arrived_at=_ist(17, 29))
+
+    assert schedule["time"] == "17:30"
+
+
+def test_a_meeting_link_sent_minutes_into_the_call_still_books():
+    value = result(date="2026-09-16", time="04:00 PM", timezone="Asia/Kolkata")
+
+    schedule = booking.normalized_schedule(value, now=_ist(16, 10), arrived_at=_ist(16, 9))
+
+    assert schedule["time"] == "16:00"
+
+
+@pytest.mark.parametrize(("now", "arrived"), [
+    (_ist(18, 45), _ist(18, 40)),  # the mail itself came long after the interview
+    (_ist(23, 45), _ist(15, 0)),   # in time, but hours have passed since
+    (_ist(17, 32), None),          # nothing says when it arrived
+])
+def test_an_interview_that_is_really_past_is_still_refused(now, arrived):
+    value = result(date="2026-09-16", time="04:00 PM", timezone="Asia/Kolkata")
+
+    with pytest.raises(booking.BookingValidationError) as exc:
+        booking.normalized_schedule(value, now=now, arrived_at=arrived)
+
+    assert exc.value.code == "PAST_INTERVIEW"
+
+
+def test_a_late_invite_books_through_the_real_entry_point(monkeypatch):
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    install_store_fakes(monkeypatch)
+    monkeypatch.setattr(booking.candidate_store, "assign_interview_slot", slot_writer("slot-late"))
+    monkeypatch.setattr(booking, "datetime", _FrozenClock)
+    mail = {
+        "provider_message_id": "gm-late", "provider_thread_id": "gt1",
+        "subject": "Screening call", "body": "Please find the meeting link below.",
+        "sent_at": "2026-09-16T10:39:00+00:00",  # 4:09 PM IST, nine minutes in
+    }
+
+    outcome = execute_mail(result(date="2026-09-16", time="04:00 PM", timezone="Asia/Kolkata"), mail)
+
+    assert outcome["status"] == "Auto Booked"
+    assert (outcome["booking"]["date"], outcome["booking"]["time"]) == ("2026-09-16", "16:00")
+
+
+# ── Nothing matched is not "more than one match" ────────────────────────────
+
+def test_two_bookings_that_match_equally_are_still_ambiguous(monkeypatch):
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    rows = [
+        {"id": "slot-a", "name": "Rahul", "slot_confirmed": True, "date": "2099-08-06",
+         "time": "15:30", "interview_source_thread_id": "gt1", "interview_company": "Example"},
+        {"id": "slot-b", "name": "Rahul", "slot_confirmed": True, "date": "2099-08-07",
+         "time": "11:00", "interview_source_thread_id": "gt1", "interview_company": "Example"},
+    ]
+    install_store_fakes(monkeypatch, rows=rows)
+    cancelled = []
+    monkeypatch.setattr(
+        booking.candidate_store, "cancel_interview_slot",
+        lambda **kwargs: cancelled.append(kwargs) or {"id": kwargs["candidate_id"]},
+    )
+
+    outcome = execute(_cancellation())
+
+    assert outcome["failure_code"] == "BOOKING_AMBIGUOUS"
+    assert cancelled == []

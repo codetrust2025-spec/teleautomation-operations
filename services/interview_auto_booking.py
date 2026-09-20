@@ -99,7 +99,32 @@ def validate_timezone(value: str):
     return zone
 
 
-def normalized_schedule(result: dict[str, Any], *, now: datetime | None = None) -> dict[str, str]:
+# An invitation that reaches us minutes before the interview is still worth
+# booking, and so is a meeting link sent once the call has started: the queue,
+# not the sender, is what made it late. Two production invites were refused as
+# past with nothing wrong with them -- a screening invite that arrived at
+# 5:29 PM for a 5:30 PM interview and finished processing at 5:32, and a Teams
+# link sent nine minutes into a 4:00 PM call -- and neither interview ever
+# reached Daily Ops.
+#
+# The mail must have been sent while the interview was still ahead or barely
+# underway, and the booking is only filled in for a few hours afterwards, so a
+# backlog of old mail cannot write bookings across past weeks.
+LATE_INVITE_GRACE = timedelta(minutes=30)
+LATE_BOOKING_WINDOW = timedelta(hours=6)
+
+
+def _still_bookable_after_it_started(
+    start: datetime, current: datetime, arrived_at: datetime | None,
+) -> bool:
+    if arrived_at is None:
+        return False
+    return arrived_at <= start + LATE_INVITE_GRACE and current <= start + LATE_BOOKING_WINDOW
+
+
+def normalized_schedule(
+    result: dict[str, Any], *, now: datetime | None = None, arrived_at: datetime | None = None,
+) -> dict[str, str]:
     interview = result.get("interview") or {}
     try:
         day = date.fromisoformat(str(interview.get("date") or ""))
@@ -111,7 +136,9 @@ def normalized_schedule(result: dict[str, Any], *, now: datetime | None = None) 
     current = now or datetime.now(source_zone)
     if current.tzinfo is None:
         current = current.replace(tzinfo=source_zone)
-    if source_dt <= current.astimezone(source_zone):
+    if (source_dt <= current.astimezone(source_zone)
+            and not _still_bookable_after_it_started(
+                source_dt, current.astimezone(source_zone), arrived_at)):
         raise BookingValidationError("PAST_INTERVIEW", "Interview date and time must be in the future.")
     local = source_dt.astimezone(ZoneInfo("Asia/Kolkata"))
     # Preserve the schedule supplied by the invitation. Trusted RFC 5545
@@ -524,7 +551,16 @@ def _resolve_existing_slot(
             score += 15
         ranked.append((score, row))
     ranked.sort(key=lambda item: item[0], reverse=True)
-    if ranked[0][0] <= 0 or (len(ranked) > 1 and ranked[0][0] == ranked[1][0]):
+    # Nothing matching and two things matching equally are different failures,
+    # and they were reported as the same one. Every stored "more than one
+    # booking" alert was the first kind: the interview being cancelled had no
+    # booking, so the alert sent a person looking for one among the others.
+    if ranked[0][0] <= 0:
+        raise BookingValidationError(
+            "BOOKING_NOT_FOUND",
+            "None of this candidate's active interview bookings matches this email.",
+        )
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
         raise BookingValidationError(
             "BOOKING_AMBIGUOUS",
             "Multiple active interview slots match this candidate; the source email does not identify one safely.",
@@ -1056,7 +1092,9 @@ def _execute_auto_booking(
         mailbox_email = str(mailbox.get("email_address") or "").strip().lower()
         if result_email and mailbox_email and result_email != mailbox_email:
             raise BookingValidationError("CANDIDATE_MAPPING_FAILED", "The AI candidate email does not match the authorized mailbox.")
-        schedule = None if classification == "interview_cancelled" else normalized_schedule(result)
+        schedule = None if classification == "interview_cancelled" else normalized_schedule(
+            result, arrived_at=interview_lifecycle._sent_at(message.get("sent_at")),
+        )
         if classification != "interview_cancelled":
             _payment_check(candidate, schedule); payment_status = "PASSED"
         slots = _confirmed_slots(candidate)
