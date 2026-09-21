@@ -755,7 +755,13 @@ def _hand_booked_twin(slots: list[dict[str, Any]], *, schedule: dict[str, str]) 
 
 
 def _source_teams_meetings(message):
-    """Exact Teams meeting identities in raw MIME alternatives, not AI fields."""
+    """Exact Teams meeting identities in raw MIME alternatives, not AI fields.
+
+    Two link forms name one meeting exactly: the classic join link, by the
+    meeting thread in its path, and the short link Teams now sends, by its
+    meeting id (see `_teams_short_meeting`). The two forms are never compared
+    with each other -- nothing in either proves they are the same meeting.
+    """
     from html import unescape
     from urllib.parse import unquote, urlsplit
     text = unescape(' '.join(str(message.get(k) or '') for k in (
@@ -769,7 +775,34 @@ def _source_teams_meetings(message):
         path = parsed.path.rstrip('/')
         if re.fullmatch(r'/l/meetup-join/19:meeting_[^/]+/0', path):
             found.add((parsed.hostname, path))
+        elif (short := _teams_short_meeting(url)):
+            found.add(short)
     return found
+
+
+def _teams_short_meeting(url: str) -> tuple[str, str, str] | None:
+    """The identity of a Teams short meeting link, or None unless it is exactly one.
+
+    teams.microsoft.com/meet/<meeting id>?p=<passcode>. The numeric id names the
+    meeting and is compared digit for digit -- never a prefix or a near match.
+    The passcode, when the link has one, is part of the identity, so the same id
+    with another passcode, or with none, is not proof of the same meeting. It is
+    compared without case: stored mail carries one meeting's passcode in two
+    cases within a single message. Nothing else in the query identifies a
+    meeting, so launcher and tracking flags are dropped. A malformed link, or
+    one with more than one passcode, is no identity at all rather than a guess.
+    """
+    from urllib.parse import parse_qs, urlsplit
+    parsed = urlsplit(url)
+    if parsed.hostname != 'teams.microsoft.com':
+        return None
+    meeting = re.fullmatch(r'/meet/(\d{10,20})', parsed.path.rstrip('/'))
+    if not meeting:
+        return None
+    passcodes = parse_qs(parsed.query).get('p', [])
+    if len(passcodes) > 1 or (passcodes and not re.fullmatch(r'[A-Za-z0-9]{4,64}', passcodes[0])):
+        return None
+    return ('teams.microsoft.com', f'/meet/{meeting.group(1)}', passcodes[0].lower() if passcodes else '')
 
 
 def _recover_pending_lifecycle_slot(
