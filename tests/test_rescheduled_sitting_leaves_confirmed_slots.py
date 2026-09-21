@@ -51,10 +51,10 @@ def confirmed_slots():
 # ── What Confirmed slots lists, status by status ────────────────────────────
 
 @pytest.mark.parametrize(("status", "listed"), [
-    ("", True),                                   # Pending
-    ("attended", True),                           # today's outcome, listed as before
-    ("not_attended", True),
-    ("re_service", True),
+    ("", True),                                   # Pending: the only status still to be sat
+    ("attended", False),                          # an outcome: see
+    ("not_attended", False),                      # test_confirmed_slots_are_only_active_bookings.py
+    ("re_service", False),
     ("cancelled", False),
     ("rescheduled", False),
     (cs.RELEASED_FOR_RESCHEDULE_STATUS, False),   # Awaiting new slot

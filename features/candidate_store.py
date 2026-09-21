@@ -3766,23 +3766,30 @@ def interview_upcoming(
 
 
 def public_booked_interview_slots(*, days: int = 60) -> dict:
-    """Confirmed slots for the public submit page (name, time and type only)."""
+    """Confirmed upcoming slots for the public submit page (name, time and type only).
+
+    Only interviews still to be sat, by the rule Daily Ops Upcoming uses, so the
+    two lists cannot disagree: a booking leaves once it has an outcome --
+    attended, not attended, re-service -- or will not be sat -- cancelled,
+    rescheduled, awaiting a new slot, replaced. It stays in Daily Ops and in
+    its history; only this list stops showing it. Its readers are this page's
+    list and count and the sidebar badge, which counts the same list.
+    """
     from datetime import date, timedelta
 
     today = date.today()
     start = today.isoformat()
     end = (today + timedelta(days=max(int(days), 1))).isoformat()
-    rows = _interview_rows_for_range(start, end)
+    rows = _filter_upcoming_only_rows(_interview_rows_for_range(start, end))
     slots: list[dict] = []
     for row in rows:
-        if not slot_still_stands(row):
-            continue
         slot_date = (row.get("date") or "").strip()[:10]
         slot_time = (row.get("time") or "").strip()
         slot_end = (row.get("time_end") or "").strip()
         if not slot_date or not slot_time:
             continue
-        # Show all of today's slots (even if time passed) so user sees just-booked slot
+        # Today's slots stay until they get an outcome, even once their time has
+        # passed, so a slot booked for earlier today still shows.
         if slot_date != today.isoformat() and not _interview_slot_still_upcoming(slot_date, slot_time, slot_end):
             continue
         slots.append({
