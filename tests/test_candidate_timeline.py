@@ -173,6 +173,8 @@ def test_the_endpoint_serves_one_persons_timeline(monkeypatch):
     monkeypatch.setattr(api.store, "list_notifications",
                         lambda *, filters, limit: (ALERTS.get(filters["candidate_id"], []), 0))
     monkeypatch.setattr(api.store, "list_events", lambda *, candidate_id, limit: EVENTS.get(candidate_id, []))
+    monkeypatch.setattr(api.store, "candidate_ids_with_mail",
+                        lambda ids: {cid for cid in ids if cid in ALERTS or cid in EVENTS})
     app = FastAPI()
     api.install_recruitment_mail_routes(app)
     client = TestClient(app)
@@ -183,3 +185,27 @@ def test_the_endpoint_serves_one_persons_timeline(monkeypatch):
     assert body["entries"][0]["title"] == "Marked attended"
     assert [entry["mail_id"] for entry in body["entries"] if entry["kind"] == "alert"] == ["gm-8"]
     assert client.get("/api/candidates/nobody/timeline").status_code == 404
+
+
+def test_mail_is_only_asked_of_the_ids_that_hold_it(monkeypatch):
+    """One candidate has an id per booking row; asking each of them for mail
+    took 1.7 s. Only the ids that hold mail are asked, and never an id that is
+    not this person's."""
+    monkeypatch.setattr(cs, "all_booking_rows", _rows)
+    monkeypatch.setattr(cs, "candidate_identity_ids", lambda cid, **_kwargs: list(PERSON))
+    asked = []
+
+    def alerts(cid):
+        asked.append(cid)
+        return ALERTS.get(cid, [])
+
+    narrowed = timeline.candidate_timeline(
+        "p1", alerts_for=alerts, events_for=lambda cid: EVENTS.get(cid, []),
+        mail_owners=lambda ids: {"p1", "someone-else"},
+    )
+    everyone = timeline.candidate_timeline(
+        "p1", alerts_for=lambda cid: ALERTS.get(cid, []), events_for=lambda cid: EVENTS.get(cid, []),
+    )
+
+    assert asked == ["p1"]
+    assert narrowed == everyone

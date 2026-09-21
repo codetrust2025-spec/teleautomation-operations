@@ -236,14 +236,20 @@ def candidate_timeline(
     *,
     alerts_for: Callable[[str], list[dict]],
     events_for: Callable[[str], list[dict]],
+    mail_owners: Callable[[list[str]], set[str]] | None = None,
     limit: int = 300,
 ) -> list[dict]:
-    """Every entry for the person `candidate_id` belongs to, newest first."""
+    """Every entry for the person `candidate_id` belongs to, newest first.
+
+    `mail_owners` narrows the mail lookups to the ids that hold any mail; asked
+    for every booking row instead, one candidate's history took 1.7 seconds.
+    """
     cid = _text(candidate_id)
     family = set(candidate_store.candidate_identity_ids(cid, include_name_matches=False)) | {cid}
     rows = [row for row in candidate_store.all_booking_rows() if _text(row.get("id")) in family]
-    alerts = _unique([alert for member in sorted(family) for alert in alerts_for(member)])
-    events = _unique([event for member in sorted(family) for event in events_for(member)])
+    with_mail = sorted(family if mail_owners is None else set(mail_owners(sorted(family))) & family)
+    alerts = _unique([alert for member in with_mail for alert in alerts_for(member)])
+    events = _unique([event for member in with_mail for event in events_for(member)])
     booked = _booking_entries(rows)
     entries = booked + _mail_entries(alerts, events, booked)
     entries.sort(key=lambda entry: entry["at"], reverse=True)

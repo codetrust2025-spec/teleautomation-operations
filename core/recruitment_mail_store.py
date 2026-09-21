@@ -238,6 +238,27 @@ def mailbox_for_candidates(candidate_ids: list[str]) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
+def candidate_ids_with_mail(candidate_ids: list[str]) -> set[str]:
+    """Which of these ids hold alerts or recruitment events.
+
+    A person's history is asked for per id, and a person has an id per booking
+    row -- twenty-five for one candidate -- while their mail sits under one or
+    two of them. One query finds those, so the timeline stops making two
+    queries for every booking row.
+    """
+    ids = [str(value) for value in candidate_ids if value]
+    if not ids:
+        return set()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT candidate_id FROM mail_monitoring_notifications WHERE candidate_id = ANY(%s)
+               UNION
+               SELECT candidate_id FROM ai_recruitment_events WHERE candidate_id = ANY(%s)""",
+            (ids, ids),
+        )
+        return {str(row[0]) for row in cur.fetchall()}
+
+
 def mailboxes_for_candidates(candidate_ids: list[str]) -> list[dict[str, Any]]:
     """Return ALL mailboxes across identity rows — supports multiple emails per candidate."""
     ids = [str(value) for value in candidate_ids if value]

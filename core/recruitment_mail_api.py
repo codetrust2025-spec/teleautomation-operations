@@ -343,6 +343,7 @@ def install_recruitment_mail_routes(app):
             candidate_timeline,candidate_id,
             alerts_for=lambda cid:store.list_notifications(filters={'candidate_id':cid},limit=200)[0],
             events_for=lambda cid:store.list_events(candidate_id=cid,limit=100),
+            mail_owners=store.candidate_ids_with_mail,
         )
         return {'status':'ok','entries':entries}
     @app.get('/api/candidates/{candidate_id}/recruitment-events')

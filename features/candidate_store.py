@@ -1202,6 +1202,8 @@ def _clean_str(value, *, default: str = "") -> str:
 
 
 _ALIAS_CACHE: dict[str, str] | None = None
+_ALIAS_BUILD_LOCK = RLock()
+_ALIAS_BUILDING = False
 
 
 def _reference_alias_map() -> dict[str, str]:
@@ -1215,27 +1217,45 @@ def _reference_alias_map() -> dict[str, str]:
 
     Cached because this runs once per row; call reload_reference_aliases()
     after the registry changes.
-    """
-    global _ALIAS_CACHE
-    if _ALIAS_CACHE is not None:
-        return _ALIAS_CACHE
-    mapping: dict[str, str] = {}
-    try:
-        from features import referrer_registry as _rr
 
-        for row in _rr.list_referrers(include_inactive=True):
-            canonical = str(row.get("name") or "").strip().lower()
-            if not canonical:
-                continue
-            for alias in row.get("aliases") or []:
-                key = str(alias or "").strip().lower()
-                if key and key != canonical:
-                    mapping[key] = canonical
-    except Exception:
-        # Registry unavailable — fall back to raw keys, exactly as before.
-        mapping = {}
-    _ALIAS_CACHE = mapping
-    return mapping
+    Built once, never re-entered. Listing the referrers reads every candidate
+    row, and each row's computed fields ask for this map again: unguarded,
+    every one of those calls started a build of its own -- 124 deep and 27,026
+    row computations for a single list, about four seconds with the only API
+    worker frozen, on the first Daily Ops load after each deploy. The aliases
+    come from the registry's own rows, not from the candidate-derived names
+    that cause the re-entry, so a call made during the build gets the raw-key
+    fallback and the finished map is unchanged.
+    """
+    global _ALIAS_CACHE, _ALIAS_BUILDING
+    cached = _ALIAS_CACHE
+    if cached is not None:
+        return cached
+    with _ALIAS_BUILD_LOCK:
+        if _ALIAS_CACHE is not None:
+            return _ALIAS_CACHE
+        if _ALIAS_BUILDING:
+            return {}
+        _ALIAS_BUILDING = True
+        mapping: dict[str, str] = {}
+        try:
+            from features import referrer_registry as _rr
+
+            for row in _rr.list_referrers(include_inactive=True):
+                canonical = str(row.get("name") or "").strip().lower()
+                if not canonical:
+                    continue
+                for alias in row.get("aliases") or []:
+                    key = str(alias or "").strip().lower()
+                    if key and key != canonical:
+                        mapping[key] = canonical
+        except Exception:
+            # Registry unavailable — fall back to raw keys, exactly as before.
+            mapping = {}
+        finally:
+            _ALIAS_BUILDING = False
+        _ALIAS_CACHE = mapping
+        return mapping
 
 
 def reload_reference_aliases() -> None:
