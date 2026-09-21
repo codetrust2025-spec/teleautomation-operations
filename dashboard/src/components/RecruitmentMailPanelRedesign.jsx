@@ -910,7 +910,18 @@ function AutomationActivity({
   );
 }
 
-function CandidateOutcomes({
+// Daily Ops opens on a booking the same way Mail Alerts sends it there.
+function openBooking(bookingId, candidateId) {
+  window.dispatchEvent(new CustomEvent("teleautomation:navigate", {
+    detail: { view: "daily-ops", bookingId, candidateId },
+  }));
+}
+
+// One entry per happening, from /api/candidates/{id}/timeline: bookings, moves,
+// replacements, attendance marks, payments and the candidate's mail, newest
+// first. An alert and the recruitment event it was raised for arrive as one
+// entry, so a mail is never listed twice.
+export function CandidateOutcomes({
   offers,
   selectedId,
   timeline,
@@ -921,7 +932,7 @@ function CandidateOutcomes({
       <header>
         <div>
           <h2>Candidate history</h2>
-          <p>Selection, offer, and joining history in one candidate view.</p>
+          <p>Bookings, moves, attendance, payments and mail, newest first.</p>
         </div>
       </header>
       <div className="sot-candidate-details">
@@ -929,22 +940,34 @@ function CandidateOutcomes({
           <h3>Candidate timeline</h3>
           {timeline.length ? (
             <ol className="sot-timeline">
-              {timeline.map((item) => (
-                <li key={item.id}>
-                  <time>{formatTime(item.created_at)}</time>
-                  <strong>{human(item.primary_status)}</strong>
-                  <span>
-                    {item.company_name || "Unknown company"} ·{" "}
-                    {item.job_title || "Unknown role"}
-                  </span>
-                  <button onClick={() => onEvidence(item.id)}>
-                    View evidence
-                  </button>
+              {timeline.map((entry) => (
+                <li
+                  key={`${entry.kind}:${entry.booking_id || entry.mail_id || entry.event_id || ""}:${entry.at}`}
+                  data-kind={entry.kind}
+                >
+                  <time>{formatTime(entry.at)}</time>
+                  <strong>{entry.title}</strong>
+                  {entry.detail && <span>{entry.detail}</span>}
+                  <small>{entry.source}</small>
+                  {(entry.event_id || entry.booking_id) && (
+                    <div className="sot-timeline__actions">
+                      {entry.event_id && (
+                        <button type="button" onClick={() => onEvidence(entry.event_id)}>
+                          View evidence
+                        </button>
+                      )}
+                      {entry.booking_id && (
+                        <button type="button" onClick={() => openBooking(entry.booking_id, selectedId)}>
+                          View booking
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="sot-empty">No timeline events.</p>
+            <p className="sot-empty">Nothing recorded for this candidate yet.</p>
           )}
         </div>
         <div>
@@ -2094,8 +2117,8 @@ export default function RecruitmentMailPanelRedesign() {
       setTimeline([]);
       return;
     }
-    request(`/api/candidates/${candidateId}/recruitment-timeline`)
-      .then((body) => setTimeline(body.events || []))
+    request(`/api/candidates/${candidateId}/timeline`)
+      .then((body) => setTimeline(body.entries || []))
       .catch((error) => setMessage(error.message));
   }, [candidateId]);
 

@@ -1389,9 +1389,18 @@
 }
 .sot-timeline time,
 .sot-timeline span,
+.sot-timeline small,
 .sot-offer-case span,
 .sot-offer-case small {
   color: var(--sot-muted);
+}
+.sot-timeline span {
+  overflow-wrap: anywhere;
+}
+.sot-timeline__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 .sot-timeline button,
 .sot-offer-case button {

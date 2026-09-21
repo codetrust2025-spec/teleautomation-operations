@@ -332,6 +332,19 @@ def install_recruitment_mail_routes(app):
         _guard();row=candidate_store.get_candidate(candidate_id)
         if not row:raise HTTPException(404,'Candidate not found')
         assert_candidate_row_access(request,row);return {'status':'ok','events':_identity_events(candidate_id,limit=100)}
+    @app.get('/api/candidates/{candidate_id}/timeline')
+    async def unified_timeline(candidate_id:str,request:Request):
+        """Bookings, moves, attendance, payments and mail for one person, newest first."""
+        _guard();row=candidate_store.get_candidate(candidate_id)
+        if not row:raise HTTPException(404,'Candidate not found')
+        assert_candidate_row_access(request,row)
+        from services.candidate_timeline import candidate_timeline
+        entries=await asyncio.to_thread(
+            candidate_timeline,candidate_id,
+            alerts_for=lambda cid:store.list_notifications(filters={'candidate_id':cid},limit=200)[0],
+            events_for=lambda cid:store.list_events(candidate_id=cid,limit=100),
+        )
+        return {'status':'ok','entries':entries}
     @app.get('/api/candidates/{candidate_id}/recruitment-events')
     async def recruitment_events(candidate_id:str,request:Request,limit:int=50,offset:int=0):
         _guard();row=candidate_store.get_candidate(candidate_id)
