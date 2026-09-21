@@ -24,6 +24,20 @@ from core import recruitment_mail_store as store
 NOW = datetime.now(timezone.utc)
 
 
+def earlier_today(days: float) -> float:
+    """An age that still lands inside the operator's day, as the queue counts days.
+
+    "Today" is Asia/Kolkata's (`store._QUEUE_TIMEZONE`), so a fixed age like
+    0.2 days (4.8 hours) is yesterday for the first 4.8 hours after midnight
+    there -- 18:30 to 23:18 UTC -- and a check run then counted it as history.
+    """
+    from zoneinfo import ZoneInfo
+
+    local = NOW.astimezone(ZoneInfo(store._QUEUE_TIMEZONE))
+    since_midnight = local - local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return min(days, since_midnight.total_seconds() / 86400 / 2)
+
+
 def table(migration: str, name: str) -> str:
     ddl = (Path(__file__).resolve().parents[1] / "core" / "migrations" / migration).read_text()
     start = ddl.index(f"CREATE TABLE IF NOT EXISTS {name}")
@@ -258,7 +272,7 @@ class TestTheClaimMeasuresHistoryItself:
         for index in range(3):
             queue(queue_db, f"old-{index}", subject="Your application update", days_old=20 + index)
         queue(queue_db, "fresh", subject="Interview scheduled", days_old=0.01)
-        queue(queue_db, "today", subject="Thank you for applying", days_old=0.2)
+        queue(queue_db, "today", subject="Thank you for applying", days_old=earlier_today(0.2))
 
         store.claim_ai_messages(limit=1)
 
