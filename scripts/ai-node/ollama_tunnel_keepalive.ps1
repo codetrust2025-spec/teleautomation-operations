@@ -37,11 +37,17 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$VpsHostName,
 
-    # The account the key logs in as. A dedicated tunnel account confined to
-    # remote forwarding of one port is the stronger setup; Praveen's laptop
-    # still connects as root and should move onto one.
+    # The account the key logs in as: the VPS's teleautomation-tunnel account,
+    # which sshd confines to ssh -R on the tunnel ports, with no shell and no
+    # commands.
     [Parameter(Mandatory = $true)]
     [string]$VpsUser,
+
+    # A key that exists for this tunnel alone, restricted on the VPS to this
+    # node's port. Required, so nothing falls back to an administrator's key:
+    # Praveen's tunnel ran on the full root key until 21 Sep 2026.
+    [Parameter(Mandatory = $true)]
+    [string]$SshKeyPath,
 
     [int]$LocalOllamaPort = 11434,
     [int]$RetrySeconds = 10
@@ -49,7 +55,7 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-$SshKey = Join-Path $env:USERPROFILE ".ssh\teleautomation_vps_ed25519"
+$SshKey = $SshKeyPath
 
 function Resolve-LogDirectory {
     <#

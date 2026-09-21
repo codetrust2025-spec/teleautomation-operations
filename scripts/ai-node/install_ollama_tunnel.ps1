@@ -19,11 +19,22 @@
     again. The supervisor itself reconnects ssh on its own loop.
 
     Re-running with the same -TaskName updates that task in place. No password
-    is stored: ssh authenticates with %USERPROFILE%\.ssh\teleautomation_vps_ed25519.
+    is stored: ssh authenticates with -SshKeyPath, a key that exists for this
+    tunnel alone. On the VPS its public half sits in the teleautomation-tunnel
+    account's authorized_keys, restricted to this node's port:
+
+        restrict,port-forwarding,permitlisten="127.0.0.1:<VpsPort>",
+        permitopen="127.0.0.1:<VpsPort>",command="/usr/sbin/nologin" ssh-ed25519 ...
+
+    and sshd's "Match User teleautomation-tunnel" block allows that account
+    remote TCP forwarding only -- no commands, no shell, no local or unix-socket
+    forwarding.
 
 .EXAMPLE
     .\install_ollama_tunnel.ps1 -TaskName "TeleAutomation Ollama Secondary Tunnel" `
-        -VpsPort 11436 -NodeName praveen_kvm1 -VpsHostName <vps-host> -VpsUser root
+        -VpsPort 11436 -NodeName praveen_kvm1 -VpsHostName <vps-host> `
+        -VpsUser teleautomation-tunnel `
+        -SshKeyPath "$env:USERPROFILE\.ssh\teleautomation_tunnel_praveen_ed25519"
 #>
 [CmdletBinding()]
 param(
@@ -31,6 +42,7 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-z0-9_]+$')][string]$NodeName,
     [Parameter(Mandatory = $true)][string]$VpsHostName,
     [Parameter(Mandatory = $true)][string]$VpsUser,
+    [Parameter(Mandatory = $true)][string]$SshKeyPath,
     [string]$TaskName = "",
     [ValidateRange(1, 60)][int]$RecheckMinutes = 5,
     [switch]$NoStart
@@ -50,16 +62,16 @@ New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 $installed = Join-Path $installDir "ollama_tunnel_keepalive.ps1"
 Copy-Item -LiteralPath $source -Destination $installed -Force
 
-$sshKey = Join-Path $env:USERPROFILE ".ssh\teleautomation_vps_ed25519"
-if (-not (Test-Path -LiteralPath $sshKey)) {
-    Write-Warning "SSH key missing at $sshKey; the tunnel cannot log in until it exists."
+if (-not (Test-Path -LiteralPath $SshKeyPath)) {
+    throw "SSH key not found at $SshKeyPath; create this tunnel's own key first."
 }
+$SshKeyPath = (Resolve-Path -LiteralPath $SshKeyPath).Path
 
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument ("-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass " +
                "-File `"$installed`" -VpsPort $VpsPort -NodeName $NodeName " +
-               "-VpsHostName $VpsHostName -VpsUser $VpsUser")
+               "-VpsHostName $VpsHostName -VpsUser $VpsUser -SshKeyPath `"$SshKeyPath`"")
 
 # At this user's logon, and on a clock every few minutes from now on. Scoped
 # to this user because a logon trigger for any user needs an elevated shell,

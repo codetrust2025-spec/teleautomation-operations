@@ -84,3 +84,20 @@ def test_the_tunnel_stays_on_the_vps_loopback_and_fails_loudly():
                    "ServerAliveInterval=30"):
         assert option in body
     assert "/api/tags" in body, "the tunnel only opens once local Ollama answers"
+
+
+def test_a_tunnel_authenticates_with_its_own_key_never_the_admin_key():
+    """Praveen's tunnel ran on the full root key until 21 Sep 2026. The key is
+    now a required argument, and neither script names the administrator's key
+    to fall back on."""
+    for path in (KEEPALIVE, INSTALLER):
+        body = text(path)
+        assert "teleautomation_vps_ed25519" not in body, f"{path.name} still names the admin key"
+        params = body.split("param(", 1)[1].split("\n)\n", 1)[0]
+        assert re.search(r"Mandatory = \$true\)\]\s*\[string\]\$SshKeyPath", params), f"{path.name}: -SshKeyPath must be required"
+    assert '"-i", $SshKey,' in text(KEEPALIVE) and "$SshKey = $SshKeyPath" in text(KEEPALIVE)
+    action = text(INSTALLER).split("New-ScheduledTaskAction", 1)[1].split("\n\n", 1)[0]
+    assert '-SshKeyPath `"$SshKeyPath`"' in action
+    # The installer records what the VPS side has to say about the key.
+    assert 'restrict,port-forwarding,permitlisten="127.0.0.1:<VpsPort>"' in text(INSTALLER)
+    assert 'command="/usr/sbin/nologin"' in text(INSTALLER)
