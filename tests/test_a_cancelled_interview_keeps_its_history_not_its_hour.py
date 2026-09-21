@@ -41,13 +41,14 @@ def slot(**overrides):
     (slot(interview_attendance_status="canceled"), False),
     (slot(interview_attendance_status="attended"), True),
     (slot(interview_attendance_status="not_attended"), True),
-    (slot(interview_attendance_status="rescheduled"), True),
+    (slot(interview_attendance_status="rescheduled"), False),
     (slot(slot_confirmed=False), False),
     (slot(date=""), False),
 ])
-def test_only_a_cancelled_booking_stops_standing(row, expected):
+def test_only_a_sitting_that_will_not_be_sat_stops_standing(row, expected):
     """Attended and not-attended interviews happened: they keep their hour and
-    stay the booking a later mail is about. Only a cancellation ends one."""
+    stay the booking a later mail is about. A cancelled or rescheduled sitting
+    will not be sat, and ends."""
     assert cs.slot_still_stands(row) is expected
 
 

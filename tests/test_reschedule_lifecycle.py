@@ -9,16 +9,19 @@ the sitting is off, the row keeps the old time, and the replacement, if there
 is one, is a different row. All four rows carrying it were that, and two had a
 replacement beside them.
 
-So `rescheduled` cannot decide whether a slot still stands. Two explicit things
-do, and only they:
+A row moved in place no longer keeps the marker: it is the live booking again,
+and the marker from the sitting it used to describe moves into its own
+history. So the marker now only ever says what the operator meant, and a
+sitting carrying it has ended -- see
+test_rescheduled_sitting_leaves_confirmed_slots.py. Two explicit states end a
+sitting too:
 
   * `superseded_by_booking_id` -- the booking that replaced this one;
   * `released_for_reschedule` -- the hour is given up and no replacement has
     been booked yet.
 
-Both keep the old date and time, because the record of what was booked is the
-point. A row moved in place keeps neither: it is the live booking again, and
-the marker from the sitting it used to describe moves into its own history.
+All of them keep the old date and time, because the record of what was booked
+is the point.
 """
 
 from __future__ import annotations
@@ -159,13 +162,13 @@ def test_a_move_that_changes_nothing_leaves_the_marker_alone(store):
     assert same.get("interview_previous_sittings") == []
 
 
-def test_rescheduled_on_its_own_still_stands(store):
-    """The automatic path leaves this marker on the row it moved, and that row
-    is the live booking. Nothing here may treat the status alone as over."""
+def test_a_sitting_marked_rescheduled_frees_its_hour(store):
+    """A move carries the marker into history, so a row that still has it is a
+    sitting that will not be sat -- the hour is free, like a cancelled one."""
     store["candidates"].append(row(interview_attendance_status="rescheduled"))
 
-    assert cs.slot_still_stands(store["candidates"][0]) is True
-    assert [c["id"] for c in cs.find_interview_slot_conflicts(IST_DAY, "15:30", "16:00")] == ["slot-old"]
+    assert cs.slot_still_stands(store["candidates"][0]) is False
+    assert cs.find_interview_slot_conflicts(IST_DAY, "15:30", "16:00") == []
 
 
 # ── The booking service, end to end ─────────────────────────────────────────

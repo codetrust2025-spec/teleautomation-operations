@@ -187,8 +187,7 @@ VALID_INTERVIEW_ROUNDS = frozenset({
     "L1", "L2", "HR", "Final", "Screening",
 })
 #: The sitting is off and the hour is free, but no replacement has been booked
-#: yet. "rescheduled" cannot say that: a row moved to its new time in place
-#: carries that marker too, and it is the live booking.
+#: yet: "Awaiting new slot" in Daily Ops.
 RELEASED_FOR_RESCHEDULE_STATUS = "released_for_reschedule"
 
 INTERVIEW_ATTENDANCE_STATUSES = frozenset({
@@ -810,11 +809,19 @@ def row_interview_attendance_status(row: dict) -> str:
 
 #: An interview that will not be sat at this time. The row keeps its date and
 #: time as the record of what was booked, and the hour is free again.
-#: `rescheduled` is deliberately absent: the automatic path moves a row to its
-#: new time in place and leaves that marker on it, so the row is still the live
-#: booking. A rescheduled sitting whose hour really is free says so with
-#: RELEASED_FOR_RESCHEDULE_STATUS, or carries a link to its replacement.
-ENDED_INTERVIEW_STATUSES = frozenset({"cancelled", RELEASED_FOR_RESCHEDULE_STATUS})
+#:
+#: `rescheduled` used to be left out, because a booking moved to its new time
+#: in place kept that marker and was still the live interview. A move no longer
+#: keeps it -- `update_interview_slot` carries it into the row's own history --
+#: so a row that carries it describes a sitting that is off, which is what an
+#: operator means by it; production held no row that had kept it through a
+#: move. Left standing, a sitting marked Rescheduled in Daily Ops stayed in
+#: Confirmed slots, held its hour against new bookings and kept Mail Alerts
+#: reading "Booked" -- on 21 Sep a 15:00 sitting whose replacement at 16:45 was
+#: already booked and attended. A booking that is moved stands at its new time.
+#: Mail about the interview still reaches the row: see `_confirmed_slots` in
+#: services/interview_auto_booking.py.
+ENDED_INTERVIEW_STATUSES = frozenset({"cancelled", "rescheduled", RELEASED_FOR_RESCHEDULE_STATUS})
 
 
 def slot_still_stands(row: dict) -> bool:
@@ -5149,9 +5156,9 @@ def _same_slot_booking(name: str, date: str, time: str) -> dict | None:
     24-hour HH:MM while the form submits "02:15 PM", and comparing the first
     five characters never matched, so a second booking of a slot fell through
     to the conflict check and was refused as somebody else's. And a booking that
-    has ended -- cancelled, released, superseded -- keeps its schedule as
-    history; it is not the booking a new request is for. A row with no
-    confirmed slot still matches, so the caller can put the slot on it.
+    has ended -- cancelled, rescheduled, released, superseded -- keeps its
+    schedule as history; it is not the booking a new request is for. A row
+    with no confirmed slot still matches, so the caller can put the slot on it.
     """
     key = _normalise_candidate_name_key(canonical_candidate_name(name))
     day = _clean_str(date)[:10]

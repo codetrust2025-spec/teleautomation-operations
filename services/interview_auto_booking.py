@@ -417,8 +417,21 @@ def _confirmed_slots(candidate: dict[str, Any]) -> list[dict[str, Any]]:
     A cancelled interview keeps its date and time as history, so it is not one
     of these: it is not a duplicate to refuse a re-invitation against, not an
     hour to clash with, and not a row a later cancellation can release.
+
+    A sitting marked Rescheduled is off, but its interview is not: the next
+    mail about it -- the new time, or a cancellation -- belongs to that row,
+    which then moves in place and is the live booking again. So it stays one of
+    these until something replaces it. Left out, that mail would find nothing
+    to move, or, for a candidate holding one other booking, move that one.
     """
-    return [row for row in _candidate_slots(candidate) if candidate_store.slot_still_stands(row)]
+    return [row for row in _candidate_slots(candidate) if candidate_store.slot_still_stands(row)
+            or _awaiting_its_new_time(row)]
+
+
+def _awaiting_its_new_time(row: dict[str, Any]) -> bool:
+    """Marked Rescheduled, and would still stand but for that mark."""
+    return (candidate_store.row_interview_attendance_status(row) == "rescheduled"
+            and candidate_store.slot_still_stands({**row, "interview_attendance_status": ""}))
 
 
 def _same_text(left: Any, right: Any) -> bool:
