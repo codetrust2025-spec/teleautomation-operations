@@ -49,7 +49,7 @@ import re
 import time
 import uuid
 from datetime import date as _date, datetime, timedelta, timezone
-from threading import Lock
+from threading import Lock, RLock
 
 from core.config import DATA_DIR
 from features.candidate_attachments import (
@@ -67,6 +67,14 @@ _FILE = os.path.join(DATA_DIR, "candidates.json")
 PROOFS_DIR = os.path.join(DATA_DIR, "candidates_proofs")
 RESUMES_DIR = os.path.join(DATA_DIR, "candidates_resumes")
 _lock = Lock()
+# Held by every path that creates a booking row -- the public booking form, the
+# Daily Ops slot route and the Gmail automation -- across its "is this already
+# booked?" check and the write that follows. Paths holding separate locks, or
+# none, each read "not booked yet" and each wrote a row: on 18 Sep one
+# interview was booked twice, eight seconds apart, by the form and the slot
+# route. A process lock is enough because production runs one worker process;
+# tests/test_one_booking_per_interview.py fails if the Dockerfile stops saying so.
+BOOKING_LOCK = RLock()
 _load_cache: dict | None = None
 _load_cache_at: float = 0.0
 _LOAD_CACHE_TTL = 15.0  # seconds — avoids repeated PG reads per dashboard refresh
@@ -5097,6 +5105,134 @@ def _find_existing_slot_row(rows: list[dict], name: str, date: str, time: str) -
     return None
 
 
+def all_booking_rows() -> list[dict]:
+    """Every stored row, read fresh and uncollapsed.
+
+    `list_candidates` shows one row per profile candidate -- the newest -- so a
+    check that reads it cannot see that person's other bookings. The Gmail
+    path stopped reading it for that reason (`_candidate_slots`); the booking
+    form's same-booking checks read it until now.
+    """
+    return [
+        _with_computed(row)
+        for row in (_load(force=True).get("candidates") or [])
+        if isinstance(row, dict)
+    ]
+
+
+def _same_slot_booking(name: str, date: str, time: str) -> dict | None:
+    """The row a booking for this name, day and start time is the same booking as.
+
+    Three things differ from `_find_existing_slot_row`, which other callers
+    keep using unchanged. Every stored row is read, not one per profile
+    candidate. Clock times are compared as clock times: rows are stored as
+    24-hour HH:MM while the form submits "02:15 PM", and comparing the first
+    five characters never matched, so a second booking of a slot fell through
+    to the conflict check and was refused as somebody else's. And a booking that
+    has ended -- cancelled, released, superseded -- keeps its schedule as
+    history; it is not the booking a new request is for. A row with no
+    confirmed slot still matches, so the caller can put the slot on it.
+    """
+    key = _normalise_candidate_name_key(canonical_candidate_name(name))
+    day = _clean_str(date)[:10]
+    start = normalise_interview_clock(time)
+    if not key or len(day) != 10 or not start:
+        return None
+    for row in all_booking_rows():
+        if _normalise_candidate_name_key(row.get("name") or "") != key:
+            continue
+        if _clean_str(row.get("date"))[:10] != day:
+            continue
+        if normalise_interview_clock(row.get("time") or "") != start:
+            continue
+        if _candidate_has_confirmed_slot(row) and not slot_still_stands(row):
+            continue
+        return row
+    return None
+
+
+def same_standing_booking(
+    candidate_id: str,
+    *,
+    date: str,
+    time: str,
+    time_end: str = "",
+    interview_round: str = "",
+) -> dict | None:
+    """The interview this person already holds at exactly this date and time.
+
+    Same person by identity link -- phone, email, an explicit link -- never by
+    name alone; same day and start; the same end and round wherever both
+    sides state one; an interview rather than an assessment; still standing.
+    Asking for that again is the same booking asked for twice. Anything that
+    differs is a different interview and is left to book.
+    """
+    cid = _clean_str(candidate_id)
+    day = _clean_str(date)[:10]
+    start = normalise_interview_clock(time)
+    if not cid or len(day) != 10 or not start:
+        return None
+    end = normalise_interview_clock(time_end)
+    wanted_round = normalise_interview_round(interview_round)
+    family = set(candidate_identity_ids(cid, include_name_matches=False)) | {cid}
+    for row in all_booking_rows():
+        if str(row.get("id") or "") not in family or not slot_still_stands(row):
+            continue
+        if (_clean_str(row.get("booking_type")) or "Interview") != "Interview":
+            continue
+        if _clean_str(row.get("date"))[:10] != day:
+            continue
+        if normalise_interview_clock(row.get("time") or "") != start:
+            continue
+        row_end = normalise_interview_clock(row.get("time_end") or "")
+        if end and row_end and row_end != end:
+            continue
+        row_round = normalise_interview_round(row.get("interview_round"))
+        if wanted_round and row_round and row_round != wanted_round:
+            continue
+        return row
+    return None
+
+
+# What an interview invite knows that a booking made by hand does not.
+INVITE_IDENTITY_FIELDS = (
+    "interview_calendar_uid",
+    "interview_calendar_sequence",
+    "interview_source_message_id",
+    "interview_source_thread_id",
+    "interview_source_timezone",
+    "interview_company",
+    "interview_role",
+)
+
+
+def link_invite_to_slot(candidate_id: str, **identity: str) -> dict:
+    """Record on a booking the invite that turned out to describe it.
+
+    Only fields the row leaves empty are filled: what the team entered is never
+    overwritten, and the booking keeps its own source. With the calendar event
+    and the source mail on it, that invite's later reschedule or cancellation
+    finds this booking instead of none.
+    """
+    cid = _clean_str(candidate_id)
+    current = get_candidate(cid)
+    if not current:
+        raise ValueError("Candidate not found")
+
+    def missing(row: dict) -> dict:
+        return {
+            key: _clean_str(value)
+            for key, value in identity.items()
+            if key in INVITE_IDENTITY_FIELDS
+            and _clean_str(value)
+            and not _clean_str(row.get(key))
+        }
+
+    if not missing(current):
+        return current
+    return _patch_row_fields(cid, missing) or current
+
+
 def _find_assignable_profile_row(rows: list[dict], name: str) -> dict | None:
     """Profile row without a confirmed slot — must have a scheduled interview date."""
     key = _normalise_candidate_name_key(canonical_candidate_name(name))
@@ -5270,12 +5406,18 @@ def _import_confirmed_interview_slot(
         # at the same slot — the caller saw "confirmed" while nothing was ever
         # booked, and the slot could never be re-booked because the poisoned key
         # short-circuited each retry.
+        #
+        # For the same reason a booking that has since been cancelled or
+        # released is not the answer to this request: replaying it reported
+        # "confirmed" for an interview that stays cancelled. And the rows are
+        # every stored row, not the list view, which shows one row per profile
+        # candidate and so hid the booking a retry was looking for.
         previous = next(
             (
                 row
-                for row in list_candidates(stage="all", month="all")
+                for row in all_booking_rows()
                 if _clean_str(row.get("booking_idempotency_key")) == booking_key
-                and _candidate_has_confirmed_slot(row)
+                and slot_still_stands(row)
             ),
             None,
         )
@@ -5371,11 +5513,13 @@ def _import_confirmed_interview_slot(
             source=source,
         )
     proof_owner = _payment_proof_owner_for_slot_name(canon, payment_proof_id)
-    existing = _find_existing_slot_row(rows, canon, day, slot_time)
+    existing = _same_slot_booking(canon, day, slot_time)
     if existing and _candidate_has_confirmed_slot(existing):
         patch: dict = {}
         existing_end = _clean_str(existing.get("time_end"))
-        if slot_end and slot_end != existing_end:
+        # Compared as clock times: "02:45 PM" from the form is the "14:45" on
+        # the row, not a change to write.
+        if slot_end and normalise_interview_clock(slot_end) != normalise_interview_clock(existing_end):
             patch["time_end"] = slot_end
         if rnd and rnd != normalise_interview_round(existing.get("interview_round")):
             patch["interview_round"] = rnd

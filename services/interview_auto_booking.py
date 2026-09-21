@@ -37,6 +37,8 @@ class BookingValidationError(ValueError):
     payment_status: str = "NOT_CHECKED"
     duplicate_status: str = "NOT_CHECKED"
     conflict_status: str = "NOT_CHECKED"
+    # The booking a DUPLICATE_BOOKING refers to, so the alert can name it.
+    booking_id: str = ""
 
     def __str__(self) -> str:
         return self.message
@@ -715,6 +717,36 @@ def _same_lifecycle_slot(
     return False
 
 
+def _hand_booked_twin(slots: list[dict[str, Any]], *, schedule: dict[str, str]) -> dict[str, Any] | None:
+    """The one booking made by hand for exactly this interview, if there is one.
+
+    A Gmail invite for an interview the team had already booked through the
+    form or Daily Ops became a second booking: nothing on the hand-booked row
+    names a calendar event or a mail, so `_same_lifecycle_slot` cannot
+    recognise it. On 18 Sep that put one 16:30-17:30 interview on the roster
+    twice, and both rows were marked attended.
+
+    So a row with no event identity of its own -- no calendar UID, no source
+    mail, no thread -- holding exactly this date, start and end for this
+    person (the caller scopes `slots` by identity link, never by name) is the
+    interview the invite describes. Exactly one such row, or none: two are
+    ambiguous and nothing is guessed. A row that does carry an event identity
+    is never matched here by time; for those the decision that equal times do
+    not make two invites one interview stands.
+    """
+    matches = [
+        row for row in slots
+        if not str(row.get("interview_calendar_uid") or "").strip()
+        and not str(row.get("interview_source_message_id") or "").strip()
+        and not str(row.get("interview_source_thread_id") or "").strip()
+        and (str(row.get("booking_type") or "").strip() or "Interview") == "Interview"
+        and str(row.get("date") or "")[:10] == schedule["date"]
+        and candidate_store.normalise_interview_clock(str(row.get("time") or "")) == schedule["time"]
+        and candidate_store.normalise_interview_clock(str(row.get("time_end") or "")) == schedule["time_end"]
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _source_teams_meetings(message):
     """Exact Teams meeting identities in raw MIME alternatives, not AI fields."""
     from html import unescape
@@ -1216,29 +1248,59 @@ def _execute_auto_booking(
                     booking_status, event_type = "Rescheduled", "interview_rescheduled"
                 payment_status, duplicate_status, conflict_status = "PASSED", "PASSED", "PASSED"
         if booking is None and classification == "interview_confirmed":
-            duplicate = next((
-                row for row in slots
-                if _same_lifecycle_slot(row, result=result, message=message, schedule=schedule)
-            ), None)
-            if duplicate:
-                raise BookingValidationError("DUPLICATE_BOOKING", "This candidate already has the same interview booking.", payment_status="PASSED", duplicate_status="DUPLICATE")
-            duplicate_status = "PASSED"
-            # Different interview identities are allowed to overlap.  The
-            # system records external interview commitments, not an exclusive
-            # interviewer resource calendar; lifecycle identity is the only
-            # duplicate boundary here.
-            conflict_status = "NOT_REQUIRED"
-            booking = _persisted(lambda: candidate_store.assign_interview_slot(
-                candidate_id=str(candidate["id"]), date=schedule["date"], time=schedule["time"],
-                time_end=schedule["time_end"], interview_round=interview_round,
-                notes=(
-                    f"Manually approved from reviewed interview email by {manual_reviewer}."
-                    if manual_reviewer else
-                    "Automatically booked from validated interview email (AI Mail Monitoring)."
-                ),
-                interview_booking_source="candidate_booked" if manual_reviewer else "ai_auto_booked",
-                **_booking_metadata(result, message, schedule),
-            ))
+            # The booking form and the Daily Ops slot route hold this lock too,
+            # so an invite and a hand booking of one interview cannot both read
+            # "not booked yet"; the rows are re-read once it is held.
+            with candidate_store.BOOKING_LOCK:
+                slots = _confirmed_slots(candidate)
+                duplicate = next((
+                    row for row in slots
+                    if _same_lifecycle_slot(row, result=result, message=message, schedule=schedule)
+                ), None)
+                if duplicate:
+                    raise BookingValidationError(
+                        "DUPLICATE_BOOKING", "This candidate already has the same interview booking.",
+                        payment_status="PASSED", duplicate_status="DUPLICATE",
+                        booking_id=str(duplicate.get("id") or ""),
+                    )
+                twin = _hand_booked_twin(slots, schedule=schedule)
+                if twin:
+                    # The invite describes an interview the team already booked
+                    # by hand. It is recorded on that booking -- its calendar
+                    # event, source mail, company and role, filling only what the
+                    # row leaves empty -- and the lifecycle points at it, so the
+                    # invite's later reschedule or cancellation acts on it.
+                    candidate_store.link_invite_to_slot(
+                        str(twin["id"]), **_booking_metadata(result, message, schedule),
+                    )
+                    interview_lifecycle.mark_applied(
+                        lifecycle_claim, booking_id=str(twin["id"]),
+                        state=interview_lifecycle.InterviewState.BOOKED,
+                    )
+                    raise BookingValidationError(
+                        "DUPLICATE_BOOKING",
+                        "This interview was already booked by hand for exactly this time; "
+                        "the email has been linked to that booking.",
+                        payment_status="PASSED", duplicate_status="DUPLICATE",
+                        booking_id=str(twin["id"]),
+                    )
+                duplicate_status = "PASSED"
+                # Different interview identities are allowed to overlap.  The
+                # system records external interview commitments, not an exclusive
+                # interviewer resource calendar; lifecycle identity is the only
+                # duplicate boundary here.
+                conflict_status = "NOT_REQUIRED"
+                booking = _persisted(lambda: candidate_store.assign_interview_slot(
+                    candidate_id=str(candidate["id"]), date=schedule["date"], time=schedule["time"],
+                    time_end=schedule["time_end"], interview_round=interview_round,
+                    notes=(
+                        f"Manually approved from reviewed interview email by {manual_reviewer}."
+                        if manual_reviewer else
+                        "Automatically booked from validated interview email (AI Mail Monitoring)."
+                    ),
+                    interview_booking_source="candidate_booked" if manual_reviewer else "ai_auto_booked",
+                    **_booking_metadata(result, message, schedule),
+                ))
             booking_status, event_type = (
                 ("Approved & Booked", "slot_manually_booked")
                 if manual_reviewer else ("Auto Booked", "slot_auto_booked")
@@ -1322,10 +1384,13 @@ def _execute_auto_booking(
         display_status = "Already Booked — Duplicate Ignored" if duplicate_ignored else "Automatic Booking Blocked"
         priority = "low" if duplicate_ignored else "retry_pending"
         event_type = "duplicate_booking_ignored" if duplicate_ignored else "slot_booking_blocked"
+        # A duplicate names the booking it duplicates, so "Already booked" can
+        # be followed to it -- and corrected if that booking later goes.
+        duplicate_of = (exc.booking_id or None) if duplicate_ignored else None
         audit = mail_store.record_booking_audit(
             analysis_id=analysis["id"], candidate_id=str(mailbox.get("candidate_id") or ""),
             gmail_message_id=message["provider_message_id"], gmail_thread_id=message.get("provider_thread_id"),
-            classification=classification, booking_id=None, auto_booked=False,
+            classification=classification, booking_id=duplicate_of, auto_booked=False,
             validation_status=validation_status, payment_status=payment_status, duplicate_status=duplicate_status,
             conflict_status=conflict_status, booking_status=booking_status, failure_code=exc.code,
             failure_message=exc.message, correlation_id=correlation_id,
@@ -1339,7 +1404,7 @@ def _execute_auto_booking(
             classification=classification, detail=exc.message,
         )
         updated_notification = mail_store.attach_booking_to_notification(
-            notification.get("id"), audit_id=audit["id"], booking_id=None,
+            notification.get("id"), audit_id=audit["id"], booking_id=duplicate_of,
             booking_status=booking_status, result=result, priority=priority,
             schedule=schedule,
             display_status=display_status, detail=exc.message,

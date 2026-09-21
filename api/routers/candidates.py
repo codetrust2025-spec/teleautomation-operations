@@ -298,14 +298,36 @@ async def candidates_interviews_slots_create(request: Request, body: dict):
         if not existing:
             raise ValueError("Candidate not found")
         assert_candidate_row_access(request, existing)
-        row = candidate_store.assign_interview_slot(
-            candidate_id=candidate_id,
-            date=date,
-            time=time,
-            time_end=time_end,
-            notes=notes,
-            interview_round=interview_round,
-        )
+        # This route had no key and no duplicate check, and did not share the
+        # booking form's lock, so the two booked one interview twice on 18 Sep.
+        # Asking again for a booking that exists returns that booking.
+        with candidate_store.BOOKING_LOCK:
+            booked = candidate_store.same_standing_booking(
+                candidate_id,
+                date=date,
+                time=time,
+                time_end=time_end,
+                interview_round=interview_round,
+            )
+            if booked:
+                return {
+                    "status": "ok",
+                    "candidate": booked,
+                    "already_booked": True,
+                    "message": (
+                        f"Already booked: {booked.get('name') or 'this candidate'} has this "
+                        f"interview on {str(booked.get('date') or '')[:10]} at "
+                        f"{booked.get('time') or ''}. Nothing new was created."
+                    ),
+                }
+            row = candidate_store.assign_interview_slot(
+                candidate_id=candidate_id,
+                date=date,
+                time=time,
+                time_end=time_end,
+                notes=notes,
+                interview_round=interview_round,
+            )
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
     return {"status": "ok", "candidate": row}

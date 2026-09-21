@@ -10,7 +10,6 @@ import os
 import re
 import time
 import uuid
-from threading import Lock
 from typing import Any
 
 from fastapi import File, Form, Request, UploadFile
@@ -20,7 +19,13 @@ from core import ai_activity
 from core.ocr_policy import processing_mode
 
 logger = logging.getLogger(__name__)
-_booking_confirmation_lock = Lock()
+
+
+def _booking_lock():
+    """The one lock every booking-creating path holds; see candidate_store."""
+    from features import candidate_store
+
+    return candidate_store.BOOKING_LOCK
 
 # The live analysis stream: how often it looks for a change, how long it may
 # stay open, and how often it proves it is alive. The keepalive stays well
@@ -1101,7 +1106,7 @@ def install_public_slot_routes(app) -> None:
                 cs.delete_candidate(created_id)
 
         try:
-            with _booking_confirmation_lock:
+            with _booking_lock():
                 candidate_ids_before = {
                     str(candidate.get("id") or "")
                     for candidate in cs.list_candidates(stage="all", month="all")
@@ -1112,13 +1117,15 @@ def install_public_slot_routes(app) -> None:
                 # the slot is applied, so an attempt blocked after that point
                 # leaves the key behind on a row with no date and
                 # slot_confirmed false; matching on the key alone replayed that
-                # row as a success forever and made the slot unbookable.
+                # row as a success forever and made the slot unbookable. A
+                # booking cancelled since is no answer either, and the rows are
+                # every stored row: the list view keeps one per profile candidate.
                 existing_booking = next(
                     (
                         candidate
-                        for candidate in cs.list_candidates(stage="all", month="all")
+                        for candidate in cs.all_booking_rows()
                         if str(candidate.get("booking_idempotency_key") or "").strip() == booking_key
-                        and cs.candidate_has_confirmed_slot(candidate)
+                        and cs.slot_still_stands(candidate)
                     ),
                     None,
                 )
