@@ -75,6 +75,14 @@ meantime the PR is merged normally and the pin follows the merge commit.
 
 Each stage prints how long it took, and the run its total.
 
+`deploy` releases the image CI built from exactly that commit, by digest,
+through the Operations `deploy` workflow and the host's `teleautomation-deploy`,
+which records the release, verifies it, and restores the previous one if it
+does not verify. `DEPLOY_VIA=host` is the break-glass path: build on the host
+and hand the image to `teleautomation-deploy deploy-local`. Never start the
+container any other way -- a raw `docker compose up` leaves the host's release
+record naming an older release, and rollback trusts that record.
+
 It stops on a **merge conflict** rather than guessing: resolving one means
 choosing which side of the change survives, and that is not a decision to
 automate.

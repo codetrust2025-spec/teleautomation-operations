@@ -1,5 +1,27 @@
 # GHCR cutover: what to configure, and how to get each value safely
 
+## Status, 21 Sep 2026
+
+Steps 1-5 were done on 17 Sep and step 6 passed the same day: the host log
+records `init`, `verify`, `rollback` and a live `deploy` of 21e0569 from the
+registry. Every deploy after that went through `fix_and_deploy.sh`'s raw
+`docker compose up`, which never told the release record, so by 21 Sep the host
+served 84c8f29 while recording 21e0569 -- the state rollback, the root compose
+wrapper and a failed release's automatic restore would all have acted on.
+
+On 21 Sep the record was put right with `deploy-local` for the running image,
+84c8f29 was released from the registry by digest through the workflow, and
+rollback was proven both ways between the two builds of that commit.
+`fix_and_deploy.sh` now releases through the workflow and the host tool by
+default (Marketing #231), refuses to release onto a stale record, and fails
+`verify` until `teleautomation-deploy status` agrees.
+
+Still open, and not engineering decisions: `AUTO_DEPLOY` stays `"false"` --
+flipping it releases every merge to main without Marketing's pin and
+dual-service check -- and the release anchor stays, because Marketing CI,
+`ci_classify.sh`, the compose file and `fix_and_deploy.sh`'s sync check all
+still read it.
+
 Everything in the pipeline already exists. What is missing is configuration that
 only the person holding the host and the GitHub account can create. This is that
 list, with the exact way to produce each value and nothing invented.
