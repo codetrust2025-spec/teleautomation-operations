@@ -16,6 +16,7 @@ attendance marks cannot appear here.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from features import candidate_store
@@ -45,8 +46,41 @@ def _words(value: Any) -> str:
     return text[:1].upper() + text[1:]
 
 
+def _instant(value: Any) -> str:
+    """One clock for every record: ISO 8601 in UTC.
+
+    Booking rows store "2026-09-21T03:44:00+00:00" while database timestamps
+    arrive as datetimes that print "2026-09-21 06:08:00+00:00". Sorted as
+    text, the space sorts before the "T", so a later mail landed below an
+    earlier booking on the same day.
+    """
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        text = _text(value)
+        if not text:
+            return ""
+        try:
+            moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).isoformat()
+
+
+def _joined(*parts: Any) -> str:
+    """Non-empty parts, each said once."""
+    kept: list[str] = []
+    for part in parts:
+        text = _text(part)
+        if text and text not in kept:
+            kept.append(text)
+    return " · ".join(kept)
+
+
 def _entry(at: Any, kind: str, title: str, detail: str, source: str, **refs: Any) -> dict | None:
-    when = _text(at)
+    when = _instant(at)
     if not when:
         return None
     return {
@@ -62,8 +96,7 @@ def _schedule(slot: dict) -> str:
     start = candidate_store.normalise_interview_clock(_text(slot.get("time")))
     end = candidate_store.normalise_interview_clock(_text(slot.get("time_end")))
     when = f"{day} {start}" + (f"-{end}" if end else "")
-    extras = [_text(slot.get(key)) for key in ("interview_company", "interview_round") if _text(slot.get(key))]
-    return " · ".join([when.strip(), *extras])
+    return _joined(when.strip(), slot.get("interview_company"), slot.get("interview_round"))
 
 
 def booked_from(row: dict) -> str:
@@ -112,7 +145,7 @@ def _booking_entries(rows: list[dict]) -> list[dict]:
         if status in ATTENDANCE_TITLES and _text(row.get("interview_attended_at")):
             by = _text(row.get("interview_attended_by"))
             remark = _text(row.get("interview_attendance_remark"))
-            detail = " · ".join(part for part in (_schedule(row), remark, f"by {by}" if by else "") if part)
+            detail = _joined(_schedule(row), remark, f"by {by}" if by else "")
             kind = "cancelled" if status == "cancelled" else (
                 "released" if status == candidate_store.RELEASED_FOR_RESCHEDULE_STATUS else "attendance")
             entries.append(_entry(row.get("interview_attended_at"), kind, ATTENDANCE_TITLES[status],
@@ -138,28 +171,52 @@ def _alert_title(alert: dict) -> str:
     return _text(alert.get("candidate_status")) or _words(alert.get("classification")) or "Mail alert"
 
 
-def _mail_entries(alerts: list[dict], events: list[dict]) -> list[dict]:
+# The booking entry an alert's outcome already describes: a booking the mail
+# made, moved or cancelled is one happening, not a booking and an alert.
+ALERT_OUTCOME_KINDS = {
+    "Auto Booked": "booking",
+    "Approved & Booked": "booking",
+    "Rescheduled": "rescheduled",
+    "Cancelled": "cancelled",
+}
+
+
+def _mail_entries(alerts: list[dict], events: list[dict], booking_entries: list[dict]) -> list[dict]:
     entries: list[dict | None] = []
     alerted_events = {_text(alert.get("ai_recruitment_event_id")) for alert in alerts}
     events_by_id = {_text(event.get("id")): event for event in events}
+    folded: set[int] = set()
     for alert in alerts:
+        event_id = _text(alert.get("ai_recruitment_event_id"))
+        event_id = event_id if event_id in events_by_id else None
+        subject = _text(alert.get("email_subject"))
+        outcome = ALERT_OUTCOME_KINDS.get(_text(alert.get("booking_status")))
+        booking_id = _text(alert.get("booking_id"))
+        twin = next((
+            index for index, entry in enumerate(booking_entries)
+            if outcome and booking_id and index not in folded
+            and entry["booking_id"] == booking_id and entry["kind"] == outcome
+        ), None)
+        if twin is not None:
+            folded.add(twin)
+            entry = booking_entries[twin]
+            entry["detail"] = _joined(entry["detail"], subject)
+            entry["mail_id"] = entry["mail_id"] or _text(alert.get("gmail_message_id")) or None
+            entry["event_id"] = entry["event_id"] or event_id
+            continue
         block = alert.get("booking_block") or {}
         reason = _text(block.get("reason")) if isinstance(block, dict) else ""
-        subject = _text(alert.get("email_subject"))
-        company = _text(alert.get("company_name"))
         entries.append(_entry(
             alert.get("email_received_at") or alert.get("created_at"), "alert", _alert_title(alert),
-            " · ".join(part for part in (reason, company, subject) if part), BOOKED_FROM_GMAIL,
-            booking_id=alert.get("booking_id"), mail_id=alert.get("gmail_message_id"),
-            event_id=_text(alert.get("ai_recruitment_event_id")) if _text(alert.get("ai_recruitment_event_id")) in events_by_id else None,
+            _joined(reason, alert.get("company_name"), subject), BOOKED_FROM_GMAIL,
+            booking_id=booking_id, mail_id=alert.get("gmail_message_id"), event_id=event_id,
         ))
     for event in events:
         if _text(event.get("id")) in alerted_events:
             continue
-        where = " · ".join(part for part in (_text(event.get("company_name")), _text(event.get("job_title"))) if part)
         entries.append(_entry(
             event.get("created_at") or event.get("email_sent_at"), "mail", _words(event.get("primary_status")),
-            " · ".join(part for part in (where, _text(event.get("subject"))) if part), "Candidate Gmail",
+            _joined(event.get("company_name"), event.get("job_title"), event.get("subject")), "Candidate Gmail",
             booking_id=event.get("booking_id"), mail_id=event.get("mailbox_message_id"), event_id=event.get("id"),
         ))
     return [entry for entry in entries if entry]
@@ -187,6 +244,7 @@ def candidate_timeline(
     rows = [row for row in candidate_store.all_booking_rows() if _text(row.get("id")) in family]
     alerts = _unique([alert for member in sorted(family) for alert in alerts_for(member)])
     events = _unique([event for member in sorted(family) for event in events_for(member)])
-    entries = _booking_entries(rows) + _mail_entries(alerts, events)
+    booked = _booking_entries(rows)
+    entries = booked + _mail_entries(alerts, events, booked)
     entries.sort(key=lambda entry: entry["at"], reverse=True)
     return entries[:limit]

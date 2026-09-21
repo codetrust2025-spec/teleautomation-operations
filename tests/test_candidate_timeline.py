@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from datetime import datetime, timezone
+
 from features import candidate_store as cs
 from services import candidate_timeline as timeline
 
@@ -42,9 +44,11 @@ def _rows():
 
 ALERTS = {
     "p1": [{"id": "n1", "classification": "interview_confirmed", "candidate_status": "Interview Automatically Booked",
+            "booking_status": "Auto Booked",
             "email_subject": "L1 interview", "company_name": "Example Corp", "booking_id": "slot-b",
             "gmail_message_id": "gm-7", "ai_recruitment_event_id": "ev-1",
-            "email_received_at": "2099-09-10T07:59:00+00:00"},
+            # Database timestamps arrive as datetimes, not ISO text.
+            "email_received_at": datetime(2099, 9, 10, 7, 59, tzinfo=timezone.utc)},
            {"id": "n2", "classification": "interview_cancelled", "candidate_status": "Automatic Booking Blocked",
             "email_subject": "Cancelled: interview", "gmail_message_id": "gm-8",
             "booking_block": {"title": "Cancellation not applied",
@@ -107,12 +111,33 @@ def test_a_payment_copied_onto_every_slot_is_one_entry(history):
     assert [entry["kind"] for entry in history].count("payment") == 1
 
 
-def test_an_alert_and_its_recruitment_event_are_one_entry(history):
+def test_the_mail_that_made_a_booking_is_that_booking_not_a_second_entry(history):
+    """The Gmail booking, its alert and its recruitment event are one happening."""
     alerts = [entry for entry in history if entry["kind"] == "alert"]
-    assert len(alerts) == 2, "the same alert reached through two identity rows is one entry"
-    booked = next(entry for entry in alerts if entry["mail_id"] == "gm-7")
-    assert booked["event_id"] == "ev-1"
+    assert [entry["mail_id"] for entry in alerts] == ["gm-8"]
+    booked = next(entry for entry in history if entry["kind"] == "booking" and entry["booking_id"] == "slot-b")
+    assert booked["mail_id"] == "gm-7" and booked["event_id"] == "ev-1"
+    assert booked["detail"].endswith("L1 interview")
     assert "Interview scheduled" not in _titles(history)
+    assert "Interview Automatically Booked" not in _titles(history)
+
+
+def test_one_clock_orders_every_record(history):
+    """ISO text from booking rows and datetimes from the database used to sort
+    as text, putting a later mail below an earlier booking on the same day."""
+    assert all(entry["at"].endswith("+00:00") and "T" in entry["at"] for entry in history)
+    moments = [datetime.fromisoformat(entry["at"]) for entry in history]
+    assert moments == sorted(moments, reverse=True)
+
+
+def test_a_repeated_detail_is_said_once(monkeypatch):
+    monkeypatch.setattr(cs, "all_booking_rows", lambda: [])
+    monkeypatch.setattr(cs, "candidate_identity_ids", lambda cid, **_kwargs: ["p1"])
+    entries = timeline.candidate_timeline("p1", alerts_for=lambda _cid: [], events_for=lambda _cid: [
+        {"id": "ev-9", "primary_status": "INTERVIEW_CONFIRMED", "company_name": "Same Words",
+         "job_title": "Same Words", "subject": "Same Words", "created_at": "2099-09-21 06:08:00+00:00"}])
+    assert entries[0]["detail"] == "Same Words"
+    assert entries[0]["at"] == "2099-09-21T06:08:00+00:00"
 
 
 def test_a_blocked_alert_reads_in_plain_english(history):
@@ -156,5 +181,5 @@ def test_the_endpoint_serves_one_persons_timeline(monkeypatch):
 
     assert body["status"] == "ok"
     assert body["entries"][0]["title"] == "Marked attended"
-    assert len([entry for entry in body["entries"] if entry["kind"] == "alert"]) == 2
+    assert [entry["mail_id"] for entry in body["entries"] if entry["kind"] == "alert"] == ["gm-8"]
     assert client.get("/api/candidates/nobody/timeline").status_code == 404
