@@ -697,20 +697,27 @@ def _same_lifecycle_slot(
     source_id = str(message.get("provider_message_id") or "").strip()
     if source_id and _same_text(row.get("interview_source_message_id"), source_id):
         return True
-    same_schedule = (
+    same_start = (
         str(row.get("date") or "")[:10] == schedule["date"]
         and str(row.get("time") or "")[:5] == schedule["time"]
-        and str(row.get("time_end") or "")[:5] == schedule["time_end"]
     )
+    same_schedule = same_start and str(row.get("time_end") or "")[:5] == schedule["time_end"]
     thread_id = str(message.get("provider_thread_id") or "").strip()
     if thread_id and _same_text(row.get("interview_source_thread_id"), thread_id) and same_schedule:
         return True
-    if same_schedule:
+    if same_start:
+        # One Teams meeting starting at one time is one interview, whatever
+        # the mail is titled or however long it says the call runs. A reminder
+        # restates the interview under its own subject and often its own end
+        # time: on 18 Sep "Reminder: Upcoming interview | ..." (15:00-15:45)
+        # was booked beside the invite it reminded about (15:00-15:30), with
+        # the same meeting, and both rows were marked attended. The meeting
+        # must be the exact same one -- never a similar link, a company or a
+        # title -- on the same date at the same start.
         incoming_meetings = _source_teams_meetings(message)
         if incoming_meetings:
             source = mail_store.booking_source_message(str(row.get("interview_source_message_id") or ""))
-            if (source and _same_text(source.get("subject"), message.get("subject"))
-                    and incoming_meetings.intersection(_source_teams_meetings(source))):
+            if source and incoming_meetings.intersection(_source_teams_meetings(source)):
                 return True
     # Identical times, titles, or public job links cannot establish that two
     # independent messages describe the same interview.

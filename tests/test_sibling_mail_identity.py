@@ -30,14 +30,16 @@ def test_hcl_sibling_reaches_exact_duplicate_guard_in_real_executor(monkeypatch)
     assert audits[-1]['auto_booked'] is False
 
 
-@pytest.mark.parametrize('change', ['different_uid', 'different_time', 'different_meeting', 'different_subject', 'no_meeting'])
+# A different subject alone no longer makes a second interview: see
+# test_reminder_same_meeting_is_one_interview.py.
+@pytest.mark.parametrize('change', ['different_uid', 'different_time', 'different_date', 'different_meeting', 'no_meeting'])
 def test_different_interviews_are_still_allowed(monkeypatch, change):
     monkeypatch.setattr(booking.mail_store, 'booking_source_message', lambda source_id: SOURCE)
     value, message, schedule = {}, dict(MESSAGE), dict(SCHEDULE)
     if change == 'different_uid': value['calendar'] = {'uid': 'other-uid'}
     if change == 'different_time': schedule['time'] = '12:15'
+    if change == 'different_date': schedule['date'] = '2099-09-12'
     if change == 'different_meeting': message['html_body'] = SOURCE['html_body_text'].replace('meeting_source', 'meeting_other')
-    if change == 'different_subject': message['subject'] = 'Different interview'
     if change == 'no_meeting': message['html_body'] = 'https://teams.microsoft.com/help'
     assert not booking._same_lifecycle_slot(SLOT, result=value, message=message, schedule=schedule)
 
