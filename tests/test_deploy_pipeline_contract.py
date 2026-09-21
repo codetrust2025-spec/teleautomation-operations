@@ -75,7 +75,10 @@ class TestWhatCanStartARelease:
         assert prune["if"] == "github.event_name == 'push'"
         keep = steps(prune)[0]["with"]
         assert keep["package-name"] == "teleautomation-operations"
-        assert int(keep["min-versions-to-keep"]) >= 20
+        # Ten, as docs/deployment/architecture-review.md recommends: the host
+        # rolls back to an image it already holds and never pulls one, so the
+        # registry only has to cover recent releases.
+        assert int(keep["min-versions-to-keep"]) >= 10
 
     def test_only_a_commit_on_main_is_built(self, deploy):
         run = step_named(deploy["jobs"]["image"], "Only a commit on main")["run"]

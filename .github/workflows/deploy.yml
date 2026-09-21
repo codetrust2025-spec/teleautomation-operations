@@ -143,9 +143,13 @@ jobs:
           echo "\`$IMAGE_REPO:$SHA\`" >> "$GITHUB_STEP_SUMMARY"
           echo "\`$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
 
-  # Every release is kept as an image until 30 newer ones exist: at one or
-  # more merges a day that is weeks of rollback targets, and the registry never
-  # grows without bound. Only after a push, so a manual run never deletes.
+  # Every release is kept as an image until 10 newer ones exist. Rollback does
+  # not need more: the host restores its previous release from an image already
+  # on the host and never pulls one, and a redeploy of an older commit whose
+  # image is gone builds it again (the image job reuses an image only if one is
+  # there). Ten keeps the live release and the several before it in the
+  # registry, and the registry never grows without bound. Only after a push, so
+  # a manual run never deletes.
   prune:
     needs: image
     if: github.event_name == 'push'
@@ -157,7 +161,7 @@ jobs:
         with:
           package-name: teleautomation-operations
           package-type: container
-          min-versions-to-keep: 30
+          min-versions-to-keep: 10
 
   deploy:
     needs: [preflight, image]

@@ -45,9 +45,10 @@ old builds — including any built before a data cleanup — reachable for longe
 recovery, ages retired builds out roughly three times faster, and stays well
 above the one or two versions the documented rollback path can actually use.
 
-Not implemented here: changing it edits `deploy.yml`, which this round of work
-was explicitly told not to touch. It is a one-line change
-(`min-versions-to-keep: 30` → `10`) when that instruction is lifted.
+Implemented on 21 Sep 2026, once that instruction was lifted:
+`min-versions-to-keep: 10`. The host's rollback restores an image already on
+the host and never pulls from the registry, so no rollback depends on a
+registry version surviving.
 
 Whatever the number, `prune` never removes the newest versions, so the deployed
 release and its immediate predecessors are always kept.
