@@ -726,11 +726,12 @@ def _same_lifecycle_slot(
         # was booked beside the invite it reminded about (15:00-15:30), with
         # the same meeting, and both rows were marked attended. The meeting
         # must be the exact same one -- never a similar link, a company or a
-        # title -- on the same date at the same start.
-        incoming_meetings = _source_teams_meetings(message)
+        # title -- on the same date at the same start. A HirePro interview
+        # room counts the same way (`_source_hirepro_interviews`).
+        incoming_meetings = _source_meeting_identities(message)
         if incoming_meetings:
             source = mail_store.booking_source_message(str(row.get("interview_source_message_id") or ""))
-            if source and incoming_meetings.intersection(_source_teams_meetings(source)):
+            if source and incoming_meetings.intersection(_source_meeting_identities(source)):
                 return True
     # Identical times, titles, or public job links cannot establish that two
     # independent messages describe the same interview.
@@ -791,6 +792,78 @@ def _source_teams_meetings(message):
         elif (short := _teams_short_meeting(url)):
             found.add(short)
     return found
+
+
+def _source_meeting_identities(message) -> set:
+    """Every exact meeting identity in a mail: Teams meetings and HirePro interview rooms."""
+    return _source_teams_meetings(message) | _source_hirepro_interviews(message)
+
+
+_HIREPRO_HOST = 'ams.hirepro.in'
+_HIREPRO_ROOM_PREFIX = '/v2/interview/home/'
+_HIREPRO_ROOM_WRAPPER = '/testcompatibility/interview/default/candidate.html'
+_HIREPRO_TOKEN = re.compile(r'Tkn:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', re.I)
+
+
+def _source_hirepro_interviews(message) -> set:
+    """Exact HirePro interview rooms in raw MIME alternatives, by their login token.
+
+    HirePro sends an interview as "<Company> - Interview Schedule" and then as
+    "Interview Reminder - <time>", in separate threads, with no calendar event
+    and no Teams link, so the reminder of 22 Sep became a second booking of the
+    11:00 interview booked from the invite a day earlier. Both mails carry the
+    candidate's interview room -- ams.hirepro.in/v2/interview/home/<token>, or
+    the same link base64-encoded in .../candidate.html?data= -- and in stored
+    mail every token belonged to one candidate's one interview. The token is
+    compared exactly once decoded; the shared compatibility-check page, and
+    anything that does not decode to one token, identify nothing.
+    """
+    from urllib.parse import urlsplit
+    text = unescape(' '.join(str(message.get(k) or '') for k in (
+        'body', 'html_body', 'body_text', 'html_body_text')))
+    found = set()
+    for url in re.findall(r'''https?://[^\s<>"']+''', text):
+        parsed = urlsplit(url)
+        if parsed.hostname != _HIREPRO_HOST:
+            continue
+        room = url
+        if parsed.path.rstrip('/') == _HIREPRO_ROOM_WRAPPER:
+            # Read raw: a query parser turns base64's "+" into a space.
+            wrapped = [part[len('data='):] for part in parsed.query.split('&') if part.startswith('data=')]
+            room = _base64_text(wrapped[0]) if len(wrapped) == 1 else ''
+        token = _hirepro_room_token(room)
+        if token:
+            found.add((_HIREPRO_HOST, 'interview-room', token))
+    return found
+
+
+def _hirepro_room_token(url: str) -> str:
+    """The login token of a HirePro interview-room link, lower-cased, or ''."""
+    import json
+    from urllib.parse import urlsplit
+    parsed = urlsplit(url or '')
+    if parsed.hostname != _HIREPRO_HOST or not parsed.path.startswith(_HIREPRO_ROOM_PREFIX):
+        return ''
+    try:
+        payload = json.loads(_base64_text(parsed.path[len(_HIREPRO_ROOM_PREFIX):].rstrip('/')) or 'null')
+    except ValueError:
+        return ''
+    match = _HIREPRO_TOKEN.fullmatch(str(payload.get('lt') or '')) if isinstance(payload, dict) else None
+    return match.group(1).lower() if match else ''
+
+
+def _base64_text(value: str) -> str:
+    """Decode a base64 (standard or URL-safe, padding optional) value to text, or ''."""
+    import base64
+    import binascii
+    from urllib.parse import unquote
+    raw = unquote(value or '').strip()
+    for decode in (base64.urlsafe_b64decode, base64.b64decode):
+        try:
+            return decode(raw + '=' * (-len(raw) % 4)).decode('utf-8')
+        except (binascii.Error, ValueError):
+            continue
+    return ''
 
 
 def _teams_short_meeting(url: str) -> tuple[str, str, str] | None:
