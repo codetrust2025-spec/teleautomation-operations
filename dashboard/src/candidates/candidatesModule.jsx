@@ -863,11 +863,29 @@ export function PaymentProofUploader({
                     className={`cand-proof-upload-job cand-proof-upload-job--${job.status}`}
                     key={job.id}
                   >
-                    <img
-                      className="cand-proof-upload-preview"
-                      src={job.previewUrl}
-                      alt=""
-                    />
+                    <button
+                      type="button"
+                      className="cand-proof-upload-thumb"
+                      onClick={() => {
+                        if (job.proof) {
+                          d(job.proof);
+                        } else if (job.previewUrl) {
+                          d({
+                            url: job.previewUrl,
+                            note: "",
+                            size: job.file?.size,
+                          });
+                        }
+                      }}
+                      title="Click to preview full screenshot"
+                      aria-label={`Preview payment screenshot${uploadJobs.length > 1 ? ` ${jobIndex + 1}` : ""}`}
+                    >
+                      <img
+                        className="cand-proof-upload-preview"
+                        src={job.previewUrl}
+                        alt=""
+                      />
+                    </button>
                     <div className="cand-proof-upload-main">
                       <div className="cand-proof-upload-head">
                         <strong>Payment screenshot{uploadJobs.length > 1 ? ` ${jobIndex + 1}` : ""}</strong>
@@ -1226,7 +1244,14 @@ export function PaymentProofUploader({
             ×
           </button>
           <img
-            src={`${ve}${u.url}`}
+            src={
+              u.url?.startsWith("blob:") ||
+              u.url?.startsWith("http:") ||
+              u.url?.startsWith("https:") ||
+              u.url?.startsWith("data:")
+                ? u.url
+                : `${ve}${u.url}`
+            }
             alt={u.note || "payment proof"}
             onClick={(b) => b.stopPropagation()}
           />
@@ -1236,11 +1261,18 @@ export function PaymentProofUploader({
           >
             {u.note && <strong>{u.note}</strong>}
             <span>
-              {Nx(u.uploaded_at)} · {kx(u.size)}
+              {u.uploaded_at ? `${Nx(u.uploaded_at)} · ` : ""}{kx(u.size)}
             </span>
             <a
-              href={`${ve}${u.url}`}
-              download={u.original_name || u.filename}
+              href={
+                u.url?.startsWith("blob:") ||
+                u.url?.startsWith("http:") ||
+                u.url?.startsWith("https:") ||
+                u.url?.startsWith("data:")
+                  ? u.url
+                  : `${ve}${u.url}`
+              }
+              download={u.original_name || u.filename || "payment-proof"}
               className="cand-btn cand-btn--ghost cand-btn--xs"
             >
               Download
