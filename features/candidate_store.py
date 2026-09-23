@@ -3685,9 +3685,29 @@ def interview_monitor(
         filter_round=filter_round,
         filter_technology=filter_technology,
     )
-    counts = _interview_attendance_counts(rows)
+    awaiting_rows: list[dict] = []
     if upcoming_only:
         rows = _filter_upcoming_only_rows(rows)
+        from datetime import date, timedelta
+        today_date = date.today()
+        lookback_start = (today_date - timedelta(days=30)).isoformat()
+        past_rows = _interview_rows_for_range(
+            lookback_start,
+            today_date.isoformat(),
+            include_unconfirmed=include_unconfirmed,
+        )
+        past_rows = _filter_interview_rows(
+            past_rows,
+            viewer_reference=viewer_reference,
+            filter_attendee=filter_attendee,
+            filter_search=filter_search,
+            filter_channel=filter_channel,
+            filter_round=filter_round,
+            filter_technology=filter_technology,
+        )
+        _, awaiting_rows = _split_pending_interviews_by_slot_phase(past_rows)
+        awaiting_rows = _enrich_interview_rows_with_slot_screenshots(awaiting_rows)
+    counts = _interview_attendance_counts(rows)
     rows = _enrich_interview_rows_with_slot_screenshots(rows)
     by_date: dict[str, list[dict]] = {}
     by_attendee: dict[str, int] = {}
@@ -3704,7 +3724,9 @@ def interview_monitor(
         "from": start,
         "to": end,
         "interviews": rows,
+        "awaiting_interviews": awaiting_rows,
         "count": len(rows),
+        "awaiting_count": len(awaiting_rows),
         **counts,
         "by_date": {day: by_date[day] for day in sorted(by_date.keys())},
         "by_attendee": dict(sorted(by_attendee.items(), key=lambda kv: kv[0].lower())),
@@ -3758,6 +3780,8 @@ def interview_upcoming(
         "from": range_start,
         "to": forward_end,
         "interviews": out_rows,
+        "scheduled_interviews": _enrich_interview_rows_with_slot_screenshots(scheduled),
+        "awaiting_interviews": _enrich_interview_rows_with_slot_screenshots(awaiting),
         "count": len(out_rows),
         "scheduled_count": len(scheduled),
         "awaiting_status_count": len(awaiting),

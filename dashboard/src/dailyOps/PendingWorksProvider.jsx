@@ -193,7 +193,7 @@ export function PendingWorksProvider({ children, mainView = 'dashboard' }) {
   const pendingInterviews = usePendingInterviewsQuery({
     enabled: authReady,
     deferMs: 8000,
-    days: 1,
+    days: 30,
   })
 
   const value = {

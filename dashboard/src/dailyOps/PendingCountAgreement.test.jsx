@@ -83,7 +83,7 @@ describe('the roster counts what it loaded', () => {
   })
 
   it('publishes that same number', () => {
-    expect(roster).toContain('publishPendingWorkChanged(nextCounts.pending_count)')
+    expect(roster).toContain('publishPendingWorkChanged(totalPending)')
   })
 })
 
