@@ -2506,7 +2506,6 @@ export default function RecruitmentMailPanelRedesign() {
         </div>
         <div className="sot-header-actions">
           <label className="sot-global-candidate-filter">
-            <span>Candidate</span>
             <select
               aria-label="Global candidate filter"
               value={candidateId}

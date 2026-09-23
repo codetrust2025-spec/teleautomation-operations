@@ -409,6 +409,10 @@
   color: var(--sot-muted);
   font-size: 13px;
 }
+.sot-global-candidate-filter {
+  display: inline-flex;
+  align-items: center;
+}
 
 .sot-ai-status,
 .sot-fallback-confidence {
