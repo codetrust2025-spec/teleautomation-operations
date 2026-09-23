@@ -10970,6 +10970,144 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   padding: 6px 10px;
   font-size: 12px;
 }
+
+/* ── Payment Proof Upload Jobs (compact preview in candidate edit) ── */
+.cand-proof-upload-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.cand-proof-upload-job {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+}
+.cand-proof-upload-job--uploading,
+.cand-proof-upload-job--processing {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.04);
+}
+.cand-proof-upload-job--success {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.04);
+}
+.cand-proof-upload-job--error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.04);
+}
+.cand-proof-upload-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  max-width: 180px;
+  max-height: 140px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  cursor: zoom-in;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.cand-proof-upload-thumb:hover {
+  border-color: rgba(99, 102, 241, 0.55);
+}
+.cand-proof-upload-preview {
+  display: block;
+  max-width: 180px;
+  max-height: 140px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.cand-proof-upload-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cand-proof-upload-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cand-proof-upload-head strong {
+  font-size: 13px;
+  color: var(--text, #e5e7eb);
+  font-weight: 600;
+}
+.cand-proof-upload-head span {
+  font-size: 11px;
+  color: var(--text-dim, #94a3b8);
+}
+.cand-proof-upload-state {
+  font-size: 12px;
+  color: var(--text-dim, #94a3b8);
+}
+.cand-proof-upload-progress {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin: 4px 0;
+}
+.cand-proof-upload-progress span {
+  display: block;
+  height: 100%;
+  background: #6366f1;
+  transition: width 0.15s ease;
+}
+.cand-proof-upload-error {
+  font-size: 12px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 2px;
+}
+.cand-proof-upload-slow {
+  font-size: 11px;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cand-proof-upload-link {
+  background: none;
+  border: none;
+  color: #818cf8;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+}
+.cand-proof-upload-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
 .cand-proofs-grid {
   list-style: none;
   margin: 0;
@@ -10987,10 +11125,15 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
+  max-width: 180px;
 }
 .cand-proof-thumb {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+  max-width: 180px;
+  max-height: 140px;
   aspect-ratio: 1;
   padding: 0;
   border: none;
@@ -10998,10 +11141,13 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   border-radius: 6px;
   overflow: hidden;
   cursor: zoom-in;
+  margin: 0 auto;
 }
 .cand-proof-thumb img {
   width: 100%;
   height: 100%;
+  max-width: 180px;
+  max-height: 140px;
   object-fit: contain;
   display: block;
 }
@@ -17668,6 +17814,12 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
     grid-column: 1 / -1;
     min-width: 0;
   }
+  .cand-panel .cand-proofs .cand-proof-upload-jobs,
+  .cand-panel .cand-proofs:has(.cand-proofs-grid) .cand-proof-upload-jobs {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+  }
   /* Upload dropzone — flexible, never overflows */
   .cand-panel .cand-proofs-drop {
     width: 100%;
@@ -17792,4 +17944,13 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-proofs-ai-grid { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
   .cand-proofs-ai-grid > span { grid-column: 1 / -1; }
   .cand-proofs-ai-value { grid-column: 1 / -1; }
+  .cand-proof-upload-job {
+    flex-wrap: wrap;
+  }
+  .cand-proof-upload-actions {
+    flex-direction: row;
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
 }

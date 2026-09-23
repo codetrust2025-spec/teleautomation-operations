@@ -334,4 +334,112 @@ describe("PaymentProofUploader", () => {
       credentials: "include",
     });
   });
+
+  it("renders a compact thumbnail preview for tall mobile screenshot and opens full preview on click", async () => {
+    const { container } = render(<Harness />);
+    // Simulate a tall PhonePe / Google Pay mobile screenshot (e.g. 1080x2400)
+    const tallScreenshot = new File(["phonepe_1080x2400_binary_data"], "phonepe_upi_receipt.png", {
+      type: "image/png",
+    });
+
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [tallScreenshot] },
+    });
+
+    await waitFor(() => expect(FakeXMLHttpRequest.instances).toHaveLength(1));
+
+    // The job card, compact thumbnail button, and preview image must be present
+    const card = container.querySelector(".cand-proof-upload-job");
+    expect(card).toBeInTheDocument();
+    const thumbBtn = card.querySelector(".cand-proof-upload-thumb");
+    expect(thumbBtn).toBeInTheDocument();
+    const previewImg = thumbBtn.querySelector(".cand-proof-upload-preview");
+    expect(previewImg).toBeInTheDocument();
+    expect(previewImg.src).toContain("blob:payment-proof");
+
+    // Clicking the compact thumbnail must open the full-size preview lightbox
+    expect(document.querySelector(".cand-proof-lightbox")).toBeNull();
+    fireEvent.click(thumbBtn);
+
+    const lightbox = document.querySelector(".cand-proof-lightbox");
+    expect(lightbox).toBeInTheDocument();
+    const lightboxImg = lightbox.querySelector("img");
+    expect(lightboxImg.src).toContain("blob:payment-proof");
+
+    // Close the lightbox
+    const closeBtn = lightbox.querySelector(".cand-proof-lightbox-close");
+    fireEvent.click(closeBtn);
+    expect(document.querySelector(".cand-proof-lightbox")).toBeNull();
+  });
+
+  it("opens full-size lightbox preview on clicking View for a completed upload", async () => {
+    const { container } = render(<Harness />);
+    const file = new File(["gpay_data"], "gpay_success.png", { type: "image/png" });
+
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => expect(FakeXMLHttpRequest.instances).toHaveLength(1));
+    const xhr = FakeXMLHttpRequest.instances[0];
+
+    act(() => xhr.upload.onload());
+
+    xhr.status = 200;
+    xhr.responseText = JSON.stringify({
+      status: "ok",
+      candidate: {
+        id: "candidate-1",
+        payment_proofs: [
+          {
+            id: "proof-gpay",
+            attachment_type: "payment_proof",
+            original_name: file.name,
+            size: file.size,
+            url: "/candidates/candidate-1/proofs/proof-gpay",
+          },
+        ],
+      },
+    });
+    act(() => xhr.onload());
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "View" })).toBeInTheDocument(),
+    );
+
+    // Clicking View opens the full-size image in the lightbox
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    const lightbox = document.querySelector(".cand-proof-lightbox");
+    expect(lightbox).toBeInTheDocument();
+    expect(lightbox.querySelector("img").src).toContain("/candidates/candidate-1/proofs/proof-gpay");
+
+    // Close the lightbox
+    fireEvent.click(lightbox.querySelector(".cand-proof-lightbox-close"));
+    expect(document.querySelector(".cand-proof-lightbox")).toBeNull();
+  });
+
+  it("keeps multiple upload jobs as compact cards with header, size, and status", async () => {
+    const { container } = render(<Harness />);
+    const file1 = new File(["data1"], "phonepe.png", { type: "image/png" });
+    const file2 = new File(["data2"], "gpay.png", { type: "image/png" });
+
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [file1, file2] },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelectorAll(".cand-proof-upload-job")).toHaveLength(2),
+    );
+
+    const jobs = container.querySelectorAll(".cand-proof-upload-job");
+    // Both jobs render compact thumbnail buttons and previews
+    expect(jobs[0].querySelector(".cand-proof-upload-thumb")).toBeInTheDocument();
+    expect(jobs[0].querySelector(".cand-proof-upload-preview")).toBeInTheDocument();
+    expect(jobs[1].querySelector(".cand-proof-upload-thumb")).toBeInTheDocument();
+    expect(jobs[1].querySelector(".cand-proof-upload-preview")).toBeInTheDocument();
+
+    // Check numbering for multiple proofs
+    expect(screen.getByText("Payment screenshot 1")).toBeInTheDocument();
+    expect(screen.getByText("Payment screenshot 2")).toBeInTheDocument();
+  });
 });

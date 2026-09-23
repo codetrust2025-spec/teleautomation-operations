@@ -82,3 +82,43 @@ describe('payment proof extracted-details panel', () => {
     expect(block).toMatch(/grid-column:\s*1\s*\/\s*-1/)
   })
 })
+
+describe('payment proof preview sizing and compact thumbnail layout', () => {
+  it('constrains upload preview image to max 140px height and 180px width with object-fit: contain', () => {
+    const preview = rule('.cand-proof-upload-preview {')
+    expect(preview).toMatch(/max-height:\s*140px/)
+    expect(preview).toMatch(/max-width:\s*180px/)
+    expect(preview).toMatch(/object-fit:\s*contain/)
+  })
+
+  it('constrains upload thumbnail container to max 140px height and 180px width', () => {
+    const thumb = rule('.cand-proof-upload-thumb {')
+    expect(thumb).toMatch(/max-height:\s*140px/)
+    expect(thumb).toMatch(/max-width:\s*180px/)
+  })
+
+  it('keeps upload jobs in a full-width row in the desktop proofs grid', () => {
+    const placed = rule('  .cand-panel .cand-proofs .cand-proof-upload-jobs')
+    expect(placed).toMatch(/grid-column:\s*1\s*\/\s*-1/)
+  })
+
+  it('constrains saved proof thumbnails to max 140px height and 180px width with object-fit contain', () => {
+    const thumb = rule('.cand-proof-thumb {')
+    expect(thumb).toMatch(/max-height:\s*140px/)
+    expect(thumb).toMatch(/max-width:\s*180px/)
+
+    const img = rule('.cand-proof-thumb img {')
+    expect(img).toMatch(/max-height:\s*140px/)
+    expect(img).toMatch(/max-width:\s*180px/)
+    expect(img).toMatch(/object-fit:\s*contain/)
+  })
+
+  it('wraps upload job cards responsively on narrow screens', () => {
+    const at = CSS.indexOf('@media (max-width: 560px)')
+    expect(at).toBeGreaterThan(-1)
+    const block = CSS.slice(at, at + 700)
+    expect(block).toContain('.cand-proof-upload-job')
+    expect(block).toMatch(/flex-wrap:\s*wrap/)
+    expect(block).toContain('.cand-proof-upload-actions')
+  })
+})
