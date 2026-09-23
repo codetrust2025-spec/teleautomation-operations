@@ -157,3 +157,138 @@ def test_date_boundary_same_day_slot_timing(monkeypatch):
         assert any(r["id"] == "c_today_past" for r in awaiting)
     if future_hour > now_ist.hour:
         assert any(r["id"] == "c_today_future" for r in scheduled)
+
+
+# ---------------------------------------------------------------------------
+# New regression tests for time-aware interview_monitor fix
+# (upcoming_only uses _split_pending_interviews_by_slot_phase, not
+#  _filter_upcoming_only_rows, so slot end-time is respected intra-day)
+# ---------------------------------------------------------------------------
+
+
+def test_monitor_future_slot_today_stays_in_upcoming(monkeypatch):
+    """A pending slot whose end time is still in the future today must appear
+    in interview_monitor.interviews (Upcoming), NOT in awaiting_interviews."""
+    now_ist = ist_now()
+    today_str = now_ist.strftime("%Y-%m-%d")
+    today = date.today()
+
+    # A slot that ends 2 hours from now (guaranteed future)
+    future_hour = min(22, now_ist.hour + 2)
+    slot_time = f"{future_hour:02d}:00"
+    slot_end = f"{future_hour:02d}:30"
+
+    mock_candidates = [
+        _make_candidate("c_future_today", "Future Today", today_str, slot_time, slot_end, status=""),
+    ]
+    monkeypatch.setattr(cs, "_load", lambda: {"candidates": mock_candidates})
+
+    result = cs.interview_monitor(
+        today.isoformat(),
+        (today + timedelta(days=30)).isoformat(),
+        upcoming_only=True,
+    )
+
+    upcoming_ids = [r["id"] for r in result["interviews"]]
+    awaiting_ids = [r["id"] for r in result["awaiting_interviews"]]
+    assert "c_future_today" in upcoming_ids, "Future slot should be in Upcoming"
+    assert "c_future_today" not in awaiting_ids, "Future slot must NOT be in Awaiting"
+
+
+def test_monitor_slot_ended_minutes_ago_moves_to_awaiting(monkeypatch):
+    """A pending slot whose end time passed a few minutes ago today must appear
+    in interview_monitor.awaiting_interviews, NOT in interviews (Upcoming)."""
+    now_ist = ist_now()
+    today_str = now_ist.strftime("%Y-%m-%d")
+    today = date.today()
+
+    # A slot that ended 2 hours ago — safely in the past
+    past_hour = max(0, now_ist.hour - 2)
+    slot_time = f"{past_hour:02d}:00"
+    slot_end = f"{past_hour:02d}:30"
+
+    if past_hour >= now_ist.hour:
+        pytest.skip("Cannot construct a past slot (running too early in the day)")
+
+    mock_candidates = [
+        _make_candidate("c_past_today", "Ended Today", today_str, slot_time, slot_end, status=""),
+    ]
+    monkeypatch.setattr(cs, "_load", lambda: {"candidates": mock_candidates})
+
+    result = cs.interview_monitor(
+        today.isoformat(),
+        (today + timedelta(days=30)).isoformat(),
+        upcoming_only=True,
+    )
+
+    upcoming_ids = [r["id"] for r in result["interviews"]]
+    awaiting_ids = [r["id"] for r in result["awaiting_interviews"]]
+    assert "c_past_today" not in upcoming_ids, "Ended slot must NOT be in Upcoming"
+    assert "c_past_today" in awaiting_ids, "Ended slot should be in Awaiting"
+
+
+def test_monitor_future_date_slot_always_upcoming(monkeypatch):
+    """A pending slot on a future date (not today) is always Upcoming."""
+    today = date.today()
+    future_date = (today + timedelta(days=5)).isoformat()
+
+    mock_candidates = [
+        _make_candidate("c_future_date", "Future Date", future_date, "10:00 AM", "11:00 AM", status=""),
+    ]
+    monkeypatch.setattr(cs, "_load", lambda: {"candidates": mock_candidates})
+
+    result = cs.interview_monitor(
+        today.isoformat(),
+        (today + timedelta(days=30)).isoformat(),
+        upcoming_only=True,
+    )
+
+    upcoming_ids = [r["id"] for r in result["interviews"]]
+    awaiting_ids = [r["id"] for r in result["awaiting_interviews"]]
+    assert "c_future_date" in upcoming_ids
+    assert "c_future_date" not in awaiting_ids
+
+
+def test_monitor_count_plus_awaiting_equals_upcoming_pending_count(monkeypatch):
+    """Invariant: monitor.count + monitor.awaiting_count == interview_upcoming.pending_count
+    on the same data snapshot. This is the single-source-of-truth assertion."""
+    now_ist = ist_now()
+    today = date.today()
+    today_str = now_ist.strftime("%Y-%m-%d")
+    past_date = (today - timedelta(days=3)).isoformat()
+    future_date = (today + timedelta(days=3)).isoformat()
+
+    # Slot ended 2 hours ago
+    past_hour = max(0, now_ist.hour - 2)
+    slot_time = f"{past_hour:02d}:00"
+    slot_end = f"{past_hour:02d}:30"
+
+    mock_candidates = [
+        # Clearly future slot
+        _make_candidate("c1", "Future 1", future_date, "02:00 PM", "03:00 PM", status=""),
+        # Past date slot, unresolved
+        _make_candidate("c2", "Overdue 1", past_date, "11:00 AM", "12:00 PM", status=""),
+        # Today slot ended (only if we can safely build it)
+        *(
+            [_make_candidate("c3", "Ended Today", today_str, slot_time, slot_end, status="")]
+            if past_hour < now_ist.hour
+            else []
+        ),
+        # Resolved — must not appear in either
+        _make_candidate("c4", "Attended", future_date, "04:00 PM", "05:00 PM", status="attended"),
+    ]
+    monkeypatch.setattr(cs, "_load", lambda: {"candidates": mock_candidates})
+
+    monitor_result = cs.interview_monitor(
+        today.isoformat(),
+        (today + timedelta(days=30)).isoformat(),
+        upcoming_only=True,
+    )
+    upcoming_result = cs.interview_upcoming(days=30, lookback_days=30)
+
+    monitor_total = monitor_result["count"] + monitor_result["awaiting_count"]
+    assert monitor_total == upcoming_result["pending_count"], (
+        f"Invariant broken: monitor({monitor_result['count']} + "
+        f"{monitor_result['awaiting_count']}) != upcoming.pending_count({upcoming_result['pending_count']})"
+    )
+
