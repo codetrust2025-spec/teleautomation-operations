@@ -3687,17 +3687,21 @@ def interview_monitor(
     )
     awaiting_rows: list[dict] = []
     if upcoming_only:
-        rows = _filter_upcoming_only_rows(rows)
         from datetime import date, timedelta
         today_date = date.today()
         lookback_start = (today_date - timedelta(days=30)).isoformat()
-        past_rows = _interview_rows_for_range(
+        # Fetch a combined window: 30-day lookback + caller's forward range.
+        # Use _split_pending_interviews_by_slot_phase (IST time-aware) so that
+        # a slot whose end time has passed today immediately moves from Upcoming
+        # to Awaiting outcome — no date-rollover required. This mirrors exactly
+        # what interview_upcoming does, giving one shared source of truth.
+        combined_rows = _interview_rows_for_range(
             lookback_start,
-            today_date.isoformat(),
+            to_date,
             include_unconfirmed=include_unconfirmed,
         )
-        past_rows = _filter_interview_rows(
-            past_rows,
+        combined_rows = _filter_interview_rows(
+            combined_rows,
             viewer_reference=viewer_reference,
             filter_attendee=filter_attendee,
             filter_search=filter_search,
@@ -3705,7 +3709,7 @@ def interview_monitor(
             filter_round=filter_round,
             filter_technology=filter_technology,
         )
-        _, awaiting_rows = _split_pending_interviews_by_slot_phase(past_rows)
+        rows, awaiting_rows = _split_pending_interviews_by_slot_phase(combined_rows)
         awaiting_rows = _enrich_interview_rows_with_slot_screenshots(awaiting_rows)
     counts = _interview_attendance_counts(rows)
     rows = _enrich_interview_rows_with_slot_screenshots(rows)
