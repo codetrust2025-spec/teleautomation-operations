@@ -120,3 +120,27 @@ def test_the_live_route_stops_listing_a_booking_once_it_has_an_outcome(monkeypat
     kept = cs.get_candidate(booked["id"])
     assert (kept["date"][:10], kept["time"], cs.row_interview_attendance_status(kept)) == (
         ahead, booked["time"], "attended")
+
+
+def test_canonical_candidate_name_capitalization():
+    assert cs.canonical_candidate_name("sakthivek") == "Sakthivek"
+    assert cs.canonical_candidate_name("pujitha") == "Pujitha"
+    assert cs.canonical_candidate_name("CHINTHALA PAVAN") == "Chinthala Pavan"
+    assert cs.canonical_candidate_name("konduru Sai Srinivas") == "Konduru Sai Srinivas"
+    assert cs.canonical_candidate_name("perla abhilash") == "Abilash Perla"
+    assert cs.canonical_candidate_name("ram charan m s") == "Ram Charan M S"
+    assert cs.canonical_candidate_name("Tejas M. Shinde") == "Tejas M. Shinde"
+
+
+def test_normalise_interview_round_numeric_and_technical():
+    assert cs.normalise_interview_round("1") == "L1"
+    assert cs.normalise_interview_round("Round 1") == "L1"
+    assert cs.normalise_interview_round("r1") == "L1"
+    assert cs.normalise_interview_round("2") == "L2"
+    assert cs.normalise_interview_round("Round 2") == "L2"
+    assert cs.normalise_interview_round("Technical") == "Technical"
+    assert cs.normalise_interview_round("Technical round") == "Technical"
+    assert cs.normalise_interview_round("Screening") == "Screening"
+    assert cs.normalise_interview_round("L1") == "L1"
+    assert cs.normalise_interview_round("") == ""
+

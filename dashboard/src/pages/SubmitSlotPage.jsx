@@ -105,16 +105,28 @@ function candidateNameKey(value) {
   return String(value || '').trim().toLocaleLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-function formatDayHeader(iso) {
+export function formatCandidateDisplayName(name) {
+  if (!name) return ''
+  return String(name)
+    .trim()
+    .split(/\s+/)
+    .map(w => {
+      if (w.length === 1 || (w.length === 2 && w.endsWith('.'))) return w.toUpperCase()
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    })
+    .join(' ')
+}
+
+export function formatDayHeader(iso) {
   if (!iso) return ''
   try {
     const d = new Date(`${iso}T12:00:00`)
     const today = new Date()
     const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1)
-    const dateStr = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+    const dateStr = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).replace(/, (?=\d{4})/, ' ')
     if (d.toDateString() === today.toDateString()) return `Today · ${dateStr}`
     if (d.toDateString() === tomorrow.toDateString()) return `Tomorrow · ${dateStr}`
-    return d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })
+    return dateStr
   } catch { return iso }
 }
 
@@ -131,9 +143,10 @@ function groupSlotsByDate(slots) {
 function dedupeCandidates(rows) {
   const byName = new Map()
   for (const row of rows || []) {
-    const name = String(row?.name || '').trim()
-    const key = candidateNameKey(name)
-    if (!name || !key) continue
+    const rawName = String(row?.name || '').trim()
+    const key = candidateNameKey(rawName)
+    if (!rawName || !key) continue
+    const name = formatCandidateDisplayName(rawName)
     const current = byName.get(key)
     if (!current || (current.name === current.name.toUpperCase() && name !== name.toUpperCase())) {
       byName.set(key, { ...row, name })
@@ -962,7 +975,7 @@ export function SubmitSlotPage() {
                               </svg>
                             </div>
                             <div className="sbs-slot-card__body">
-                              <div className="sbs-slot-card__name">{slot.name}</div>
+                              <div className="sbs-slot-card__name">{formatCandidateDisplayName(slot.name)}</div>
                               <div className="sbs-slot-card__time">
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
                                 <span>{formatFriendlyTime(slot.time)}{slot.time_end ? ` – ${formatFriendlyTime(slot.time_end)}` : ''}</span>
@@ -979,8 +992,15 @@ export function SubmitSlotPage() {
                                 >
                                   Assessment
                                 </span>
+                              ) : slot.interview_round ? (
+                                <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
                               ) : (
-                                slot.interview_round && <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
+                                <span
+                                  className="sbs-slot-card__round sbs-slot-card__round--unspecified"
+                                  title="Interview round was not specified in invitation"
+                                >
+                                  Round not specified
+                                </span>
                               )}
                               <span className="sbs-confirmed-card__status">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>

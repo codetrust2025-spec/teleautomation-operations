@@ -62,7 +62,8 @@ async function openConfirmed(slots) {
 
 /** The card element containing a candidate's name. */
 function cardFor(name) {
-  return screen.getByText(name).closest('.sbs-confirmed-card')
+  const el = screen.queryByText(name) || screen.getByText(new RegExp(`^${name}$`, 'i'))
+  return el.closest('.sbs-confirmed-card')
 }
 
 afterEach(() => {
@@ -240,3 +241,40 @@ describe('assessments in the confirmed list', () => {
     expect(within(cardFor('Lavanya')).queryByText('Assessment')).toBeNull()
   })
 })
+
+describe('candidate name capitalization and round badge presentation', () => {
+  it('formats lowercase and uppercase candidate names into Title Case', async () => {
+    const slots = [
+      { name: 'sakthivek', technology: 'QA', interview_round: 'Screening', date: '2026-09-24', time: '09:30' },
+      { name: 'pujitha', technology: 'Java', interview_round: 'L1', date: '2026-09-24', time: '14:00' },
+      { name: 'CHINTHALA PAVAN', technology: 'ServiceNow', interview_round: 'L1', date: '2026-09-24', time: '15:00' },
+    ]
+    await openConfirmed(slots)
+    await waitFor(() => expect(screen.getByText('Sakthivek')).toBeTruthy())
+    expect(screen.getByText('Pujitha')).toBeTruthy()
+    expect(screen.getByText('Chinthala Pavan')).toBeTruthy()
+  })
+
+  it('renders "Round not specified" badge when interview has no round', async () => {
+    const slots = [
+      { name: 'Keerthi Nannapaneni', technology: 'Data', interview_round: '', date: '2026-09-24', time: '16:00', booking_type: 'Interview' },
+    ]
+    await openConfirmed(slots)
+    await waitFor(() => expect(screen.getByText('Keerthi Nannapaneni')).toBeTruthy())
+    const badge = screen.getByText('Round not specified')
+    expect(badge).toBeTruthy()
+    expect(badge.className).toContain('sbs-slot-card__round--unspecified')
+  })
+
+  it('renders Technical round badge when round is Technical', async () => {
+    const slots = [
+      { name: 'Keerthi Nannapaneni', technology: 'Data', interview_round: 'Technical', date: '2026-09-24', time: '16:00', booking_type: 'Interview' },
+    ]
+    await openConfirmed(slots)
+    await waitFor(() => expect(screen.getByText('Keerthi Nannapaneni')).toBeTruthy())
+    const badge = screen.getByText('Technical')
+    expect(badge).toBeTruthy()
+    expect(badge.className).toContain('sbs-slot-card__round--technical')
+  })
+})
+

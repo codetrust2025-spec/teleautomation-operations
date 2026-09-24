@@ -184,7 +184,7 @@ VALID_SERVICE_TYPES = {"profile_service", "round_wise"}
 VALID_INTERVIEW_SCOPES = {"external", "internal"}
 VALID_PURPOSES = {"interview_support", "work_support", "experience_docs", "other"}
 VALID_INTERVIEW_ROUNDS = frozenset({
-    "L1", "L2", "HR", "Final", "Screening",
+    "L1", "L2", "HR", "Final", "Screening", "Technical",
 })
 #: The sitting is off and the hour is free, but no replacement has been booked
 #: yet: "Awaiting new slot" in Daily Ops.
@@ -491,6 +491,18 @@ _CANDIDATE_NAME_ALIASES: dict[str, str] = {
 }
 
 
+def _title_case_name(name: str) -> str:
+    """Format candidate name into standard Title Case while preserving initials."""
+    words = (name or "").strip().split()
+    out = []
+    for w in words:
+        if len(w) == 1 or (len(w) == 2 and w.endswith(".")):
+            out.append(w.upper())
+        else:
+            out.append(w[0].upper() + w[1:].lower())
+    return " ".join(out)
+
+
 def canonical_candidate_name(name: str) -> str:
     """Single display name per person — e.g. PERLA ABHILASH → Abilash Perla."""
     raw = _clean_str(name)
@@ -503,7 +515,7 @@ def canonical_candidate_name(name: str) -> str:
         return "Abilash Perla"
     if ("ram charan" in key or "reddy charan" in key) and ("m s" in key or key.endswith(" ms")):
         return "Ram Charan M S"
-    return raw
+    return _title_case_name(raw)
 
 
 def candidate_defaults_to_tool_attendee(name: str) -> bool:
@@ -1509,10 +1521,17 @@ def normalise_interview_round(raw) -> str:
     compact = re.sub(r"\s+", "", val).upper()
     if compact in VALID_INTERVIEW_ROUNDS:
         return compact
+    m_num = re.match(r"^(?:ROUND|R)?(\d)$", compact, re.IGNORECASE)
+    if m_num:
+        label = f"L{m_num.group(1)}"
+        if label in VALID_INTERVIEW_ROUNDS:
+            return label
     m = re.match(r"^L(\d)$", compact, re.IGNORECASE)
     if m:
         label = f"L{m.group(1)}"
         return label if label in VALID_INTERVIEW_ROUNDS else ""
+    if "TECHNICAL" in compact:
+        return "Technical"
     title = val.title()
     if title in VALID_INTERVIEW_ROUNDS:
         return title
