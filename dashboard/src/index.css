@@ -10767,6 +10767,11 @@ select.cand-input {
   color: #fca5a5;
   border: 1px solid rgba(239, 68, 68, 0.4);
 }
+.cand-pay-pill--unevidenced {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
 .cand-pay-pillrow {
   display: inline-flex;
   align-items: center;
@@ -12689,6 +12694,11 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   background: rgba(239, 68, 68, 0.12);
   color: #fca5a5;
   border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.cand-pay-status--unevidenced {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
 }
 .cand-toggle {
   display: inline-flex;

@@ -2171,6 +2171,11 @@ function K8(e) {
     // the form shows the authoritative numbers the moment it opens, and keeps
     // showing them after a proof mutation refreshes the summary.
     payment_is_proof_derived: !!e.payment_is_proof_derived,
+    payment_unevidenced: !!(
+      e.payment_unevidenced ??
+      ((Number(e.payment) || 0) > 0 && normalizePaymentProofs(e).length === 0)
+    ),
+    proof_count: e.proof_count ?? normalizePaymentProofs(e).length,
     expected_minimum: e.expected_minimum,
     verified_received: e.verified_received,
     verified_proof_total: e.verified_proof_total,
@@ -2309,6 +2314,11 @@ export function CandidateEditModal({
           !!paymentSummary.needs_reconciliation;
         next.payment_reconciliation_gap =
           Number(paymentSummary.reconciliation_gap) || 0;
+        next.proof_count = Number(paymentSummary.proof_count ?? nextProofs.length) || 0;
+        next.payment_unevidenced =
+          paymentSummary.unevidenced != null
+            ? !!paymentSummary.unevidenced
+            : (Number(paymentSummary.received_total) || 0) > 0 && nextProofs.length === 0;
         next.referral_commission =
           Number(paymentSummary.referral_commission) || 0;
         next.referral_percentage =
@@ -2324,6 +2334,11 @@ export function CandidateEditModal({
         next.above_minimum = Number(candidate.above_minimum) || 0;
         next.balance_due = Number(candidate.balance_due) || 0;
         next.verified_proof_count = Number(candidate.verified_proof_count) || 0;
+        next.proof_count = Number(candidate.proof_count ?? nextProofs.length) || 0;
+        next.payment_unevidenced =
+          candidate.payment_unevidenced != null
+            ? !!candidate.payment_unevidenced
+            : (Number(candidate.payment) || 0) > 0 && nextProofs.length === 0;
         next.payment_is_proof_derived = !!candidate.payment_is_proof_derived;
         next.payment_needs_reconciliation =
           !!candidate.payment_needs_reconciliation;
@@ -2511,10 +2526,13 @@ export function CandidateEditModal({
       ? Number(l.referral_commission) || 0
       : wl(k, T, P, !!l.bgv_certificates);
   const S = Math.max(0, T - k);
-  const E = w.useMemo(
-    () => (k <= 0 ? "unpaid" : k >= T ? "paid" : "partial"),
-    [k, T],
-  );
+  const isUnevidenced =
+    k > 0 && (o.length === 0 || (l.proof_count ?? 0) === 0 || !!l.payment_unevidenced);
+  const E = w.useMemo(() => {
+    if (k <= 0) return "unpaid";
+    if (isUnevidenced) return "unevidenced";
+    return k >= T ? "paid" : "partial";
+  }, [k, T, isUnevidenced]);
   const b = S > 0;
   const A = W8(l);
   const O = !A;
@@ -3053,6 +3071,11 @@ export function CandidateEditModal({
             <div className="cand-field">
               <span className={`cand-pay-status cand-pay-status--${E}`}>
                 {E === "paid" && <s.Fragment>✓ Paid ({$n(k)})</s.Fragment>}
+                {E === "unevidenced" && (
+                  <s.Fragment>
+                    ⚠ Recorded — proof missing ({k >= T ? $n(k) : `${$n(k)} / ${$n(T)}`})
+                  </s.Fragment>
+                )}
                 {E === "partial" && (
                   <s.Fragment>
                     ● {$n(k)}/{$n(T)} · <strong>{$n(S)} pending</strong>
@@ -5540,7 +5563,7 @@ function Ax(e) {
     return "₹0";
   }
 }
-function _Component27({ row: e, onViewProofs: t }) {
+export function _Component27({ row: e, onViewProofs: t }) {
   const r = Number(e.expected_payment) || 20000;
   const n = Number(e.payment) || 0;
   const a = Math.max(0, r - n);
@@ -5564,7 +5587,49 @@ function _Component27({ row: e, onViewProofs: t }) {
         <span className="cand-pay-proofs-cta">View</span>
       </button>
     ) : null;
-  if (i === "paid") {
+  const isUnevidenced =
+    Boolean(e.payment_unevidenced) || (n > 0 && l === 0);
+  if (n <= 0) {
+    return (
+      <div className="cand-cell-money cand-pay">
+        <span className="cand-pay-amount">
+          <span className="cand-pay-zero">₹0</span>
+          <span className="cand-pay-expected"> / {Ax(r)}</span>
+        </span>
+        <span className="cand-pay-pillrow">
+          <span
+            className="cand-pay-pill cand-pay-pill--unpaid"
+            title={e.follow_up || ""}
+          >
+            {Ax(r)} due
+          </span>
+        </span>
+      </div>
+    );
+  }
+  if (isUnevidenced) {
+    return (
+      <div className="cand-cell-money cand-pay">
+        <span className="cand-pay-amount">
+          {Cx(n)}
+          {n < r && <span className="cand-pay-expected"> / {Ax(r)}</span>}
+        </span>
+        <span className="cand-pay-pillrow">
+          <span
+            className="cand-pay-pill cand-pay-pill--unevidenced"
+            title={
+              n < r
+                ? `${Ax(a)} due — Recorded manually, proof missing`
+                : "Recorded manually — proof missing"
+            }
+          >
+            ⚠ Recorded — proof missing
+          </span>
+        </span>
+      </div>
+    );
+  }
+  if (i === "paid" || n >= r) {
     return (
       <div className="cand-cell-money cand-pay">
         <span className="cand-pay-amount">{Cx(n)}</span>
@@ -5578,12 +5643,12 @@ function _Component27({ row: e, onViewProofs: t }) {
     return (
       <div className="cand-cell-money cand-pay">
         <span className="cand-pay-amount">
-          {n > 0 ? Cx(n) : <span className="cand-pay-zero">₹0</span>}
+          {Cx(n)}
           <span className="cand-pay-expected"> / {Ax(r)}</span>
         </span>
         <span className="cand-pay-pillrow">
           <span
-            className={`cand-pay-pill cand-pay-pill--${i === "unpaid" ? "unpaid" : "partial"}`}
+            className="cand-pay-pill cand-pay-pill--partial"
             title={e.follow_up || ""}
           >
             {Ax(a)} due

@@ -303,6 +303,8 @@ def test_api_summary_matches_the_documented_response_shape():
         "verified_proof_count": 1,
         "payment_status": "PAID",
         "proof_derived": True,
+        "unevidenced": False,
+        "proof_count": 0,
         "needs_reconciliation": False,
         "reconciliation_gap": 0,
         "referrer": "Pavan Kalyan",
@@ -330,3 +332,52 @@ def test_api_summary_survives_a_row_with_nothing_set():
     assert out["received_total"] == 0
     assert out["payment_status"] == "UNPAID"
     assert out["verified_proof_count"] == 0
+    assert out["unevidenced"] is False
+    assert out["proof_count"] == 0
+
+
+def test_api_summary_flags_unevidenced_payment():
+    row = {
+        "payment": 20000,
+        "expected_minimum": 20000,
+        "payment_status": "paid",
+        "payment_is_proof_derived": False,
+        "payment_unevidenced": True,
+        "proof_count": 0,
+        "verified_proof_count": 0,
+    }
+    out = receipts.api_summary(row)
+    assert out["unevidenced"] is True
+    assert out["proof_derived"] is False
+    assert out["proof_count"] == 0
+    assert out["received_total"] == 20000
+
+
+def test_receipt_summary_unevidenced_full_and_partial():
+    # Full amount recorded with no proofs
+    full = receipts.receipt_summary(expected=20000, recorded=20000, proofs=[])
+    assert full["unevidenced"] is True
+    assert full["proof_derived"] is False
+    assert full["verified_received"] == 20000
+    assert full["outstanding"] == 0
+
+    # Partial amount recorded with no proofs
+    partial = receipts.receipt_summary(expected=20000, recorded=10000, proofs=[])
+    assert partial["unevidenced"] is True
+    assert partial["proof_derived"] is False
+    assert partial["verified_received"] == 10000
+    assert partial["outstanding"] == 10000
+
+    # Zero recorded with no proofs
+    zero = receipts.receipt_summary(expected=20000, recorded=0, proofs=[])
+    assert zero["unevidenced"] is False
+    assert zero["verified_received"] == 0
+
+    # Recorded with verified proof
+    verified_res = receipts.receipt_summary(
+        expected=20000, recorded=20000, proofs=[proof(20000, utr="U1")]
+    )
+    assert verified_res["unevidenced"] is False
+    assert verified_res["proof_derived"] is True
+    assert verified_res["verified_received"] == 20000
+
