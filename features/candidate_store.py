@@ -184,7 +184,7 @@ VALID_SERVICE_TYPES = {"profile_service", "round_wise"}
 VALID_INTERVIEW_SCOPES = {"external", "internal"}
 VALID_PURPOSES = {"interview_support", "work_support", "experience_docs", "other"}
 VALID_INTERVIEW_ROUNDS = frozenset({
-    "L1", "L2", "HR", "Final", "Screening", "Technical",
+    "L1", "L2", "L3", "HR", "Final", "Screening",
 })
 #: The sitting is off and the hour is free, but no replacement has been booked
 #: yet: "Awaiting new slot" in Daily Ops.
@@ -1514,24 +1514,18 @@ def _normalise_interview_scope(raw, base: dict | None = None) -> str:
 
 
 def normalise_interview_round(raw) -> str:
-    """Canonical interview round label (L1, L2, …) for slot booking."""
+    """Canonical interview round label (L1, L2, L3, …) for slot booking."""
     val = _clean_str(raw)
     if not val:
         return ""
     compact = re.sub(r"\s+", "", val).upper()
     if compact in VALID_INTERVIEW_ROUNDS:
         return compact
-    m_num = re.match(r"^(?:ROUND|R)?(\d)$", compact, re.IGNORECASE)
+    m_num = re.search(r"(?:ROUND|R|L)?\s*(\d)", compact, re.IGNORECASE)
     if m_num:
         label = f"L{m_num.group(1)}"
         if label in VALID_INTERVIEW_ROUNDS:
             return label
-    m = re.match(r"^L(\d)$", compact, re.IGNORECASE)
-    if m:
-        label = f"L{m.group(1)}"
-        return label if label in VALID_INTERVIEW_ROUNDS else ""
-    if "TECHNICAL" in compact:
-        return "Technical"
     title = val.title()
     if title in VALID_INTERVIEW_ROUNDS:
         return title

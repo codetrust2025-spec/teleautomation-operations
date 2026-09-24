@@ -133,14 +133,28 @@ def test_canonical_candidate_name_capitalization():
 
 
 def test_normalise_interview_round_numeric_and_technical():
+    # Generic "Technical round" with no number -> discarded / empty (UI displays "Round not specified")
+    assert cs.normalise_interview_round("Technical") == ""
+    assert cs.normalise_interview_round("Technical round") == ""
+    assert cs.normalise_interview_round("technical") == ""
+
+    # Explicit numbers and round levels -> L1, L2, L3
     assert cs.normalise_interview_round("1") == "L1"
     assert cs.normalise_interview_round("Round 1") == "L1"
     assert cs.normalise_interview_round("r1") == "L1"
+    assert cs.normalise_interview_round("Technical Round 1") == "L1"
+    assert cs.normalise_interview_round("Technical round 2") == "L2"
     assert cs.normalise_interview_round("2") == "L2"
     assert cs.normalise_interview_round("Round 2") == "L2"
-    assert cs.normalise_interview_round("Technical") == "Technical"
-    assert cs.normalise_interview_round("Technical round") == "Technical"
-    assert cs.normalise_interview_round("Screening") == "Screening"
+    assert cs.normalise_interview_round("3") == "L3"
+    assert cs.normalise_interview_round("Round 3") == "L3"
     assert cs.normalise_interview_round("L1") == "L1"
+    assert cs.normalise_interview_round("L2") == "L2"
+    assert cs.normalise_interview_round("L3") == "L3"
+
+    # HR, Final, Screening unchanged
+    assert cs.normalise_interview_round("HR") == "HR"
+    assert cs.normalise_interview_round("Final") == "Final"
+    assert cs.normalise_interview_round("Screening") == "Screening"
     assert cs.normalise_interview_round("") == ""
 

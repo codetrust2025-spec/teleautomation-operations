@@ -117,13 +117,20 @@ export function formatCandidateDisplayName(name) {
     .join(' ')
 }
 
+const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
 export function formatDayHeader(iso) {
   if (!iso) return ''
   try {
     const d = new Date(`${iso}T12:00:00`)
     const today = new Date()
     const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1)
-    const dateStr = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).replace(/, (?=\d{4})/, ' ')
+    const weekday = SHORT_WEEKDAYS[d.getDay()]
+    const day = d.getDate()
+    const month = SHORT_MONTHS[d.getMonth()]
+    const year = d.getFullYear()
+    const dateStr = `${weekday}, ${day} ${month} ${year}`
     if (d.toDateString() === today.toDateString()) return `Today · ${dateStr}`
     if (d.toDateString() === tomorrow.toDateString()) return `Tomorrow · ${dateStr}`
     return dateStr

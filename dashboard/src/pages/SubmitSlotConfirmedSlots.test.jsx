@@ -255,7 +255,7 @@ describe('candidate name capitalization and round badge presentation', () => {
     expect(screen.getByText('Chinthala Pavan')).toBeTruthy()
   })
 
-  it('renders "Round not specified" badge when interview has no round', async () => {
+  it('renders "Round not specified" badge when interview has no round or generic technical round', async () => {
     const slots = [
       { name: 'Keerthi Nannapaneni', technology: 'Data', interview_round: '', date: '2026-09-24', time: '16:00', booking_type: 'Interview' },
     ]
@@ -264,17 +264,43 @@ describe('candidate name capitalization and round badge presentation', () => {
     const badge = screen.getByText('Round not specified')
     expect(badge).toBeTruthy()
     expect(badge.className).toContain('sbs-slot-card__round--unspecified')
+    expect(screen.queryByText('Technical')).toBeNull()
   })
 
-  it('renders Technical round badge when round is Technical', async () => {
+  it('renders L1 for explicit Technical Round 1 and L2 for Round 2', async () => {
     const slots = [
-      { name: 'Keerthi Nannapaneni', technology: 'Data', interview_round: 'Technical', date: '2026-09-24', time: '16:00', booking_type: 'Interview' },
+      { name: 'Keerthi Nannapaneni', technology: 'Data', interview_round: 'L1', date: '2026-09-24', time: '14:30', booking_type: 'Interview' },
+      { name: 'Gangadhar', technology: 'ServiceNow', interview_round: 'L2', date: '2026-09-25', time: '15:30', booking_type: 'Interview' },
+      { name: 'Alluru Kaleswar', technology: 'Java', interview_round: 'L3', date: '2026-09-26', time: '10:00', booking_type: 'Interview' },
     ]
     await openConfirmed(slots)
     await waitFor(() => expect(screen.getByText('Keerthi Nannapaneni')).toBeTruthy())
-    const badge = screen.getByText('Technical')
-    expect(badge).toBeTruthy()
-    expect(badge.className).toContain('sbs-slot-card__round--technical')
+    expect(screen.getByText('L1')).toBeTruthy()
+    expect(screen.getByText('L2')).toBeTruthy()
+    expect(screen.getByText('L3')).toBeTruthy()
+  })
+
+  it('keeps HR, Final, and Screening badges unchanged', async () => {
+    const slots = [
+      { name: 'Candidate A', technology: 'Tech', interview_round: 'Screening', date: '2026-09-24', time: '10:00', booking_type: 'Interview' },
+      { name: 'Candidate B', technology: 'Tech', interview_round: 'Final', date: '2026-09-24', time: '11:00', booking_type: 'Interview' },
+      { name: 'Candidate C', technology: 'Tech', interview_round: 'HR', date: '2026-09-24', time: '12:00', booking_type: 'Interview' },
+    ]
+    await openConfirmed(slots)
+    await waitFor(() => expect(screen.getByText('Candidate A')).toBeTruthy())
+    expect(screen.getByText('Screening')).toBeTruthy()
+    expect(screen.getByText('Final')).toBeTruthy()
+    expect(screen.getByText('HR')).toBeTruthy()
+  })
+
+  it('formats date headers with 3-letter month abbreviations (SEP, OCT, etc.)', async () => {
+    const { formatDayHeader } = await import('./SubmitSlotPage.jsx')
+    const sepHeader = formatDayHeader('2026-09-24')
+    expect(sepHeader).toMatch(/24 SEP 2026/i)
+    expect(sepHeader).not.toMatch(/SEPT/i)
+
+    const octHeader = formatDayHeader('2026-10-05')
+    expect(octHeader).toMatch(/5 OCT 2026/i)
   })
 })
 
