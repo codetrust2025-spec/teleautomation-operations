@@ -245,22 +245,22 @@ describe('assessments in the confirmed list', () => {
 describe('candidate name capitalization and round badge presentation', () => {
   it('formats lowercase and uppercase candidate names into Title Case', async () => {
     const slots = [
-      { name: 'sakthivek', technology: 'QA', interview_round: 'Screening', date: '2026-09-24', time: '09:30' },
-      { name: 'pujitha', technology: 'Java', interview_round: 'L1', date: '2026-09-24', time: '14:00' },
-      { name: 'CHINTHALA PAVAN', technology: 'ServiceNow', interview_round: 'L1', date: '2026-09-24', time: '15:00' },
+      { name: 'candidate alpha', technology: 'QA', interview_round: 'Screening', date: '2026-09-24', time: '09:30' },
+      { name: 'candidate beta', technology: 'Java', interview_round: 'L1', date: '2026-09-24', time: '14:00' },
+      { name: 'CANDIDATE GAMMA', technology: 'ServiceNow', interview_round: 'L1', date: '2026-09-24', time: '15:00' },
     ]
     await openConfirmed(slots)
-    await waitFor(() => expect(screen.getByText('Sakthivek')).toBeTruthy())
-    expect(screen.getByText('Pujitha')).toBeTruthy()
-    expect(screen.getByText('Chinthala Pavan')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Candidate Alpha')).toBeTruthy())
+    expect(screen.getByText('Candidate Beta')).toBeTruthy()
+    expect(screen.getByText('Candidate Gamma')).toBeTruthy()
   })
 
   it('renders "Round not specified" badge when interview has no round or generic technical round', async () => {
     const slots = [
-      { name: 'Keerthi Nannapaneni', technology: 'Data', interview_round: '', date: '2026-09-24', time: '16:00', booking_type: 'Interview' },
+      { name: 'Candidate Delta', technology: 'Data', interview_round: '', date: '2026-09-24', time: '16:00', booking_type: 'Interview' },
     ]
     await openConfirmed(slots)
-    await waitFor(() => expect(screen.getByText('Keerthi Nannapaneni')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Candidate Delta')).toBeTruthy())
     const badge = screen.getByText('Round not specified')
     expect(badge).toBeTruthy()
     expect(badge.className).toContain('sbs-slot-card__round--unspecified')
@@ -269,12 +269,12 @@ describe('candidate name capitalization and round badge presentation', () => {
 
   it('renders L1 for explicit Technical Round 1 and L2 for Round 2', async () => {
     const slots = [
-      { name: 'Keerthi Nannapaneni', technology: 'Data', interview_round: 'L1', date: '2026-09-24', time: '14:30', booking_type: 'Interview' },
-      { name: 'Gangadhar', technology: 'ServiceNow', interview_round: 'L2', date: '2026-09-25', time: '15:30', booking_type: 'Interview' },
-      { name: 'Alluru Kaleswar', technology: 'Java', interview_round: 'L3', date: '2026-09-26', time: '10:00', booking_type: 'Interview' },
+      { name: 'Candidate Delta', technology: 'Data', interview_round: 'L1', date: '2026-09-24', time: '14:30', booking_type: 'Interview' },
+      { name: 'Candidate Epsilon', technology: 'ServiceNow', interview_round: 'L2', date: '2026-09-25', time: '15:30', booking_type: 'Interview' },
+      { name: 'Candidate Zeta', technology: 'Java', interview_round: 'L3', date: '2026-09-26', time: '10:00', booking_type: 'Interview' },
     ]
     await openConfirmed(slots)
-    await waitFor(() => expect(screen.getByText('Keerthi Nannapaneni')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Candidate Delta')).toBeTruthy())
     expect(screen.getByText('L1')).toBeTruthy()
     expect(screen.getByText('L2')).toBeTruthy()
     expect(screen.getByText('L3')).toBeTruthy()

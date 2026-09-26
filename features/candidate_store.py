@@ -1521,7 +1521,11 @@ def normalise_interview_round(raw) -> str:
     compact = re.sub(r"\s+", "", val).upper()
     if compact in VALID_INTERVIEW_ROUNDS:
         return compact
-    m_num = re.search(r"(?:ROUND|R|L)?\s*(\d)", compact, re.IGNORECASE)
+    # A round number must be the whole supplied label (apart from a supported
+    # interview-round prefix). Searching anywhere in the text turns unrelated
+    # identifiers (for example, "Candidate ID: 123") into L1 and silently
+    # changes booking metadata.
+    m_num = re.fullmatch(r"(?:(?:TECHNICAL|INTERVIEW)?(?:ROUND|R|L)?)(\d)", compact)
     if m_num:
         label = f"L{m_num.group(1)}"
         if label in VALID_INTERVIEW_ROUNDS:

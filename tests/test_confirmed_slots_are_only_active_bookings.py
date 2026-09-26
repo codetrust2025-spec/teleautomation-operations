@@ -150,13 +150,13 @@ def test_the_live_route_stops_listing_a_booking_once_it_has_an_outcome(monkeypat
 
 
 def test_canonical_candidate_name_capitalization():
-    assert cs.canonical_candidate_name("sakthivek") == "Sakthivek"
-    assert cs.canonical_candidate_name("pujitha") == "Pujitha"
-    assert cs.canonical_candidate_name("CHINTHALA PAVAN") == "Chinthala Pavan"
-    assert cs.canonical_candidate_name("konduru Sai Srinivas") == "Konduru Sai Srinivas"
-    assert cs.canonical_candidate_name("perla abhilash") == "Abilash Perla"
-    assert cs.canonical_candidate_name("ram charan m s") == "Ram Charan M S"
-    assert cs.canonical_candidate_name("Tejas M. Shinde") == "Tejas M. Shinde"
+    assert cs.canonical_candidate_name("candidate alpha") == "Candidate Alpha"
+    assert cs.canonical_candidate_name("CANDIDATE BETA") == "Candidate Beta"
+    assert cs.canonical_candidate_name("candidate gamma") == "Candidate Gamma"
+    assert cs.canonical_candidate_name("candidate delta") == "Candidate Delta"
+    assert cs.canonical_candidate_name("candidate epsilon") == "Candidate Epsilon"
+    assert cs.canonical_candidate_name("candidate zeta m s") == "Candidate Zeta M S"
+    assert cs.canonical_candidate_name("Candidate Eta") == "Candidate Eta"
 
 
 def test_normalise_interview_round_numeric_and_technical():
