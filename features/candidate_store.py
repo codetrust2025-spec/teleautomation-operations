@@ -3807,19 +3807,23 @@ def interview_upcoming(
 
 
 def public_booked_interview_slots(*, days: int = 60) -> dict:
-    """Confirmed upcoming slots for the public submit page (name, time and type only).
+    """Confirmed slots awaiting an attendance outcome for the public submit page.
 
-    Only interviews still to be sat, by the rule Daily Ops Upcoming uses, so the
-    two lists cannot disagree: a booking leaves once it has an outcome --
-    attended, not attended, re-service -- or will not be sat -- cancelled,
-    rescheduled, awaiting a new slot, replaced. It stays in Daily Ops and in
-    its history; only this list stops showing it. Its readers are this page's
-    list and count and the sidebar badge, which counts the same list.
+    A past slot remains visible until Daily Ops records a final attendance
+    status.  The same ``row_interview_attendance_status`` / ``slot_still_stands``
+    predicate used by Daily Ops is the only removal rule: attended, not
+    attended, re-service, cancelled, rescheduled, released-for-reschedule and
+    superseded slots disappear immediately.  Clock time must never remove a
+    pending slot, otherwise an outcome can no longer be recorded from the two
+    synchronized operational surfaces.
     """
     from datetime import date, timedelta
 
     today = date.today()
-    start = today.isoformat()
+    # Do not impose an arbitrary history window: an unresolved historical
+    # sitting is still awaiting an outcome.  ``days`` continues to bound only
+    # future slots so the public page cannot accidentally show far-future data.
+    start = "2000-01-01"
     end = (today + timedelta(days=max(int(days), 1))).isoformat()
     rows = _filter_upcoming_only_rows(_interview_rows_for_range(start, end))
     slots: list[dict] = []
@@ -3828,10 +3832,6 @@ def public_booked_interview_slots(*, days: int = 60) -> dict:
         slot_time = (row.get("time") or "").strip()
         slot_end = (row.get("time_end") or "").strip()
         if not slot_date or not slot_time:
-            continue
-        # Today's slots stay until they get an outcome, even once their time has
-        # passed, so a slot booked for earlier today still shows.
-        if slot_date != today.isoformat() and not _interview_slot_still_upcoming(slot_date, slot_time, slot_end):
             continue
         slots.append({
             "name": canonical_candidate_name((row.get("name") or "").strip()),

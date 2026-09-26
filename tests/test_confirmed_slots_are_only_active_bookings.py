@@ -1,4 +1,4 @@
-"""Confirmed upcoming slots lists only interviews still to be sat.
+"""Confirmed slots list every standing interview awaiting an outcome.
 
 The page and the sidebar badge both say "Confirmed upcoming slots", yet a
 booking marked Attended or Not attended in Daily Ops stayed on the list until
@@ -85,6 +85,33 @@ def test_a_booking_from_earlier_today_stays_until_it_has_an_outcome(store):
     store["candidates"].append(row(time="00:05", time_end="00:35"))
 
     assert listed() == [(TODAY, "00:05")]
+
+
+def test_a_past_pending_booking_stays_until_daily_ops_records_an_outcome(store):
+    """Passing wall-clock time cannot silently close an unresolved sitting."""
+    old_day = (date.today() - timedelta(days=365)).isoformat()
+    old_pending = row(date=old_day, time="00:05", time_end="00:35")
+    future = row(id="future", date=LATER, time="11:00", time_end="11:30")
+    store["candidates"] += [old_pending, future]
+
+    assert listed() == [(old_day, "00:05"), (LATER, "11:00")]
+
+    cs.set_interview_attendance("sitting", status="not_attended", remark="outcome logged",
+                                by="operations_admin")
+
+    assert listed() == [(LATER, "11:00")]
+
+
+@pytest.mark.parametrize("outcome", [
+    "attended", "not_attended", "cancelled", "rescheduled", "re_service",
+    cs.RELEASED_FOR_RESCHEDULE_STATUS,
+])
+def test_a_past_booking_leaves_only_when_daily_ops_has_a_final_status(store, outcome):
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    store["candidates"].append(row(date=yesterday, time="00:05", time_end="00:35",
+                                    interview_attendance_status=outcome))
+
+    assert listed() == []
 
 
 def test_listing_changes_nothing(store):
