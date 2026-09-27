@@ -1,4 +1,4 @@
-"""Confirmed upcoming slots lists only interviews still to be sat.
+"""Confirmed slots list every standing interview awaiting an outcome.
 
 The page and the sidebar badge both say "Confirmed upcoming slots", yet a
 booking marked Attended or Not attended in Daily Ops stayed on the list until
@@ -87,6 +87,33 @@ def test_a_booking_from_earlier_today_stays_until_it_has_an_outcome(store):
     assert listed() == [(TODAY, "00:05")]
 
 
+def test_a_past_pending_booking_stays_until_daily_ops_records_an_outcome(store):
+    """Passing wall-clock time cannot silently close an unresolved sitting."""
+    old_day = (date.today() - timedelta(days=365)).isoformat()
+    old_pending = row(date=old_day, time="00:05", time_end="00:35")
+    future = row(id="future", date=LATER, time="11:00", time_end="11:30")
+    store["candidates"] += [old_pending, future]
+
+    assert listed() == [(old_day, "00:05"), (LATER, "11:00")]
+
+    cs.set_interview_attendance("sitting", status="not_attended", remark="outcome logged",
+                                by="operations_admin")
+
+    assert listed() == [(LATER, "11:00")]
+
+
+@pytest.mark.parametrize("outcome", [
+    "attended", "not_attended", "cancelled", "rescheduled", "re_service",
+    cs.RELEASED_FOR_RESCHEDULE_STATUS,
+])
+def test_a_past_booking_leaves_only_when_daily_ops_has_a_final_status(store, outcome):
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    store["candidates"].append(row(date=yesterday, time="00:05", time_end="00:35",
+                                    interview_attendance_status=outcome))
+
+    assert listed() == []
+
+
 def test_listing_changes_nothing(store):
     store["candidates"] += [row(interview_attendance_status="attended"),
                             row(id="still-to-sit", time="16:00", time_end="16:30")]
@@ -123,13 +150,13 @@ def test_the_live_route_stops_listing_a_booking_once_it_has_an_outcome(monkeypat
 
 
 def test_canonical_candidate_name_capitalization():
-    assert cs.canonical_candidate_name("sakthivek") == "Sakthivek"
-    assert cs.canonical_candidate_name("pujitha") == "Pujitha"
-    assert cs.canonical_candidate_name("CHINTHALA PAVAN") == "Chinthala Pavan"
-    assert cs.canonical_candidate_name("konduru Sai Srinivas") == "Konduru Sai Srinivas"
-    assert cs.canonical_candidate_name("perla abhilash") == "Abilash Perla"
-    assert cs.canonical_candidate_name("ram charan m s") == "Ram Charan M S"
-    assert cs.canonical_candidate_name("Tejas M. Shinde") == "Tejas M. Shinde"
+    assert cs.canonical_candidate_name("candidate alpha") == "Candidate Alpha"
+    assert cs.canonical_candidate_name("CANDIDATE BETA") == "Candidate Beta"
+    assert cs.canonical_candidate_name("candidate gamma") == "Candidate Gamma"
+    assert cs.canonical_candidate_name("candidate delta") == "Candidate Delta"
+    assert cs.canonical_candidate_name("candidate epsilon") == "Candidate Epsilon"
+    assert cs.canonical_candidate_name("candidate zeta m s") == "Candidate Zeta M S"
+    assert cs.canonical_candidate_name("Candidate Eta") == "Candidate Eta"
 
 
 def test_normalise_interview_round_numeric_and_technical():
