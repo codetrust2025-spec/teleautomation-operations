@@ -2666,6 +2666,12 @@ def daily_interview_roster(
     }
 
 
+# Every stored slot, for the readers that are not asking about a date at all:
+# the month list, and the global unresolved view. Written as a span rather than
+# "no range" so one code path reads the roster.
+_ALL_TIME_SPAN = ("2000-01-01", "2100-12-31")
+
+
 def _interview_rows_for_range(
     from_date: str,
     to_date: str,
@@ -3682,11 +3688,19 @@ def interview_monitor(
     filter_technology: str | None = None,
     include_unconfirmed: bool = False,
     upcoming_only: bool = False,
+    unresolved_only: bool = False,
 ) -> dict:
-    """All confirmed interview slots in a date range — admin monitor view."""
+    """All confirmed interview slots in a date range — admin monitor view.
+
+    `unresolved_only` answers a different question: every interview still
+    waiting for its outcome, whatever its date. The range is deliberately
+    ignored, because an interview nobody closed in May is exactly what this
+    view exists to surface and no date filter an operator would think to pick
+    contains it. It takes precedence over `upcoming_only`, which is a view of
+    the days around today.
+    """
     rows = _interview_rows_for_range(
-        from_date,
-        to_date,
+        *(_ALL_TIME_SPAN if unresolved_only else (from_date, to_date)),
         include_unconfirmed=include_unconfirmed,
     )
     rows = _filter_interview_rows(
@@ -3699,7 +3713,14 @@ def interview_monitor(
         filter_technology=filter_technology,
     )
     awaiting_rows: list[dict] = []
-    if upcoming_only:
+    if unresolved_only:
+        # The same unresolved rule the Upcoming tab uses — no stored status and
+        # the booking still stands — so a row leaves this list the moment an
+        # operator sets its status, and a superseded or cancelled sitting was
+        # never in it. Nothing is split off into `awaiting_interviews`: the
+        # whole point is one list.
+        rows = _filter_upcoming_only_rows(rows)
+    elif upcoming_only:
         from datetime import date, timedelta
         today_date = date.today()
         lookback_start = (today_date - timedelta(days=30)).isoformat()
@@ -3737,9 +3758,13 @@ def interview_monitor(
     end = (to_date or "").strip()[:10]
     if start > end:
         start, end = end, start
+    if unresolved_only:
+        # Say which span was read, not the one that was asked for and ignored.
+        start, end = _ALL_TIME_SPAN
     return {
         "from": start,
         "to": end,
+        "unresolved_only": bool(unresolved_only),
         "interviews": rows,
         "awaiting_interviews": awaiting_rows,
         "count": len(rows),
@@ -3903,8 +3928,14 @@ def interview_global_summary(
     filter_technology: str | None = None,
     include_unconfirmed: bool = False,
     upcoming_only: bool = False,
+    unresolved_only: bool = False,
 ) -> dict:
-    """Ops snapshot — interviews by attendee/referrer/tech + tasks (scoped per viewer)."""
+    """Ops snapshot — interviews by attendee/referrer/tech + tasks (scoped per viewer).
+
+    `unresolved_only` matches `interview_monitor`'s view of the same name, so
+    the counters above the table describe the rows in it: every interview still
+    waiting for an outcome, from any date.
+    """
     start = (from_date or "").strip()[:10]
     end = (to_date or "").strip()[:10]
     if len(start) != 10 or len(end) != 10:
@@ -3913,14 +3944,12 @@ def interview_global_summary(
         start, end = end, start
 
     all_rows = _interview_rows_for_range(
-        "2000-01-01",
-        "2100-12-31",
+        *_ALL_TIME_SPAN,
         include_unconfirmed=include_unconfirmed,
     )
     all_rows = _filter_interview_rows(all_rows, viewer_reference=viewer_reference)
     rows = _interview_rows_for_range(
-        start,
-        end,
+        *(_ALL_TIME_SPAN if unresolved_only else (start, end)),
         include_unconfirmed=include_unconfirmed,
     )
     overview_rows = _filter_interview_rows(list(rows), viewer_reference=viewer_reference)
@@ -3933,8 +3962,12 @@ def interview_global_summary(
         filter_round=filter_round,
         filter_technology=filter_technology,
     )
-    if upcoming_only:
+    if upcoming_only or unresolved_only:
         rows = _filter_upcoming_only_rows(rows)
+    if unresolved_only:
+        # The pie describes what the table holds, or it is describing a
+        # different question than the one the operator asked.
+        overview_rows = _filter_upcoming_only_rows(overview_rows)
     interview_counts = _interview_attendance_counts(rows)
 
     overview_candidates: dict[str, dict] = {}

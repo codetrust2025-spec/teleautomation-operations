@@ -6,6 +6,7 @@ import { useConfirm } from '../context/ConfirmContext.jsx'
 import { formatClockTime } from '../utils/istTime.js'
 import { bookingSourceMeta as sharedBookingSourceMeta } from '../utils/bookingSource.js'
 import { addDaysIso, todayIso } from './calendarDates.js'
+import { ALL_TIME_RANGE } from './dateRangePresets.js'
 import { publishPendingWorkChanged } from './PendingWorksProvider.jsx'
 import { STATUS_OPTIONS, countStatusRows, emptyStatusCounts, matchesStatusFilter, statusLabel, statusTone } from './interviewStatuses.js'
 
@@ -194,6 +195,9 @@ export function InterviewRoster({
   dashboardCandidateTypeFilter = '',
   dashboardStatusFilter = '',
   upcomingOnly = false,
+  // The global Pending view: every interview still waiting for an outcome, at
+  // any date. It replaces the date range rather than narrowing it.
+  unresolvedOnly = false,
   onRosterMutate,
   onRosterCountsChange,
   // Bumped by the panel's Refresh. The counters are tallied from these rows
@@ -244,7 +248,13 @@ export function InterviewRoster({
     try {
       const params = new URLSearchParams()
       let url = `${API}/candidates/interviews/daily`
-      if (hasRange && !isSingleDayRange) {
+      if (unresolvedOnly) {
+        // Asks for the whole span explicitly, so the request says what it
+        // reads even though the server ignores the range for this view.
+        url = `${API}/candidates/interviews/monitor`
+        params.set('from', ALL_TIME_RANGE.from)
+        params.set('to', ALL_TIME_RANGE.to)
+      } else if (hasRange && !isSingleDayRange) {
         url = `${API}/candidates/interviews/monitor`
         params.set('from', dashboardFromDate)
         params.set('to', dashboardToDate)
@@ -257,7 +267,8 @@ export function InterviewRoster({
       if (effectiveChannel) params.set('channel', effectiveChannel)
       if (effectiveRound) params.set('round', effectiveRound)
       if (effectiveTechnology) params.set('technology', effectiveTechnology)
-      if (upcomingOnly) params.set('upcoming_only', 'true')
+      if (unresolvedOnly) params.set('unresolved_only', 'true')
+      else if (upcomingOnly) params.set('upcoming_only', 'true')
 
       const res = await fetch(`${url}?${params}`, { credentials: 'include', cache: 'no-store' })
       if (!(res.headers.get('content-type') || '').includes('application/json')) {
@@ -279,7 +290,12 @@ export function InterviewRoster({
       const totalPending = upcomingOnly
         ? (nextCounts.pending_count || 0) + awaiting.length
         : nextCounts.pending_count
-      publishPendingWorkChanged(totalPending)
+      // The sidebar badge counts pending interviews in its own seven-day
+      // window. This view counts every unresolved interview ever, which is a
+      // different and much larger number, so it asks the badge to re-read its
+      // own rather than handing it one that would be wrong.
+      if (unresolvedOnly) publishPendingWorkChanged()
+      else publishPendingWorkChanged(totalPending)
       setError('')
     } catch (err) {
       if (!silent) {
@@ -301,6 +317,7 @@ export function InterviewRoster({
     hasRange,
     isSingleDayRange,
     upcomingOnly,
+    unresolvedOnly,
   ])
 
   const loadCandidateOptions = useCallback(async () => {
@@ -433,12 +450,17 @@ export function InterviewRoster({
     effectiveTechnology && `profile ${effectiveTechnology}`,
     effectiveSearch.trim() && `search "${effectiveSearch.trim()}"`,
   ].filter(Boolean)
-  const emptyHeadline = hasRange && dashboardFromDate !== dashboardToDate
-    ? `No interviews between ${formatDayLabel(dashboardFromDate)} and ${formatDayLabel(dashboardToDate)}`
-    : `No interviews on ${formatDayLabel(dashboardFromDate || day)}`
+  // This list is not about a date, so an empty one must not name one.
+  const emptyHeadline = unresolvedOnly
+    ? 'Nothing is waiting for a status update'
+    : hasRange && dashboardFromDate !== dashboardToDate
+      ? `No interviews between ${formatDayLabel(dashboardFromDate)} and ${formatDayLabel(dashboardToDate)}`
+      : `No interviews on ${formatDayLabel(dashboardFromDate || day)}`
   const emptyHint = activeFilterLabels.length
-    ? `Nothing matches ${activeFilterLabels.join(' · ')} — clear the filters, or pick another date.`
-    : 'Pick another date in the calendar, or switch the period above.'
+    ? `Nothing matches ${activeFilterLabels.join(' · ')} — clear the filters${unresolvedOnly ? '.' : ', or pick another date.'}`
+    : unresolvedOnly
+      ? 'Every interview on record has an outcome against it.'
+      : 'Pick another date in the calendar, or switch the period above.'
 
   const scopeHint = handlerView
     ? `${reference} — your interview roster`

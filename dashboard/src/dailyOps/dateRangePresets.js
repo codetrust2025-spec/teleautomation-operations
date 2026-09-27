@@ -22,6 +22,11 @@ function endOfWeekIso(iso) {
   return addDaysIso(startOfWeekIso(iso), 6)
 }
 
+// Every stored slot, for the views that are not asking about a date: the
+// all-time month option and the global unresolved list. Matches `_ALL_TIME_SPAN`
+// in features/candidate_store.py.
+export const ALL_TIME_RANGE = { from: '2000-01-01', to: '2100-12-31' }
+
 export function resolvePresetRange(presetId) {
   const today = todayIso()
   switch (presetId) {

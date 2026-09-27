@@ -174,6 +174,10 @@ async def candidates_interviews_monitor(
     round: str | None = Query(default=None),
     technology: str | None = Query(default=None),
     upcoming_only: bool = Query(default=False),
+    # The global Pending view: every interview still waiting for an outcome,
+    # whatever its date. from/to stay required so the request shape does not
+    # change; the store ignores them for this view.
+    unresolved_only: bool = Query(default=False),
 ):
     from fastapi import HTTPException
 
@@ -195,6 +199,7 @@ async def candidates_interviews_monitor(
             filter_round=round,
             filter_technology=technology,
             upcoming_only=upcoming_only,
+            unresolved_only=unresolved_only,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -235,6 +240,7 @@ async def candidates_interviews_global(
     round: str | None = Query(default=None),
     technology: str | None = Query(default=None),
     upcoming_only: bool = Query(default=False),
+    unresolved_only: bool = Query(default=False),
 ):
     from fastapi import HTTPException
 
@@ -256,6 +262,7 @@ async def candidates_interviews_global(
             filter_round=round,
             filter_technology=technology,
             upcoming_only=upcoming_only,
+            unresolved_only=unresolved_only,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

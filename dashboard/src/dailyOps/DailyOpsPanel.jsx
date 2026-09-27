@@ -4,7 +4,7 @@ import { STATUS_TABS } from './interviewStatuses.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { InterviewRoster } from './InterviewRoster.jsx'
 import { PendingWorksStrip } from './PendingWorksStrip.jsx'
-import { PRESETS, detectPresetFromRange, resolvePresetRange } from './dateRangePresets.js'
+import { ALL_TIME_RANGE, PRESETS, detectPresetFromRange, resolvePresetRange } from './dateRangePresets.js'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { isValidIsoDay, monthRangeIso, parseMonthKey } from './calendarDates.js'
 
@@ -120,6 +120,10 @@ export function DailyOpsPanel({
   const [candidateSearch, setCandidateSearch] = useState('')
   const [candidateFilter, setCandidateFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  // One list of every interview still waiting for an outcome, however old.
+  // It answers "what have we not closed?", which no date range can: the
+  // forgotten ones are precisely the ones outside every range worth picking.
+  const [unresolvedOnly, setUnresolvedOnly] = useState(false)
   const [globalStats, setGlobalStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -127,9 +131,11 @@ export function DailyOpsPanel({
   const [refreshNonce, setRefreshNonce] = useState(0)
 
   function applyMonth(monthValue) {
+    // Choosing a period is choosing the dated view again.
+    setUnresolvedOnly(false)
     if (monthValue === 'all') {
-      setFromDate('2000-01-01')
-      setToDate('2100-12-31')
+      setFromDate(ALL_TIME_RANGE.from)
+      setToDate(ALL_TIME_RANGE.to)
       setRangePreset('allTime')
       return
     }
@@ -152,6 +158,7 @@ export function DailyOpsPanel({
    */
   function applyExactDate(iso) {
     if (!isValidIsoDay(iso)) return
+    setUnresolvedOnly(false)
     setFromDate(iso)
     setToDate(iso)
     // A picked day that happens to be today is the Today preset — say so, so
@@ -164,9 +171,17 @@ export function DailyOpsPanel({
   function applyPreset(presetId) {
     const range = resolvePresetRange(presetId)
     if (!range) return
+    setUnresolvedOnly(false)
     setRangePreset(presetId)
     setFromDate(range.from)
     setToDate(range.to)
+  }
+
+  /** Every row here is Pending by definition, so a status filter left over
+   *  from the dated view would empty the list the moment it opened. */
+  function showUnresolved() {
+    setUnresolvedOnly(true)
+    setStatusFilter('')
   }
 
   function applyManualFrom(value) {
@@ -180,18 +195,20 @@ export function DailyOpsPanel({
   }
 
   // When range is custom, disable upcoming_only filter to show all interviews in the range
-  const effectiveUpcomingOnly = rangePreset === 'upcoming' ? upcomingOnly : false
+  const effectiveUpcomingOnly = !unresolvedOnly && rangePreset === 'upcoming' ? upcomingOnly : false
 
   const loadGlobal = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ from: fromDate, to: toDate })
+      const range = unresolvedOnly ? ALL_TIME_RANGE : { from: fromDate, to: toDate }
+      const params = new URLSearchParams({ from: range.from, to: range.to })
       if (attendeeFilter) params.set('attendee', attendeeFilter)
       if (roundFilter) params.set('round', roundFilter)
       if (technologyFilter) params.set('technology', technologyFilter)
       const search = candidateFilter || candidateSearch.trim()
       if (search) params.set('search', search)
-      if (effectiveUpcomingOnly) params.set('upcoming_only', 'true')
+      if (unresolvedOnly) params.set('unresolved_only', 'true')
+      else if (effectiveUpcomingOnly) params.set('upcoming_only', 'true')
       const res = await fetch(`${API}/candidates/interviews/global?${params}`, { credentials: 'include' })
       if (!(res.headers.get('content-type') || '').includes('application/json')) {
         throw new Error(`Global data ${res.status}`)
@@ -205,7 +222,7 @@ export function DailyOpsPanel({
     } finally {
       setLoading(false)
     }
-  }, [fromDate, toDate, attendeeFilter, roundFilter, technologyFilter, candidateSearch, candidateFilter, effectiveUpcomingOnly])
+  }, [fromDate, toDate, attendeeFilter, roundFilter, technologyFilter, candidateSearch, candidateFilter, effectiveUpcomingOnly, unresolvedOnly])
 
   // Refresh has to move the counters, and they come from the roster's rows,
   // so it reloads the roster as well as the range summary. Declared after
@@ -296,13 +313,26 @@ export function DailyOpsPanel({
               key={preset.id}
               type="button"
               role="tab"
-              aria-selected={rangePreset === preset.id}
-              className={`ops-date-range__preset${rangePreset === preset.id ? ' ops-date-range__preset--active' : ''}`}
+              aria-selected={!unresolvedOnly && rangePreset === preset.id}
+              className={`ops-date-range__preset${!unresolvedOnly && rangePreset === preset.id ? ' ops-date-range__preset--active' : ''}`}
               onClick={() => applyPreset(preset.id)}
             >
               {preset.label}
             </button>
           ))}
+          {/* Not a period: it is every interview still waiting for an outcome,
+              at any date. Sits with the periods because it is the same choice
+              — what the table below is a list of. */}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={unresolvedOnly}
+            className={`ops-date-range__preset ops-date-range__preset--unresolved${unresolvedOnly ? ' ops-date-range__preset--active' : ''}`}
+            title="Every interview still waiting for a status update, however old"
+            onClick={() => unresolvedOnly ? applyPreset('upcoming') : showUnresolved()}
+          >
+            All unresolved
+          </button>
         </div>
         </div>
 
@@ -368,13 +398,20 @@ export function DailyOpsPanel({
         </div>
       </div>
 
+      {unresolvedOnly && (
+        <p className="ops-unresolved-note" role="status">
+          <strong>All unresolved</strong> — every interview still waiting for a status update, oldest first.
+          The period and date filters do not apply here; a row leaves this list as soon as you set its status.
+        </p>
+      )}
+
       {error && <p className="admin-error ops-dash-error" role="alert">{error}</p>}
 
       {/* ── Table fills the rest ─────────────────────────────────────── */}
       <div className="ops-dashboard ops-dashboard--v3 ops-table-area">
         <InterviewRoster
           refreshNonce={refreshNonce}
-          key={`${fromDate}|${toDate}|${upcomingOnly}`}
+          key={`${fromDate}|${toDate}|${upcomingOnly}|${unresolvedOnly}`}
           variant="dashboard"
           dashboardFromDate={fromDate}
           dashboardToDate={toDate}
@@ -383,7 +420,8 @@ export function DailyOpsPanel({
           dashboardTechnologyFilter={technologyFilter}
           dashboardCandidateSearch={candidateFilter || candidateSearch}
           dashboardStatusFilter={statusFilter}
-          upcomingOnly={upcomingOnly}
+          upcomingOnly={upcomingOnly && !unresolvedOnly}
+          unresolvedOnly={unresolvedOnly}
           onRosterCountsChange={setRosterCounts}
           onRosterMutate={loadGlobal}
         />
