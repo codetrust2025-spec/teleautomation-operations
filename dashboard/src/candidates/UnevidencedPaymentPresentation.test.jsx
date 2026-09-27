@@ -8,7 +8,7 @@ import { ConfirmProvider } from "../context/ConfirmContext.jsx";
 const BASE_CANDIDATE = {
   id: "e6971117e0",
   name: "CHINTHALA PAVAN",
-  phone: "9381886003",
+  phone: "9000000042",
   technology: "ServiceNow",
   reference: "Pavan Kalyan",
   stage: "in_progress",
