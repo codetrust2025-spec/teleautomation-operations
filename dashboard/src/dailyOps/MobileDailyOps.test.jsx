@@ -236,16 +236,18 @@ describe('what it all looks like laid out', () => {
     //   python scripts/layout_harness.py .layout-harness/captures/daily-ops-unresolved-phone.html
     // then `await window.layoutReport()` measures overflow and clipped text at
     // every width at once — 440px (this phone) and 1440px (the laptop) included.
+    // Invented names, sized like the real ones: a short, a medium and one
+    // long enough to have been clipped by the desktop table's ellipsis.
     mockFetch([
-      row({ id: 'a', name: 'Gangadhar', date: '2026-05-27', time: '14:45', interview_round: 'L1' }),
-      row({ id: 'b', name: 'Yamini Akhil', date: '2026-06-19', time: '13:00', interview_round: '',
+      row({ id: 'a', name: 'Asha Rao', date: '2026-05-27', time: '14:45', interview_round: 'L1' }),
+      row({ id: 'b', name: 'Vikram Devi', date: '2026-06-19', time: '13:00', interview_round: '',
             technology: 'Oracle Fusion (Tech Con)' }),
-      row({ id: 'c', name: 'Keerthi Nannapaneni', date: '2026-09-24', time: '16:00',
+      row({ id: 'c', name: 'Nandini Balasubramanian', date: '2026-09-24', time: '16:00',
             interview_round: 'Final', interview_attendance_remark: 'Panel asked to move it to the afternoon slot.' }),
     ])
     await renderPanel()
     fireEvent.click(screen.getByRole('tab', { name: 'All unresolved' }))
-    await waitFor(() => expect(screen.getByText('Gangadhar')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 
     expect(document.querySelectorAll('.ops-interview-row')).toHaveLength(3)
     captureLayout('daily-ops-unresolved-phone')
