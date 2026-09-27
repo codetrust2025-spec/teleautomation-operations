@@ -9,12 +9,14 @@ const provider = fs.readFileSync(path.join(__dirname, 'PendingWorksProvider.jsx'
 describe('Awaiting outcome section in Daily Ops', () => {
   it('tracks awaitingRows from the monitor payload', () => {
     expect(roster).toContain('const [awaitingRows, setAwaitingRows] = useState([])')
-    expect(roster).toContain('const awaiting = data.awaiting_interviews || []')
-    expect(roster).toContain('setAwaitingRows(awaiting)')
+    expect(roster).toContain('applyRoster(data.interviews || [], data.awaiting_interviews || [])')
+    expect(roster).toContain('setAwaitingRows(visibleAwaiting)')
   })
 
-  it('calculates totalPending as upcoming pending + awaitingRows length', () => {
-    expect(roster).toMatch(/const totalPending = upcomingOnly\s*\?\s*\(nextCounts\.pending_count \|\| 0\) \+ awaiting\.length\s*:\s*nextCounts\.pending_count/)
+  it('calculates totalPending as upcoming pending + awaiting rows length', () => {
+    // Counted from the awaiting rows actually shown: a row the operator has
+    // just resolved is off the list, so it must be out of the number too.
+    expect(roster).toMatch(/const totalPending = upcomingOnly\s*\?\s*\(nextCounts\.pending_count \|\| 0\) \+ visibleAwaiting\.length\s*:\s*nextCounts\.pending_count/)
     expect(roster).toContain('publishPendingWorkChanged(totalPending)')
   })
 

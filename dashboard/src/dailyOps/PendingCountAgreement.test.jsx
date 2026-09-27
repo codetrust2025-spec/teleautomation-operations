@@ -76,8 +76,10 @@ describe('the rows are the count', () => {
 })
 
 describe('the roster counts what it loaded', () => {
-  it('tallies its rows instead of reading the payload totals', () => {
-    expect(roster).toContain('countStatusRows(data.interviews || [], resolvedStatus)')
+  it('tallies the rows it shows instead of reading the payload totals', () => {
+    // `visible` is the payload's rows minus any the operator resolved a moment
+    // ago, which is exactly what the table draws.
+    expect(roster).toContain('const nextCounts = countStatusRows(visible, resolvedStatus)')
     // The payload reader is no longer how the roster gets its numbers.
     expect(roster).not.toContain('readStatusCounts(data)')
   })

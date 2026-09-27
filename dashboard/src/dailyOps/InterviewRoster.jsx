@@ -12,6 +12,11 @@ import { STATUS_OPTIONS, countStatusRows, emptyStatusCounts, matchesStatusFilter
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
+// How long a row the operator just resolved stays hidden from a list of
+// unresolved rows that still carries it. Long enough to cover a reader that
+// is a moment behind, short enough that it can never look like data loss.
+const RESOLVED_SUPPRESSION_MS = 60000
+
 const TECHNOLOGIES = [
   '.NET', 'Angular', 'Automation Testing', 'AWS Admin', 'AWS Cloud', 'AWS DevOps',
   'Azure Admin', 'Azure DevOps', 'Business Analyst', 'Cloud', 'Cloud DevOps',
@@ -237,6 +242,64 @@ export function InterviewRoster({
   const rosterCountsRef = useRef(onRosterCountsChange)
   rosterCountsRef.current = onRosterCountsChange
 
+  // Pending and All unresolved list rows *because* they have no outcome, so
+  // recording one takes the row off the list. Waiting for a reload to say so
+  // is not good enough: a poll whose request left before the write answers
+  // after it, with the row still in it, and the row reappears seconds after
+  // the operator watched it go — indistinguishable from the update being lost.
+  // The save is authoritative for the row it wrote, so the row goes at once
+  // and stays gone while any lagging reader still carries it.
+  //
+  // Bounded in time, because suppression is a claim about a request in flight,
+  // not about the data: if the row is still coming back a minute later then
+  // something else is true and the screen should show it rather than hide it.
+  const resolvedHere = useRef(new Map())
+  const pendingOnlyView = unresolvedOnly || upcomingOnly
+
+  /** Rows the operator resolved a moment ago and the server has not caught up on. */
+  function stillSuppressed(row) {
+    const at = resolvedHere.current.get(row?.id)
+    return at !== undefined && Date.now() - at < RESOLVED_SUPPRESSION_MS
+  }
+
+  /** Put a set of rows on screen: one place that filters, counts and announces.
+   *
+   *  Every counter is tallied from the rows actually shown, so the tabs above
+   *  the table and the sidebar badge cannot drift from it.
+   */
+  const applyRoster = useCallback((nextRows, nextAwaiting, { fromServer = true } = {}) => {
+    const suppress = pendingOnlyView && resolvedHere.current.size > 0
+    const visible = suppress ? nextRows.filter(row => !stillSuppressed(row)) : nextRows
+    const visibleAwaiting = suppress ? nextAwaiting.filter(row => !stillSuppressed(row)) : nextAwaiting
+    if (fromServer && resolvedHere.current.size) {
+      // Forgotten as soon as the server agrees, or once the window is up.
+      // Only a payload can settle that: the local list this same save just
+      // filtered the row out of says nothing about what the server holds, and
+      // reading it as agreement would drop the guard before the first reload.
+      const present = new Set([...nextRows, ...nextAwaiting].map(row => row.id))
+      for (const [id, at] of [...resolvedHere.current]) {
+        if (!present.has(id) || Date.now() - at >= RESOLVED_SUPPRESSION_MS) resolvedHere.current.delete(id)
+      }
+    }
+    setRows(visible)
+    setAwaitingRows(visibleAwaiting)
+    // Counted from the rows just shown rather than read off the payload:
+    // the top counter and the sidebar badge disagreed with the table and
+    // with each other because all three measured different things.
+    const nextCounts = countStatusRows(visible, resolvedStatus)
+    setCounts(nextCounts)
+    rosterCountsRef.current?.(nextCounts, { isUpcomingView: upcomingOnly })
+    const totalPending = upcomingOnly
+      ? (nextCounts.pending_count || 0) + visibleAwaiting.length
+      : nextCounts.pending_count
+    // The sidebar badge counts pending interviews in its own seven-day
+    // window. This view counts every unresolved interview ever, which is a
+    // different and much larger number, so it asks the badge to re-read its
+    // own rather than handing it one that would be wrong.
+    if (unresolvedOnly) publishPendingWorkChanged()
+    else publishPendingWorkChanged(totalPending)
+  }, [unresolvedOnly, upcomingOnly, pendingOnlyView])
+
   const effectiveAttendee = isDashboard ? dashboardAttendeeFilter : attendeeFilter
   const effectiveSearch = isDashboard ? dashboardCandidateSearch : candidateFilter
   const effectiveChannel = isDashboard ? dashboardCandidateTypeFilter : channelFilter
@@ -278,24 +341,7 @@ export function InterviewRoster({
       if (!res.ok || data.status !== 'ok') {
         throw new Error(data.message || data.detail || `Failed to load roster (${res.status})`)
       }
-      setRows(data.interviews || [])
-      const awaiting = data.awaiting_interviews || []
-      setAwaitingRows(awaiting)
-      // Counted from the rows just loaded rather than read off the payload:
-      // the top counter and the sidebar badge disagreed with the table and
-      // with each other because all three measured different things.
-      const nextCounts = countStatusRows(data.interviews || [], resolvedStatus)
-      setCounts(nextCounts)
-      rosterCountsRef.current?.(nextCounts, { isUpcomingView: upcomingOnly })
-      const totalPending = upcomingOnly
-        ? (nextCounts.pending_count || 0) + awaiting.length
-        : nextCounts.pending_count
-      // The sidebar badge counts pending interviews in its own seven-day
-      // window. This view counts every unresolved interview ever, which is a
-      // different and much larger number, so it asks the badge to re-read its
-      // own rather than handing it one that would be wrong.
-      if (unresolvedOnly) publishPendingWorkChanged()
-      else publishPendingWorkChanged(totalPending)
+      applyRoster(data.interviews || [], data.awaiting_interviews || [])
       setError('')
     } catch (err) {
       if (!silent) {
@@ -318,6 +364,7 @@ export function InterviewRoster({
     isSingleDayRange,
     upcomingOnly,
     unresolvedOnly,
+    applyRoster,
   ])
 
   const loadCandidateOptions = useCallback(async () => {
@@ -380,6 +427,9 @@ export function InterviewRoster({
       const data = await res.json()
       if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Update failed')
       setEditing(null)
+      // Only after the server said yes: a failed update leaves the row where
+      // it is, with the error above the table.
+      applySavedStatus(row.id, status || '')
       await load({ silent: true })
       notifyRosterChanged()
     } catch (err) {
@@ -387,6 +437,24 @@ export function InterviewRoster({
     } finally {
       setBusyId(null)
     }
+  }
+
+  /** Show the outcome the operator just recorded, before any reload says so.
+   *
+   *  On a list of rows that have no outcome, recording one removes the row and
+   *  drops the count by one there and then. On a dated list, where the row
+   *  stays, its status changes in place. Either way nothing on screen waits
+   *  for the next fetch, and a reload that still disagrees does not undo it.
+   */
+  function applySavedStatus(rowId, status) {
+    const leaves = Boolean(status) && pendingOnlyView
+    if (leaves) resolvedHere.current.set(rowId, Date.now())
+    const updated = list => leaves
+      ? list.filter(row => row.id !== rowId)
+      : list.map(row => row.id === rowId
+        ? { ...row, interview_attendance_status: status, interview_attendance_status_resolved: status }
+        : row)
+    applyRoster(updated(rows), updated(awaitingRows), { fromServer: false })
   }
 
   async function saveAttendee(row, attendee) {

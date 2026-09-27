@@ -337,7 +337,12 @@ describe('the roster fallback carries every counter', () => {
 describe('changing a row refreshes the counters', () => {
   it('sets a row to Cancelled and re-reads the counts', async () => {
     await renderPanel()
-    expect(tab('Cancelled').textContent).toMatch(/Cancelled\s*1/)
+    // A dated roster keeps every row it loaded whatever its status, so this is
+    // where a status change moves a counter rather than removing the row. The
+    // Upcoming and All unresolved lists hold rows *because* they have no
+    // outcome, and recording one takes the row off them — see below.
+    fireEvent.click(screen.getByRole('tab', { name: 'Today' }))
+    await waitFor(() => expect(tab('Cancelled').textContent).toMatch(/Cancelled\s*1/))
 
     const select = document.querySelector('.ops-interview-row select')
     fireEvent.change(select, { target: { value: 'cancelled' } })
@@ -374,6 +379,27 @@ describe('changing a row refreshes the counters', () => {
     })
     // The roster and the global counts are both re-read after a write.
     await waitFor(() => expect(tab('Cancelled').textContent).toMatch(/Cancelled\s*2/))
+  })
+
+  it('takes the row off a list of interviews that have no outcome yet', async () => {
+    // Upcoming lists a row because it is still waiting for one. Recording the
+    // outcome is what the list was for, so the row goes and Pending drops at
+    // once -- not when some later fetch happens to agree.
+    await renderPanel()
+    expect(tab('Pending').textContent).toMatch(/Pending\s*1/)
+    expect(rowNames().some(text => text.includes('Pending Priya'))).toBe(true)
+
+    fireEvent.change(document.querySelector('.ops-interview-row select'), { target: { value: 'cancelled' } })
+    const form = await waitFor(() => {
+      const node = document.querySelector('form.ops-slot-modal')
+      if (!node) throw new Error('the confirm modal did not open')
+      return node
+    })
+    fireEvent.change(form.querySelector('input.cand-input'), { target: { value: 'Candidate cancelled.' } })
+    await act(async () => { fireEvent.submit(form) })
+
+    expect(rowNames().some(text => text.includes('Pending Priya'))).toBe(false)
+    expect(tab('Pending').textContent).toMatch(/Pending\s*0/)
   })
 
   it('re-reads the counts when Refresh is pressed', async () => {

@@ -30,7 +30,13 @@ const TODAY = '2026-09-27'
 
 let calls
 let unresolvedRows
+let dailyRows
 let posted
+// A reader a moment behind the write: the row keeps coming back in the list
+// even though the update was saved. It is what a poll whose request left
+// before the save returns, and the screen must not believe it.
+let serverLags
+let postFails
 
 function jsonResponse(body) {
   return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => body }
@@ -47,15 +53,25 @@ function interviewRow(date, name) {
 function mockFetch() {
   calls = []
   posted = []
+  serverLags = false
+  postFails = false
   unresolvedRows = [interviewRow('2026-05-04', 'Asha Rao'), interviewRow('2026-06-18', 'Vikram Devi')]
+  dailyRows = [interviewRow(TODAY, 'Meera Iyer')]
   vi.stubGlobal('fetch', vi.fn(async (input, init) => {
     const url = new URL(String(input), 'http://localhost')
     calls.push(url)
     if (url.pathname.endsWith('/interview-attendance')) {
       posted.push({ url, body: JSON.parse(init.body) })
-      // The server drops it from the unresolved list the moment it has a status.
+      if (postFails) {
+        return { ok: false, status: 500, headers: { get: () => 'application/json' },
+                 json: async () => ({ status: 'error', message: 'Update failed' }) }
+      }
       const id = decodeURIComponent(url.pathname.split('/').at(-2))
-      unresolvedRows = unresolvedRows.filter(row => row.id !== id)
+      // The server drops it from the unresolved list the moment it has a
+      // status -- unless this test is playing a reader that has not caught up.
+      if (!serverLags) unresolvedRows = unresolvedRows.filter(row => row.id !== id)
+      dailyRows = dailyRows.map(row => row.id === id
+        ? { ...row, interview_attendance_status: JSON.parse(init.body).status } : row)
       return jsonResponse({ status: 'ok' })
     }
     if (url.pathname.endsWith('/interviews/global')) {
@@ -74,7 +90,7 @@ function mockFetch() {
       })
     }
     if (url.pathname.endsWith('/interviews/daily')) {
-      return jsonResponse({ status: 'ok', interviews: [], count: 0 })
+      return jsonResponse({ status: 'ok', interviews: dailyRows, count: dailyRows.length })
     }
     return jsonResponse({ status: 'ok' })
   }))
@@ -224,6 +240,75 @@ describe('the list', () => {
     expect(screen.getByText('Nothing is waiting for a status update')).toBeInTheDocument()
     // Never "No interviews on <date>": this list is not about a date.
     expect(screen.queryByText(/No interviews (on|between)/)).toBeNull()
+  })
+})
+
+describe('a recorded outcome lands immediately', () => {
+  /** Attended needs an attendee, feedback and a note before it can be saved. */
+  async function markAttended(name) {
+    fireEvent.change(screen.getByLabelText(`Attendance for ${name}`), { target: { value: 'attended' } })
+    fireEvent.change(screen.getByLabelText(/Interview feedback/), { target: { value: 'positive' } })
+    fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'went ahead, cleared' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Attended' })) })
+  }
+
+  function pendingCard() {
+    return screen.getByRole('button', { name: /^Pending/ })
+  }
+
+  it('takes the row off the list and drops the count by one, with no reload', async () => {
+    // The bug: the row only left when a fetch said so, and a fetch that had
+    // left before the save said the opposite. Here the server keeps returning
+    // the row, so nothing but the save itself can remove it from the screen.
+    serverLags = true
+    await renderPanel()
+    await openUnresolved()
+    await waitFor(() => expect(pendingCard().textContent).toBe('Pending2'))
+
+    await markAttended('Asha Rao')
+
+    expect(screen.queryByText('Asha Rao')).toBeNull()
+    expect(pendingCard().textContent).toBe('Pending1')
+    expect(screen.getByText('Vikram Devi')).toBeInTheDocument()
+    expect(posted[0].body.status).toBe('attended')
+  })
+
+  it('does not let a lagging reload put the row back', async () => {
+    serverLags = true
+    await renderPanel()
+    await openUnresolved()
+    await markAttended('Asha Rao')
+
+    // Several poll cycles of a server still listing it.
+    await act(async () => { await vi.advanceTimersByTimeAsync(16000) })
+
+    expect(screen.queryByText('Asha Rao')).toBeNull()
+    expect(pendingCard().textContent).toBe('Pending1')
+  })
+
+  it('keeps the row and shows the error when the update fails', async () => {
+    postFails = true
+    await renderPanel()
+    await openUnresolved()
+
+    await markAttended('Asha Rao')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Update failed')
+    expect(screen.getByText('Asha Rao')).toBeInTheDocument()
+    expect(pendingCard().textContent).toBe('Pending2')
+  })
+
+  it('leaves a dated roster showing the row with its new status', async () => {
+    // Only a list of rows that have no outcome loses the row. Today's roster
+    // is a list of that day's interviews, so it keeps it and shows the status.
+    await renderPanel()
+    fireEvent.click(screen.getByRole('tab', { name: 'Today' }))
+    await waitFor(() => expect(screen.getByText('Meera Iyer')).toBeInTheDocument())
+
+    await markAttended('Meera Iyer')
+
+    expect(screen.getByText('Meera Iyer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Attended/ }).textContent).toBe('Attended1')
   })
 })
 
