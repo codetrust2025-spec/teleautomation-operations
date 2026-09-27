@@ -336,7 +336,10 @@ export function DailyOpsPanel({
         </div>
         </div>
 
-        <div className="ops-roster-control ops-roster-control--date">
+        {/* All unresolved is not a period, so a date has nothing to pick here.
+            The class lets a phone, where the controls have no room to spare,
+            drop the control entirely; a desktop keeps it where it was. */}
+        <div className={`ops-roster-control ops-roster-control--date${unresolvedOnly ? ' ops-roster-control--not-applicable' : ''}`}>
           <span>Date</span>
           <DateCalendarPicker
             value={exactDate}

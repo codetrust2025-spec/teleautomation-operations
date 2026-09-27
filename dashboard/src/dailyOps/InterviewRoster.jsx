@@ -657,11 +657,11 @@ export function InterviewRoster({
                             )}
                           </td>
                           <td data-label="Technology">{row.technology || '—'}</td>
-                          <td data-label="Round">{row.interview_round || 'Not specified in email'}</td>
+                          <td data-label="Round">{row.interview_round || 'Round not specified'}</td>
                           {!handlerView && !effectiveAttendee && (
                             <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
                           )}
-                          <td data-label="Attendance" className="ops-interview-attendance-cell">
+                          <td data-label="Status" className="ops-interview-attendance-cell">
                             <div className="ops-interview-attendance-form">
                               <AttendanceSelect
                                 value={status === 'pending' ? '' : status}
@@ -765,11 +765,11 @@ export function InterviewRoster({
                               )}
                             </td>
                             <td data-label="Technology">{row.technology || '—'}</td>
-                            <td data-label="Round">{row.interview_round || 'Not specified in email'}</td>
+                            <td data-label="Round">{row.interview_round || 'Round not specified'}</td>
                             {!handlerView && !effectiveAttendee && (
                               <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
                             )}
-                            <td data-label="Attendance" className="ops-interview-attendance-cell">
+                            <td data-label="Status" className="ops-interview-attendance-cell">
                               <div className="ops-interview-attendance-form">
                                 <AttendanceSelect
                                   value={status === 'pending' ? '' : status}

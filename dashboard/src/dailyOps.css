@@ -1904,3 +1904,88 @@
   background: rgba(245, 158, 11, 0.02);
 }
 
+/* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
+   Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
+   the phone breakpoint: the desktop layout above 767px is untouched.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* The status is in the dropdown. In a card the pill sits directly under it
+     saying the same word again, so the row reads "Pending / Pending". The
+     dropdown is the one that can be acted on, so the pill goes. */
+  .ops-interview-attendance-form .ops-status-pill {
+    display: none;
+  }
+
+  /* All unresolved ignores dates by design, and a phone has no room for a
+     control that does nothing. It comes back with any period. */
+  .ops-roster-control--not-applicable {
+    display: none;
+  }
+
+  /* Eight counters cannot share 440px: laid out in a row that must not wrap,
+     each one held above a 56px floor, they ran into each other. They scroll
+     sideways now instead, at a size a thumb can hit. No `min-width` here --
+     the 900px block owns that floor. */
+  .ops-topbar__kpis {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 6px;
+    padding-bottom: 2px;
+    scroll-snap-type: x proximity;
+  }
+
+  .ops-topbar__kpis::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ops-topbar__kpis .ops-dash-kpi {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 6px 12px;
+    scroll-snap-align: start;
+  }
+
+  /* Touch targets and room to read. The label column of a card takes 82px of
+     a 440px screen, which is what pushed values into two and three lines. */
+  .ops-dash-table-wrap.ta-table-responsive--cards td::before,
+  .ops-interview-table-wrap .ops-interview-table td::before {
+    min-width: 68px;
+  }
+
+  .ops-interview-attendance-form .ops-attendance-select {
+    min-height: 44px;
+    font-size: 13px;
+  }
+
+  .ops-dash-attend-cell .ops-row-menu__trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Nothing in a card is worth clipping: names, notes and the booking source
+     wrap rather than disappear behind an ellipsis. */
+  .ops-dash-table-wrap.ta-table-responsive--cards td,
+  .ops-interview-table-wrap .ops-interview-table td {
+    overflow-wrap: anywhere;
+  }
+
+  .ops-interview-notes-text {
+    /* 150px of a 440px screen, ellipsised, hid most of every remark. */
+    max-width: none;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  /* A card has the height to wrap a name; a table column has not. Measured at
+     440px, "Keerthi Nannapaneni" wanted 129px of a 122px cell and lost its
+     last letters -- to an ellipsis inherited from the desktop table. */
+  .ops-dash-table--v3 td[data-label=Candidate] strong,
+  .ops-interview-table td[data-label=Candidate] strong {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}

@@ -38,8 +38,9 @@ OUT = ROOT / ".layout-harness"
 # The stylesheets main.jsx imports, in its order: the cascade depends on it.
 STYLESHEETS = ("index.css", "businessShell.css", "dailyOps.css", "recruitmentMail.css")
 # Desktop, the two sides of every breakpoint the dashboard declares that a
-# change has so far needed, tablet and phone.
-WIDTHS = (1440, 1280, 1181, 1180, 1024, 902, 900, 768, 390)
+# change has so far needed, tablet and phone. 440 is an iPhone 16 Pro Max,
+# the widest phone the team carries and the one Daily Ops was fixed against.
+WIDTHS = (1440, 1280, 1181, 1180, 1024, 902, 900, 768, 440, 390)
 
 FRAME = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
