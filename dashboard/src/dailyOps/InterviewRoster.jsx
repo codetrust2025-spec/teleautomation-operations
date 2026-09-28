@@ -223,7 +223,6 @@ export function InterviewRoster({
   const setDay = isDashboard ? (onDashboardDayChange ?? setLocalDay) : setLocalDay
 
   const [rows, setRows] = useState([])
-  const [awaitingRows, setAwaitingRows] = useState([])
   // A counter per status, from the same list the tabs read. Naming three of
   // them here left the dashboard showing 0 for Cancelled, Rescheduled and
   // Re-Service in the window before the global summary arrives -- and for good
@@ -267,31 +266,27 @@ export function InterviewRoster({
    *  Every counter is tallied from the rows actually shown, so the tabs above
    *  the table and the sidebar badge cannot drift from it.
    */
-  const applyRoster = useCallback((nextRows, nextAwaiting, { fromServer = true } = {}) => {
+  const applyRoster = useCallback((nextRows, { fromServer = true } = {}) => {
     const suppress = pendingOnlyView && resolvedHere.current.size > 0
     const visible = suppress ? nextRows.filter(row => !stillSuppressed(row)) : nextRows
-    const visibleAwaiting = suppress ? nextAwaiting.filter(row => !stillSuppressed(row)) : nextAwaiting
     if (fromServer && resolvedHere.current.size) {
       // Forgotten as soon as the server agrees, or once the window is up.
       // Only a payload can settle that: the local list this same save just
       // filtered the row out of says nothing about what the server holds, and
       // reading it as agreement would drop the guard before the first reload.
-      const present = new Set([...nextRows, ...nextAwaiting].map(row => row.id))
+      const present = new Set(nextRows.map(row => row.id))
       for (const [id, at] of [...resolvedHere.current]) {
         if (!present.has(id) || Date.now() - at >= RESOLVED_SUPPRESSION_MS) resolvedHere.current.delete(id)
       }
     }
     setRows(visible)
-    setAwaitingRows(visibleAwaiting)
     // Counted from the rows just shown rather than read off the payload:
     // the top counter and the sidebar badge disagreed with the table and
     // with each other because all three measured different things.
     const nextCounts = countStatusRows(visible, resolvedStatus)
     setCounts(nextCounts)
     rosterCountsRef.current?.(nextCounts, { isUpcomingView: upcomingOnly })
-    const totalPending = upcomingOnly
-      ? (nextCounts.pending_count || 0) + visibleAwaiting.length
-      : nextCounts.pending_count
+    const totalPending = nextCounts.pending_count
     // The sidebar badge counts pending interviews in its own seven-day
     // window. This view counts every unresolved interview ever, which is a
     // different and much larger number, so it asks the badge to re-read its
@@ -341,7 +336,7 @@ export function InterviewRoster({
       if (!res.ok || data.status !== 'ok') {
         throw new Error(data.message || data.detail || `Failed to load roster (${res.status})`)
       }
-      applyRoster(data.interviews || [], data.awaiting_interviews || [])
+      applyRoster(data.interviews || [])
       setError('')
     } catch (err) {
       if (!silent) {
@@ -454,7 +449,7 @@ export function InterviewRoster({
       : list.map(row => row.id === rowId
         ? { ...row, interview_attendance_status: status, interview_attendance_status_resolved: status }
         : row)
-    applyRoster(updated(rows), updated(awaitingRows), { fromServer: false })
+    applyRoster(updated(rows), { fromServer: false })
   }
 
   async function saveAttendee(row, attendee) {
@@ -591,236 +586,117 @@ export function InterviewRoster({
 
       {error && <p className="admin-error" role="alert">{error}</p>}
 
-      {loading && rows.length === 0 && awaitingRows.length === 0 ? (
+      {loading && rows.length === 0 ? (
         <p className="ops-checklist-empty">Loading interview roster…</p>
-      ) : rows.length === 0 && awaitingRows.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="ops-checklist-empty ops-roster-empty" role="status">
           <strong>{emptyHeadline}</strong>
           <span>{emptyHint}</span>
         </div>
       ) : (
-        <>
-          {rows.length === 0 && upcomingOnly ? (
-            <div className="ops-checklist-empty ops-roster-empty" role="status">
-              <strong>{emptyHeadline}</strong>
-              <span>{emptyHint}</span>
-            </div>
-          ) : rows.length > 0 ? (
-            <div className={`ops-interview-table-wrap ta-table-responsive ta-table-responsive--cards${isDashboard ? ' ops-dash-table-wrap' : ' ops-interview-table-wrap--bounded'}`}>
-              <div className="ta-table-responsive__scroll">
-                <table className={`ops-interview-table${isDashboard ? ' ops-dash-table ops-dash-table--v3' : ''}`}>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Time</th>
-                      <th>Candidate</th>
-                      <th>Technology</th>
-                      <th>Round</th>
-                      {!handlerView && !effectiveAttendee && <th>Attendee</th>}
-                      <th>Attendance</th>
-                      <th>Screenshot</th>
-                      <th>Notes</th>
-                      {canManage && <th aria-label="Actions" />}
+        <div className={`ops-interview-table-wrap ta-table-responsive ta-table-responsive--cards${isDashboard ? ' ops-dash-table-wrap' : ' ops-interview-table-wrap--bounded'}`}>
+          <div className="ta-table-responsive__scroll">
+            <table className={`ops-interview-table${isDashboard ? ' ops-dash-table ops-dash-table--v3' : ''}`}>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Candidate</th>
+              <th>Technology</th>
+              <th>Round</th>
+              {!handlerView && !effectiveAttendee && <th>Attendee</th>}
+              <th>Attendance</th>
+              <th>Screenshot</th>
+              <th>Notes</th>
+              {canManage && <th aria-label="Actions" />}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)).map(row => {
+              const status = resolvedStatus(row)
+              const bookingSource = bookingSourceMeta(row)
+              return (
+                <tr key={row.id} className={`ops-interview-row ops-interview-row--${statusTone(status)}`}>
+                  <td data-label="Date" className="ops-interview-date">
+                    {formatDayLabel(row.date)}
+                  </td>
+                  <td data-label="Time" className="ops-interview-time">
+                    {[row.time, row.time_end].filter(Boolean).map(formatClockTime).join(' – ') || '—'}
+                  </td>
+                  <td data-label="Candidate">
+                    {/* Name and number are one thing to read, so they are one
+                        box to lay out: on a phone they stay together and the
+                        booking-source chip wraps under them instead of being
+                        squeezed onto their line. `display:contents` keeps this
+                        wrapper out of the desktop's layout entirely. */}
+                    <span className="ops-interview-identity">
+                      <strong>{row.name}</strong>
+                      {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
+                    </span>
+                    <span
+                      className={`ops-booking-source ops-booking-source--${bookingSource.tone}`}
+                      title={bookingSource.title}
+                    >
+                      {bookingSource.label}
+                    </span>
+                    {/* An assessment holds a roster slot like an interview
+                        but is a test the candidate sits alone, inside a
+                        window. The row has to say which it is. */}
+                    {row.booking_type === 'Assessment' && (
+                      <span
+                        className="ops-booking-type ops-booking-type--assessment"
+                        title="Online assessment, booked inside the window the invitation allowed"
+                      >
+                        Assessment
+                      </span>
+                        )}
+                      </td>
+                      <td data-label="Technology">{row.technology || '—'}</td>
+                      <td data-label="Round">{row.interview_round || 'Round not specified'}</td>
+                      {!handlerView && !effectiveAttendee && (
+                        <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
+                      )}
+                      <td data-label="Status" className="ops-interview-attendance-cell">
+                        <div className="ops-interview-attendance-form">
+                          <AttendanceSelect
+                            value={status === 'pending' ? '' : status}
+                            disabled={busyId === row.id}
+                            ariaLabel={`Attendance for ${row.name}`}
+                            onChange={async (val) => {
+                              if (!val) { saveAttendance(row, val, row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'); return }
+                              const label = statusLabel(val)
+                              // Show attendee selection before confirming
+                              setEditing({ row, mode: 'attendee-with-status', targetStatus: val, targetLabel: label })
+                            }}
+                          />
+                          <span className={`ops-status-pill ops-status-pill--${statusTone(status)}`}>
+                            {statusLabel(status)}
+                          </span>
+                        </div>
+                      </td>
+                      <td data-label="Screenshot" className="ops-slot-shot-cell">
+                        {row.slot_screenshot_proof
+                          ? <button type="button" className="ops-slot-shot-thumb" onClick={() => setScreenshotRow(row)} title={`View booking screenshot for ${row.name}`}><img src={`${API}${row.slot_screenshot_proof.url}`} alt="" loading="lazy" /><span>View</span></button>
+                          : <span className="ops-slot-shot-empty">Not available</span>}
+                      </td>
+                      <td data-label="Notes" className="ops-interview-notes-cell">
+                        {row.interview_feedback && (
+                          <span className={`ops-feedback-pill ops-feedback-pill--${row.interview_feedback}`}>
+                            {row.interview_feedback === 'positive' ? 'Positive' : 'Negative'}
+                          </span>
+                        )}
+                        {row.interview_attendance_remark
+                          ? <span className="ops-interview-notes-text" title={row.interview_attendance_remark}>{row.interview_attendance_remark}</span>
+                          : (row.interview_feedback ? null : '—')}
+                      </td>
+                      {canManage && <td data-label="Actions" className="ops-dash-attend-cell"><RowActions row={row} busy={busyId === row.id} canEditAttendee={canEditAttendee} onEditAttendee={() => setEditing({ row, mode: 'attendee' })} onEditSlot={() => setEditing({ row, mode: 'slot' })} onRemove={removeSlot} /></td>}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)).map(row => {
-                      const status = resolvedStatus(row)
-                      const bookingSource = bookingSourceMeta(row)
-                      return (
-                        <tr key={row.id} className={`ops-interview-row ops-interview-row--${statusTone(status)}`}>
-                          <td data-label="Date" className="ops-interview-date">
-                            {formatDayLabel(row.date)}
-                          </td>
-                          <td data-label="Time" className="ops-interview-time">
-                            {[row.time, row.time_end].filter(Boolean).map(formatClockTime).join(' – ') || '—'}
-                          </td>
-                          <td data-label="Candidate">
-                            {/* Name and number are one thing to read, so they are one
-                                box to lay out: on a phone they stay together and the
-                                booking-source chip wraps under them instead of being
-                                squeezed onto their line. `display:contents` keeps this
-                                wrapper out of the desktop's layout entirely. */}
-                            <span className="ops-interview-identity">
-                              <strong>{row.name}</strong>
-                              {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
-                            </span>
-                            <span
-                              className={`ops-booking-source ops-booking-source--${bookingSource.tone}`}
-                              title={bookingSource.title}
-                            >
-                              {bookingSource.label}
-                            </span>
-                            {/* An assessment holds a roster slot like an interview
-                                but is a test the candidate sits alone, inside a
-                                window. The row has to say which it is. */}
-                            {row.booking_type === 'Assessment' && (
-                              <span
-                                className="ops-booking-type ops-booking-type--assessment"
-                                title="Online assessment, booked inside the window the invitation allowed"
-                              >
-                                Assessment
-                              </span>
-                            )}
-                          </td>
-                          <td data-label="Technology">{row.technology || '—'}</td>
-                          <td data-label="Round">{row.interview_round || 'Round not specified'}</td>
-                          {!handlerView && !effectiveAttendee && (
-                            <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
-                          )}
-                          <td data-label="Status" className="ops-interview-attendance-cell">
-                            <div className="ops-interview-attendance-form">
-                              <AttendanceSelect
-                                value={status === 'pending' ? '' : status}
-                                disabled={busyId === row.id}
-                                ariaLabel={`Attendance for ${row.name}`}
-                                onChange={async (val) => {
-                                  if (!val) { saveAttendance(row, val, row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'); return }
-                                  const label = statusLabel(val)
-                                  // Show attendee selection before confirming
-                                  setEditing({ row, mode: 'attendee-with-status', targetStatus: val, targetLabel: label })
-                                }}
-                              />
-                              <span className={`ops-status-pill ops-status-pill--${statusTone(status)}`}>
-                                {statusLabel(status)}
-                              </span>
-                            </div>
-                          </td>
-                          <td data-label="Screenshot" className="ops-slot-shot-cell">
-                            {row.slot_screenshot_proof
-                              ? <button type="button" className="ops-slot-shot-thumb" onClick={() => setScreenshotRow(row)} title={`View booking screenshot for ${row.name}`}><img src={`${API}${row.slot_screenshot_proof.url}`} alt="" loading="lazy" /><span>View</span></button>
-                              : <span className="ops-slot-shot-empty">Not available</span>}
-                          </td>
-                          <td data-label="Notes" className="ops-interview-notes-cell">
-                            {row.interview_feedback && (
-                              <span className={`ops-feedback-pill ops-feedback-pill--${row.interview_feedback}`}>
-                                {row.interview_feedback === 'positive' ? 'Positive' : 'Negative'}
-                              </span>
-                            )}
-                            {row.interview_attendance_remark
-                              ? <span className="ops-interview-notes-text" title={row.interview_attendance_remark}>{row.interview_attendance_remark}</span>
-                              : (row.interview_feedback ? null : '—')}
-                          </td>
-                          {canManage && <td data-label="Actions" className="ops-dash-attend-cell"><RowActions row={row} busy={busyId === row.id} canEditAttendee={canEditAttendee} onEditAttendee={() => setEditing({ row, mode: 'attendee' })} onEditSlot={() => setEditing({ row, mode: 'slot' })} onRemove={removeSlot} /></td>}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
-
-          {upcomingOnly && awaitingRows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)).length > 0 && (
-            <section className="ops-awaiting-outcome-section" aria-label="Awaiting outcome interviews">
-              <div className="ops-awaiting-outcome-header">
-                <div className="ops-awaiting-outcome-title">
-                  <h3>Awaiting outcome</h3>
-                  <span className="ops-awaiting-badge">
-                    {awaitingRows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)).length}
-                  </span>
-                </div>
-                <p className="ops-awaiting-outcome-desc">
-                  Past interviews with no final attendance status logged. Record an outcome to resolve them.
-                </p>
-              </div>
-              <div className={`ops-interview-table-wrap ta-table-responsive ta-table-responsive--cards${isDashboard ? ' ops-dash-table-wrap' : ' ops-interview-table-wrap--bounded'}`}>
-                <div className="ta-table-responsive__scroll">
-                  <table className={`ops-interview-table${isDashboard ? ' ops-dash-table ops-dash-table--v3' : ''}`}>
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Candidate</th>
-                        <th>Technology</th>
-                        <th>Round</th>
-                        {!handlerView && !effectiveAttendee && <th>Attendee</th>}
-                        <th>Attendance</th>
-                        <th>Screenshot</th>
-                        <th>Notes</th>
-                        {canManage && <th aria-label="Actions" />}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {awaitingRows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)).map(row => {
-                        const status = resolvedStatus(row)
-                        const bookingSource = bookingSourceMeta(row)
-                        return (
-                          <tr key={`awaiting-${row.id}`} className={`ops-interview-row ops-interview-row--${statusTone(status)} ops-interview-row--awaiting`}>
-                            <td data-label="Date" className="ops-interview-date">
-                              {formatDayLabel(row.date)}
-                            </td>
-                            <td data-label="Time" className="ops-interview-time">
-                              {[row.time, row.time_end].filter(Boolean).map(formatClockTime).join(' – ') || '—'}
-                            </td>
-                            <td data-label="Candidate">
-                              <span className="ops-interview-identity">
-                                <strong>{row.name}</strong>
-                                {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
-                              </span>
-                              <span
-                                className={`ops-booking-source ops-booking-source--${bookingSource.tone}`}
-                                title={bookingSource.title}
-                              >
-                                {bookingSource.label}
-                              </span>
-                              {row.booking_type === 'Assessment' && (
-                                <span
-                                  className="ops-booking-type ops-booking-type--assessment"
-                                  title="Online assessment, booked inside the window the invitation allowed"
-                                >
-                                  Assessment
-                                </span>
-                              )}
-                            </td>
-                            <td data-label="Technology">{row.technology || '—'}</td>
-                            <td data-label="Round">{row.interview_round || 'Round not specified'}</td>
-                            {!handlerView && !effectiveAttendee && (
-                              <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
-                            )}
-                            <td data-label="Status" className="ops-interview-attendance-cell">
-                              <div className="ops-interview-attendance-form">
-                                <AttendanceSelect
-                                  value={status === 'pending' ? '' : status}
-                                  disabled={busyId === row.id}
-                                  ariaLabel={`Attendance for ${row.name}`}
-                                  onChange={async (val) => {
-                                    if (!val) { saveAttendance(row, val, row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'); return }
-                                    const label = statusLabel(val)
-                                    setEditing({ row, mode: 'attendee-with-status', targetStatus: val, targetLabel: label })
-                                  }}
-                                />
-                                <span className={`ops-status-pill ops-status-pill--${statusTone(status)}`}>
-                                  {statusLabel(status)}
-                                </span>
-                              </div>
-                            </td>
-                            <td data-label="Screenshot" className="ops-slot-shot-cell">
-                              {row.slot_screenshot_proof
-                                ? <button type="button" className="ops-slot-shot-thumb" onClick={() => setScreenshotRow(row)} title={`View booking screenshot for ${row.name}`}><img src={`${API}${row.slot_screenshot_proof.url}`} alt="" loading="lazy" /><span>View</span></button>
-                                : <span className="ops-slot-shot-empty">Not available</span>}
-                            </td>
-                            <td data-label="Notes" className="ops-interview-notes-cell">
-                              {row.interview_feedback && (
-                                <span className={`ops-feedback-pill ops-feedback-pill--${row.interview_feedback}`}>
-                                  {row.interview_feedback === 'positive' ? 'Positive' : 'Negative'}
-                                </span>
-                              )}
-                              {row.interview_attendance_remark
-                                ? <span className="ops-interview-notes-text" title={row.interview_attendance_remark}>{row.interview_attendance_remark}</span>
-                                : (row.interview_feedback ? null : '—')}
-                            </td>
-                            {canManage && <td data-label="Actions" className="ops-dash-attend-cell"><RowActions row={row} busy={busyId === row.id} canEditAttendee={canEditAttendee} onEditAttendee={() => setEditing({ row, mode: 'attendee' })} onEditSlot={() => setEditing({ row, mode: 'slot' })} onRemove={removeSlot} /></td>}
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
-          )}
-        </>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
       {editing && <SlotEditModal row={editing.row} mode={editing.mode} targetStatus={editing.targetStatus} targetLabel={editing.targetLabel} busy={busyId === editing.row.id} onClose={() => setEditing(null)} onSave={values => editing.mode === 'attendee' ? saveAttendee(editing.row, values.attendee) : editing.mode === 'attendee-with-status' ? saveAttendance(editing.row, values.status, values.attendee, values.remark, values.feedback) : saveSlot(editing.row, values)} />}
       {screenshotRow && <SlotScreenshotModal row={screenshotRow} onClose={() => setScreenshotRow(null)} />}

@@ -3716,39 +3716,26 @@ def interview_monitor(
         filter_round=filter_round,
         filter_technology=filter_technology,
     )
+    # No view splits its rows in two any more. The key stays, always empty, so
+    # a reader that has not been redeployed reads "nothing awaiting" rather
+    # than failing.
     awaiting_rows: list[dict] = []
     if unresolved_only:
-        # The same unresolved rule the Upcoming tab uses — no stored status and
-        # the booking still stands — so a row leaves this list the moment an
+        # The same unresolved rule Upcoming uses — no stored status and the
+        # booking still stands — so a row leaves this list the moment an
         # operator sets its status, and a superseded or cancelled sitting was
-        # never in it. Nothing is split off into `awaiting_interviews`: the
-        # whole point is one list.
+        # never in it.
         rows = _filter_upcoming_only_rows(rows)
     elif upcoming_only:
-        from datetime import date, timedelta
-        today_date = date.today()
-        lookback_start = (today_date - timedelta(days=30)).isoformat()
-        # Fetch a combined window: 30-day lookback + caller's forward range.
-        # Use _split_pending_interviews_by_slot_phase (IST time-aware) so that
-        # a slot whose end time has passed today immediately moves from Upcoming
-        # to Awaiting outcome — no date-rollover required. This mirrors exactly
-        # what interview_upcoming does, giving one shared source of truth.
-        combined_rows = _interview_rows_for_range(
-            lookback_start,
-            to_date,
-            include_unconfirmed=include_unconfirmed,
-        )
-        combined_rows = _filter_interview_rows(
-            combined_rows,
-            viewer_reference=viewer_reference,
-            filter_attendee=filter_attendee,
-            filter_search=filter_search,
-            filter_channel=filter_channel,
-            filter_round=filter_round,
-            filter_technology=filter_technology,
-        )
-        rows, awaiting_rows = _split_pending_interviews_by_slot_phase(combined_rows)
-        awaiting_rows = _enrich_interview_rows_with_slot_screenshots(awaiting_rows)
+        # Upcoming is what is still to come: pending sittings whose time has
+        # not passed. It used to reach 30 days back as well and hand the
+        # overdue ones to an "Awaiting outcome" section below the table --
+        # a second place to chase an outcome, and one that could only ever
+        # show the last 30 days of them. All unresolved is that list now, at
+        # any age, so a sitting whose end time has passed simply leaves this
+        # one. `_split_pending_interviews_by_slot_phase` is still what decides
+        # (IST time-aware, so it happens on the hour, not at date rollover).
+        rows, _past_their_time = _split_pending_interviews_by_slot_phase(rows)
     counts = _interview_attendance_counts(rows)
     rows = _enrich_interview_rows_with_slot_screenshots(rows)
     by_date: dict[str, list[dict]] = {}

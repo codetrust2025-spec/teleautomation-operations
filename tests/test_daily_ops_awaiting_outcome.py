@@ -2,9 +2,10 @@
 
 Verifies:
 1. interview_monitor with upcoming_only=True computes counts strictly from the filtered rows (Requirement 6).
-2. interview_monitor returns awaiting_interviews containing past-due slots without an attendance status.
-3. Resolved interviews (attended, cancelled, etc.) never appear in awaiting_interviews.
-4. Date boundaries: slot in future belongs to upcoming interviews; slot in past belongs to awaiting_interviews.
+2. interview_monitor's Upcoming holds only sittings still to come; a past-due one leaves it for
+   All unresolved (the Awaiting outcome section under the table was retired on 28 Sep 2026).
+3. Resolved interviews (attended, cancelled, etc.) appear in neither list.
+4. Date boundaries: a slot in the future is Upcoming; one whose end time has passed is not.
 5. interview_upcoming returns scheduled_interviews and awaiting_interviews matching counts.
 """
 
@@ -69,8 +70,9 @@ def test_interview_monitor_counts_match_filtered_rows(monkeypatch):
     assert result["attended_count"] == 0
 
 
-def test_interview_monitor_returns_awaiting_interviews(monkeypatch):
-    """Requirement 2: past interviews with no attendance status appear in awaiting_interviews."""
+def test_a_past_pending_interview_simply_leaves_upcoming(monkeypatch):
+    """It used to be handed to an Awaiting outcome section under the table.
+    That section is gone: All unresolved is the one list for them now."""
     today = date.today()
     past_date = (today - timedelta(days=5)).isoformat()
     future_date = (today + timedelta(days=2)).isoformat()
@@ -101,10 +103,15 @@ def test_interview_monitor_returns_awaiting_interviews(monkeypatch):
     assert upcoming_ids == ["c_future"]
     assert result["count"] == 1
 
-    # Awaiting list has only the overdue unresolved slot
-    awaiting_ids = [r["id"] for r in result["awaiting_interviews"]]
-    assert awaiting_ids == ["c_past_pending"]
-    assert result["awaiting_count"] == 1
+    # Nothing is split off, and the overdue sitting is not quietly in Upcoming.
+    assert (result["awaiting_interviews"], result["awaiting_count"]) == ([], 0)
+    assert "c_past_pending" not in upcoming_ids
+
+    # It is under All unresolved, with every other sitting still waiting.
+    unresolved = cs.interview_monitor(
+        today.isoformat(), (today + timedelta(days=7)).isoformat(), unresolved_only=True,
+    )
+    assert [r["id"] for r in unresolved["interviews"]] == ["c_past_pending", "c_future"]
 
 
 def test_interview_upcoming_returns_split_lists(monkeypatch):
@@ -195,9 +202,9 @@ def test_monitor_future_slot_today_stays_in_upcoming(monkeypatch):
     assert "c_future_today" not in awaiting_ids, "Future slot must NOT be in Awaiting"
 
 
-def test_monitor_slot_ended_minutes_ago_moves_to_awaiting(monkeypatch):
-    """A pending slot whose end time passed a few minutes ago today must appear
-    in interview_monitor.awaiting_interviews, NOT in interviews (Upcoming)."""
+def test_monitor_slot_ended_minutes_ago_leaves_upcoming(monkeypatch):
+    """A pending slot whose end time passed today leaves Upcoming on the hour,
+    without waiting for the date to roll over, and is in All unresolved."""
     now_ist = ist_now()
     today_str = now_ist.strftime("%Y-%m-%d")
     today = date.today()
@@ -222,9 +229,13 @@ def test_monitor_slot_ended_minutes_ago_moves_to_awaiting(monkeypatch):
     )
 
     upcoming_ids = [r["id"] for r in result["interviews"]]
-    awaiting_ids = [r["id"] for r in result["awaiting_interviews"]]
     assert "c_past_today" not in upcoming_ids, "Ended slot must NOT be in Upcoming"
-    assert "c_past_today" in awaiting_ids, "Ended slot should be in Awaiting"
+    assert result["awaiting_interviews"] == [], "Upcoming no longer splits its rows"
+
+    unresolved = cs.interview_monitor(
+        today.isoformat(), (today + timedelta(days=30)).isoformat(), unresolved_only=True,
+    )
+    assert "c_past_today" in [r["id"] for r in unresolved["interviews"]]
 
 
 def test_monitor_future_date_slot_always_upcoming(monkeypatch):
@@ -249,9 +260,10 @@ def test_monitor_future_date_slot_always_upcoming(monkeypatch):
     assert "c_future_date" not in awaiting_ids
 
 
-def test_monitor_count_plus_awaiting_equals_upcoming_pending_count(monkeypatch):
-    """Invariant: monitor.count + monitor.awaiting_count == interview_upcoming.pending_count
-    on the same data snapshot. This is the single-source-of-truth assertion."""
+def test_upcoming_and_all_unresolved_account_for_every_pending_sitting(monkeypatch):
+    """The single-source-of-truth assertion, in its new shape: Upcoming holds
+    the sittings still to come, All unresolved holds every sitting with no
+    outcome, and none falls between the two."""
     now_ist = ist_now()
     today = date.today()
     today_str = now_ist.strftime("%Y-%m-%d")
@@ -284,11 +296,18 @@ def test_monitor_count_plus_awaiting_equals_upcoming_pending_count(monkeypatch):
         (today + timedelta(days=30)).isoformat(),
         upcoming_only=True,
     )
+    unresolved_result = cs.interview_monitor(
+        today.isoformat(), (today + timedelta(days=30)).isoformat(), unresolved_only=True,
+    )
     upcoming_result = cs.interview_upcoming(days=30, lookback_days=30)
 
-    monitor_total = monitor_result["count"] + monitor_result["awaiting_count"]
-    assert monitor_total == upcoming_result["pending_count"], (
-        f"Invariant broken: monitor({monitor_result['count']} + "
-        f"{monitor_result['awaiting_count']}) != upcoming.pending_count({upcoming_result['pending_count']})"
-    )
+    # Upcoming is exactly the scheduled half, and splits nothing off.
+    assert monitor_result["count"] == upcoming_result["scheduled_count"]
+    assert monitor_result["awaiting_count"] == 0
+    # All unresolved holds every pending sitting, Upcoming's included, and the
+    # resolved one ("c4", attended) is in neither.
+    assert unresolved_result["count"] == upcoming_result["pending_count"]
+    assert ({r["id"] for r in monitor_result["interviews"]}
+            <= {r["id"] for r in unresolved_result["interviews"]})
+    assert "c4" not in {r["id"] for r in unresolved_result["interviews"]}
 

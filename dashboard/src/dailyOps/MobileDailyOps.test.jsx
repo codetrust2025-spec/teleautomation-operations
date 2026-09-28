@@ -346,10 +346,11 @@ describe('the card is not a page in itself', () => {
 })
 
 describe('the candidate line', () => {
-  it('groups the name with the number in both tables', () => {
+  it('groups the name with the number', () => {
     // One box to lay out, so a phone can keep them together and wrap the
     // booking source underneath instead of squeezing three things onto a line.
-    expect((ROSTER.match(/ops-interview-identity/g) || []).length).toBe(2)
+    // One table renders it now that Awaiting outcome is gone.
+    expect((ROSTER.match(/ops-interview-identity/g) || []).length).toBe(1)
     const identity = ROSTER.indexOf('ops-interview-identity')
     expect(ROSTER.slice(identity, identity + 260)).toMatch(/<strong>\{row\.name\}<\/strong>/)
     expect(ROSTER.slice(identity, identity + 260)).toMatch(/ops-interview-phone/)
