@@ -698,44 +698,68 @@ def _same_lifecycle_slot(
     Interview commitments are deliberately allowed to overlap.  A date/time
     comparison alone therefore cannot be a duplicate guard: it would reject a
     second, genuinely different invite for the candidate.  Calendar UID is
-    authoritative when both sources carry one. Otherwise require message or
-    source-event identity, never just company, role, or equal times. Candidate
-    identity is scoped by the caller; SEQUENCE precedence is handled by the
-    lifecycle guard before this duplicate check.
+    authoritative when both sources carry one -- with one exception, below,
+    for a provider re-issuing an invitation under an event id of its own.
+    Otherwise require message or source-event identity, never just company,
+    role, or equal times. Candidate identity is scoped by the caller;
+    SEQUENCE precedence is handled by the lifecycle guard before this
+    duplicate check.
     """
     uid = _calendar_uid(result)
     stored_uid = str(row.get("interview_calendar_uid") or "").strip()
-    if uid and stored_uid:
-        return _same_text(stored_uid, uid)
-    source_id = str(message.get("provider_message_id") or "").strip()
-    if source_id and _same_text(row.get("interview_source_message_id"), source_id):
+    if uid and stored_uid and _same_text(stored_uid, uid):
         return True
     same_start = (
         str(row.get("date") or "")[:10] == schedule["date"]
         and str(row.get("time") or "")[:5] == schedule["time"]
     )
     same_schedule = same_start and str(row.get("time_end") or "")[:5] == schedule["time_end"]
+    if uid and stored_uid:
+        # Two calendar events that are not the same event. Almost always two
+        # interviews -- and the one exception is a mail provider re-issuing
+        # somebody else's invitation under an event of its own. On 28 Sep the
+        # invite arrived from the recruiter with its Outlook event, and Gmail
+        # sent the same invitation on eleven seconds later as "Invitation from
+        # an unknown sender: ...", carrying a fresh @google.com event id. Two
+        # ids, one meeting, one interview -- booked twice.
+        #
+        # So a differing event id stops being decisive only when the two mails
+        # name the exact same meeting AND the whole schedule agrees: same day,
+        # same start, same end. Nothing weaker -- two genuinely different
+        # interviews can share a room, or an hour, but not both at once.
+        return same_schedule and _shares_exact_meeting(row, message)
+    source_id = str(message.get("provider_message_id") or "").strip()
+    if source_id and _same_text(row.get("interview_source_message_id"), source_id):
+        return True
     thread_id = str(message.get("provider_thread_id") or "").strip()
     if thread_id and _same_text(row.get("interview_source_thread_id"), thread_id) and same_schedule:
         return True
-    if same_start:
+    if same_start and _shares_exact_meeting(row, message):
         # One Teams meeting starting at one time is one interview, whatever
         # the mail is titled or however long it says the call runs. A reminder
         # restates the interview under its own subject and often its own end
         # time: on 18 Sep "Reminder: Upcoming interview | ..." (15:00-15:45)
         # was booked beside the invite it reminded about (15:00-15:30), with
-        # the same meeting, and both rows were marked attended. The meeting
-        # must be the exact same one -- never a similar link, a company or a
-        # title -- on the same date at the same start. A HirePro interview
-        # room counts the same way (`_source_hirepro_interviews`).
-        incoming_meetings = _source_meeting_identities(message)
-        if incoming_meetings:
-            source = mail_store.booking_source_message(str(row.get("interview_source_message_id") or ""))
-            if source and incoming_meetings.intersection(_source_meeting_identities(source)):
-                return True
+        # the same meeting, and both rows were marked attended.
+        return True
     # Identical times, titles, or public job links cannot establish that two
     # independent messages describe the same interview.
     return False
+
+
+def _shares_exact_meeting(row: dict[str, Any], message: dict[str, Any]) -> bool:
+    """Do this mail and the mail that made this booking name one same meeting?
+
+    The meeting must be the exact same one -- never a similar link, a company
+    or a title. A Teams join link identifies it by its meeting thread, a Teams
+    short link by its id, a HirePro interview room by its login token
+    (`_source_meeting_identities`).
+    """
+    incoming = _source_meeting_identities(message)
+    if not incoming:
+        return False
+    source = mail_store.booking_source_message(str(row.get("interview_source_message_id") or ""))
+    return bool(source and incoming.intersection(_source_meeting_identities(source)))
 
 
 def _hand_booked_twin(slots: list[dict[str, Any]], *, schedule: dict[str, str]) -> dict[str, Any] | None:

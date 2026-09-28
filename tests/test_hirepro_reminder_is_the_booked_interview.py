@@ -169,10 +169,23 @@ def test_the_same_room_in_another_persons_booking_never_merges(monkeypatch):
     assert booked_separately(outcome, writes)
 
 
-def test_calendar_events_on_both_sides_still_decide_first(monkeypatch):
+def test_two_event_ids_no_longer_outrank_one_room_at_one_schedule(monkeypatch):
+    # Was: event ids decided and this booked twice. Changed on 28 Sep, when a
+    # provider re-issuing an invitation under its own event id put the same
+    # interview on the roster twice -- see
+    # test_reissued_invitation_is_one_interview.py.
     booked = {**BOOKED, "interview_calendar_uid": "syntheticuid-invite-event"}
 
     outcome, writes, _ = book(monkeypatch, reminder(wrapped(room())), rows=(booked,),
+                              calendar={"uid": "syntheticuid-reminder-event", "sequence": 0})
+
+    assert ignored_as_the_booked_interview(outcome, writes)
+
+
+def test_calendar_events_still_decide_when_the_schedule_differs(monkeypatch):
+    booked = {**BOOKED, "interview_calendar_uid": "syntheticuid-invite-event"}
+
+    outcome, writes, _ = book(monkeypatch, reminder(wrapped(room())), rows=(booked,), end_time="03:45 PM",
                               calendar={"uid": "syntheticuid-reminder-event", "sequence": 0})
 
     assert booked_separately(outcome, writes)

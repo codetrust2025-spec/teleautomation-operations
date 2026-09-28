@@ -32,16 +32,28 @@ def test_hcl_sibling_reaches_exact_duplicate_guard_in_real_executor(monkeypatch)
 
 # A different subject alone no longer makes a second interview: see
 # test_reminder_same_meeting_is_one_interview.py.
-@pytest.mark.parametrize('change', ['different_uid', 'different_time', 'different_date', 'different_meeting', 'no_meeting'])
+@pytest.mark.parametrize('change', ['different_uid_and_end', 'different_time', 'different_date', 'different_meeting', 'no_meeting'])
 def test_different_interviews_are_still_allowed(monkeypatch, change):
     monkeypatch.setattr(booking.mail_store, 'booking_source_message', lambda source_id: SOURCE)
     value, message, schedule = {}, dict(MESSAGE), dict(SCHEDULE)
-    if change == 'different_uid': value['calendar'] = {'uid': 'other-uid'}
+    # A second event id is only overruled when the whole schedule agrees too.
+    if change == 'different_uid_and_end':
+        value['calendar'] = {'uid': 'other-uid'}
+        schedule['time_end'] = '13:15'
     if change == 'different_time': schedule['time'] = '12:15'
     if change == 'different_date': schedule['date'] = '2099-09-12'
     if change == 'different_meeting': message['html_body'] = SOURCE['html_body_text'].replace('meeting_source', 'meeting_other')
     if change == 'no_meeting': message['html_body'] = 'https://teams.microsoft.com/help'
     assert not booking._same_lifecycle_slot(SLOT, result=value, message=message, schedule=schedule)
+
+
+def test_a_second_event_id_for_the_same_meeting_and_schedule_is_one_interview(monkeypatch):
+    # 28 Sep: a provider re-issued an invitation under an event id of its own,
+    # same meeting, same 12:45-13:30, and it was booked a second time.
+    monkeypatch.setattr(booking.mail_store, 'booking_source_message', lambda source_id: SOURCE)
+
+    assert booking._same_lifecycle_slot(SLOT, result={'calendar': {'uid': 'other-uid'}},
+                                        message=dict(MESSAGE), schedule=dict(SCHEDULE))
 
 
 def test_proof_store_outage_cannot_permit_duplicate_booking(monkeypatch):

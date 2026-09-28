@@ -176,10 +176,25 @@ def test_a_classic_link_and_a_short_link_are_never_compared(monkeypatch):
 
 # unchanged precedence ------------------------------------------------------
 
-def test_calendar_events_on_both_sides_still_decide_first(monkeypatch):
+def test_two_event_ids_no_longer_outrank_one_meeting_at_one_schedule(monkeypatch):
+    # Was: event ids decided and this booked twice. On 28 Sep that let Gmail's
+    # re-issue of an invitation, under an event id of its own, book a second
+    # interview in the same meeting at the same 12:45-13:30 --
+    # see test_reissued_invitation_is_one_interview.py.
     booked = {**BOOKED, "interview_calendar_uid": "syntheticuid-invite-event"}
 
     outcome, writes, _ = book(monkeypatch, reminder(SHORT), rows=(booked,),
+                              calendar={"uid": "syntheticuid-reminder-event", "sequence": 0})
+
+    assert ignored_as_the_booked_interview(outcome, writes)
+
+
+def test_calendar_events_still_decide_when_the_schedule_differs(monkeypatch):
+    # The exception is narrow: the whole schedule has to agree before a
+    # differing event id stops being the answer.
+    booked = {**BOOKED, "interview_calendar_uid": "syntheticuid-invite-event"}
+
+    outcome, writes, _ = book(monkeypatch, reminder(SHORT), rows=(booked,), end_time="03:45 PM",
                               calendar={"uid": "syntheticuid-reminder-event", "sequence": 0})
 
     assert booked_separately(outcome, writes)
