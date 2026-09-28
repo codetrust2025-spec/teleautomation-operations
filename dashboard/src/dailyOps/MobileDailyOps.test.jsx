@@ -243,7 +243,9 @@ describe('what it all looks like laid out', () => {
       row({ id: 'b', name: 'Vikram Devi', date: '2026-06-19', time: '13:00', interview_round: '',
             technology: 'Oracle Fusion (Tech Con)' }),
       row({ id: 'c', name: 'Nandini Balasubramanian', date: '2026-09-24', time: '16:00',
-            interview_round: 'Final', interview_attendance_remark: 'Panel asked to move it to the afternoon slot.' }),
+            interview_round: 'Final', interview_attendance_remark: 'Panel asked to move it to the afternoon slot.',
+            interview_booking_source: 'candidate_booked', interview_feedback: 'positive',
+            slot_screenshot_proof: { url: '/media/slot-shots/example.png', original_name: 'invite.png' } }),
     ])
     await renderPanel()
     fireEvent.click(screen.getByRole('tab', { name: 'All unresolved' }))
@@ -251,6 +253,130 @@ describe('what it all looks like laid out', () => {
 
     expect(document.querySelectorAll('.ops-interview-row')).toHaveLength(3)
     captureLayout('daily-ops-unresolved-phone')
+  })
+})
+
+describe('the period tabs scroll rather than being cut off', () => {
+  it('lets the strip shrink, which is what turns the overflow into a scroll', () => {
+    // Measured at 390px before the fix: the period group sat at the width of
+    // its five tabs (404px) inside a 354px box that clips, so All unresolved
+    // was cut off by 43px. A flex item does not shrink below its content
+    // unless it is told it may.
+    const shrink = declaring('.ops-roster-control-group--period', 'min-width')
+    expect(shrink.length, 'nothing lets the period group shrink').toBeGreaterThan(0)
+    for (const rule of shrink) {
+      expect(rule.body).toMatch(/min-width\s*:\s*0/)
+      expect(phoneOnly(rule.media), `${rule.media} reaches a desktop`).toBe(true)
+    }
+  })
+
+  it('keeps the tabs on one scrolling row', () => {
+    // Equal specificity, so the last rule in the sheet is the one a phone
+    // gets. An earlier 600px block already scrolled the strip but left it
+    // wrapping, which is how the tabs became two rows.
+    const strip = ALL.filter(r => r.selector.includes('.ops-date-range__presets') && phoneOnly(r.media))
+    const winner = strip.filter(r => /overflow-x/.test(r.body)).at(-1)
+    expect(winner, 'nothing makes the strip scroll on a phone').toBeTruthy()
+    expect(winner.body).toMatch(/overflow-x\s*:\s*auto/)
+    expect(winner.body).toMatch(/flex-wrap\s*:\s*nowrap/)
+    // Wrapping is the other way to fit five tabs, and the brief rules it out.
+    const wrapsLater = strip.slice(strip.indexOf(winner) + 1).some(r => /flex-wrap\s*:\s*wrap/.test(r.body))
+    expect(wrapsLater, 'a later rule puts the tabs back on two rows').toBe(false)
+  })
+
+  it('brings the selected tab into view when it is off the edge', async () => {
+    // jsdom has no scrollIntoView, so the panel calls it optionally and this
+    // supplies one. `nearest` is what leaves a desktop, where nothing
+    // overflows, completely still.
+    const scrolled = []
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (options) { scrolled.push([this, options]) }
+    try {
+      await renderPanel()
+      scrolled.length = 0
+      fireEvent.click(screen.getByRole('tab', { name: 'All unresolved' }))
+      await act(async () => { await Promise.resolve() })
+
+      const [element, options] = scrolled.at(-1) || []
+      expect(element, 'the newly selected tab was never scrolled to').toBe(
+        screen.getByRole('tab', { name: 'All unresolved' }))
+      expect(options).toEqual({ inline: 'nearest', block: 'nearest' })
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+})
+
+describe('the card is not a page in itself', () => {
+  it('trims the padding every row of the card carries', () => {
+    // 440px measurements: the card was 516px tall, of which ten rows of
+    // table-cell padding. 424px after, with nothing removed from it.
+    const padded = ALL.filter(
+      r => phoneOnly(r.media) && r.selector.includes('ta-table-responsive--cards td') && /padding\s*:/.test(r.body),
+    )
+    expect(padded.length).toBeGreaterThan(0)
+    expect(padded.at(-1).body).toMatch(/padding\s*:\s*4px 12px/)
+  })
+
+  it('keeps the screenshot openable and the menu thumb-sized', async () => {
+    mockFetch([row({ slot_screenshot_proof: { url: '/media/x.png', original_name: 'invite.png' } })])
+    await renderPanel()
+    await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
+
+    // Smaller, not gone: the thumbnail is still the button that opens the
+    // full screenshot, and the row menu keeps its 44px target.
+    expect(screen.getByTitle('View booking screenshot for Asha Rao')).toBeInTheDocument()
+    // The last phone-scoped rule wins: an earlier 700px block sizes it 86x50.
+    const thumb = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-slot-shot-thumb')).at(-1)
+    expect(thumb.body).toMatch(/width\s*:\s*64px/)
+    expect(thumb.body).toMatch(/height\s*:\s*40px/)
+    const menu = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-row-menu__trigger'))
+    expect(menu.some(r => /min-height\s*:\s*44px/.test(r.body))).toBe(true)
+  })
+
+  it('leaves the note readable rather than shortening it', async () => {
+    const remark = 'Panel asked to move it to the afternoon slot.'
+    mockFetch([row({ interview_attendance_remark: remark })])
+    await renderPanel()
+
+    expect(await screen.findByText(remark)).toBeInTheDocument()
+    const notes = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-interview-notes-text'))
+    expect(notes.some(r => /max-width\s*:\s*none/.test(r.body)), 'the note must not be capped').toBe(true)
+  })
+})
+
+describe('the candidate line', () => {
+  it('groups the name with the number in both tables', () => {
+    // One box to lay out, so a phone can keep them together and wrap the
+    // booking source underneath instead of squeezing three things onto a line.
+    expect((ROSTER.match(/ops-interview-identity/g) || []).length).toBe(2)
+    const identity = ROSTER.indexOf('ops-interview-identity')
+    expect(ROSTER.slice(identity, identity + 260)).toMatch(/<strong>\{row\.name\}<\/strong>/)
+    expect(ROSTER.slice(identity, identity + 260)).toMatch(/ops-interview-phone/)
+  })
+
+  it('renders that group around the name and phone', async () => {
+    await renderPanel()
+    await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
+
+    const identity = document.querySelector('.ops-interview-row .ops-interview-identity')
+    expect(identity.querySelector('strong').textContent).toBe('Asha Rao')
+    expect(identity.querySelector('.ops-interview-phone').textContent).toBe('9000000001')
+    // The source chip is a sibling of the group, free to wrap below it.
+    expect(identity.parentElement.querySelector('.ops-booking-source')).not.toBeNull()
+    expect(identity.querySelector('.ops-booking-source')).toBeNull()
+  })
+
+  it('is invisible to the desktop layout', () => {
+    // `display:contents` means the wrapper is not laid out at all, so a laptop
+    // renders exactly the two boxes it rendered before this element existed.
+    const base = ALL.filter(r => r.selector.trim() === '.ops-interview-identity')
+    const unscoped = base.filter(r => r.media === null)
+    expect(unscoped.length, 'the wrapper needs a base rule that erases it').toBe(1)
+    expect(unscoped[0].body).toMatch(/display\s*:\s*contents/)
+    for (const rule of base.filter(r => r.media !== null)) {
+      expect(phoneOnly(rule.media), `${rule.media} reaches a desktop`).toBe(true)
+    }
   })
 })
 

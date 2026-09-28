@@ -87,6 +87,10 @@
 .ops-interview-time{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600;color:#fbbf24}
 .ops-interview-date{font-variant-numeric:tabular-nums;white-space:nowrap;color:#cbd5e1;font-weight:600}
 .ops-interview-phone{display:block;font-size:12px;color:#94a3b8;margin-top:2px}
+/* Name + number, grouped for the phone card. `display:contents` means the
+   wrapper is not laid out at all here: the desktop sees the same two boxes
+   inside the cell that it saw before this element existed. */
+.ops-interview-identity{display:contents}
 .ops-interview-attended-check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;-webkit-user-select:none;user-select:none}
 .ops-interview-attended-check input{width:16px;height:16px;accent-color:#6366f1}
 .ops-interview-by{display:block;font-size:11px;color:#64748b;margin-top:4px}
@@ -1987,5 +1991,108 @@
     white-space: normal;
     overflow: visible;
     text-overflow: clip;
+  }
+}
+
+/* ── Phone, second pass: the strip scrolls and the card stops being a page ──
+   Measured at 440px and 390px. Desktop is out of scope by construction: every
+   rule is inside the phone breakpoint.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* The period tabs are a strip that scrolls, never two rows. Wrapping put
+     All unresolved on a line of its own; not wrapping, without a scroll, cut
+     it off at the right edge. The panel keeps the selected one in view. */
+  /* The strip could not scroll because it was never narrow enough to need to:
+     a flex item's default `min-width:auto` held the period group at the width
+     of its five tabs (404px inside a 354px box), and `.ops-roster-controls`
+     clips what overflows it. So the last tab was simply cut off. Letting the
+     group shrink is what turns the overflow into a scroll. */
+  .ops-roster-controls__range .ops-roster-control-group--period {
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .ops-roster-controls .ops-date-range__presets {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    min-width: 0;
+    max-width: 100%;
+    gap: 6px;
+  }
+
+  .ops-roster-controls .ops-date-range__presets::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ops-roster-controls .ops-date-range__preset {
+    flex: 0 0 auto;
+    min-height: 36px;
+  }
+
+  /* A card was 519px tall: ten rows of label-and-value, each padded as though
+     it were a table cell, and a thumbnail sized for a desktop column. Nothing
+     is dropped -- the rows are simply the height of what is in them. */
+  .ops-dash-table-wrap.ta-table-responsive--cards td,
+  .ops-interview-table-wrap .ops-interview-table td {
+    padding: 4px 12px;
+  }
+
+  .ops-slot-shot-cell .ops-slot-shot-thumb {
+    width: 64px;
+    height: 40px;
+  }
+
+  .ops-interview-notes-cell {
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+    line-height: 1.35;
+  }
+
+  .ops-interview-notes-cell .ops-feedback-pill {
+    flex: 0 0 auto;
+  }
+
+  .ops-interview-notes-text {
+    flex: 1 1 140px;
+    font-size: 12.5px;
+  }
+
+  /* The menu keeps its 44px target; the row around it does not need to be
+     taller than the button. */
+  .ops-dash-attend-cell {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  /* Name and number read as one thing and stay on one line; the booking
+     source drops beneath them rather than sharing their line or being
+     clipped. */
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label=Candidate],
+  .ops-interview-table-wrap .ops-interview-table td[data-label=Candidate] {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .ops-interview-identity {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .ops-interview-identity .ops-interview-phone {
+    margin-top: 0;
+  }
+
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label=Candidate] .ops-booking-source,
+  .ops-interview-table-wrap .ops-interview-table td[data-label=Candidate] .ops-booking-source {
+    flex: 0 0 auto;
+    margin-left: 0;
   }
 }

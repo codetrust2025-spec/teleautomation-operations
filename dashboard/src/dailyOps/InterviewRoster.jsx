@@ -636,8 +636,15 @@ export function InterviewRoster({
                             {[row.time, row.time_end].filter(Boolean).map(formatClockTime).join(' – ') || '—'}
                           </td>
                           <td data-label="Candidate">
-                            <strong>{row.name}</strong>
-                            {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
+                            {/* Name and number are one thing to read, so they are one
+                                box to lay out: on a phone they stay together and the
+                                booking-source chip wraps under them instead of being
+                                squeezed onto their line. `display:contents` keeps this
+                                wrapper out of the desktop's layout entirely. */}
+                            <span className="ops-interview-identity">
+                              <strong>{row.name}</strong>
+                              {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
+                            </span>
                             <span
                               className={`ops-booking-source ops-booking-source--${bookingSource.tone}`}
                               title={bookingSource.title}
@@ -747,8 +754,10 @@ export function InterviewRoster({
                               {[row.time, row.time_end].filter(Boolean).map(formatClockTime).join(' – ') || '—'}
                             </td>
                             <td data-label="Candidate">
-                              <strong>{row.name}</strong>
-                              {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
+                              <span className="ops-interview-identity">
+                                <strong>{row.name}</strong>
+                                {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
+                              </span>
                               <span
                                 className={`ops-booking-source ops-booking-source--${bookingSource.tone}`}
                                 title={bookingSource.title}

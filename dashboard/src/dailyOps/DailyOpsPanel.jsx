@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { API } from '../config.js'
 import { STATUS_TABS } from './interviewStatuses.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -125,6 +125,10 @@ export function DailyOpsPanel({
   // forgotten ones are precisely the ones outside every range worth picking.
   const [unresolvedOnly, setUnresolvedOnly] = useState(false)
   const [globalStats, setGlobalStats] = useState(null)
+  // On a phone the period tabs are a scrolling strip, so the one that is
+  // selected can sit off the right edge — All unresolved, being last, always
+  // did. Nothing scrolls on a desktop, where the whole row fits.
+  const presetsRef = useRef(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [rosterCounts, setRosterCounts] = useState(null)
@@ -235,6 +239,14 @@ export function DailyOpsPanel({
 
   useEffect(() => { loadGlobal() }, [loadGlobal])
 
+  // `nearest` scrolls only when the tab is actually out of view, and only the
+  // strip: a desktop, where nothing overflows, never moves. Optional call
+  // because jsdom has no scrollIntoView.
+  useEffect(() => {
+    presetsRef.current?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' })
+  }, [rangePreset, unresolvedOnly])
+
   // The status tabs describe the rows on screen, so they read the roster's own
   // tally. globalStats is a summary over a whole date range and ignores the
   // status filter, which is why the Pending tab could say 8 above a table of
@@ -307,7 +319,7 @@ export function DailyOpsPanel({
         <div className="ops-roster-controls__range">
         <div className="ops-roster-control-group ops-roster-control-group--period">
         <span className="ops-roster-control-group__label">Period</span>
-        <div className="ops-date-range__presets" role="tablist" aria-label="Date range">
+        <div className="ops-date-range__presets" role="tablist" aria-label="Date range" ref={presetsRef}>
           {PRESETS.map(preset => (
             <button
               key={preset.id}
