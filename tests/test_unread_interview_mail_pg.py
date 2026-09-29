@@ -42,6 +42,13 @@ END:VCALENDAR
 """
 
 
+#: A foreign key and whatever it does on delete. `mailbox_messages` points at a
+#: table these tests do not build, and dropping the reference while leaving its
+#: `ON DELETE CASCADE` behind is a syntax error, not a table.
+FOREIGN_KEY = re.compile(r"\s+REFERENCES\s+\w+\s*\(\w+\)(?:\s+ON\s+(?:DELETE|UPDATE)\s+(?:CASCADE|RESTRICT|"
+                         r"NO\s+ACTION|SET\s+(?:NULL|DEFAULT)))*", re.I)
+
+
 def table_ddl(migration: str, table: str) -> list[str]:
     """One CREATE TABLE from its migration, without the foreign keys."""
     ddl = (MIGRATIONS / migration).read_text()
@@ -50,7 +57,7 @@ def table_ddl(migration: str, table: str) -> list[str]:
     for index in range(start, len(ddl)):
         depth += (ddl[index] == "(") - (ddl[index] == ")")
         if depth == 0 and ddl[index] == ")":
-            return [re.sub(r"\s+REFERENCES\s+\w+\(\w+\)", "", ddl[start:index + 1]) + ";"]
+            return [FOREIGN_KEY.sub("", ddl[start:index + 1]) + ";"]
     raise AssertionError(f"{table} is never closed")
 
 
