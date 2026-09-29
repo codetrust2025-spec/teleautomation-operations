@@ -16,7 +16,7 @@ export const TRACKED_CLASSIFICATIONS = [
   "joining_date_updated", "onboarding_started", "background_verification",
   "document_verification", "compensation_confirmation",
   "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
-  "interview_cancelled", "candidate_rejected",
+  "interview_cancelled", "candidate_rejected", "interview_needs_reading",
 ];
 // Tracked categories for the compact notification-type filter.
 const JOB_CONFIRMED_CLASSIFICATIONS = [
@@ -28,7 +28,9 @@ const JOB_CONFIRMED_CLASSIFICATIONS = [
 ];
 const AUTO_BOOKING_CLASSIFICATIONS = [
   "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
-  "interview_cancelled",
+  // An interview mail the reader could not read is interview work too, and
+  // the server groups it here (INTERVIEW_RELATED_CLASSIFICATIONS).
+  "interview_cancelled", "interview_needs_reading",
 ];
 
 // The Selection view is the grouped one. Named rather than spelled inline so

@@ -10,6 +10,7 @@ from services.gmail_mailbox_provider import (
     encrypt_credentials,
 )
 from services.recruitment_mail_agent import process_message
+from services.unread_interview_mail import surface_unread_interview_mail
 
 logger=logging.getLogger('teleautomation.recruitment_mail_worker')
 
@@ -220,6 +221,17 @@ class RecruitmentMailWorker:
             except Exception:
                 store.schedule_ai_retry(row['id'],succeeded=False)
                 logger.exception('AI retry failed message_id=%s',row['id'])
+        # Giving up on a mail is not the same as deciding it is nothing. A mail
+        # parked here with a calendar event or a meeting room in it is an
+        # interview nobody has been told about, so it is written into Mail
+        # Alerts for a person to read. Runs after the retries, so a mail only
+        # surfaces once its own attempts are actually spent.
+        try:
+            surfaced=surface_unread_interview_mail()
+            if surfaced:
+                logger.info('Surfaced %d unread interview mail(s) for review',len(surfaced))
+        except Exception:
+            logger.exception('Unable to surface unread interview mail')
     def process_job(self,job):
         mailbox=store.mailbox_by_id(job['mailbox_id']);counts={'fetched':0,'processed':0,'events':0}
         if not mailbox:store.finish_job(job['id'],status='FAILED',error='Mailbox not found');return

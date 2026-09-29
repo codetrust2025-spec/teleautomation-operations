@@ -29,7 +29,9 @@ export const SELECTION_CLASSIFICATIONS = [
 /** Interview slot movement — booked, moved or dropped. */
 export const INTERVIEW_BOOKING_CLASSIFICATIONS = [
   'interview_shortlisted', 'interview_confirmed', 'interview_rescheduled',
-  'interview_cancelled',
+  // An interview mail the reader gave up on. It sounds like the rest: nobody
+  // is coming back to it, so the only thing that reaches a person is this.
+  'interview_cancelled', 'interview_needs_reading',
 ]
 
 const ALERT_CLASSIFICATIONS = new Set([

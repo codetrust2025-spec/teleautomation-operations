@@ -4,13 +4,16 @@ from pathlib import Path
 
 
 def test_every_requested_classification_is_stable():
+    # `interview_needs_reading` was added on 29 Sep 2026: an interview mail the
+    # reader gave up on, filed for a person instead of vanishing. It is not
+    # `ai_retry_pending`, which promises an attempt that is no longer coming.
     assert store.CANONICAL_CLASSIFICATIONS == {
         'job_selection_confirmed','offer_received','offer_accepted','offer_declined',
         'offer_revoked','joining_confirmed','joining_date_updated','onboarding_started',
         'background_verification','document_verification','compensation_confirmation',
         'interview_update','interview_shortlisted','interview_confirmed','interview_rescheduled',
             'interview_cancelled','candidate_rejected','ai_retry_pending','not_relevant',
-        'final_round_cleared','hr_confirmation',
+        'final_round_cleared','hr_confirmation','interview_needs_reading',
     }
 
 

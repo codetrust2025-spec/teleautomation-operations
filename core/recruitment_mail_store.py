@@ -31,6 +31,10 @@ CANONICAL_CLASSIFICATIONS = {
     "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
     "interview_cancelled", "candidate_rejected",
     "not_relevant", "ai_retry_pending", "final_round_cleared", "hr_confirmation",
+    # A mail the reader gave up on that plainly describes an interview. Not
+    # `ai_retry_pending`: that one means another attempt is coming, and for
+    # these there is none -- a person has to read it.
+    "interview_needs_reading",
 }
 
 # Mail Monitoring Notifications track only auto interview slot booking and
@@ -45,6 +49,13 @@ TRACKED_NOTIFICATION_CLASSIFICATIONS = {
     "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
     "interview_cancelled",
     "final_round_cleared", "hr_confirmation",
+    # An interview mail the reader could not read. Tracked because the
+    # alternative is what happened to three of one candidate's interviews in
+    # September: the pipeline gave up on the invitations, wrote the analysis,
+    # and told nobody -- no alert, no booking, no row anywhere a person looks.
+    # Only mail carrying real interview evidence is ever filed under it
+    # (`services.unread_interview_mail`), so it is a short queue, not a dump.
+    "interview_needs_reading",
 }
 # candidate_rejected is deliberately absent. A rejection is an outcome to
 # record, not something to interrupt an administrator for: it needs no action,
@@ -60,6 +71,9 @@ TRACKED_NOTIFICATION_CLASSIFICATIONS = {
 INTERVIEW_RELATED_CLASSIFICATIONS = {
     "interview_shortlisted", "interview_confirmed",
     "interview_rescheduled", "interview_cancelled",
+    # An unread interview invitation is interview work, and belongs with the
+    # interviews rather than in a group of its own.
+    "interview_needs_reading",
 }
 SELECTION_RELATED_CLASSIFICATIONS = (
     TRACKED_NOTIFICATION_CLASSIFICATIONS - INTERVIEW_RELATED_CLASSIFICATIONS
@@ -136,6 +150,7 @@ _CLASSIFICATION_STATUS = {
     "interview_confirmed": "Interview Confirmed",
     "interview_rescheduled": "Interview Rescheduled",
     "interview_cancelled": "Interview Cancelled",
+    "interview_needs_reading": "Needs reading",
     "candidate_rejected": "Rejected",
     "needs_review": "AI Retry Pending",
     "ai_retry_pending": "AI Retry Pending",
@@ -3196,6 +3211,77 @@ def release_booking_claims(candidate_id: str, *, reason: str = "slot_removed") -
             len(released), target, reason,
         )
     return len(released)
+
+
+#: Where a message stops for good: the reader has given up on it.
+#:
+#: `claim_ai_messages` parks a message here once its attempts are spent, and
+#: the deterministic verdicts (the evidence guard, unresolved relevance) are
+#: parked after two. Nothing moves it afterwards.
+TERMINAL_AI_STATUSES = ("AI_PROCESSING_FAILED",)
+
+
+def unread_interview_candidates(*, since, limit: int = 200) -> list[dict[str, Any]]:
+    """Mail the reader gave up on that nothing has told anybody about.
+
+    The message, its analysis and its attachments, for the caller to judge
+    (`services.unread_interview_mail`). Bounded by `since` against the park,
+    not the send date: a mail that arrives today and is parked today is the
+    case this exists for, and an old backlog is a separate decision.
+    """
+    placeholders = ", ".join("%s" for _ in TERMINAL_AI_STATUSES)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(f"""SELECT m.id, m.provider_message_id, m.provider_thread_id, m.mailbox_id,
+                  m.candidate_id, m.sender_name, m.sender_email, m.recipient_email, m.subject,
+                  m.sent_at, m.body_text, m.html_body_text, m.ai_last_error_code, m.ai_retry_count,
+                  m.updated_at, a.id AS analysis_id, a.reason AS analysis_reason
+              FROM mailbox_messages m
+              LEFT JOIN mail_ai_analyses a ON a.mailbox_message_id = m.id
+              WHERE m.processing_status IN ({placeholders})
+                AND m.updated_at >= %s
+                AND COALESCE(m.message_direction, '') <> 'OUTBOUND'
+                AND NOT EXISTS (SELECT 1 FROM mail_monitoring_notifications n
+                                WHERE n.gmail_message_id = m.provider_message_id)
+              ORDER BY m.sent_at DESC
+              LIMIT %s""", (*TERMINAL_AI_STATUSES, since, max(1, min(int(limit), 500))))
+        return _rows(cur)
+
+
+def record_unread_interview_alert(
+    message: dict[str, Any], *, evidence: str, reason_code: str = "",
+) -> dict[str, Any] | None:
+    """File an unread interview mail where an operator will see it.
+
+    Carries no event and no booking: nothing was decided about this mail, which
+    is the point of it. `UNIQUE(gmail_message_id, classification)` makes a
+    second attempt a no-op, so the surfacing pass is safe to run every cycle.
+    """
+    provider_id = str(message.get("provider_message_id") or "").strip()
+    if not provider_id:
+        return None
+    name, email = _candidate_snapshot(str(message.get("candidate_id") or ""), {})
+    summary = (
+        "The reader could not classify this mail, and it carries interview details: "
+        f"{evidence}. Open it and book the interview by hand if it is real."
+    )
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
+          gmail_message_id,gmail_thread_id,email_analysis_id,classification,candidate_status,
+          email_subject,sender_name,sender_email,email_received_at,ai_confidence,ai_summary,ai_reason,
+          recommended_action,priority,created_at,updated_at)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+          ON CONFLICT (gmail_message_id, classification) DO NOTHING RETURNING *""",
+          (_id(), str(message.get("candidate_id") or ""), name, email,
+           provider_id, message.get("provider_thread_id"), message.get("analysis_id"),
+           "interview_needs_reading", _CLASSIFICATION_STATUS["interview_needs_reading"],
+           message.get("subject"), message.get("sender_name"), message.get("sender_email"),
+           message.get("sent_at"), 0.0, summary[:1000],
+           str(reason_code or message.get("ai_last_error_code") or "AI_COULD_NOT_READ_THIS_MAIL")[:1000],
+           "Read the mail and book the interview by hand if it is real."[:1000],
+           # High: an interview nobody has seen may be tomorrow's.
+           "high"))
+        created = _rows(cur)
+    return created[0] if created else None
 
 
 def visible_rows_sql() -> tuple[str, list[Any]]:
