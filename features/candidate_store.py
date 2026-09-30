@@ -2337,6 +2337,7 @@ PENDING_WORK_LABELS = {
     "missing_reference": "Assign referrer",
     "missing_resume": "Upload resume",
     "payment_due": "Payment pending",
+    "missing_payment_proof": "Upload payment proof",
     "missing_follow_up": "Add follow-up remark",
     "missing_phone": "Add phone number",
 }
@@ -2344,6 +2345,7 @@ PENDING_WORK_LABELS = {
 PENDING_WORK_PRIORITY = {
     "missing_reference": 10,
     "missing_resume": 20,
+    "missing_payment_proof": 25,
     "payment_due": 30,
     "missing_follow_up": 35,
     "missing_phone": 50,
@@ -2399,9 +2401,19 @@ def _merge_profile_rows_for_pending(rows: list[dict]) -> dict:
         rep.get("reference"),
     )
     follow_up = next((r.get("follow_up") for r in rows if _clean_str(r.get("follow_up"))), "")
+    # A profile is unevidenced only if none of its slots holds an adjudicated
+    # proof: the proof may sit on a different slot from the representative.
+    group_proofs = payment_receipts.collect_proofs(
+        [partition_candidate_attachments(r) for r in rows]
+    )
     merged = {
         **rep,
         "payment": payment,
+        "recorded_payment": max(int(r.get("recorded_payment", r.get("payment")) or 0) for r in rows),
+        "payment_unevidenced": (
+            payment > 0 and not payment_receipts.has_proof_evidence(group_proofs)
+        ),
+        "proof_count": len({str(p.get("id")) for p in group_proofs}),
         "expected_payment": expected,
         "balance_due": max(0, expected - payment),
         "resume_count": len(merged_resumes),
@@ -2495,6 +2507,15 @@ def _pending_collections_from_rows(
     return pending_total, pending_count, pending_no_remark, by_ref
 
 
+def _payment_proof_missing(row: dict) -> bool:
+    recorded = int(row.get("recorded_payment", row.get("payment")) or 0)
+    if recorded <= 0:
+        return False
+    if row.get("payment_unevidenced"):
+        return True
+    return int(row.get("proof_count") or len(row.get("payment_proofs") or [])) == 0
+
+
 def _collect_pending_works_for_row(row: dict) -> list[dict]:
     works: list[dict] = []
     ref = (row.get("reference") or "").strip()
@@ -2504,6 +2525,11 @@ def _collect_pending_works_for_row(row: dict) -> list[dict]:
     if service_type != "round_wise" and int(row.get("resume_count") or len(row.get("resumes") or [])) == 0:
         works.append(_pending_work_item(kind="missing_resume", row=row))
     # Payment balance is enforced at slot booking — do not surface as pending work.
+    # A recorded amount with no proof behind it is different: money is claimed
+    # but nothing evidences it. It is the same condition the Candidates table
+    # badges "Recorded — proof missing", so the two must never disagree.
+    if _payment_proof_missing(row):
+        works.append(_pending_work_item(kind="missing_payment_proof", row=row))
     if not (row.get("phone") or "").strip():
         works.append(_pending_work_item(kind="missing_phone", row=row))
     return works
@@ -2518,11 +2544,15 @@ def _pending_works_core(rows: list[dict]) -> dict:
     ]
     profile_groups: dict[str, list[dict]] = {}
     round_rows: list[dict] = []
+    phones_by_name = _phones_by_name_key([
+        r for r in rows
+        if _normalise_service_type(r.get("service_type"), r) != "round_wise"
+    ])
     for row in rows:
         if _normalise_service_type(row.get("service_type"), row) == "round_wise":
             round_rows.append(row)
             continue
-        key = _normalise_candidate_name_key(row.get("name") or "")
+        key = _profile_group_key(row, phones_by_name)
         if not key:
             continue
         profile_groups.setdefault(key, []).append(row)

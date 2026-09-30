@@ -180,3 +180,42 @@ def test_detail_view_of_a_namesake_never_includes_the_other_persons_proofs(store
     detail = store.get_candidate_detail(mine)
     assert detail["payment"] == 10000
     assert [p["id"] for p in detail["payment_proofs"]] == ["p10"]
+
+
+# --- Pending Works: a recorded payment with no proof ---------------------------
+
+def kinds_for(store, name):
+    return [
+        w["kind"] for w in store.pending_works(month="all")["works"]
+        if w["candidate_name"] == name
+    ]
+
+
+def test_recorded_payment_without_any_proof_is_pending_work(store):
+    slot(store, name="Proof Missing", phone="9000000301", proofs=[], recorded=20000,
+         updated="2026-09-01T00:00:00+00:00")
+    assert "missing_payment_proof" in kinds_for(store, "Proof Missing")
+
+
+def test_a_proof_on_any_slot_of_the_profile_clears_it(store):
+    slot(store, name="Proof Elsewhere", phone="9000000302", proofs=[], recorded=20000,
+         updated="2026-09-09T00:00:00+00:00")
+    slot(store, name="Proof Elsewhere", phone="9000000302", proofs=[TWENTY], recorded=20000,
+         updated="2026-09-01T00:00:00+00:00")
+    assert "missing_payment_proof" not in kinds_for(store, "Proof Elsewhere")
+
+
+def test_nothing_recorded_is_not_a_missing_proof(store):
+    slot(store, name="Nothing Paid", phone="9000000303", proofs=[], recorded=0,
+         updated="2026-09-01T00:00:00+00:00")
+    assert "missing_payment_proof" not in kinds_for(store, "Nothing Paid")
+
+
+def test_a_namesake_with_a_proof_does_not_hide_the_missing_one(store):
+    slot(store, name="Shared Name", phone="9000000304", proofs=[TWENTY], recorded=20000,
+         updated="2026-09-01T00:00:00+00:00")
+    slot(store, name="Shared Name", phone="9000000305", proofs=[], recorded=20000,
+         updated="2026-09-02T00:00:00+00:00")
+    found = [w for w in store.pending_works(month="all")["works"]
+             if w["candidate_name"] == "Shared Name" and w["kind"] == "missing_payment_proof"]
+    assert len(found) == 1

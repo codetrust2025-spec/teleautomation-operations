@@ -25,6 +25,7 @@ import "./PendingWorksTab.css";
 const ACTIONS = {
   missing_resume: "Upload Resume",
   missing_phone: "Add Phone",
+  missing_payment_proof: "Upload Proof",
 };
 const DEFAULT_ACTION = "Edit Candidate";
 
