@@ -2124,6 +2124,59 @@ def _slim_list_row(row: dict) -> dict:
     return slim
 
 
+def _phones_by_name_key(rows: list[dict]) -> dict[str, set[str]]:
+    """Every distinct phone identity seen under each normalised name."""
+    phones: dict[str, set[str]] = {}
+    for row in rows:
+        name = " ".join((row.get("name") or "").strip().lower().split())
+        phone = candidate_phone_identity(row.get("phone"))
+        if name and phone:
+            phones.setdefault(name, set()).add(phone)
+    return phones
+
+
+def _profile_group_key(row: dict, phones_by_name: dict[str, set[str]]) -> str:
+    """Which profile a slot row belongs to, phone before name.
+
+    A phone number is something the candidate holds; a name is not, and two
+    people can share one. Rows that carry a phone group on it, so a spelling
+    difference does not split a candidate and a shared name does not join two.
+    A row with no phone can only fall back on its name, and does so onto the
+    phone group of that name only when the name maps to exactly one phone --
+    an ambiguous name stays a group of its own rather than picking a person.
+    """
+    name = " ".join((row.get("name") or "").strip().lower().split())
+    phone = candidate_phone_identity(row.get("phone"))
+    if phone:
+        return f"phone:{phone}"
+    if not name:
+        return ""
+    known = phones_by_name.get(name) or set()
+    if len(known) == 1:
+        return f"phone:{next(iter(known))}"
+    return f"name:{name}"
+
+
+def _recompute_group_payment(merged: dict, group: list[dict]) -> dict:
+    """Derive the collapsed row's money from the whole profile, not one slot.
+
+    Every slot of a profile carries the proofs it was booked with, and a proof
+    uploaded for a later slot is not copied back onto an earlier one. The
+    displayed row is the newest slot, so its received/outstanding/status used to
+    reflect only the proofs that slot happened to hold. The figures are now
+    derived from the union of the group's proofs and the recorded amount, and
+    every dependent field (status, allocation, commission) follows from that.
+    """
+    recorded = max(
+        int(r.get("recorded_payment", r.get("payment")) or 0) for r in group
+    )
+    controlled = any(_coerce_bool(r.get("payment_proof_controlled")) for r in group)
+    raw = dict(merged)
+    raw["payment"] = recorded
+    raw["payment_proof_controlled"] = controlled
+    return _with_computed(raw)
+
+
 def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) -> list[dict]:
     """Show one Candidates-page record per profile candidate.
 
@@ -2133,11 +2186,16 @@ def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) 
     """
     grouped: dict[str, list[dict]] = {}
     result: list[dict] = []
+    profile_rows = [
+        row for row in rows
+        if _normalise_service_type(row.get("service_type"), row) != "round_wise"
+    ]
+    phones_by_name = _phones_by_name_key(profile_rows)
     for row in rows:
         if _normalise_service_type(row.get("service_type"), row) == "round_wise":
             result.append(row)
             continue
-        key = " ".join((row.get("name") or "").strip().lower().split())
+        key = _profile_group_key(row, phones_by_name)
         if not key:
             result.append(row)
             continue
@@ -2155,11 +2213,6 @@ def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) 
             newest = max(group, key=lambda r: (r.get("updated_at") or "", r.get("date") or ""))
         merged = dict(newest)
         merged["slot_count"] = len(group)
-        # Use the max payment across all slot clones for this profile.
-        # Payment is recorded on one slot but the collapsed row should reflect it.
-        max_payment = max(int(r.get("payment") or 0) for r in group)
-        if max_payment > merged.get("payment", 0):
-            merged["payment"] = max_payment
         # A profile may have old interview-slot duplicates.  Keep its explicit
         # Ravinder referral instead of letting a newer duplicate (for example
         # one imported with Thrilok) replace it in the consolidated row.
@@ -2200,6 +2253,8 @@ def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) 
             merged["proof_count"] = len(all_proofs)
         if slot_proofs:
             merged["slot_screenshot_proofs"] = list(slot_proofs.values())
+        merged = _recompute_group_payment(merged, group)
+        merged["slot_count"] = len(group)
         result.append(merged)
     result.sort(key=lambda r: (r.get("date") or "", r.get("updated_at") or ""), reverse=True)
     return result
@@ -4293,14 +4348,19 @@ def get_candidate_detail(cid: str) -> dict | None:
         return None
     if _normalise_service_type(source.get("service_type"), source) == "round_wise":
         return source
-    key = _normalise_candidate_name_key(source.get("name") or "")
+    profile_rows = [
+        row
+        for row in (_load().get("candidates") or [])
+        if _normalise_service_type(row.get("service_type"), row) != "round_wise"
+    ]
+    phones_by_name = _phones_by_name_key(profile_rows)
+    key = _profile_group_key(source, phones_by_name)
     if not key:
         return source
     rows = [
         _with_computed(row)
-        for row in (_load().get("candidates") or [])
-        if _normalise_service_type(row.get("service_type"), row) != "round_wise"
-        and _normalise_candidate_name_key(row.get("name") or "") == key
+        for row in profile_rows
+        if _profile_group_key(row, phones_by_name) == key
     ]
     collapsed = _collapse_profile_candidates(rows)
     return collapsed[0] if collapsed else source

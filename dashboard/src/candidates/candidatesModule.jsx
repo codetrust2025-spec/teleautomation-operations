@@ -2980,14 +2980,16 @@ export function CandidateEditModal({
             {l.payment_is_proof_derived && (
               <div className="cand-field cand-receipt-breakdown">
                 <span className="cand-receipt-line">
-                  Minimum expected <strong>{$n(l.expected_minimum ?? T)}</strong>
+                  {l.service_type === "round_wise" ? "Minimum expected" : "Expected"}{" "}
+                  <strong>{$n(l.expected_minimum ?? T)}</strong>
                 </span>
                 <span className="cand-receipt-line">
                   Verified received <strong>{$n(l.verified_received ?? k)}</strong>
                 </span>
                 {(l.above_minimum ?? 0) > 0 && (
                   <span className="cand-receipt-line cand-receipt-line--over">
-                    Above minimum <strong>{$n(l.above_minimum)}</strong>
+                    {l.service_type === "round_wise" ? "Above minimum" : "Excess payment"}{" "}
+                    <strong>{$n(l.above_minimum)}</strong>
                   </span>
                 )}
                 <span className="cand-receipt-line">
