@@ -17,7 +17,7 @@ import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
-import { ReconnectWorklist } from './ReconnectWorklist.jsx'
+import { ReconnectWorklist, ago, reminderSummary } from './ReconnectWorklist.jsx'
 import {
   GMAIL_GRANT_DAYS,
   grantDaysRemaining,
@@ -257,5 +257,81 @@ describe('how it is wired into the page', () => {
   it('reuses the existing reconnect action', () => {
     const block = panel.slice(panel.indexOf('<ReconnectWorklist'))
     expect(block.slice(0, 200)).toContain('onAction={mailboxAction}')
+  })
+})
+
+describe('the automatic reminder status', () => {
+  const broken = [row('Asha', 'asha@example.test', 9, { broken: true })]
+  const notice = {
+    mailbox_id: 'mb-Asha',
+    detected_at: daysAgo(2),
+    last_notified_at: daysAgo(1),
+    notice_count: 3,
+    next_notice_at: '2026-09-10T03:30:00Z',
+    link: 'https://ops.example.test/api/candidate-mailboxes/reconnect/tok',
+  }
+  const automation = {
+    enabled: true,
+    open_count: 1,
+    resolved_7d: 4,
+    last_digest_at: '2026-09-09T05:30:00Z',
+    notices: [notice],
+  }
+
+  it('says how long ago an account was detected, how often the team was told, and what is next', () => {
+    const text = reminderSummary(notice, NOW)
+    expect(text).toContain('Detected 2 days ago')
+    expect(text).toContain('team told 3×')
+    expect(text).toContain('next reminder')
+    expect(text).toContain('IST')
+  })
+
+  it('says so plainly when the team has not been told yet', () => {
+    expect(reminderSummary({ ...notice, notice_count: 0 }, NOW)).toContain('team not told yet')
+    expect(reminderSummary(undefined, NOW)).toBe('Waiting for the next check')
+  })
+
+  it('counts minutes, hours and days', () => {
+    expect(ago(new Date(NOW - 5 * 60000).toISOString(), NOW)).toBe('5 min ago')
+    expect(ago(new Date(NOW - 5 * 3600000).toISOString(), NOW)).toBe('5 h ago')
+    expect(ago(daysAgo(3), NOW)).toBe('3 days ago')
+    expect(ago('', NOW)).toBe('')
+  })
+
+  it('shows the banner, the history of each account and a copy-link control', () => {
+    render(<ReconnectWorklist rows={broken} busy={false} onAction={vi.fn()} automation={automation} />)
+    expect(screen.getByRole('status').textContent).toContain('Reminders are automatic')
+    expect(screen.getByRole('status').textContent).toContain('4 reconnected in the last 7 days')
+    expect(screen.getByRole('status').textContent).toContain('Only the Gmail account holder')
+    expect(screen.getByText(/team told 3×/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeTruthy()
+  })
+
+  it('copies the server-issued link, not one it builds itself', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(<ReconnectWorklist rows={broken} busy={false} onAction={vi.fn()} automation={automation} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
+    expect(writeText).toHaveBeenCalledWith(notice.link)
+  })
+
+  it('still offers the manual reconnect beside it', () => {
+    const onAction = vi.fn()
+    render(<ReconnectWorklist rows={broken} busy={false} onAction={onAction} automation={automation} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }))
+    expect(onAction).toHaveBeenCalledWith('reconnect', broken[0])
+  })
+
+  it('warns when reminders are switched off', () => {
+    render(<ReconnectWorklist rows={broken} busy={false} onAction={vi.fn()} automation={{ ...automation, enabled: false }} />)
+    expect(screen.getByRole('status').textContent).toContain('switched off')
+  })
+
+  it('renders exactly as before when the status has not loaded', () => {
+    render(<ReconnectWorklist rows={broken} busy={false} onAction={vi.fn()} />)
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByText('Reminders')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeTruthy()
   })
 })

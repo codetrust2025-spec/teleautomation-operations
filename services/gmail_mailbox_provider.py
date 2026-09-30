@@ -129,8 +129,11 @@ def decrypt_credentials(value: str) -> dict[str,Any]:
     from cryptography.fernet import Fernet
     return json.loads(Fernet(_secret_key()).decrypt(value.encode()).decode())
 
-def authorization_url(state: str, redirect_uri: str) -> str:
+def authorization_url(state: str, redirect_uri: str, login_hint: str = "") -> str:
     params={"client_id":os.environ["GOOGLE_OAUTH_CLIENT_ID"],"redirect_uri":redirect_uri,"response_type":"code","scope":GMAIL_SCOPE,"access_type":"offline","prompt":"consent","state":state,"include_granted_scopes":"false"}
+    # A hint only preselects which Google account to sign in to. Consent is still
+    # Google's own screen, and the callback still rejects any other account.
+    if login_hint: params["login_hint"]=login_hint
     return "https://accounts.google.com/o/oauth2/v2/auth?"+urllib.parse.urlencode(params)
 
 def exchange_code(code: str, redirect_uri: str) -> dict[str,Any]:

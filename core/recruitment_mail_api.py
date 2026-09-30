@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio, base64, functools, hashlib, hmac, json, logging, os, time
 from datetime import date, datetime, timedelta, timezone
 from fastapi import HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from core import recruitment_mail_store as store
 from core.dashboard_access import operator_profile, require_fleet_admin, assert_candidate_row_access
 from core.ai_gateway import AIGatewayError, chat_structured, configured_models, health as ollama_health
@@ -12,6 +12,7 @@ from core import ai_activity
 from core import ollama_nodes
 from core import gmail_watch
 from features import candidate_store
+from services import gmail_reconnect
 from services.gmail_mailbox_provider import authorization_url, exchange_code, encrypt_credentials, GmailMailboxProvider
 
 logger=logging.getLogger('teleautomation.recruitment_mail_api')
@@ -106,6 +107,40 @@ def install_recruitment_mail_routes(app):
         _guard();require_fleet_admin(request)
         rows=await asyncio.to_thread(_mailbox_overview_rows)
         return {'status':'ok','mailboxes':rows,'checked_at':datetime.now(timezone.utc)}
+    @app.get('/api/candidate-mailboxes/reconnect-status')
+    async def reconnect_status(request:Request):
+        """Each mailbox awaiting a reconnect, when it was detected and reminded."""
+        _guard();require_fleet_admin(request)
+        rows=await asyncio.to_thread(store.mailbox_health_rows)
+        payload=await asyncio.to_thread(gmail_reconnect.status_payload,rows,candidate_store.get_candidate)
+        return {'status':'ok',**payload,'checked_at':datetime.now(timezone.utc)}
+    def _reconnect_page(heading:str,detail:str,status:int=200)->HTMLResponse:
+        page=('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+              '<title>Gmail reconnect</title><style>body{font-family:system-ui,sans-serif;background:#0f1117;color:#e8eaf0;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px}'
+              'main{max-width:30rem;background:#181b24;border:1px solid #2a2f3d;border-radius:12px;padding:24px}h1{font-size:1.2rem;margin:0 0 8px}p{margin:0;color:#aab0c0;line-height:1.5}</style></head>'
+              f'<body><main><h1>{heading}</h1><p>{detail}</p></main></body></html>')
+        return HTMLResponse(page,status_code=status,headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'})
+    @app.get('/api/candidate-mailboxes/reconnect/{token}')
+    async def reconnect_link(token:str):
+        """Public by design: a signed, expiring link that opens Google's consent screen.
+
+        It grants nothing itself. It mints a fresh OAuth state for one mailbox and
+        sends the browser to Google, where the Gmail account holder must approve;
+        the callback then refuses any account other than the mailbox's own.
+        """
+        _guard();_require_oauth_config()
+        try:mailbox_id,email=gmail_reconnect.read_token(token)
+        except ValueError as exc:
+            return _reconnect_page('This link has expired' if 'expired' in str(exc) else 'This link is not valid','Ask the team for a new reconnect link.',400)
+        mb=await asyncio.to_thread(store.mailbox_by_id,mailbox_id)
+        if not mb or str(mb.get('email_address') or '').strip().lower()!=email or mb.get('connection_status')=='SUPERSEDED':
+            return _reconnect_page('Nothing to reconnect','This Gmail account is no longer being monitored.',404)
+        if mb.get('connection_status')=='CONNECTED' and not gmail_reconnect.needs_reconnect(mb):
+            return _reconnect_page('Already connected','This Gmail account is connected. No action is needed.')
+        redirect=str(os.getenv('GOOGLE_OAUTH_REDIRECT_URI') or '').strip()
+        if not redirect:return _reconnect_page('Reconnect is unavailable','Ask the team to reconnect this account from Operations.',503)
+        state=_state({'candidate_id':mb['candidate_id'],'email':email,'actor':'reconnect-link','redirect_uri':redirect,'via':'link'})
+        return RedirectResponse(authorization_url(state,redirect,login_hint=email),status_code=302,headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'})
     @app.post('/api/gmail/pubsub/push')
     async def gmail_pubsub_push(request:Request):
         """Acknowledge a Gmail mailbox-change envelope and queue History API sync."""
@@ -255,6 +290,12 @@ def install_recruitment_mail_routes(app):
             except Exception:logger.exception('Gmail watch registration failed mailbox_id=%s; polling fallback remains active',mb['id'])
         end=date.today();start=end-timedelta(days=29);job=store.enqueue_historical_rescan(mb['id'],requested_by=actor,range_start=start,range_end=end)
         store.audit(actor=actor,role='admin',action='POST_CONNECT_HISTORICAL_RESCAN_QUEUED',candidate_id=data['candidate_id'],source_id=job['id'],new={'range_start':start.isoformat(),'range_end':end.isoformat(),'prompt_version':'v3'})
+        # Reminders stop here, not at the next cycle: the account is connected.
+        for connected_id in {mb['id'],*[m['id'] for m in store.mailboxes_for_candidates(identity_ids) if str(m.get('email_address') or '').lower()==str(data['email']).lower()]}:
+            try:gmail_reconnect.mark_resolved(connected_id)
+            except Exception:logger.exception('Could not close the reconnect reminder for mailbox_id=%s',connected_id)
+        if data.get('via')=='link':
+            return _reconnect_page('Gmail reconnected','Thank you. Monitoring has resumed for this account. You can close this window.')
         return RedirectResponse('/?view=ai-recruitment&mailbox=connected')
     def _resolve_mailbox(candidate_id:str,body:dict|None=None)->dict|None:
         """Pick a specific mailbox by mailbox_id from body, else fall back to best."""

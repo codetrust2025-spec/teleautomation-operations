@@ -130,6 +130,9 @@ describe('operations backend routes are reachable from the UI', () => {
     /^\/docs/, /^\/webhook/, /^\/static/, /^\/favicon/, /^\/login$/, /^\/logout$/,
     /^\/auth\/login/, /^\/auth\/logout/, /\{full_path/,
     /oauth\/google\/callback/,   // provider redirect target, not fetched
+    // Opened from a message by the Gmail account holder, never fetched by the
+    // dashboard: a signed, expiring link that redirects to Google's consent screen.
+    /^\/api\/candidate-mailboxes\/reconnect\/\{token\}$/,
     /pubsub/,                    // Gmail push delivery endpoint
     // Read-only production runbook endpoint; deliberately not a dashboard
     // control, because reconciliation must never auto-repair live records.

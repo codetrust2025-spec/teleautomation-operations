@@ -49,6 +49,11 @@ _PUBLIC_EXACT = frozenset({
     # compares GMAIL_PUBSUB_VERIFICATION_TOKEN with hmac.compare_digest before
     # doing anything, exactly as /webhooks/whatsapp above does.
     "/api/gmail/pubsub/push",
+    # Where Google sends the account holder back after consent. A reconnect link
+    # is opened by the Gmail account holder, who has no dashboard session. The
+    # callback is not open: it rejects any `state` this service did not sign
+    # (and sign recently), and any Google account other than the mailbox's own.
+    "/api/candidate-mailboxes/oauth/google/callback",
     "/push/vapid-public-key",
     "/bookings/confirm",
     # Static pages that must be readable without an account: OAuth consent
@@ -64,6 +69,8 @@ _PUBLIC_PREFIXES = (
     "/assets/",
     "/call/join/",
     "/public/",
+    # Signed, expiring reconnect links; see gmail_reconnect.read_token.
+    "/api/candidate-mailboxes/reconnect/",
 )
 
 # First path segment for API routes (must stay in sync with server.py serve_spa).

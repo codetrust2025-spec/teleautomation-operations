@@ -8,6 +8,7 @@ import { ButtonContent, InlineLoader, OverlayLoader } from "../Loader.jsx";
 import { OcrToggle } from "./OcrToggle.jsx";
 import { PureOllamaToggle } from "./PureOllamaToggle.jsx";
 import { ReconnectWorklist } from "./ReconnectWorklist.jsx";
+import { useReconnectStatus } from "../hooks/useReconnectStatus.js";
 
 const request = async (path, options = {}) => {
   const isGet = !options.method || options.method === "GET";
@@ -1906,6 +1907,7 @@ export default function RecruitmentMailPanelRedesign() {
   const [timeline, setTimeline] = useState([]);
   const [search, setSearch] = useState("");
   const [mailboxListMode, setMailboxListMode] = useState("linked");
+  const reconnectAutomation = useReconnectStatus(mailboxListMode === "reconnect");
   const [showAddMailbox, setShowAddMailbox] = useState(false);
   const [newMailboxCandidateId, setNewMailboxCandidateId] = useState("");
   const [newMailboxEmail, setNewMailboxEmail] = useState("");
@@ -2788,6 +2790,7 @@ export default function RecruitmentMailPanelRedesign() {
                 rows={allRows}
                 busy={busy}
                 onAction={mailboxAction}
+                automation={reconnectAutomation}
               />
             ) : mailboxListMode === "pending" ? (
               <PendingMailboxTable

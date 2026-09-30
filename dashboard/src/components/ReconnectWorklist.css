@@ -111,3 +111,37 @@
     font-weight: 700;
   }
 }
+
+/* Automatic reminder status. */
+.sot-reconnect-automation {
+  margin: 0 0 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(50, 132, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(50, 132, 255, 0.08);
+  color: var(--sot-muted, #8da0bd);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sot-reconnect-automation.is-off {
+  border-color: rgba(255, 166, 43, 0.4);
+  background: rgba(255, 166, 43, 0.08);
+  color: #ffbe6a;
+}
+.sot-reconnect-reminders {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sot-muted, #8da0bd);
+}
+.sot-reconnect-table td .sot-reconnect-copy {
+  margin-left: 6px;
+  border-color: rgba(141, 160, 189, 0.4);
+  background: transparent;
+  color: var(--sot-muted, #8da0bd);
+}
+@media (max-width: 640px) {
+  .sot-reconnect-table td .sot-reconnect-copy {
+    margin: 6px 0 0;
+  }
+}
