@@ -270,3 +270,20 @@ def test_another_persons_credit_is_never_released(store, monkeypatch, tmp_path):
     assert store.delete_proof("slot-1", "pf1") is True
 
     assert len(_live_credits(tmp_path)) == 1
+
+
+def test_reverifying_the_same_candidates_receipt_updates_its_payment_row(monkeypatch, tmp_path):
+    """The receipt was stored as UNKNOWN_RECEIVER; once the payee is recognisable
+    the same candidate's re-verification must leave the payment credited, or the
+    one-credit-per-payment rule could not see it."""
+    first = _verify(monkeypatch, _receiver_side(), entity="cand-b", image=b"recv")
+    assert first["verification_state"] == "UNKNOWN_RECEIVER"
+    _payer_side_then_released(monkeypatch)
+
+    again = _verify(monkeypatch, _receiver_side(), entity="cand-b", image=b"recv")
+
+    assert again["verification_state"] == "VERIFIED_COMPANY_PAYMENT"
+    mine = [p for p in _ledger(tmp_path)["payments"] if p["source_entity_id"] == "cand-b"]
+    assert [p["verification_state"] for p in mine] == ["VERIFIED_COMPANY_PAYMENT"]
+    third = _verify(monkeypatch, _payer_side(), entity="cand-c", image=b"payer-3")
+    assert third["verification_state"] == "DUPLICATE_PAYMENT", "the credit must now be visible"

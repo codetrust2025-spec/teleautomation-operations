@@ -1364,6 +1364,25 @@ def _record_verification_unlocked(
         sources = existing_payment.setdefault("source_modules", [])
         if source_module not in sources:
             sources.append(source_module)
+        if result.get("deterministic_verified") and not _credited_payment(existing_payment):
+            # Re-verifying the same candidate's evidence -- after the receiver
+            # became recognisable, say -- must update the payment it credits.
+            # Left as it was, the row stayed UNKNOWN_RECEIVER while a credit was
+            # posted against it, so the one-credit-per-payment rule could no
+            # longer see that this payment had been credited.
+            existing_payment.update({
+                "verification_state": result["verification_state"],
+                "reason_codes": list(result.get("reason_codes") or []),
+                "receiver_type": result.get("receiver_type") or "unknown",
+                "receiver_registry_id": result.get("receiver_registry_id") or "",
+                "receiver_registry_name": result.get("receiver_registry_name") or "",
+                "matched_account_id": result.get("receiver_registry_id") or "",
+                "matched_owner_type": str(result.get("receiver_type") or "").upper(),
+                "human_explanation": " ".join(result.get("deterministic_reasons") or []),
+                "confidence_score": int(result.get("confidence_score") or 0),
+                "verified_at": now,
+            })
+            existing_payment.pop("released_at", None)
         payment = existing_payment
     else:
         payment = {
