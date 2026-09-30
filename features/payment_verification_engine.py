@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from threading import RLock
-from typing import Any
+from typing import Any, Iterable
 
 from core.config import DATA_DIR
 from features import transaction_identity
@@ -1223,6 +1223,8 @@ def _credited_payment(payment: dict[str, Any] | None) -> bool:
     """True when a stored payment actually put money against its entity."""
     if not payment:
         return False
+    if payment.get("released_at"):
+        return False
     state = str(payment.get("verification_state") or "")
     if state in NON_CREDITING_VERIFICATION_STATES:
         return False
@@ -1558,6 +1560,111 @@ def _record_verification(**kwargs: Any) -> dict[str, Any]:
         return _record_verification_unlocked(**kwargs)
 
 
+def _transaction_references(result: dict[str, Any]) -> dict[str, str]:
+    return {
+        key: _norm_text(result.get(key)).replace(" ", "")
+        for key in ("transaction_id", "utr_number", "reference_number")
+        if _norm_text(result.get(key)).replace(" ", "")
+    }
+
+
+def receiver_established_by_transaction(result: dict[str, Any]) -> dict[str, Any] | None:
+    """The registered receiver of this very transaction, when it is already known.
+
+    A payment has one receiver. A receipt seen from the receiving side names the
+    payee only by a masked bank account ("XXXXXXXXXX00221"), which no registry
+    can match, so the same payment that was verified from the paying side --
+    "paid to J Ravinder", UPI handle visible -- read as an unknown receiver and
+    counted for nothing.
+
+    The receiver is taken from an earlier payment only when it is provably the
+    same transaction: a shared UTR or transaction id, the same amount, and the
+    same date where both receipts show one. The earlier payment must itself have
+    been verified against the registry. Who *owns* the payment is a separate
+    question and is still decided by the credit rules, so this can never credit
+    the same money twice.
+    """
+    references = _transaction_references(result)
+    amount_minor = _minor_units(result.get("amount"))
+    if not references or amount_minor <= 0:
+        return None
+    date = str(result.get("payment_date") or result.get("transaction_date") or "").strip()
+    wanted = set(references.values())
+    for payment in _load_ledger().get("payments") or []:
+        if str(payment.get("verification_state") or "") not in {
+            "VERIFIED_COMPANY_PAYMENT", "VERIFIED_REFERRER_PAYMENT",
+        }:
+            continue
+        if payment.get("receiver_type") not in {"company", "referrer"}:
+            continue
+        if not payment.get("receiver_registry_id"):
+            continue
+        if int(payment.get("amount_minor") or 0) != amount_minor:
+            continue
+        known = {str(v or "") for v in (payment.get("transaction_references") or {}).values()}
+        if not wanted.intersection(known - {""}):
+            continue
+        earlier = str(payment.get("transaction_date") or "").strip()
+        if date and earlier and date != earlier:
+            continue
+        return payment
+    return None
+
+
+def release_payment_credit(
+    *,
+    entity_ids: Iterable[str],
+    references: Iterable[str],
+    actor: str,
+    reason: str,
+) -> list[str]:
+    """Take back the credit of a payment whose proof no longer exists anywhere.
+
+    Deleting the only proof of a payment used to leave its ledger credit posted.
+    A payment credited to one candidate cannot be credited to another, so a
+    screenshot attached to the wrong person kept the money -- and blocked the
+    person who actually paid -- after the wrong attachment was removed.
+
+    Reversals are appended, never edited, and the payment is marked released so
+    it stops counting as credited. Its receiver stays on record: who the payee
+    was is a fact about the transaction, not about who it was credited to.
+    """
+    entities = {str(e) for e in entity_ids if str(e or "")}
+    wanted = {_norm_text(r).replace(" ", "") for r in references if _norm_text(r)}
+    wanted.discard("")
+    if not entities or not wanted:
+        return []
+    released: list[str] = []
+    with _lock:
+        data = _load_ledger()
+        for payment in data.get("payments") or []:
+            if str(payment.get("source_entity_id") or "") not in entities:
+                continue
+            if payment.get("released_at") or not _credited_payment(payment):
+                continue
+            known = {str(v or "") for v in (payment.get("transaction_references") or {}).values()}
+            if not wanted.intersection(known):
+                continue
+            payment_id = str(payment.get("payment_id") or "")
+            payment["released_at"] = _now()
+            payment["released_by"] = actor
+            payment["released_reason"] = reason
+            released.append(payment_id)
+        _save_ledger(data)
+    for payment_id in released:
+        for entry in list(_load_ledger().get("entries") or []):
+            if (
+                str(entry.get("payment_id") or "") == payment_id
+                and entry.get("status") == "posted"
+                and not entry.get("reversal_of_entry_id")
+                and entry.get("transaction_type") != "REVERSAL"
+            ):
+                reverse_ledger_entry(
+                    str(entry.get("ledger_entry_id") or ""), actor=actor, reason=reason,
+                )
+    return released
+
+
 def verify_payment_screenshot(
     image_data: bytes,
     mime_type: str = "image/jpeg",
@@ -1615,6 +1722,25 @@ def verify_payment_screenshot(
     )
     receiver = classify_receiver(result, referrer_hint=referrer_hint)
     result.update(receiver)
+    if (
+        result.get("receiver_type") == "unknown"
+        and result.get("receiver_identifier_present")
+        and not result.get("receiver_match_ambiguous")
+        and not result.get("receiver_identifier_conflict")
+    ):
+        known = receiver_established_by_transaction(result)
+        if known:
+            result.update({
+                "receiver_type": known["receiver_type"],
+                "receiver_registry_id": known["receiver_registry_id"],
+                "receiver_registry_name": known.get("receiver_registry_name") or "",
+                "receiver_match": "transaction",
+                "receiver_match_score": 100,
+                "receiver_identifier_complete": True,
+                "receiver_account_active": True,
+                "receiver_account_verified": True,
+                "receiver_established_by_payment": known.get("payment_id") or "",
+            })
     result["ollama_receiver_type"] = str((extraction or {}).get("receiver_type") or "unknown")
     result["source_module"] = source_module
     result["ocr_used"] = use_ocr
@@ -1659,7 +1785,7 @@ def verify_payment_screenshot(
     has_stable_receiver_match = (
         result.get("receiver_type") in {"company", "referrer"}
         and result.get("receiver_match") in {
-            "upi", "phone", "account", "masked_upi_alias",
+            "upi", "phone", "account", "masked_upi_alias", "transaction",
         }
         and int(result.get("receiver_match_score") or 0) >= 100
     )

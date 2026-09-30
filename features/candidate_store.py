@@ -8074,6 +8074,56 @@ def get_proof(cid: str, pid: str) -> tuple[str, dict] | None:
     return get_attachment(cid, pid, AttachmentType.PAYMENT_PROOF)
 
 
+def _release_credit_for_deleted_proof(cid: str, removed: dict) -> None:
+    """Take back the ledger credit of a payment once no proof of it remains.
+
+    The credit is looked for on every slot of the profile the proof was on,
+    because the ledger names whichever slot uploaded it. It is kept while any
+    row of the store still holds a proof of the same transaction. A failure here
+    must never block removing a wrong attachment, so it is logged and swallowed.
+    """
+    try:
+        from features import payment_verification_engine as pve
+
+        refs = [
+            str(removed.get(key) or "")
+            for key in ("utr_number", "transaction_id", "reference_number")
+            if str(removed.get(key) or "")
+        ]
+        if not refs:
+            return
+        wanted = {pve._norm_text(r).replace(" ", "") for r in refs}
+        rows = _load().get("candidates") or []
+        for row in rows:
+            for proof in partition_candidate_attachments(row)["payment_proofs"]:
+                held = {
+                    pve._norm_text(proof.get(key)).replace(" ", "")
+                    for key in ("utr_number", "transaction_id", "reference_number")
+                }
+                if wanted & (held - {""}):
+                    return
+        source = next((r for r in rows if r.get("id") == cid), None) or {}
+        profile_rows = [
+            r for r in rows
+            if _normalise_service_type(r.get("service_type"), r) != "round_wise"
+        ]
+        key = _profile_group_key(source, _phones_by_name_key(profile_rows)) if source else ""
+        entity_ids = {cid} | {
+            str(r.get("id")) for r in profile_rows
+            if key and _profile_group_key(r, _phones_by_name_key(profile_rows)) == key
+        }
+        pve.release_payment_credit(
+            entity_ids=entity_ids,
+            references=refs,
+            actor="system",
+            reason=f"Payment proof {removed.get('id')} deleted; no proof of this transaction remains.",
+        )
+    except Exception:  # noqa: BLE001 - never block deleting a wrong attachment
+        import logging
+
+        logging.getLogger(__name__).exception("could not release the credit of a deleted proof")
+
+
 def delete_proof(cid: str, pid: str) -> bool:
     """Remove a proof from the candidate + delete its file from disk.
     Also searches slot-clone rows with the same name in case proof was merged from another row."""
@@ -8091,11 +8141,12 @@ def delete_proof(cid: str, pid: str) -> bool:
                         os.remove(path)
                 except OSError:
                     pass
-                proofs.pop(i)
+                removed = proofs.pop(i)
                 target_row["payment_proofs"] = proofs
                 target_row["updated_at"] = _now_iso()
                 cdata["candidates"] = rows
                 _save(cdata)
+                _release_credit_for_deleted_proof(cid, removed)
                 recalculate_received_total(
                     cid,
                     trigger="proof_deleted",
@@ -8121,11 +8172,12 @@ def delete_proof(cid: str, pid: str) -> bool:
                             os.remove(path)
                     except OSError:
                         pass
-                    proofs.pop(i)
+                    removed = proofs.pop(i)
                     r["payment_proofs"] = proofs
                     r["updated_at"] = _now_iso()
                     cdata["candidates"] = rows
                     _save(cdata)
+                    _release_credit_for_deleted_proof(str(r["id"]), removed)
                     recalculate_received_total(
                         str(r["id"]),
                         trigger="proof_deleted",
