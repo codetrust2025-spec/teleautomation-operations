@@ -165,3 +165,32 @@ def test_main_installs_redaction_before_the_app_is_created():
     assert install_line is not None, "main.py never installs access-log redaction"
     assert app_line is not None, "main.py no longer assigns `app`"
     assert install_line < app_line, "redaction must be installed before the app exists"
+
+
+# --- a secret in the URL path: the Gmail reconnect link ---------------------------
+
+RECONNECT = "/api/candidate-mailboxes/reconnect/"
+TOKEN = "eyJwIjoiZ21haWwtcmVjb25uZWN0LXYxIn0.0123456789abcdef"
+
+
+def test_a_reconnect_token_in_the_path_is_redacted():
+    line = f'127.0.0.1:1 - "GET {RECONNECT}{TOKEN} HTTP/1.1" 302 Found'
+    assert TOKEN not in redact(line)
+    assert f"{RECONNECT}<redacted> HTTP/1.1" in redact(line)
+
+
+def test_the_access_record_shape_is_redacted_through_the_filter():
+    """Uvicorn passes the request line as an argument, not in the message."""
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1,
+        '%s - "%s %s HTTP/%s" %d', ("127.0.0.1:1", "GET", f"{RECONNECT}{TOKEN}", "1.1", 302), None,
+    )
+    assert QuerySecretRedactingFilter().filter(record) is True
+    assert TOKEN not in record.getMessage()
+    assert "<redacted>" in record.getMessage()
+
+
+def test_other_paths_are_left_alone():
+    line = 'GET /api/candidate-mailboxes/overview HTTP/1.1'
+    assert redact(line) == line
+    assert redact("GET /api/candidate-mailboxes/reconnect-status HTTP/1.1").endswith("reconnect-status HTTP/1.1")

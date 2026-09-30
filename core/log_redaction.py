@@ -35,14 +35,24 @@ _PATTERN = re.compile(
 
 REDACTED = r"\1<redacted>"
 
+# Secrets that ride in the URL *path* rather than the query. A Gmail reconnect
+# link is /api/candidate-mailboxes/reconnect/<signed token>; the token names the
+# mailbox and carries the account holder's address, so it must not reach the log.
+_SECRET_PATH = re.compile(r"(/api/candidate-mailboxes/reconnect/)[^\s\"'?#/]+")
+_PATH_MARKER = "/reconnect/"
+
 # Loggers that emit request lines.  uvicorn.access is the one that matters;
 # the others are cheap insurance if the server is ever run differently.
 _TARGET_LOGGERS = ("uvicorn.access", "gunicorn.access", "hypercorn.access")
 
 
 def redact(text: str) -> str:
-    """Replace the value of any secret-bearing query parameter."""
-    return _PATTERN.sub(REDACTED, text)
+    """Replace the value of any secret-bearing query parameter or path segment."""
+    return _SECRET_PATH.sub(REDACTED, _PATTERN.sub(REDACTED, text))
+
+
+def _worth_scanning(value: str) -> bool:
+    return "=" in value or _PATH_MARKER in value
 
 
 class QuerySecretRedactingFilter(logging.Filter):
@@ -53,16 +63,16 @@ class QuerySecretRedactingFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.msg, str) and "=" in record.msg:
+        if isinstance(record.msg, str) and _worth_scanning(record.msg):
             record.msg = redact(record.msg)
         args = record.args
         if isinstance(args, tuple):
             record.args = tuple(
-                redact(a) if isinstance(a, str) and "=" in a else a for a in args
+                redact(a) if isinstance(a, str) and _worth_scanning(a) else a for a in args
             )
         elif isinstance(args, dict):
             record.args = {
-                k: redact(v) if isinstance(v, str) and "=" in v else v
+                k: redact(v) if isinstance(v, str) and _worth_scanning(v) else v
                 for k, v in args.items()
             }
         return True
