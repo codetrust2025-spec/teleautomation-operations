@@ -309,3 +309,48 @@ describe("CandidatePaymentCell (Candidates list/card table cell)", () => {
     expect(container.querySelector(".cand-pay-zero").textContent).toBe("₹0");
   });
 });
+
+describe("a proof whose image was lost is not reported as never uploaded", () => {
+  const lost = {
+    payment: 20000,
+    expected_payment: 20000,
+    payment_proofs: [{ id: "legacy-1", attachment_type: "payment_proof", original_name: "old.jpg" }],
+    proof_count: 1,
+    verified_proof_count: 0,
+    payment_unevidenced: true,
+    payment_proof_files_lost: true,
+    payment_status: "paid",
+  };
+
+  it("the list cell says Proof file lost, keeps the amount, and is never green", () => {
+    const { container } = render(<CandidatePaymentCell row={lost} />);
+    const pill = container.querySelector(".cand-pay-pill");
+    expect(pill.className).toContain("cand-pay-pill--unevidenced");
+    expect(pill.textContent).toContain("Proof file lost");
+    expect(pill.textContent).not.toContain("proof missing");
+    expect(container.querySelector(".cand-pay-amount").textContent).toBe("₹20,000");
+    expect(container.querySelector(".cand-pay-pill--paid")).toBeNull();
+  });
+
+  it("the editor says the file is lost and that the amount is unchanged", () => {
+    const { container } = renderModal(lost);
+    const status = container.querySelector(".cand-pay-status");
+    expect(status.textContent).toContain("Recorded — proof file lost (₹20,000)");
+    const note = Array.from(container.querySelectorAll(".cand-receipt-missing")).find(
+      (node) => node.textContent.includes("no longer stored"),
+    );
+    expect(note).toBeTruthy();
+    expect(note.textContent).toContain("unchanged");
+  });
+
+  it("a candidate with no proof record at all still says proof missing", () => {
+    const { container } = render(
+      <CandidatePaymentCell
+        row={{ ...lost, payment_proofs: [], proof_count: 0, payment_proof_files_lost: false }}
+      />,
+    );
+    const pill = container.querySelector(".cand-pay-pill");
+    expect(pill.textContent).toContain("Recorded — proof missing");
+    expect(pill.textContent).not.toContain("file lost");
+  });
+});

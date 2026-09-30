@@ -1900,6 +1900,16 @@ def _with_computed(row: dict) -> dict:
     enriched["above_minimum"] = receipts["above_minimum"]
     enriched["payment_proof_status_counts"] = receipts["status_counts"]
     enriched["payment_unevidenced"] = receipts["unevidenced"]
+    # Proof records exist but not one image survives: distinct from never having
+    # uploaded anything, and the recorded amount is left exactly as it was.
+    enriched["payment_proof_files_lost"] = bool(
+        receipts["unevidenced"]
+        and attachments["payment_proofs"]
+        and not any(
+            _proof_file_present(str(row.get("id") or ""), proof)
+            for proof in attachments["payment_proofs"]
+        )
+    )
     enriched["payment_needs_reconciliation"] = receipts["needs_reconciliation"]
     enriched["payment_reconciliation_gap"] = receipts["reconciliation_gap"]
     payment_proofs = attachments["payment_proofs"]
@@ -2338,6 +2348,7 @@ PENDING_WORK_LABELS = {
     "missing_resume": "Upload resume",
     "payment_due": "Payment pending",
     "missing_payment_proof": "Upload payment proof",
+    "payment_proof_file_lost": "Proof file lost",
     "missing_follow_up": "Add follow-up remark",
     "missing_phone": "Add phone number",
 }
@@ -2346,6 +2357,7 @@ PENDING_WORK_PRIORITY = {
     "missing_reference": 10,
     "missing_resume": 20,
     "missing_payment_proof": 25,
+    "payment_proof_file_lost": 26,
     "payment_due": 30,
     "missing_follow_up": 35,
     "missing_phone": 50,
@@ -2414,6 +2426,14 @@ def _merge_profile_rows_for_pending(rows: list[dict]) -> dict:
             payment > 0 and not payment_receipts.has_proof_evidence(group_proofs)
         ),
         "proof_count": len({str(p.get("id")) for p in group_proofs}),
+        "payment_proof_files_lost": bool(
+            group_proofs
+            and not any(
+                _proof_file_present(str(r.get("id") or ""), proof)
+                for r in rows
+                for proof in group_proofs
+            )
+        ),
         "expected_payment": expected,
         "balance_due": max(0, expected - payment),
         "resume_count": len(merged_resumes),
@@ -2507,13 +2527,29 @@ def _pending_collections_from_rows(
     return pending_total, pending_count, pending_no_remark, by_ref
 
 
-def _payment_proof_missing(row: dict) -> bool:
+def _payment_proof_gap(row: dict) -> str:
+    """"" when the payment is evidenced, else why it is not.
+
+    "missing"   no proof record of any kind stands behind a recorded amount.
+    "file_lost" a proof was uploaded, but none of its images is still stored.
+    It is the same condition the Candidates table badges, so the two agree.
+    """
     recorded = int(row.get("recorded_payment", row.get("payment")) or 0)
     if recorded <= 0:
-        return False
-    if row.get("payment_unevidenced"):
-        return True
-    return int(row.get("proof_count") or len(row.get("payment_proofs") or [])) == 0
+        return ""
+    unevidenced = bool(row.get("payment_unevidenced")) or (
+        int(row.get("proof_count") or len(row.get("payment_proofs") or [])) == 0
+    )
+    if not unevidenced:
+        return ""
+    if row.get("payment_proof_files_lost"):
+        return "file_lost"
+    # A proof exists and its image is stored: it awaits review, it is not missing.
+    return "" if int(row.get("proof_count") or 0) > 0 else "missing"
+
+
+def _payment_proof_missing(row: dict) -> bool:
+    return _payment_proof_gap(row) == "missing"
 
 
 def _collect_pending_works_for_row(row: dict) -> list[dict]:
@@ -2528,8 +2564,11 @@ def _collect_pending_works_for_row(row: dict) -> list[dict]:
     # A recorded amount with no proof behind it is different: money is claimed
     # but nothing evidences it. It is the same condition the Candidates table
     # badges "Recorded — proof missing", so the two must never disagree.
-    if _payment_proof_missing(row):
+    gap = _payment_proof_gap(row)
+    if gap == "missing":
         works.append(_pending_work_item(kind="missing_payment_proof", row=row))
+    elif gap == "file_lost":
+        works.append(_pending_work_item(kind="payment_proof_file_lost", row=row))
     if not (row.get("phone") or "").strip():
         works.append(_pending_work_item(kind="missing_phone", row=row))
     return works
@@ -7507,6 +7546,33 @@ def _attachment_dir(cid: str, attachment_type: AttachmentType) -> str:
     return os.path.join(PROOFS_DIR, cid, attachment_type.value)
 
 
+def _proof_file_present(row_id: str, proof: dict) -> bool:
+    """Is the image behind this proof record still stored?
+
+    A record says an upload happened; it does not say the file survived. The
+    files written before the 25 Aug 2026 server move were never carried over,
+    so their records remain with nothing behind them. A slot row's copy of a
+    proof points at the row that owns the file, so both are looked in, and so is
+    the flat layout older uploads used. A durable evidence-store key counts.
+    """
+    if not isinstance(proof, dict):
+        return False
+    if proof.get("storage_key"):
+        return True
+    name = str(proof.get("filename") or "")
+    if not name:
+        return False
+    owners = {str(row_id or ""), str(proof.get("candidate_id") or "")} - {""}
+    for owner in owners:
+        folders = [_proof_dir(owner)] + [
+            _attachment_dir(owner, kind)
+            for kind in (AttachmentType.PAYMENT_PROOF, AttachmentType.SLOT_SCREENSHOT_PROOF)
+        ]
+        if any(os.path.isfile(os.path.join(folder, name)) for folder in folders):
+            return True
+    return False
+
+
 def _ext_from_mime(mime: str, fallback_name: str = "") -> str:
     mime = (mime or "").lower().split(";")[0].strip()
     if mime in _ALLOWED_MIME:
@@ -8124,6 +8190,38 @@ def _release_credit_for_deleted_proof(cid: str, removed: dict) -> None:
         logging.getLogger(__name__).exception("could not release the credit of a deleted proof")
 
 
+def _discard_proof_file(removed: dict, row_id: str, rows: list[dict]) -> None:
+    """Delete a proof's image only when no row still holds a record of it.
+
+    A profile's slot rows each carry a copy of the same proof, all pointing at
+    the one file its owning row stored. Removing the proof from one row used to
+    delete that file whatever the others held, leaving their copies with nothing
+    behind them. The file goes only with the last record.
+    """
+    proof_id = str(removed.get("id") or "")
+    if not proof_id:
+        return
+    for row in rows:
+        for proof in partition_candidate_attachments(row)["payment_proofs"]:
+            if str(proof.get("id")) == proof_id:
+                return
+    name = str(removed.get("filename") or "")
+    if not name:
+        return
+    owners = {row_id, str(removed.get("candidate_id") or "")} - {""}
+    for owner in owners:
+        for folder in (
+            _attachment_dir(owner, AttachmentType.PAYMENT_PROOF),
+            _proof_dir(owner),
+        ):
+            path = os.path.join(folder, name)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except OSError:
+                pass
+
+
 def delete_proof(cid: str, pid: str) -> bool:
     """Remove a proof from the candidate + delete its file from disk.
     Also searches slot-clone rows with the same name in case proof was merged from another row."""
@@ -8135,17 +8233,12 @@ def delete_proof(cid: str, pid: str) -> bool:
         proofs = list(target_row.get("payment_proofs") or [])
         for i, p in enumerate(proofs):
             if p.get("id") == pid:
-                path = os.path.join(_attachment_dir(cid, AttachmentType.PAYMENT_PROOF), p["filename"])
-                try:
-                    if os.path.exists(path):
-                        os.remove(path)
-                except OSError:
-                    pass
                 removed = proofs.pop(i)
                 target_row["payment_proofs"] = proofs
                 target_row["updated_at"] = _now_iso()
                 cdata["candidates"] = rows
                 _save(cdata)
+                _discard_proof_file(removed, cid, rows)
                 _release_credit_for_deleted_proof(cid, removed)
                 recalculate_received_total(
                     cid,
@@ -8166,17 +8259,12 @@ def delete_proof(cid: str, pid: str) -> bool:
             proofs = list(r.get("payment_proofs") or [])
             for i, p in enumerate(proofs):
                 if p.get("id") == pid:
-                    path = os.path.join(_attachment_dir(r["id"], AttachmentType.PAYMENT_PROOF), p["filename"])
-                    try:
-                        if os.path.exists(path):
-                            os.remove(path)
-                    except OSError:
-                        pass
                     removed = proofs.pop(i)
                     r["payment_proofs"] = proofs
                     r["updated_at"] = _now_iso()
                     cdata["candidates"] = rows
                     _save(cdata)
+                    _discard_proof_file(removed, str(r["id"]), rows)
                     _release_credit_for_deleted_proof(str(r["id"]), removed)
                     recalculate_received_total(
                         str(r["id"]),

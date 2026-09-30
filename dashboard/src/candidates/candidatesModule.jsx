@@ -2175,6 +2175,7 @@ function K8(e) {
       e.payment_unevidenced ??
       ((Number(e.payment) || 0) > 0 && normalizePaymentProofs(e).length === 0)
     ),
+    payment_proof_files_lost: !!e.payment_proof_files_lost,
     proof_count: e.proof_count ?? normalizePaymentProofs(e).length,
     expected_minimum: e.expected_minimum,
     verified_received: e.verified_received,
@@ -2319,6 +2320,7 @@ export function CandidateEditModal({
           paymentSummary.unevidenced != null
             ? !!paymentSummary.unevidenced
             : (Number(paymentSummary.received_total) || 0) > 0 && nextProofs.length === 0;
+        next.payment_proof_files_lost = !!paymentSummary.proof_files_lost;
         next.referral_commission =
           Number(paymentSummary.referral_commission) || 0;
         next.referral_percentage =
@@ -2339,6 +2341,7 @@ export function CandidateEditModal({
           candidate.payment_unevidenced != null
             ? !!candidate.payment_unevidenced
             : (Number(candidate.payment) || 0) > 0 && nextProofs.length === 0;
+        next.payment_proof_files_lost = !!candidate.payment_proof_files_lost;
         next.payment_is_proof_derived = !!candidate.payment_is_proof_derived;
         next.payment_needs_reconciliation =
           !!candidate.payment_needs_reconciliation;
@@ -3064,6 +3067,14 @@ export function CandidateEditModal({
                 })()}
               </div>
             )}
+            {l.payment_proof_files_lost && (
+              <div className="cand-field cand-receipt-missing">
+                A payment proof was uploaded, but its image is no longer stored
+                (files from before the 25 Aug server move were not carried
+                over). {$n(l.payment)} is the recorded figure and is unchanged;
+                upload the receipt again to evidence it.
+              </div>
+            )}
             {(l.payment ?? 0) > 0 && (l.proof_count ?? 0) === 0 && (
               <div className="cand-field cand-receipt-missing">
                 No payment proof on record. {$n(l.payment)} is the recorded
@@ -3075,7 +3086,10 @@ export function CandidateEditModal({
                 {E === "paid" && <s.Fragment>✓ Paid ({$n(k)})</s.Fragment>}
                 {E === "unevidenced" && (
                   <s.Fragment>
-                    ⚠ Recorded — proof missing ({k >= T ? $n(k) : `${$n(k)} / ${$n(T)}`})
+                    {l.payment_proof_files_lost
+                      ? "⚠ Recorded — proof file lost"
+                      : "⚠ Recorded — proof missing"}{" "}
+                    ({k >= T ? $n(k) : `${$n(k)} / ${$n(T)}`})
                   </s.Fragment>
                 )}
                 {E === "partial" && (
@@ -5621,11 +5635,19 @@ export function _Component27({ row: e, onViewProofs: t }) {
             className="cand-pay-pill cand-pay-pill--unevidenced"
             title={
               n < r
-                ? `${Ax(a)} due — Recorded manually, proof missing`
-                : "Recorded manually — proof missing"
+                ? `${Ax(a)} due — ${
+                    e.payment_proof_files_lost
+                      ? "a proof was uploaded but its image is no longer stored"
+                      : "Recorded manually, proof missing"
+                  }`
+                : e.payment_proof_files_lost
+                  ? "A proof was uploaded but its image is no longer stored. The recorded amount is unchanged."
+                  : "Recorded manually — proof missing"
             }
           >
-            ⚠ Recorded — proof missing
+            {e.payment_proof_files_lost
+              ? "⚠ Proof file lost"
+              : "⚠ Recorded — proof missing"}
           </span>
         </span>
       </div>

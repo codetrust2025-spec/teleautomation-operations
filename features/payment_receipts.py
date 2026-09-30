@@ -294,6 +294,7 @@ def api_summary(row: dict[str, Any]) -> dict[str, Any]:
         "payment_status": status or ("UNPAID" if received <= 0 else "PAID"),
         "proof_derived": bool(row.get("payment_is_proof_derived")),
         "unevidenced": bool(row.get("payment_unevidenced")),
+        "proof_files_lost": bool(row.get("payment_proof_files_lost")),
         "proof_count": max(0, int(row.get("proof_count") or 0)),
         "needs_reconciliation": bool(row.get("payment_needs_reconciliation")),
         "reconciliation_gap": max(0, int(row.get("payment_reconciliation_gap") or 0)),

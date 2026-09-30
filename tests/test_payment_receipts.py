@@ -304,6 +304,7 @@ def test_api_summary_matches_the_documented_response_shape():
         "payment_status": "PAID",
         "proof_derived": True,
         "unevidenced": False,
+        "proof_files_lost": False,
         "proof_count": 0,
         "needs_reconciliation": False,
         "reconciliation_gap": 0,
