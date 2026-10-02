@@ -20,7 +20,11 @@ import EarningsBreakdown from "./EarningsBreakdown.jsx";
 import "./EarningsBreakdown.css";
 import CompanyExpenditure from "./CompanyExpenditure.jsx";
 import "./CompanyExpenditure.css";
-import { normalizePaymentProofs } from "./paymentProofs.js";
+import {
+  dedupeProofsForDisplay,
+  normalizePaymentProofs,
+  proofPresentation,
+} from "./paymentProofs.js";
 import AiNodeProgress, {
   startAiAnalysis,
   useAiAnalysis,
@@ -118,6 +122,42 @@ function evidenceProblem(proof) {
   return BROKEN_EVIDENCE_STATES[proof?.file_availability] || "";
 }
 
+function ProofThumb({ proof, apiBase, onOpen }) {
+  // A screenshot whose file is gone (the files from before the 25 Aug server
+  // move were never carried over) must say so, not show the browser's broken
+  // image icon: the record, the amount and the status are still true.
+  const [failed, setFailed] = w.useState(false);
+  const src = `${apiBase}${proof.url}`;
+  w.useEffect(() => setFailed(false), [src]);
+  if (failed || isEvidenceBroken(proof)) {
+    return (
+      <div
+        className="cand-proof-thumb cand-proof-thumb--lost"
+        role="img"
+        aria-label="Screenshot unavailable"
+      >
+        <strong>Screenshot unavailable</strong>
+        <small>The stored image could not be loaded. The details below are unchanged.</small>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="cand-proof-thumb"
+      onClick={onOpen}
+      aria-label="Preview proof"
+    >
+      <img
+        src={src}
+        alt={proof.note || "payment proof"}
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </button>
+  );
+}
+
 export function PaymentProofUploader({
   candidateId: e,
   proofs: t = [],
@@ -133,6 +173,7 @@ export function PaymentProofUploader({
   const [x, v] = w.useState("");
   const [g, p] = w.useState(false);
   const [aiResult, setAiResult] = w.useState(null);
+  const [showDuplicates, setShowDuplicates] = w.useState(false);
   const [uploadJobs, setUploadJobs] = w.useState([]);
   const m = w.useRef(null);
   // `n` below is the same "busy" signal, but it is state: it stays false for
@@ -588,12 +629,26 @@ export function PaymentProofUploader({
   async function S(b) {
     var A;
     if (!e) return;
-    const ok = await window.__TA_CONFIRM_VALUE__?.confirm?.({
-      title: "Remove this proof?",
-      message: b.note || "This payment proof will be removed.",
-      confirmLabel: "Remove",
-      variant: "danger",
-    });
+    const pres = proofPresentation(b);
+    const facts = [
+      pres.amountText,
+      pres.reference.value && `${pres.reference.label} ${pres.reference.value}`,
+      Nx(b.uploaded_at) && `uploaded ${Nx(b.uploaded_at)}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const message = `${facts || b.note || "This payment proof"}. Deleting it recalculates the received total from the remaining verified proofs and cannot be undone.`;
+    // Never delete unconfirmed: if the app's confirm dialog is not mounted, the
+    // browser's own is used rather than skipping the question.
+    const ask = window.__TA_CONFIRM_VALUE__?.confirm;
+    const ok = ask
+      ? await ask({
+          title: "Delete this payment proof?",
+          message,
+          confirmLabel: "Delete proof",
+          variant: "danger",
+        })
+      : window.confirm(message);
     if (!ok) return;
     try {
       const ownerId = proofCandidateId(b, e);
@@ -777,16 +832,24 @@ export function PaymentProofUploader({
     }
     return () => document.removeEventListener("keydown", b);
   }, [u]);
+  // One card per underlying payment; copies stay reachable behind a toggle.
+  const { shown: uniqueProofs, hidden: duplicateProofs } = w.useMemo(
+    () => dedupeProofsForDisplay(t),
+    [t],
+  );
+  const hiddenProofIds = w.useMemo(
+    () => new Set(duplicateProofs.map((proof) => proof.id)),
+    [duplicateProofs],
+  );
+  const visibleProofs = showDuplicates ? t : uniqueProofs;
   return (
     <div className="cand-proofs">
       <div className="cand-proofs-header">
         <span className="cand-field-label">
-          Payment proofs<span className="cand-proofs-count">{t.length}</span>
+          Payment proofs<span className="cand-proofs-count">{uniqueProofs.length}</span>
         </span>
         {!_ && t.length > 0 && (
-          <span className="cand-proofs-hint">
-            Click a thumbnail to enlarge · drag to reorder is coming soon
-          </span>
+          <span className="cand-proofs-hint">Click a preview to enlarge</span>
         )}
       </div>
       {_ ? (
@@ -958,15 +1021,6 @@ export function PaymentProofUploader({
                           View
                         </button>
                       )}
-                      {job.status === "success" && (
-                        <button
-                          type="button"
-                          className="cand-btn cand-btn--xs cand-btn--ghost"
-                          onClick={() => m.current?.click()}
-                        >
-                          Replace
-                        </button>
-                      )}
                       {!active && (
                         <button
                           type="button"
@@ -1123,23 +1177,42 @@ export function PaymentProofUploader({
           </ol>
         </div>
       )}
-      {t.length > 0 && (
+      {visibleProofs.length > 0 && (
         <ul className="cand-proofs-grid">
-          {t.map((b) => (
-            <li className="cand-proof-card" key={b.id}>
-              <button
-                type="button"
-                className="cand-proof-thumb"
-                onClick={() => d(b)}
-                aria-label="Preview proof"
-              >
-                <img
-                  src={`${ve}${b.url}`}
-                  alt={b.note || "payment proof"}
-                  loading="lazy"
-                />
-              </button>
+          {visibleProofs.map((b) => {
+            const pres = proofPresentation(b);
+            const isDuplicate = hiddenProofIds.has(b.id);
+            return (
+            <li
+              className={`cand-proof-card${isDuplicate ? " cand-proof-card--duplicate" : ""}`}
+              key={b.id}
+              data-proof-id={b.id}
+            >
+              <ProofThumb proof={b} apiBase={ve} onOpen={() => d(b)} />
               <div className="cand-proof-meta">
+                <div className="cand-proof-headline">
+                  <strong className="cand-proof-amount">{pres.amountText}</strong>
+                  <span
+                    className={`cand-proof-status cand-proof-status--${pres.status.tone}`}
+                  >
+                    {pres.status.label}
+                  </span>
+                  {isDuplicate && (
+                    <span className="cand-proof-status cand-proof-status--muted">
+                      Duplicate upload
+                    </span>
+                  )}
+                </div>
+                <dl className="cand-proof-facts">
+                  <div>
+                    <dt>{pres.reference.label}</dt>
+                    <dd className="cand-proof-ref">{pres.reference.value || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Uploaded</dt>
+                    <dd>{Nx(b.uploaded_at) || "—"}</dd>
+                  </div>
+                </dl>
                 {f === b.id ? (
                   <div className="cand-proof-note-edit">
                     <input
@@ -1178,8 +1251,6 @@ export function PaymentProofUploader({
                   </button>
                 )}
                 <div className="cand-proof-sub">
-                  <span>{Nx(b.uploaded_at)}</span>
-                  <span>·</span>
                   <span>{kx(b.size)}</span>
                 </div>
                 {isEvidenceBroken(b) && (
@@ -1220,13 +1291,28 @@ export function PaymentProofUploader({
                 className="cand-proof-delete"
                 onClick={() => S(b)}
                 title="Delete proof"
-                aria-label="Delete proof"
+                aria-label={`Delete proof${pres.amount ? ` of ${pres.amountText}` : ""}`}
               >
                 ×
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
+      )}
+      {duplicateProofs.length > 0 && (
+        <p className="cand-proofs-duplicates">
+          {duplicateProofs.length === 1
+            ? "1 duplicate upload of a payment shown above is hidden."
+            : `${duplicateProofs.length} duplicate uploads of payments shown above are hidden.`}{" "}
+          <button
+            type="button"
+            className="cand-proof-upload-link"
+            onClick={() => setShowDuplicates((v) => !v)}
+          >
+            {showDuplicates ? "Hide duplicates" : "Show duplicates"}
+          </button>
+        </p>
       )}
       {u && (
         <div
@@ -2530,6 +2616,11 @@ export function CandidateEditModal({
       ? Number(l.referral_commission) || 0
       : wl(k, T, P, !!l.bgv_certificates);
   const S = Math.max(0, T - k);
+  // While a screenshot is being read, whatever the totals say is about to be
+  // replaced; a "pending" or "proof missing" warning now would be wrong by
+  // the time it was read.
+  const verifying = proofUploadBusy;
+  const receivedLocked = !!l.payment_is_proof_derived || verifying;
   const isUnevidenced =
     k > 0 && (o.length === 0 || (l.proof_count ?? 0) === 0 || !!l.payment_unevidenced);
   const E = w.useMemo(() => {
@@ -2949,14 +3040,23 @@ export function CandidateEditModal({
             <label className="cand-field">
               <span className="cand-field-label">
                 Received ₹
-                {l.payment_is_proof_derived && (
+                {receivedLocked && (
+                  <span className="cand-field-lock" aria-hidden="true">
+                    🔒
+                  </span>
+                )}
+                {l.payment_is_proof_derived && !verifying && (
                   <span className="cand-field-required-tag">
                     from verified proofs
                   </span>
                 )}
+                {verifying && (
+                  <span className="cand-field-required-tag">verifying…</span>
+                )}
               </span>
               <input
-                className="cand-input"
+                className={`cand-input${receivedLocked ? " cand-input--readonly" : ""}`}
+                aria-readonly={receivedLocked || undefined}
                 type="number"
                 min="0"
                 step="500"
@@ -2968,20 +3068,37 @@ export function CandidateEditModal({
                  * 0 once two unverifiable screenshots made the display 0. A
                  * derived value is never sent. */
                 onChange={(C) => {
-                  if (l.payment_is_proof_derived) return;
+                  if (receivedLocked) return;
                   g("payment", C.target.value);
                 }}
                 placeholder="0"
-                readOnly={!!l.payment_is_proof_derived}
-                disabled={!!l.payment_is_proof_derived}
+                readOnly={receivedLocked}
+                disabled={receivedLocked}
                 title={
                   l.payment_is_proof_derived
                     ? "Calculated from verified payment proofs. Upload, reject or remove a proof to change it."
                     : undefined
                 }
               />
+              <span className="cand-field-hint">
+                {verifying
+                  ? "Locked while the screenshot is being verified."
+                  : l.payment_is_proof_derived
+                    ? "Calculated from verified payment proofs — upload, reject or remove a proof to change it."
+                    : "Entered manually. It is replaced by the verified total once a proof is verified."}
+              </span>
             </label>
-            {l.payment_is_proof_derived && (
+            {verifying ? (
+              <div
+                className="cand-field cand-receipt-verifying"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="cand-receipt-verifying__dot" aria-hidden="true" />
+                Verification in progress — the received total, outstanding amount and
+                proof status update when the screenshot has been read.
+              </div>
+            ) : l.payment_is_proof_derived && (
               <div className="cand-field cand-receipt-breakdown">
                 <span className="cand-receipt-line">
                   {l.service_type === "round_wise" ? "Minimum expected" : "Expected"}{" "}
@@ -3018,7 +3135,7 @@ export function CandidateEditModal({
                 </a>
               </div>
             )}
-            {l.payment_needs_reconciliation && (
+            {!verifying && l.payment_needs_reconciliation && (
               <div className="cand-field cand-receipt-warning">
                 Verified proofs account for {$n(l.verified_proof_total ?? 0)} of the{" "}
                 {$n(l.payment)} recorded — {$n(l.payment_reconciliation_gap ?? 0)}{" "}
@@ -3052,7 +3169,7 @@ export function CandidateEditModal({
               *
               * The counts come from receipt_summary, so this states the engine's
               * own verdict rather than a second opinion about it. */}
-            {(l.proof_count ?? 0) > 0 && (l.verified_proof_count ?? 0) === 0 && (
+            {!verifying && (l.proof_count ?? 0) > 0 && (l.verified_proof_count ?? 0) === 0 && (
               <div className="cand-field cand-receipt-missing">
                 {l.proof_count === 1
                   ? "1 payment proof uploaded"
@@ -3068,7 +3185,7 @@ export function CandidateEditModal({
                 })()}
               </div>
             )}
-            {l.payment_evidenced_on && (
+            {!verifying && l.payment_evidenced_on && (
               <div className="cand-field cand-receipt-missing">
                 This row has no proof of its own, but the {l.payment_evidenced_on.date || "later"}{" "}
                 booking of the same candidate carries a verified proof covering
@@ -3076,7 +3193,7 @@ export function CandidateEditModal({
                 it is not a missing receipt. Nothing here has been changed.
               </div>
             )}
-            {l.payment_proof_files_lost && (
+            {!verifying && l.payment_proof_files_lost && (
               <div className="cand-field cand-receipt-missing">
                 A payment proof was uploaded, but its image is no longer stored
                 (files from before the 25 Aug server move were not carried
@@ -3084,16 +3201,21 @@ export function CandidateEditModal({
                 upload the receipt again to evidence it.
               </div>
             )}
-            {(l.payment ?? 0) > 0 && (l.proof_count ?? 0) === 0 && (
+            {!verifying && (l.payment ?? 0) > 0 && (l.proof_count ?? 0) === 0 && (
               <div className="cand-field cand-receipt-missing">
                 No payment proof on record. {$n(l.payment)} is the recorded
                 figure; upload the receipt to evidence it.
               </div>
             )}
             <div className="cand-field">
-              <span className={`cand-pay-status cand-pay-status--${E}`}>
-                {E === "paid" && <s.Fragment>✓ Paid ({$n(k)})</s.Fragment>}
-                {E === "unevidenced" && (
+              <span
+                className={`cand-pay-status cand-pay-status--${verifying ? "verifying" : E}`}
+              >
+                {verifying && (
+                  <s.Fragment>⏳ Verification in progress…</s.Fragment>
+                )}
+                {!verifying && E === "paid" && <s.Fragment>✓ Paid ({$n(k)})</s.Fragment>}
+                {!verifying && E === "unevidenced" && (
                   <s.Fragment>
                     {l.payment_evidenced_on
                       ? "↪ Recorded — proof on another booking"
@@ -3103,12 +3225,12 @@ export function CandidateEditModal({
                     ({k >= T ? $n(k) : `${$n(k)} / ${$n(T)}`})
                   </s.Fragment>
                 )}
-                {E === "partial" && (
+                {!verifying && E === "partial" && (
                   <s.Fragment>
                     ● {$n(k)}/{$n(T)} · <strong>{$n(S)} pending</strong>
                   </s.Fragment>
                 )}
-                {E === "unpaid" && <s.Fragment>○ {$n(T)} pending</s.Fragment>}
+                {!verifying && E === "unpaid" && <s.Fragment>○ {$n(T)} pending</s.Fragment>}
               </span>
               {k > 0 && (l.reference || "").trim() && (
                 <span className="cand-pay-handler-share">

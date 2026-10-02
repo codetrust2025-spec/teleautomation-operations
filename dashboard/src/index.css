@@ -17966,3 +17966,171 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
     margin-top: 4px;
   }
 }
+
+/* ── Candidate Edit: Received is system-calculated ────────────────────── */
+.cand-input--readonly,
+.cand-input--readonly:disabled {
+  background: rgba(255, 255, 255, 0.04);
+  border-style: dashed;
+  color: var(--text-dim, #cbd5e1);
+  cursor: not-allowed;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.cand-input--readonly::-webkit-outer-spin-button,
+.cand-input--readonly::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cand-field-lock {
+  margin-left: 6px;
+  font-size: 11px;
+}
+.cand-receipt-verifying {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #c7d2fe;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.cand-receipt-verifying__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #818cf8;
+  animation: cand-verifying-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cand-verifying-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cand-receipt-verifying__dot { animation: none; }
+}
+.cand-pay-status--verifying {
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #c7d2fe;
+}
+
+/* ── Candidate Edit: proof cards ───────────────────────────────────────── */
+.cand-proofs-grid {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+.cand-proof-card {
+  max-width: none;
+  padding: 8px;
+  gap: 8px;
+}
+.cand-proof-thumb {
+  max-width: none;
+  max-height: none;
+  aspect-ratio: 4 / 3;
+  min-height: 170px;
+}
+.cand-proof-thumb img {
+  max-width: none;
+  max-height: none;
+}
+.cand-proof-thumb--lost {
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  text-align: center;
+  cursor: default;
+  border: 1px dashed rgba(251, 191, 36, 0.45);
+  color: #fcd34d;
+}
+.cand-proof-thumb--lost small {
+  color: var(--text-dim, #94a3b8);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.cand-proof-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.cand-proof-amount {
+  font-size: 16px;
+  color: var(--text, #f1f5f9);
+}
+.cand-proof-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cand-proof-status--ok { background: rgba(34, 197, 94, 0.16); color: #86efac; }
+.cand-proof-status--warn { background: rgba(251, 191, 36, 0.16); color: #fcd34d; }
+.cand-proof-status--bad { background: rgba(239, 68, 68, 0.16); color: #fca5a5; }
+.cand-proof-status--muted { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; }
+.cand-proof-facts {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 11px;
+}
+.cand-proof-facts > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.cand-proof-facts dt {
+  flex: none;
+  min-width: 78px;
+  color: var(--text-dim, #94a3b8);
+}
+.cand-proof-facts dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text, #e5e7eb);
+}
+.cand-proof-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+.cand-proof-card--duplicate {
+  opacity: 0.7;
+  border-style: dashed;
+}
+.cand-proofs-duplicates {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-dim, #94a3b8);
+}
+/* The delete control is always visible: a control that appears only on hover
+   does not exist on a touch screen. */
+.cand-proof-delete {
+  opacity: 1;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+}
+.cand-proof-upload-job--success .cand-proof-upload-thumb {
+  display: none;
+}
+@media (max-width: 640px) {
+  .cand-proofs-grid {
+    grid-template-columns: 1fr;
+  }
+  .cand-proof-thumb {
+    min-height: 200px;
+  }
+  .cand-proof-delete {
+    width: 36px;
+    height: 36px;
+  }
+}

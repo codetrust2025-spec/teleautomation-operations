@@ -241,3 +241,100 @@ describe("PaymentProofsModal", () => {
     expect(screen.queryByRole("dialog", { name: "Payment proof preview" })).not.toBeInTheDocument();
   });
 });
+
+import { dedupeProofsForDisplay, proofPresentation } from "./paymentProofs.js";
+
+describe("proofPresentation", () => {
+  it("reads status, amount and UTR off a verified proof", () => {
+    const p = proofPresentation({
+      verification_state: "VERIFIED_COMPANY_PAYMENT",
+      verified_amount: 20000,
+      utr_number: "060288603637",
+      transaction_id: "T2609131812234060873256",
+    });
+    expect(p.status).toMatchObject({ key: "verified", label: "Verified", tone: "ok" });
+    expect(p.amountText).toBe("₹20,000");
+    expect(p.reference).toEqual({ label: "UTR", value: "060288603637" });
+  });
+
+  it("calls a transaction id stored in the UTR field a transaction id", () => {
+    const p = proofPresentation({ utr_number: "T2609131812234060873256" });
+    expect(p.reference).toEqual({ label: "Transaction ID", value: "T2609131812234060873256" });
+  });
+
+  it("falls back to the transaction id, then the reference, then nothing", () => {
+    expect(proofPresentation({ transaction_id: "T26091318122340" }).reference.label).toBe("Transaction ID");
+    expect(proofPresentation({ reference_number: "R-1" }).reference).toEqual({ label: "Reference", value: "R-1" });
+    expect(proofPresentation({}).reference.value).toBe("");
+  });
+
+  it("labels every engine state a reviewer can meet", () => {
+    const label = (s) => proofPresentation({ verification_state: s }).status.label;
+    expect(label("UNKNOWN_RECEIVER")).toBe("Receiver not recognised");
+    expect(label("PENDING_MANUAL_REVIEW")).toBe("Needs review");
+    expect(label("EXTRACTION_FAILED")).toBe("Could not read");
+    expect(label("DUPLICATE_PAYMENT")).toBe("Duplicate payment");
+    expect(label("REJECTED")).toBe("Rejected");
+    expect(label("")).toBe("Not reviewed");
+    expect(label("SOMETHING_NEW")).toBe("Needs review");
+  });
+
+  it("never invents an amount", () => {
+    expect(proofPresentation({ verification_state: "UNKNOWN_RECEIVER" }).amountText).toBe("Amount not read");
+  });
+});
+
+describe("dedupeProofsForDisplay", () => {
+  const verified = (id, utr, extra = {}) => ({
+    id,
+    verification_state: "VERIFIED_COMPANY_PAYMENT",
+    verified_amount: 20000,
+    utr_number: utr,
+    uploaded_at: `2026-09-0${id.length}`,
+    ...extra,
+  });
+
+  it("shows one card for the same UTR uploaded twice, preferring the verified copy", () => {
+    const legacy = { id: "old", utr_number: "111111111111", uploaded_at: "2026-06-01" };
+    const good = verified("new", "111111111111");
+    const { shown, hidden } = dedupeProofsForDisplay([legacy, good]);
+    expect(shown).toEqual([good]);
+    expect(hidden).toEqual([legacy]);
+  });
+
+  it("groups by the same screenshot checksum even when no reference was read", () => {
+    const a = { id: "a", sha256: "abc123", uploaded_at: "2026-09-01" };
+    const b = { id: "b", sha256: "ABC123", uploaded_at: "2026-09-02" };
+    expect(dedupeProofsForDisplay([a, b]).shown).toEqual([a]);
+  });
+
+  it("joins a transaction id stored in the UTR field of one copy", () => {
+    const a = { id: "a", transaction_id: "T2609131812234060873256" };
+    const b = { id: "b", utr_number: "T2609131812234060873256" };
+    expect(dedupeProofsForDisplay([a, b]).shown).toHaveLength(1);
+  });
+
+  it("keeps two different payments of the same amount and date apart", () => {
+    const a = verified("a1", "111111111111");
+    const b = verified("b22", "222222222222");
+    expect(dedupeProofsForDisplay([a, b]).shown).toEqual([a, b]);
+  });
+
+  it("keeps proofs with no identity at all, each on its own", () => {
+    const a = { id: "a" };
+    const b = { id: "b" };
+    expect(dedupeProofsForDisplay([a, b]).shown).toEqual([a, b]);
+  });
+
+  it("alters and removes nothing", () => {
+    const list = [verified("a1", "1"), verified("b22", "1")];
+    const copy = JSON.parse(JSON.stringify(list));
+    const { shown, hidden } = dedupeProofsForDisplay(list);
+    expect(list).toEqual(copy);
+    expect(shown.length + hidden.length).toBe(list.length);
+  });
+
+  it("copes with nothing", () => {
+    expect(dedupeProofsForDisplay(undefined)).toEqual({ shown: [], hidden: [] });
+  });
+});
