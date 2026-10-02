@@ -341,13 +341,12 @@ def effective_expected_payment(row: dict) -> int:
     expected = int(row.get("expected_payment") or 0)
     if expected <= 0:
         return fallback
-    # Stale direct default (₹20k) on a consultancy profile row — use ₹15k channel baseline.
-    if (
-        service_type == "profile_service"
-        and consultancy
-        and expected == DEFAULT_EXPECTED_PAYMENT
-    ):
-        return CONSULTANCY_EXPECTED_PAYMENT
+    # Stale direct default (₹20k) on a consultancy profile row — use ₹15k channel
+    # baseline. The BGV add-on is part of the standard price on either channel.
+    if service_type == "profile_service" and consultancy:
+        add_on = BGV_CERTIFICATES_PAYMENT if _coerce_bool(row.get("bgv_certificates")) else 0
+        if expected == DEFAULT_EXPECTED_PAYMENT + add_on:
+            return CONSULTANCY_EXPECTED_PAYMENT + add_on
     return expected
 
 
@@ -1570,20 +1569,21 @@ def _normalise(record: dict, *, existing: dict | None = None) -> dict:
     expected = _coerce_payment(exp_raw)
     if expected <= 0:
         expected = default_for_channel
-    elif (
-        service_type == "profile_service"
-        and consultancy
-        and expected == DEFAULT_EXPECTED_PAYMENT
-        and "consultancy" in record
-    ):
-        expected = CONSULTANCY_EXPECTED_PAYMENT
-    elif (
-        service_type == "profile_service"
-        and not consultancy
-        and expected == CONSULTANCY_EXPECTED_PAYMENT
-        and "consultancy" in record
-    ):
-        expected = DEFAULT_EXPECTED_PAYMENT
+    elif service_type == "profile_service" and "consultancy" in record:
+        # The channel was stated. If the amount is exactly the *other* channel's
+        # standard price -- with the BGV add-on counted the same way -- it is a
+        # stale default, not an agreed charge, and follows the channel:
+        #   Direct (consultancy off)      -> 20,000   (+30,000 with BGV)
+        #   Consultancy (consultancy on)  -> 15,000   (+30,000 with BGV)
+        # Anything else is a figure someone agreed and is left alone.
+        other_channel_default = baseline_for_service(
+            service_type,
+            consultancy=not consultancy,
+            interview_scope=interview_scope,
+            bgv_certificates=bgv_certificates,
+        )
+        if expected == other_channel_default:
+            expected = default_for_channel
 
     # `proofs` is intentionally NOT in _ALLOWED_FIELDS — it's only mutated
     # through add_proof / delete_proof so screenshots can't be wiped by a

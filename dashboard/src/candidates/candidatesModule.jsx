@@ -2493,9 +2493,17 @@ export function CandidateEditModal({
       [C]: Y,
     }));
   }
-  function p(C) {
+  function p(C, prev) {
     const Y = Number(C.expected_payment) || 0;
-    if (U8.has(Y)) {
+    // The amount is a stale default, not an agreed charge, when it equals the
+    // standard price of the state the form was just in -- including the BGV
+    // add-on, which the fixed set below does not cover. An amount agreed by
+    // hand matches neither and is kept.
+    const previousStandard = prev
+      ? os(prev.service_type, prev.consultancy, prev.interview_scope) +
+        (prev.bgv_certificates ? 30000 : 0)
+      : null;
+    if (U8.has(Y) || (previousStandard !== null && Y === previousStandard)) {
       return String(
         os(C.service_type, C.consultancy, C.interview_scope) +
           (C.bgv_certificates ? 30000 : 0),
@@ -2513,7 +2521,7 @@ export function CandidateEditModal({
       };
       return {
         ...J,
-        expected_payment: p(J),
+        expected_payment: p(J, Y),
       };
     });
   }
@@ -2525,7 +2533,7 @@ export function CandidateEditModal({
       };
       return {
         ...J,
-        expected_payment: p(J),
+        expected_payment: p(J, Y),
       };
     });
   }
@@ -2537,7 +2545,7 @@ export function CandidateEditModal({
       };
       return {
         ...J,
-        expected_payment: p(J),
+        expected_payment: p(J, Y),
       };
     });
   }
@@ -2966,31 +2974,47 @@ export function CandidateEditModal({
               </div>
             )}
             {l.service_type === "profile_service" && (
-              <label
-                className={`cand-field cand-consultancy-field${l.consultancy ? " cand-consultancy-field--on" : ""}`}
-              >
+              <div className="cand-field cand-channel-field">
                 <span className="cand-field-label">Channel</span>
-                <div className="cand-consultancy-toggle">
-                  <input
-                    type="checkbox"
-                    id="cand-consultancy-cb"
-                    checked={!!l.consultancy}
-                    onChange={(C) => y(C.target.checked)}
-                  />
+                {/* Two explicit choices, exactly one selected. The old single
+                    checkbox changed its own caption, so an unchecked box read
+                    "Direct ₹20,000" -- Direct looked unselected beside the
+                    direct price. */}
+                <div className="cand-service-options" role="radiogroup" aria-label="Channel">
                   <label
-                    htmlFor="cand-consultancy-cb"
-                    className="cand-consultancy-label"
+                    className={`cand-service-card${!l.consultancy ? " cand-service-card--on" : ""}`}
                   >
-                    <span className="cand-consultancy-pip" aria-hidden={true} />
-                    <span className="cand-consultancy-text">
-                      <strong>
-                        {l.consultancy ? "Consultancy" : "Direct"}
-                      </strong>
-                      <em>₹{N_(l.consultancy).toLocaleString("en-IN")}</em>
+                    <input
+                      type="radio"
+                      name="cand-channel"
+                      checked={!l.consultancy}
+                      onChange={() => y(false)}
+                    />
+                    <span className="cand-service-card-body">
+                      <strong>Direct</strong>
+                      <em>
+                        ₹{Cu.toLocaleString("en-IN")} · came directly to us
+                      </em>
+                    </span>
+                  </label>
+                  <label
+                    className={`cand-service-card${l.consultancy ? " cand-service-card--on" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="cand-channel"
+                      checked={!!l.consultancy}
+                      onChange={() => y(true)}
+                    />
+                    <span className="cand-service-card-body">
+                      <strong>Consultancy</strong>
+                      <em>
+                        ₹{k_.toLocaleString("en-IN")} · came through a consultancy
+                      </em>
                     </span>
                   </label>
                 </div>
-              </label>
+              </div>
             )}
             <div
               className="cand-field cand-bgv-field"
