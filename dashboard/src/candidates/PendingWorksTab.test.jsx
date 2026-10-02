@@ -280,3 +280,31 @@ describe('how it is wired in', () => {
     expect(app).toContain('pending?.pendingInterviewCount || 0')
   })
 })
+
+describe("a pending item says which row it is about and why", () => {
+  it("shows the round date and the server's explanation, with a Review action", async () => {
+    const item = {
+      id: "payment_evidenced_elsewhere:lead",
+      kind: "payment_evidenced_elsewhere",
+      label: "Same payment evidenced on another booking",
+      detail: "A verified proof for this payment is on the 2026-09-03 booking. This row looks like the same payment recorded twice; review it rather than uploading a proof.",
+      priority: 27,
+      candidate_id: "lead",
+      candidate_name: "Round Person",
+      technology: "Salesforce",
+      service_type: "round_wise",
+      date: "2026-09-02",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "ok", works: [item], count: 1, candidate_count: 1 }),
+    }));
+    render(<PendingWorksTab onOpenCandidate={vi.fn()} />);
+    expect(await screen.findByText("Same payment evidenced on another booking")).toBeTruthy();
+    expect(screen.getByText("Round-wise · 2026-09-02")).toBeTruthy();
+    expect(screen.getByText(/recorded twice/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Review Row" })).toBeTruthy();
+    expect(screen.queryByText(/Upload payment proof/)).toBeNull();
+    vi.unstubAllGlobals();
+  });
+});

@@ -354,3 +354,36 @@ describe("a proof whose image was lost is not reported as never uploaded", () =>
     expect(pill.textContent).not.toContain("file lost");
   });
 });
+
+describe("a row whose payment is evidenced on a later booking", () => {
+  const twice = {
+    payment: 5000,
+    expected_payment: 5000,
+    payment_proofs: [],
+    proof_count: 0,
+    verified_proof_count: 0,
+    payment_unevidenced: true,
+    payment_evidenced_on: { id: "booked-row", date: "2026-09-03" },
+    payment_status: "paid",
+  };
+
+  it("the list cell points at the booking instead of asking for a receipt", () => {
+    const { container } = render(<CandidatePaymentCell row={twice} />);
+    const pill = container.querySelector(".cand-pay-pill");
+    expect(pill.textContent).toContain("Proof on 2026-09-03 booking");
+    expect(pill.textContent).not.toContain("proof missing");
+    expect(container.querySelector(".cand-pay-amount").textContent).toBe("₹5,000");
+    expect(container.querySelector(".cand-pay-pill--paid")).toBeNull();
+  });
+
+  it("the editor explains it and leaves the amount alone", () => {
+    const { container } = renderModal({ ...twice, service_type: "round_wise", interview_scope: "external" });
+    expect(container.querySelector(".cand-pay-status").textContent).toContain("Recorded — proof on another booking");
+    const note = Array.from(container.querySelectorAll(".cand-receipt-missing")).find((n) =>
+      n.textContent.includes("same payment recorded twice"),
+    );
+    expect(note).toBeTruthy();
+    expect(note.textContent).toContain("2026-09-03");
+    expect(note.textContent).toContain("Nothing here has been changed");
+  });
+});

@@ -2289,6 +2289,63 @@ def _attach_pending_work_stats(payload: dict, pw: dict) -> dict:
     return payload
 
 
+def _booked_round_evidencing(row: dict, raw_rows: list[dict]) -> dict | None:
+    """The booked round whose verified proof already evidences this row's money.
+
+    A round-wise candidate has a ledger row before they book. The booking form
+    reuses that row only while it is still unpaid, so once an operator types the
+    amount received onto it the booking creates a second row -- with its own
+    verified proof -- and the first is left paid, unbooked and proofless although
+    the payment is evidenced a row away. The two rows are one payment seen twice.
+
+    Matched on phone identity (never name), the same scope, a booked round
+    created no earlier than this row, and verified proof covering the amount.
+    Read-only: nothing here changes a payment, a proof or a row.
+    """
+    if _normalise_service_type(row.get("service_type"), row) != "round_wise":
+        return None
+    recorded = int(row.get("recorded_payment", row.get("payment")) or 0)
+    if recorded <= 0 or _coerce_bool(row.get("slot_confirmed")):
+        return None
+    if row.get("payment_proofs") or int(row.get("proof_count") or 0) > 0:
+        return None
+    phone = candidate_phone_identity(row.get("phone"))
+    if not phone:
+        return None
+    scope = _normalise_interview_scope(row.get("interview_scope"), row)
+    created = _clean_str(row.get("created_at"))
+    best: tuple[str, dict, int] | None = None
+    for other in raw_rows:
+        if str(other.get("id")) == str(row.get("id")):
+            continue
+        if candidate_phone_identity(other.get("phone")) != phone:
+            continue
+        if _normalise_service_type(other.get("service_type"), other) != "round_wise":
+            continue
+        if not _coerce_bool(other.get("slot_confirmed")):
+            continue
+        if _normalise_interview_scope(other.get("interview_scope"), other) != scope:
+            continue
+        if _clean_str(other.get("created_at")) < created:
+            continue
+        total = payment_receipts.verified_proof_total(
+            partition_candidate_attachments(other)["payment_proofs"]
+        )
+        if total >= recorded and (best is None or _clean_str(other.get("created_at")) < best[0]):
+            best = (_clean_str(other.get("created_at")), other, total)
+    return best[1] if best else None
+
+
+def _annotate_evidenced_elsewhere(row: dict, raw_rows: list[dict]) -> dict:
+    other = _booked_round_evidencing(row, raw_rows)
+    if other:
+        row["payment_evidenced_on"] = {
+            "id": str(other.get("id") or ""),
+            "date": _clean_str(other.get("date"))[:10],
+        }
+    return row
+
+
 def list_candidates(*, stage: str | None = None, task: str | None = None,
                     search: str | None = None, month: str | None = None,
                     pending_only: bool = False,
@@ -2303,7 +2360,8 @@ def list_candidates(*, stage: str | None = None, task: str | None = None,
     show only one handler's leads)."""
     reconcile_resume_metadata()
     data = _load()
-    rows = [_with_computed(r) for r in (data.get("candidates") or [])]
+    raw_rows = data.get("candidates") or []
+    rows = [_annotate_evidenced_elsewhere(_with_computed(r), raw_rows) for r in raw_rows]
     # Apply month filter BEFORE collapse so we don't accidentally pick
     # a June slot when filtering for July (collapse picks newest by updated_at).
     if month and month != "all":
@@ -2349,6 +2407,7 @@ PENDING_WORK_LABELS = {
     "payment_due": "Payment pending",
     "missing_payment_proof": "Upload payment proof",
     "payment_proof_file_lost": "Proof file lost",
+    "payment_evidenced_elsewhere": "Same payment evidenced on another booking",
     "missing_follow_up": "Add follow-up remark",
     "missing_phone": "Add phone number",
 }
@@ -2358,6 +2417,7 @@ PENDING_WORK_PRIORITY = {
     "missing_resume": 20,
     "missing_payment_proof": 25,
     "payment_proof_file_lost": 26,
+    "payment_evidenced_elsewhere": 27,
     "payment_due": 30,
     "missing_follow_up": 35,
     "missing_phone": 50,
@@ -2376,6 +2436,7 @@ def _pending_work_item(*, kind: str, row: dict, detail: str = "") -> dict:
         "reference": row.get("reference") or "",
         "technology": row.get("technology") or "",
         "service_type": row.get("service_type") or "profile_service",
+        "date": _clean_str(row.get("date"))[:10],
     }
 
 
@@ -2542,6 +2603,8 @@ def _payment_proof_gap(row: dict) -> str:
     )
     if not unevidenced:
         return ""
+    if row.get("payment_evidenced_on"):
+        return "evidenced_elsewhere"
     if row.get("payment_proof_files_lost"):
         return "file_lost"
     # A proof exists and its image is stored: it awaits review, it is not missing.
@@ -2569,6 +2632,13 @@ def _collect_pending_works_for_row(row: dict) -> list[dict]:
         works.append(_pending_work_item(kind="missing_payment_proof", row=row))
     elif gap == "file_lost":
         works.append(_pending_work_item(kind="payment_proof_file_lost", row=row))
+    elif gap == "evidenced_elsewhere":
+        on = row.get("payment_evidenced_on") or {}
+        works.append(_pending_work_item(
+            kind="payment_evidenced_elsewhere", row=row,
+            detail=f"A verified proof for this payment is on the {on.get('date') or 'later'} booking. "
+                   "This row looks like the same payment recorded twice; review it rather than uploading a proof.",
+        ))
     if not (row.get("phone") or "").strip():
         works.append(_pending_work_item(kind="missing_phone", row=row))
     return works
@@ -4399,9 +4469,10 @@ def roster_csv_rows(rows: list[dict]) -> str:
 
 def get_candidate(cid: str) -> dict | None:
     reconcile_resume_metadata()
-    for r in _load().get("candidates") or []:
+    raw_rows = _load().get("candidates") or []
+    for r in raw_rows:
         if r.get("id") == cid:
-            return _with_computed(r)
+            return _annotate_evidenced_elsewhere(_with_computed(r), raw_rows)
     return None
 
 

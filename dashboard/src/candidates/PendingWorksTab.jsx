@@ -27,6 +27,7 @@ const ACTIONS = {
   missing_phone: "Add Phone",
   missing_payment_proof: "Upload Proof",
   payment_proof_file_lost: "Upload Proof Again",
+  payment_evidenced_elsewhere: "Review Row",
 };
 const DEFAULT_ACTION = "Edit Candidate";
 
@@ -213,6 +214,11 @@ export function PendingWorksTab({ onOpenCandidate }) {
                       <>
                         <td data-label="Candidate" rowSpan={group.tasks.length}>
                           <span className="cand-pending__name">{group.name}</span>
+                          {task.service_type === "round_wise" && task.date ? (
+                            <span className="cand-pending__task-count">
+                              Round-wise · {task.date}
+                            </span>
+                          ) : null}
                           {group.tasks.length > 1 && (
                             <span className="cand-pending__task-count">
                               {group.tasks.length} tasks
@@ -224,7 +230,12 @@ export function PendingWorksTab({ onOpenCandidate }) {
                         </td>
                       </>
                     ) : null}
-                    <td data-label="Missing item">{task.label || task.kind}</td>
+                    <td data-label="Missing item">
+                      {task.label || task.kind}
+                      {task.detail ? (
+                        <span className="cand-pending__detail">{task.detail}</span>
+                      ) : null}
+                    </td>
                     <td data-label="Priority">
                       <span
                         className={`cand-pending__priority is-${band.tone}`}

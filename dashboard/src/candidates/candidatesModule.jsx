@@ -2176,6 +2176,7 @@ function K8(e) {
       ((Number(e.payment) || 0) > 0 && normalizePaymentProofs(e).length === 0)
     ),
     payment_proof_files_lost: !!e.payment_proof_files_lost,
+    payment_evidenced_on: e.payment_evidenced_on || null,
     proof_count: e.proof_count ?? normalizePaymentProofs(e).length,
     expected_minimum: e.expected_minimum,
     verified_received: e.verified_received,
@@ -3067,6 +3068,14 @@ export function CandidateEditModal({
                 })()}
               </div>
             )}
+            {l.payment_evidenced_on && (
+              <div className="cand-field cand-receipt-missing">
+                This row has no proof of its own, but the {l.payment_evidenced_on.date || "later"}{" "}
+                booking of the same candidate carries a verified proof covering
+                {" "}{$n(l.payment)}. It looks like the same payment recorded twice, so
+                it is not a missing receipt. Nothing here has been changed.
+              </div>
+            )}
             {l.payment_proof_files_lost && (
               <div className="cand-field cand-receipt-missing">
                 A payment proof was uploaded, but its image is no longer stored
@@ -3086,9 +3095,11 @@ export function CandidateEditModal({
                 {E === "paid" && <s.Fragment>✓ Paid ({$n(k)})</s.Fragment>}
                 {E === "unevidenced" && (
                   <s.Fragment>
-                    {l.payment_proof_files_lost
-                      ? "⚠ Recorded — proof file lost"
-                      : "⚠ Recorded — proof missing"}{" "}
+                    {l.payment_evidenced_on
+                      ? "↪ Recorded — proof on another booking"
+                      : l.payment_proof_files_lost
+                        ? "⚠ Recorded — proof file lost"
+                        : "⚠ Recorded — proof missing"}{" "}
                     ({k >= T ? $n(k) : `${$n(k)} / ${$n(T)}`})
                   </s.Fragment>
                 )}
@@ -5636,18 +5647,24 @@ export function _Component27({ row: e, onViewProofs: t }) {
             title={
               n < r
                 ? `${Ax(a)} due — ${
-                    e.payment_proof_files_lost
+                    e.payment_evidenced_on
+                      ? "the same payment is evidenced on a later booking"
+                      : e.payment_proof_files_lost
                       ? "a proof was uploaded but its image is no longer stored"
                       : "Recorded manually, proof missing"
                   }`
-                : e.payment_proof_files_lost
-                  ? "A proof was uploaded but its image is no longer stored. The recorded amount is unchanged."
+                : e.payment_evidenced_on
+                  ? "The same payment is evidenced by a verified proof on a later booking of this candidate."
+                  : e.payment_proof_files_lost
+                    ? "A proof was uploaded but its image is no longer stored. The recorded amount is unchanged."
                   : "Recorded manually — proof missing"
             }
           >
-            {e.payment_proof_files_lost
-              ? "⚠ Proof file lost"
-              : "⚠ Recorded — proof missing"}
+            {e.payment_evidenced_on
+              ? `↪ Proof on ${e.payment_evidenced_on.date || "later"} booking`
+              : e.payment_proof_files_lost
+                ? "⚠ Proof file lost"
+                : "⚠ Recorded — proof missing"}
           </span>
         </span>
       </div>
@@ -6113,9 +6130,16 @@ function CandidatesPanelImpl() {
 
     // Scroll to the row in the table and highlight it
     requestAnimationFrame(() => {
-      const rows = document.querySelectorAll(".cand-page .cand-table tbody tr");
+      // Two rows can share a name (a round-wise candidate has one per round),
+      // so the row the intent names is found by id first.
+      const exact = targetId
+        ? document.querySelector(`.cand-page .cand-table tbody tr[data-cid="${targetId}"]`)
+        : null;
+      const rows = exact
+        ? [exact]
+        : document.querySelectorAll(".cand-page .cand-table tbody tr");
       for (const row of rows) {
-        if (row.textContent?.toLowerCase().includes(targetName)) {
+        if (exact || row.textContent?.toLowerCase().includes(targetName)) {
           row.scrollIntoView({ behavior: "smooth", block: "center" });
           row.style.transition = "box-shadow 0.3s, background 0.3s";
           row.style.boxShadow =
