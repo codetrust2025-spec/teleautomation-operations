@@ -1369,11 +1369,13 @@ export function PaymentProofUploader({
     </div>
   );
 }
-export function ResumeAutoFill({ candidateId, onExtracted }) {
+export function ResumeAutoFill({ candidateId, onExtracted, onAutofilled }) {
   const [busy, setBusy] = w.useState(false);
   const [aiData, setAiData] = w.useState(null);
   const [error, setError] = w.useState("");
   const [filled, setFilled] = w.useState(false);
+  // What the server filled on its own when the resume was saved, or why not.
+  const [autofillNote, setAutofillNote] = w.useState("");
   const inputRef = w.useRef(null);
   // The AI node reading the resume, and how long it took.
   const { analysis, begin: beginAnalysis } = useAiAnalysis(ve);
@@ -1383,6 +1385,7 @@ export function ResumeAutoFill({ candidateId, onExtracted }) {
     setError("");
     setAiData(null);
     setFilled(false);
+    setAutofillNote("");
     let run = beginAnalysis();
     let serverAnalysis = null;
     let outcome = { ok: false, failureLabel: "Could not read" };
@@ -1407,6 +1410,21 @@ export function ResumeAutoFill({ candidateId, onExtracted }) {
         serverAnalysis = res.analysis;
         if (res.ai_extraction?.is_resume === false) {
           outcome = { ok: false, failureLabel: "Not a resume" };
+        }
+        if (candidateId && res.autofill) {
+          const filledNow = res.autofill.filled || {};
+          const names = Object.keys(filledNow);
+          if (names.length) {
+            // The server saved these on the candidate; mirror them into the
+            // form (blank fields only) so a later Save cannot write the blank
+            // back over them.
+            onAutofilled?.(filledNow);
+            setAutofillNote(
+              `Filled from this resume: ${names.join(", ")}. Existing details were kept.`,
+            );
+          } else if (res.autofill.refused) {
+            setAutofillNote(`Not filled automatically: ${res.autofill.refused}.`);
+          }
         }
         if (candidateId && res.status === "ok") {
           if (res.ai_extraction) {
@@ -1608,6 +1626,18 @@ export function ResumeAutoFill({ candidateId, onExtracted }) {
       {filled && (
         <div style={{ marginTop: "6px", fontSize: "12px", color: "#22c55e" }}>
           ✓ Fields filled from resume
+        </div>
+      )}
+      {autofillNote && (
+        <div
+          role="status"
+          style={{
+            marginTop: "6px",
+            fontSize: "12px",
+            color: autofillNote.startsWith("Filled") ? "#22c55e" : "#fbbf24",
+          }}
+        >
+          {autofillNote}
         </div>
       )}
     </div>
@@ -2761,13 +2791,28 @@ export function CandidateEditModal({
         </header>
         <ResumeAutoFill
           candidateId={e?.id}
+          // Only a blank field is ever filled from a resume. This used to
+          // overwrite an existing candidate's name, technology, phone and email
+          // with whatever the resume said, valid or not.
           onExtracted={(data) => {
-            if (data.candidate_name && (e || !l.name))
+            const blank = (value) => !String(value ?? "").trim();
+            if (data.candidate_name && blank(l.name))
               g("name", data.candidate_name);
-            if (data.technology && (e || !l.technology))
+            if (data.technology && blank(l.technology))
               g("technology", data.technology);
-            if (data.phone && (e || !l.phone)) g("phone", data.phone);
-            if (data.email && (e || !l.email)) g("email", data.email);
+            if (data.phone && blank(l.phone)) g("phone", data.phone);
+            if (data.email && blank(l.email)) g("email", data.email);
+          }}
+          onAutofilled={(filledNow) => {
+            // Mirror what the server saved, without touching anything the
+            // person has typed since the resume was sent.
+            c((current) => {
+              const next = { ...current };
+              for (const [key, value] of Object.entries(filledNow || {})) {
+                if (!String(current[key] ?? "").trim()) next[key] = value;
+              }
+              return next;
+            });
           }}
         />
         <div className="cand-modal-body">

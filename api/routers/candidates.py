@@ -1060,10 +1060,25 @@ async def _upload_resume(request: Request, cid: str, file: UploadFile, note: str
         return {"status": "error", "message": str(e)}
     if entry is None:
         return {"status": "error", "message": "Candidate not found"}
-    row = candidate_store.get_candidate(cid)
-    resp = {"status": "ok", "resume": entry, "candidate": row}
+    resp = {"status": "ok", "resume": entry}
     if ai_extraction and ai_extraction.get("is_resume"):
         resp["ai_extraction"] = ai_extraction
+        # Fill what the candidate is missing from this resume -- and only that.
+        # See features/resume_autofill: a valid value is never replaced, only an
+        # AI reading at sufficient confidence is trusted, and a resume that does
+        # not match the candidate is ignored. It must never fail the upload.
+        try:
+            from features import resume_autofill
+
+            resp["autofill"] = await asyncio.to_thread(
+                resume_autofill.apply_autofill, cid, ai_extraction,
+                resume_id=str((entry or {}).get("id") or ""),
+            )
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).exception("Resume auto-fill failed for candidate %s", cid)
+    resp["candidate"] = candidate_store.get_candidate(cid)
     return resp
 @router.get("/candidates/{cid}/resumes/{rid}")
 async def candidates_serve_resume(cid: str, rid: str, request: Request):
