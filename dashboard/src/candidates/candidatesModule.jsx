@@ -5800,8 +5800,12 @@ export function _Component27({ row: e, onViewProofs: t }) {
           }
         }}
         title={`View ${l} payment screenshot${l === 1 ? "" : "s"}`}
+        aria-label={`View ${l} payment screenshot${l === 1 ? "" : "s"}`}
       >
-        <span aria-hidden={true}>📎</span> {l}
+        <span aria-hidden={true}>📎</span>
+        <span className="cand-pay-proofs-count">
+          {l} {l === 1 ? "proof" : "proofs"}
+        </span>
         <span className="cand-pay-proofs-cta">View</span>
       </button>
     ) : null;
@@ -5891,6 +5895,55 @@ export function _Component27({ row: e, onViewProofs: t }) {
     );
   }
 }
+/**
+ * A note or follow-up that can be read in full.
+ *
+ * The table used to cut it at 30/60 characters, and the cut text could not be
+ * recovered without opening the editor. The whole text is in the DOM and in the
+ * hover title; it is clamped to two lines visually, and a click (or Enter)
+ * opens it in place. The click never opens the row's editor.
+ */
+function ExpandableNote({ text, className, prefix = "" }) {
+  const [open, setOpen] = w.useState(false);
+  const long = String(text || "").length > 36;
+  const toggle = (event) => {
+    event.stopPropagation();
+    if (long) setOpen((value) => !value);
+  };
+  return (
+    <span
+      className={`${className} cand-note${open ? " cand-note--open" : ""}`}
+      title={text}
+      onClick={toggle}
+      onKeyDown={(event) => {
+        if (long && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          toggle(event);
+        }
+      }}
+      role={long ? "button" : undefined}
+      tabIndex={long ? 0 : undefined}
+      aria-expanded={long ? open : undefined}
+    >
+      {prefix ? <span aria-hidden={true}>{prefix}</span> : null}
+      {text}
+    </span>
+  );
+}
+
+/** What the delete confirmation says is about to be removed. */
+export function deleteRowMessage(row) {
+  const kind = row.service_type === "round_wise" ? "round-wise" : "profile";
+  const when = row.date ? ` dated ${String(row.date).slice(0, 10)}` : "";
+  const money = Number(row.payment) > 0 ? ` with ₹${Number(row.payment).toLocaleString("en-IN")} recorded` : "";
+  const proofs = normalizePaymentProofs(row).length;
+  const proofText = proofs ? ` and ${proofs} payment proof${proofs === 1 ? "" : "s"}` : "";
+  const siblings = Number(row.slot_count) > 1
+    ? ` ${row.slot_count - 1} other row${row.slot_count - 1 === 1 ? "" : "s"} of this candidate are not affected.`
+    : "";
+  return `This permanently removes this ${kind} row${when}${money}${proofText}.${siblings} It cannot be undone.`;
+}
+
 function pR(e) {
   if (!e) {
     return "—";
@@ -6388,16 +6441,6 @@ function CandidatesPanelImpl() {
             sortedCandidates.find((c) => c && c.id === rowCid)
           : sortedCandidates[index];
         if (!candidate || !candidate.id) return;
-        const nameCell = row.querySelector(".cand-cell-name");
-        nameCell?.querySelector(".cand-row-complete")?.remove();
-        if (candidate.details_complete && nameCell) {
-          const complete = document.createElement("span");
-          complete.className = "cand-row-complete";
-          complete.title = "All required candidate details are entered";
-          complete.setAttribute("aria-label", "Details complete");
-          complete.textContent = "✓";
-          nameCell.append(complete);
-        }
         // Hide service badge from name cell (legacy DOM badges)
         const allBadges = row.querySelectorAll(
           ".cand-cell-name .cand-channel-tag, .cand-cell-name .cand-service-badge",
@@ -6453,9 +6496,8 @@ function CandidatesPanelImpl() {
     if (
       !(await U({
         title: `Delete ${ge.name}?`,
-        message:
-          "This removes the candidate row permanently. Cannot be undone.",
-        confirmLabel: "Delete",
+        message: deleteRowMessage(ge),
+        confirmLabel: "Delete row",
         variant: "danger",
       }))
     ) {
@@ -6723,7 +6765,18 @@ function CandidatesPanelImpl() {
           <table className="cand-table">
             <thead>
               <tr>
-                <th>Name</th>
+                <th>
+                  Name{" "}
+                  <span
+                    className="cand-th-hint cand-tip cand-tip--below"
+                    role="img"
+                    tabIndex={0}
+                    aria-label="What the green tick means"
+                    data-tip="A green ✓ after a name means all required details are entered: name, technology, date, phone, reference, resume, and a payment proof once money is recorded."
+                  >
+                    ⓘ
+                  </span>
+                </th>
                 <th>Service type</th>
                 <th>Technology</th>
                 <th>Stage</th>
@@ -6771,24 +6824,33 @@ function CandidatesPanelImpl() {
                       >
                         <td className="cand-cell-name">
                           <span className="cand-name">{ge.name}</span>
+                          {ge.details_complete && (
+                            <span
+                              className="cand-row-complete cand-tip cand-tip--below"
+                              role="img"
+                              tabIndex={0}
+                              aria-label="All required details entered"
+                              data-tip="All required details are entered: name, technology, date, phone, reference, resume, and a payment proof once money is recorded. This is a data-entry check, not a payment or interview status."
+                            >
+                              ✓
+                            </span>
+                          )}
                           <span className="cand-cid" hidden>
                             {ge.id}
                           </span>
                           {ge.notes && (
-                            <span className="cand-cell-note" title={ge.notes}>
-                              · {ge.notes.slice(0, 30)}
-                              {ge.notes.length > 30 ? "…" : ""}
-                            </span>
+                            <ExpandableNote
+                              className="cand-cell-note"
+                              text={ge.notes}
+                              prefix="· "
+                            />
                           )}
                           {ge.follow_up && (
-                            <span
+                            <ExpandableNote
                               className="cand-cell-followup"
-                              title={ge.follow_up}
-                            >
-                              <span aria-hidden={true}>⟳</span>{" "}
-                              {ge.follow_up.slice(0, 60)}
-                              {ge.follow_up.length > 60 ? "…" : ""}
-                            </span>
+                              text={ge.follow_up}
+                              prefix="⟳ "
+                            />
                           )}
                         </td>
                         <td>
@@ -6840,18 +6902,20 @@ function CandidatesPanelImpl() {
                         >
                           <button
                             type="button"
-                            className="cand-btn cand-btn--ghost cand-btn--xs"
+                            className="cand-btn cand-btn--ghost cand-btn--xs cand-tip cand-tip--left"
                             onClick={() => I(ge)}
-                            title="Edit"
+                            aria-label={`Edit ${ge.name}`}
+                            data-tip="Edit candidate: details, payment and proofs"
                           >
                             ✎
                           </button>
                           {a && (
                             <button
                               type="button"
-                              className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost"
+                              className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost cand-tip cand-tip--left"
                               onClick={() => Pe(ge)}
-                              title="Delete"
+                              aria-label={`Delete ${ge.name}`}
+                              data-tip="Delete this row. You will be asked to confirm first."
                             >
                               🗑
                             </button>
