@@ -407,7 +407,10 @@ def test_alert_summaries_carry_no_personal_data():
 
 def test_host_scripts_are_lf_so_they_run_on_linux():
     """A CRLF shell script dies on its first line on the host ("set: pipefail: invalid option")."""
-    for base, _dirs, names in os.walk(OPS):
+    for base, dirs, names in os.walk(OPS):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]   # bytecode the tests above create
         for name in names:
+            if name.endswith((".pyc", ".pyo")):
+                continue
             with open(os.path.join(base, name), "rb") as stream:
                 assert b"\r" not in stream.read(), os.path.join(base, name)
