@@ -93,8 +93,15 @@ describe('2. the footer never covers proof content', () => {
     expect(footer).not.toMatch(/sticky/)
   })
 
-  it('everything except the body keeps its own height', () => {
-    expect(rule('.cand-modal > :not(.cand-modal-body)')).toMatch(/flex:\s*0 0 auto/)
+  it('the header, error and footer keep their own height', () => {
+    expect(rule('.cand-modal > .cand-modal-header')).toMatch(/flex:\s*0 0 auto/)
+    expect(FIX).toMatch(/\.cand-modal > \.cand-modal-error,\s*\.cand-modal > \.cand-modal-footer\s*\{\s*flex:\s*0 0 auto/)
+  })
+
+  it("does not freeze other modals' own flexible children (the Earnings table area)", () => {
+    expect(FIX).not.toMatch(/:not\(\.cand-modal-body\)\s*\{[^}]*flex/)
+    const earn = CSS.slice(CSS.indexOf('.cand-earn-tablewrap {'))
+    expect(earn.slice(0, 200)).toMatch(/flex:\s*1 1 auto/)
   })
 })
 

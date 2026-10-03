@@ -5,6 +5,7 @@ those features. Candidate-level payment data, including the BGV amounts the
 allocation engine splits out, stays here: it belongs to Candidates.
 """
 import asyncio
+import logging
 import os
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -16,6 +17,7 @@ from core.operations_api_helpers import (
     viewer_reference as _viewer_reference,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/candidates")

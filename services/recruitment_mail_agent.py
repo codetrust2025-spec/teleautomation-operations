@@ -65,7 +65,7 @@ def _publish_ignored_interview(
 
         signal = trusted_interview_result(decoded, list(attachments or []))
     except Exception:  # a broken parser must not break ingestion
-        logger.debug("Interview signal check failed", exc_info=True)
+        logger.warning("Interview signal check failed; the message continues without one", exc_info=True)
         return None
     if not signal:
         return None

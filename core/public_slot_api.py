@@ -174,12 +174,23 @@ def _pending_proof_ids(*values: str) -> list[str]:
     return ordered
 
 
+#: Fields of a slot-picker row that never leave the building on a public route.
+_PUBLIC_PICKER_WITHHELD = frozenset({"phone", "email"})
+
+
 def install_public_slot_routes(app) -> None:
     from features import candidate_store as cs
 
     @app.get("/public/slots/candidates")
     async def public_slot_candidates(channel: str | None = None):
-        rows = cs.interview_slot_picker_rows(channel=channel or "profile")
+        # No contact details on an anonymous endpoint. This list used to carry
+        # every candidate's full phone number to anyone who asked; the page never
+        # reads it (a round-wise client types their own number, and a booking is
+        # made by candidate id).
+        rows = [
+            {k: v for k, v in row.items() if k not in _PUBLIC_PICKER_WITHHELD}
+            for row in cs.interview_slot_picker_rows(channel=channel or "profile")
+        ]
         return JSONResponse(
             {"status": "ok", "candidates": rows, "count": len(rows)},
             headers={"Cache-Control": "no-store, max-age=0"},

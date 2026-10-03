@@ -18377,7 +18377,11 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   max-height: 90vh;
   max-height: 90dvh;
 }
-.cand-modal > :not(.cand-modal-body) { flex: 0 0 auto; }
+/* Only the fixed bars. Other modals (Earnings) have their own flexible, scrolling
+   direct children, which a blanket `> :not(.cand-modal-body)` rule overrode. */
+.cand-modal > .cand-modal-header,
+.cand-modal > .cand-modal-error,
+.cand-modal > .cand-modal-footer { flex: 0 0 auto; }
 .cand-modal .cand-modal-body {
   flex: 1 1 auto;
   min-height: 0;       /* lets the body shrink and scroll instead of pushing the footer out */

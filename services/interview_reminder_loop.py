@@ -19,6 +19,7 @@ _lock = threading.Lock()
 _task: asyncio.Task | None = None
 REMINDER_MINUTES = 30
 CHECK_INTERVAL_SEC = 300
+MAX_SENT_KEYS = 500
 
 
 def _load_sent() -> set[str]:
@@ -34,9 +35,20 @@ def _load_sent() -> set[str]:
     return set()
 
 
+def _chronological(key: str) -> tuple[str, str]:
+    """Sort key for "<id>:<YYYY-MM-DD>:<HH:MM>": by slot, oldest first.
+
+    The list used to be trimmed with a plain sort, which orders by candidate id.
+    Once it passed the cap that kept the keys with the highest ids and dropped
+    the rest, including a reminder written a moment earlier, which then fired
+    again on the next tick while the slot was still inside its window."""
+    parts = key.split(":", 2)
+    return (parts[1], parts[2]) if len(parts) == 3 else ("", key)
+
+
 def _save_sent(keys: set[str]) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
-    trimmed = sorted(keys)[-500:]
+    trimmed = sorted(keys, key=_chronological)[-MAX_SENT_KEYS:]
     tmp = _SENT_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(trimmed, f, indent=2)
@@ -102,8 +114,12 @@ async def interview_reminder_loop() -> None:
             n = await run_reminder_tick()
             if n:
                 logger.info("Interview reminders sent: %d", n)
-        except Exception as exc:
-            logger.debug("interview reminder tick: %s", exc)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Was logger.debug: a tick that fails every time (a store error, the
+            # outbox unavailable) left no trace and every reminder silently stopped.
+            logger.exception("Interview reminder tick failed; will retry in %ss", CHECK_INTERVAL_SEC)
         await asyncio.sleep(CHECK_INTERVAL_SEC)
 
 

@@ -68,7 +68,7 @@ async def notify_slot_booked(row: dict, *, action: str = "assigned") -> None:
             whatsapp_text=wa_text,
         )
     except Exception as exc:
-        logger.debug("Marketing notification delivery failed: %s", exc)
+        logger.warning("Slot-booked notification could not be queued: %s", exc, exc_info=True)
 
 
 def format_slot_reminder(row: dict, *, minutes: int = 30) -> tuple[str, str]:

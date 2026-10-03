@@ -1084,7 +1084,7 @@ def _attach_automatic_booking_evidence(
                 new={"error_code": type(exc).__name__, "gmail_message_id": message.get("provider_message_id")},
             )
         except Exception:
-            logger.debug("Unable to persist evidence failure audit", exc_info=True)
+            logger.warning("Unable to persist evidence failure audit", exc_info=True)
         return None
 
 

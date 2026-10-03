@@ -66,6 +66,10 @@ EARLY_NOTICES = 2
 #: Accounts per message. A longer list is split into several messages in the same
 #: cycle rather than cut off: a reminder without a link is not actionable.
 MAX_LINES_IN_TEXT = 12
+#: Marketing rejects a notification whose `whatsapp_text` is over 4000 characters
+#: (422, retried 12 times, then dead). A real link is ~280 characters, so twelve
+#: of them overflow; a message is therefore also bounded by size, with headroom.
+MAX_TEXT_CHARS = 3600
 MAX_MESSAGES_PER_CYCLE = 3
 MAX_NAMES_IN_PUSH = 6
 
@@ -296,6 +300,36 @@ def mark_resolved(mailbox_id: str, *, resolution: str = "reconnected") -> bool:
 
 # --- wording --------------------------------------------------------------------
 
+_TEXT_HEAD = "Gmail reconnect needed — the account holder must approve Google's screen:"
+_TEXT_TAIL = "Links work for 3 days. Nothing is needed once an account shows Connected."
+
+
+def _text_line(item: dict[str, Any]) -> str:
+    owner = f" ({item['owner']})" if item.get("owner") else ""
+    label = item["name"] or item["email"]
+    return f"• {label}{owner}: {item['link']}" if item.get("link") else f"• {label}{owner}"
+
+
+def split_for_messages(items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Groups of accounts whose text fits one message: at most MAX_LINES_IN_TEXT
+    accounts and at most MAX_TEXT_CHARS characters, counting the fixed wording and
+    the "and N more" line a later part might add. An account is never cut."""
+    reserve = len(_TEXT_HEAD) + len(_TEXT_TAIL) + 120
+    groups: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    used = reserve
+    for item in items:
+        cost = len(_text_line(item)) + 1
+        if current and (len(current) >= MAX_LINES_IN_TEXT or used + cost > MAX_TEXT_CHARS):
+            groups.append(current)
+            current, used = [], reserve
+        current.append(item)
+        used += cost
+    if current:
+        groups.append(current)
+    return groups
+
+
 def build_digest(
     items: list[dict[str, Any]],
     *,
@@ -325,14 +359,12 @@ def build_digest(
     if still_open_elsewhere:
         body += f" {still_open_elsewhere} more are also waiting."
 
-    lines = ["Gmail reconnect needed — the account holder must approve Google's screen:"]
+    lines = [_TEXT_HEAD]
     for item in items[:MAX_LINES_IN_TEXT]:
-        owner = f" ({item['owner']})" if item.get("owner") else ""
-        label = item["name"] or item["email"]
-        lines.append(f"• {label}{owner}: {item['link']}" if item.get("link") else f"• {label}{owner}")
+        lines.append(_text_line(item))
     if count > MAX_LINES_IN_TEXT:
         lines.append(f"…and {count - MAX_LINES_IN_TEXT} more — open Operations → Mail → Reconnect.")
-    lines.append("Links work for 3 days. Nothing is needed once an account shows Connected.")
+    lines.append(_TEXT_TAIL)
     return {
         "title": title,
         "body": body,
@@ -417,8 +449,7 @@ async def run_cycle(
     result: dict[str, Any] = {"open": open_total, "due": len(items), "sent": False, "dry_run": dry_run}
     if not items:
         return result
-    size = MAX_LINES_IN_TEXT
-    chunks = [items[i:i + size] for i in range(0, len(items), size)][:MAX_MESSAGES_PER_CYCLE]
+    chunks = split_for_messages(items)[:MAX_MESSAGES_PER_CYCLE]
     digests = [
         build_digest(
             chunk,

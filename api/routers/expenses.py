@@ -1,5 +1,6 @@
 """Operations expense, payout and salary routes."""
 import asyncio
+import logging
 from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from core import ai_activity
@@ -7,6 +8,7 @@ from features import transaction_identity
 from core.operations_api_helpers import require_admin as _require_fleet_admin
 from core.operations_api_helpers import require_payroll_admin as _require_payroll_admin
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/handler-expenses")
