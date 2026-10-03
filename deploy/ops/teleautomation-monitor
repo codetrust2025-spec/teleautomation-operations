@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""Production health monitor. Runs every 5 minutes (teleautomation-monitor.timer).
+
+Measures the host, the containers, the application (scripts/ops_health.py inside
+operations-api), the nightly backup and the RTX 4060 laptop's mirror, then turns
+failing checks into de-duplicated alerts and writes
+/var/lib/teleautomation-monitor/status.json.
+
+It sends nothing itself. Two independent watchdogs read status.json through a
+command-restricted SSH key (ta_offhost.py) and deliver it:
+  * GitHub Actions in the private teleautomation-ops-watch repository opens one
+    issue per alert (GitHub emails the owner), comments at most once a day while
+    it lasts, and closes it on recovery; it also alerts when this host, or this
+    monitor, stops answering.
+  * the RTX 4060 laptop's watchdog, which also checks the host from outside.
+
+No spam, by construction:
+  * a check must fail for its own min_fail_minutes before it becomes an alert
+    (default 10: two consecutive runs), and some only count in IST working hours;
+  * an alert stays one alert until it has passed twice in a row (no flapping);
+  * an alert's summary carries no names, phones, emails or payment references.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import socket
+import ssl
+import subprocess
+import sys
+import time
+import urllib.request
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+STATUS_DIR = os.environ.get("TA_STATUS_DIR", "/var/lib/teleautomation-monitor")
+STATE_FILE = os.path.join(STATUS_DIR, "monitor-state.json")
+STATUS_FILE = os.path.join(STATUS_DIR, "status.json")
+BACKUP_STATUS = os.path.join(STATUS_DIR, "backup-status.json")
+LAPTOP_REPORT = os.path.join(STATUS_DIR, "laptop-report.json")
+PROJECT = os.environ.get("TA_COMPOSE_PROJECT", "teleautomation-production")
+CONTAINERS = [f"{PROJECT}-{n}-1" for n in ("operations-api", "marketing-api", "operations-db", "marketing-db")]
+PUBLIC_URL = os.environ.get("TA_PUBLIC_URL", "https://operations.teleautomation.online/health")
+TLS_HOST = os.environ.get("TA_TLS_HOST", "operations.teleautomation.online")
+IST = timezone(timedelta(hours=5, minutes=30))
+OK_RUNS_TO_RESOLVE = 2
+FORGET_MISSING_AFTER = 3600
+
+
+def check(key, ok, summary, *, severity="critical", min_fail_minutes=10, business_hours_only=False):
+    return {"key": key, "ok": bool(ok), "severity": severity, "summary": summary,
+            "min_fail_minutes": min_fail_minutes, "business_hours_only": business_hours_only}
+
+
+# --- the alert engine (pure) -----------------------------------------------------------
+
+def in_business_hours(now: float) -> bool:
+    return 9 <= datetime.fromtimestamp(now, IST).hour < 21
+
+
+def evaluate(checks: list[dict], state: dict, *, now: float) -> tuple[list[dict], dict]:
+    """Fold this run's checks into the alert state. Returns (active alerts, new state)."""
+    entries = dict(state.get("checks") or {})
+    seen = set()
+    for c in checks:
+        key = c["key"]
+        seen.add(key)
+        e = dict(entries.get(key) or {})
+        e["last_seen"] = now
+        e["severity"], e["summary"] = c["severity"], c["summary"]
+        if c["ok"]:
+            e.pop("failing_since", None)
+            if e.get("alerting"):
+                e["ok_runs"] = int(e.get("ok_runs") or 0) + 1
+                if e["ok_runs"] >= OK_RUNS_TO_RESOLVE:
+                    e["alerting"] = False
+                    e["resolved_at"] = now
+        else:
+            e["ok_runs"] = 0
+            e.setdefault("failing_since", now)
+            counts = not c.get("business_hours_only") or in_business_hours(now)
+            if not e.get("alerting") and counts and now - e["failing_since"] >= 60 * int(c.get("min_fail_minutes", 10)):
+                e["alerting"] = True
+                e["alert_since"] = now
+        entries[key] = e
+    for key in list(entries):
+        if key not in seen and now - float(entries[key].get("last_seen") or 0) > FORGET_MISSING_AFTER:
+            del entries[key]          # a check that is no longer measured (e.g. disabled job)
+    active = [
+        {"key": k, "severity": e["severity"], "summary": e["summary"],
+         "since": datetime.fromtimestamp(e.get("alert_since") or now, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        for k, e in sorted(entries.items()) if e.get("alerting")
+    ]
+    return active, {"checks": entries}
+
+
+# --- probes -------------------------------------------------------------------------------
+
+def run(cmd: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def probe_containers(state: dict) -> list[dict]:
+    out = []
+    restarts_before = state.get("restarts") or {}
+    restarts_now = {}
+    for name in CONTAINERS:
+        r = run(["docker", "inspect", "-f", "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}", name])
+        if r.returncode != 0:
+            out.append(check(f"container:{name}", False, f"Container {name} is missing", min_fail_minutes=5))
+            continue
+        status, health, restarts = r.stdout.strip().split("|")
+        restarts_now[name] = int(restarts)
+        ok = status == "running" and health in ("healthy", "none")
+        out.append(check(f"container:{name}", ok, f"Container {name} is {status}/{health}" if not ok else f"{name} ok",
+                         min_fail_minutes=5))
+        grew = name in restarts_before and int(restarts) > int(restarts_before[name])
+        out.append(check(f"container_restart:{name}", not grew,
+                         f"Container {name} restarted (restart count {restarts})" if grew else f"{name} stable",
+                         severity="warning", min_fail_minutes=0))
+    state["restarts"] = restarts_now
+    return out
+
+
+def probe_http(key: str, url: str, timeout: int = 15) -> dict:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            ok = response.status == 200
+            return check(key, ok, f"{url} answered {response.status}" if not ok else f"{url} ok", min_fail_minutes=5)
+    except Exception as exc:  # noqa: BLE001
+        return check(key, False, f"{url} unreachable ({type(exc).__name__})", min_fail_minutes=5)
+
+
+def probe_tls() -> dict:
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((TLS_HOST, 443), timeout=15) as sock, ctx.wrap_socket(sock, server_hostname=TLS_HOST) as tls:
+            expires = ssl.cert_time_to_seconds(tls.getpeercert()["notAfter"])
+        days = (expires - time.time()) / 86400
+        return check("tls:certificate", days >= 14, f"TLS certificate expires in {int(days)} days",
+                     severity="critical" if days < 5 else "warning", min_fail_minutes=0)
+    except Exception as exc:  # noqa: BLE001
+        return check("tls:certificate", False, f"TLS certificate could not be read ({type(exc).__name__})",
+                     severity="warning", min_fail_minutes=30)
+
+
+def probe_resources() -> list[dict]:
+    du = shutil.disk_usage("/")
+    pct = 100 * du.used / du.total
+    out = [check("host:disk", pct < 85, f"Root disk {pct:.0f}% full",
+                 severity="critical" if pct >= 93 else "warning", min_fail_minutes=0)]
+    try:
+        info = dict(line.split(":", 1) for line in open("/proc/meminfo") if ":" in line)
+        avail = int(info["MemAvailable"].split()[0]) / int(info["MemTotal"].split()[0])
+        out.append(check("host:memory", avail >= 0.05, f"Only {avail:.0%} memory available",
+                         severity="warning", min_fail_minutes=15))
+    except (OSError, KeyError, ValueError):
+        pass
+    return out
+
+
+def probe_app() -> list[dict]:
+    r = run(["docker", "exec", "-w", "/app", f"{PROJECT}-operations-api-1", "python", "-m", "scripts.ops_health"], timeout=150)
+    if r.returncode != 0:
+        return [check("app:health_probe", False, "Application health probe failed to run", min_fail_minutes=15)]
+    try:
+        return [check(**{k: c[k] for k in ("key", "ok", "summary")},
+                      severity=c.get("severity", "critical"), min_fail_minutes=c.get("min_fail_minutes", 10),
+                      business_hours_only=c.get("business_hours_only", False))
+                for c in json.loads(r.stdout)["checks"]] + [check("app:health_probe", True, "probe ran")]
+    except (ValueError, KeyError):
+        return [check("app:health_probe", False, "Application health probe returned unreadable output", min_fail_minutes=15)]
+
+
+def probe_recipients() -> dict:
+    """Marketing delivers in-app notifications by web push and WhatsApp. With no
+    subscriber and no number configured, every notification reaches nobody."""
+    code = ("import os\nfrom features import web_push as w\n"
+            "phones=[p for p in os.getenv('WHATSAPP_SLOTS_NOTIFY_PHONES','').split(',') if p.strip()]\n"
+            "print(len(w.all_usernames_with_subscriptions()), len(phones))")
+    r = run(["docker", "exec", f"{PROJECT}-marketing-api-1", "python", "-c", code], timeout=60)
+    try:
+        push, phones = (int(x) for x in r.stdout.split())
+    except ValueError:
+        return check("notify:recipients", False, "Notification recipients could not be read", severity="warning", min_fail_minutes=60)
+    ok = push + phones > 0
+    return check("notify:recipients", ok,
+                 "In-app notifications reach nobody: 0 browser-push subscribers and no WhatsApp number configured"
+                 if not ok else f"{push} push subscriber(s), {phones} WhatsApp number(s)", severity="warning", min_fail_minutes=0)
+
+
+def _age_hours(stamp: str | None, now: float) -> float | None:
+    if not stamp:
+        return None
+    try:
+        return (now - datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).timestamp()) / 3600
+    except ValueError:
+        return None
+
+
+def probe_backup(now: float) -> list[dict]:
+    data = _load(BACKUP_STATUS, {})
+    age = _age_hours(data.get("last_success_at"), now)
+    fresh = age is not None and age <= 26
+    out = [check("backup:fresh", fresh,
+                 "No successful backup with a passing restore test yet" if age is None
+                 else f"Last successful backup and restore test was {age:.0f} h ago" if not fresh
+                 else f"backup {age:.1f} h old", min_fail_minutes=0)]
+    failed = data.get("last_result") == "failed"
+    out.append(check("backup:last_run", not failed,
+                     f"Last backup run failed: {data.get('last_error') or 'unknown step'}" if failed else "last backup run ok",
+                     min_fail_minutes=0))
+    return out
+
+
+def probe_laptop(now: float) -> list[dict]:
+    """The RTX 4060 laptop reports after every watchdog run and every mirror run."""
+    r = _load(LAPTOP_REPORT, None)
+    if not r:
+        return [check("rtx:report", False, "RTX 4060 laptop has never reported (backup mirror not installed yet)",
+                      severity="warning", min_fail_minutes=0)]
+    out = []
+    silent_h = (now - float(r.get("received_at") or 0)) / 3600
+    out.append(check("rtx:report", silent_h <= 2, f"RTX 4060 laptop silent for {silent_h:.0f} h (off, asleep or disconnected)",
+                     severity="warning", min_fail_minutes=0))
+    mirror_h = _age_hours(r.get("mirror_last_success_at"), now)
+    out.append(check("rtx:mirror_fresh", mirror_h is not None and mirror_h <= 36,
+                     "Off-server copy on the RTX laptop has never completed" if mirror_h is None
+                     else f"Off-server copy on the RTX laptop is {mirror_h:.0f} h old", min_fail_minutes=0))
+    verified = r.get("mirror_verify_ok")
+    out.append(check("rtx:mirror_verify", verified is not False,
+                     f"Off-server copy failed verification: {r.get('mirror_verify_problem') or 'checksum mismatch'}",
+                     min_fail_minutes=0))
+    free = r.get("disk_free_gb")
+    if isinstance(free, (int, float)):
+        out.append(check("rtx:disk", free >= 10, f"RTX laptop backup drive has {free:.0f} GB free",
+                         severity="critical" if free < 3 else "warning", min_fail_minutes=0))
+    return out
+
+
+def _load(path: str, default):
+    try:
+        with open(path, encoding="utf-8") as stream:
+            return json.load(stream)
+    except (OSError, ValueError):
+        return default
+
+
+def _save(path: str, data) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as stream:
+        json.dump(data, stream, indent=1)
+    os.replace(tmp, path)
+
+
+def main() -> int:
+    os.makedirs(STATUS_DIR, exist_ok=True)
+    now = time.time()
+    state = _load(STATE_FILE, {})
+    checks: list[dict] = []
+    for probe in (lambda: probe_containers(state), probe_resources, probe_app,
+                  lambda: [probe_http("http:operations_local", "http://127.0.0.1:8210/health")],
+                  lambda: [probe_http("http:marketing_local", "http://127.0.0.1:8110/health")],
+                  lambda: [probe_http("http:public", PUBLIC_URL)], lambda: [probe_tls()],
+                  lambda: [probe_recipients()], lambda: probe_backup(now), lambda: probe_laptop(now)):
+        try:
+            checks.extend(probe())
+        except Exception as exc:  # noqa: BLE001 - one broken probe must not blind the rest
+            checks.append(check("monitor:probe_error", False, f"A monitor probe crashed ({type(exc).__name__})",
+                                severity="warning", min_fail_minutes=15))
+    active, alert_state = evaluate(checks, state.get("alerts") or {}, now=now)
+    state["alerts"] = alert_state
+    _save(STATE_FILE, state)
+    _save(STATUS_FILE, {
+        "generated_at": datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "host": socket.gethostname(),
+        "active_alerts": active,
+        "checks": checks,
+    })
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

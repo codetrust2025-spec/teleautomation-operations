@@ -10,6 +10,7 @@ import threading
 from datetime import datetime, timedelta
 
 from core.config import DATA_DIR
+from core.job_heartbeats import beat
 from core.ist_time import IST, ist_now
 
 logger = logging.getLogger(__name__)
@@ -114,9 +115,11 @@ async def interview_reminder_loop() -> None:
             n = await run_reminder_tick()
             if n:
                 logger.info("Interview reminders sent: %d", n)
+            beat("interview_reminders", interval_sec=CHECK_INTERVAL_SEC)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            beat("interview_reminders", interval_sec=CHECK_INTERVAL_SEC, ok=False, error=repr(exc))
             # Was logger.debug: a tick that fails every time (a store error, the
             # outbox unavailable) left no trace and every reminder silently stopped.
             logger.exception("Interview reminder tick failed; will retry in %ss", CHECK_INTERVAL_SEC)

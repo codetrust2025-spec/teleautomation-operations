@@ -1,0 +1,11 @@
+[Unit]
+Description=TeleAutomation nightly backup (02:00 IST)
+
+[Timer]
+# 20:30 UTC = 02:00 IST. The RTX 4060 laptop mirrors the result at 03:00 IST.
+OnCalendar=*-*-* 20:30:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

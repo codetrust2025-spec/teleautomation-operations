@@ -1,0 +1,12 @@
+[Unit]
+Description=TeleAutomation nightly backup with restore test
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/teleautomation-backup
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=3h

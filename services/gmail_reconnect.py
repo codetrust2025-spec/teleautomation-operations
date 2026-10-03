@@ -26,6 +26,8 @@ told. This module:
 from __future__ import annotations
 
 import asyncio
+
+from core.job_heartbeats import beat
 import base64
 import hashlib
 import hmac
@@ -535,8 +537,10 @@ async def gmail_reconnect_loop() -> None:
             result = await run_cycle()
             if result.get("sent"):
                 logger.info("Gmail reconnect digest queued: due=%d open=%d", result["due"], result["open"])
-        except Exception:  # noqa: BLE001 - never let one bad pass end the loop
+            beat("gmail_reconnect", interval_sec=CYCLE_INTERVAL_SEC)
+        except Exception as exc:  # noqa: BLE001 - never let one bad pass end the loop
             logger.exception("Gmail reconnect cycle failed")
+            beat("gmail_reconnect", interval_sec=CYCLE_INTERVAL_SEC, ok=False, error=repr(exc))
         await asyncio.sleep(CYCLE_INTERVAL_SEC)
 
 

@@ -1,0 +1,37 @@
+# Off-server watchdog for TeleAutomation production. Source of truth:
+# teleautomation-operations/deploy/ops/watch (published here by publish_watch.sh).
+name: watchdog
+on:
+  schedule:
+    - cron: "7,37 * * * *"   # every 30 minutes (GitHub may start it a few minutes late)
+  workflow_dispatch: {}
+permissions:
+  issues: write
+  contents: read
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH identity (restricted to `status` on the server)
+        env:
+          KEY: ${{ secrets.WATCH_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.WATCH_KNOWN_HOSTS }}
+          HOST: ${{ secrets.WATCH_HOST }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/watch && chmod 0600 ~/.ssh/watch
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host prod\n  HostName %s\n  User root\n  IdentityFile ~/.ssh/watch\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' "$HOST" > ~/.ssh/config
+      - name: Check and reconcile alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_HEALTH_URL: https://operations.teleautomation.online/health
+          SSH_TARGET: prod
+        run: python3 watchdog.py
+      - if: always()
+        run: rm -f ~/.ssh/watch

@@ -51,7 +51,9 @@ class RecruitmentMailWorker:
         except asyncio.CancelledError:raise
         except Exception:logger.exception('Mailbox maintenance failed task=%s',label)
     async def _run(self):
+        from core.job_heartbeats import beat
         while not self._stopping:
+            beat('mail_worker',interval_sec=5)
             try:
                 # A mailbox shown as "Monitoring Active" must always consume
                 # its durable sync queue.  Previously a separate environment
@@ -82,7 +84,9 @@ class RecruitmentMailWorker:
                     if active:
                         await asyncio.wait(active,timeout=1,return_when=asyncio.FIRST_COMPLETED);continue
             except asyncio.CancelledError:raise
-            except Exception:logger.exception('Mailbox worker loop failed')
+            except Exception as exc:
+                logger.exception('Mailbox worker loop failed')
+                beat('mail_worker',interval_sec=5,ok=False,error=repr(exc))
             await asyncio.sleep(5)
     @staticmethod
     def _terminal_mailbox_ids(cur):

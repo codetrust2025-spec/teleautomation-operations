@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# Nightly production backup with a full restore test. Installed to /usr/local/sbin,
+# run by teleautomation-backup.timer. Read-only towards production: it dumps and
+# copies; it never writes to a production database or volume.
+#
+#  1. stage a consistent copy: pg_dump of both databases (plain SQL, no owners),
+#     exact row count of every table, rsync of both data volumes, host config
+#  2. manifest.json: sha256 of every staged file and the row counts
+#  3. restic backup of the stage (encrypted, de-duplicated, compressed)
+#  4. retention: 7 daily, 4 weekly, 6 monthly snapshots, then prune
+#  5. RESTORE TEST of the snapshot just taken: restic restore into a scratch
+#     directory, re-hash every file against the manifest, load each SQL dump into
+#     a throwaway postgres:16 (no network) and compare every table's row count
+#  6. restic check --read-data: every byte of the repository re-read and verified
+#
+# The RTX 4060 laptop then mirrors the repository (scripts/rtx-backup), verifying
+# every file against the SHA-256 it is named after. Status for the monitor and
+# the watchdogs: $STATUS_DIR/backup-status.json. A failure records the step and
+# leaves every earlier snapshot untouched.
+set -Eeuo pipefail
+umask 077
+
+ROOT="${TA_BACKUP_ROOT:-/var/backups/teleautomation}"
+REPO="${TA_RESTIC_REPO:-$ROOT/restic}"
+STAGE="$ROOT/stage"
+STATUS_DIR="${TA_STATUS_DIR:-/var/lib/teleautomation-monitor}"
+LIB="${TA_LIB_DIR:-/usr/local/lib/teleautomation}"
+PROJECT="${TA_COMPOSE_PROJECT:-teleautomation-production}"
+OPS_DB="$PROJECT-operations-db-1"
+MKT_DB="$PROJECT-marketing-db-1"
+OPS_VOL="/var/lib/docker/volumes/${PROJECT}_operations_data/_data"
+MKT_VOL="/var/lib/docker/volumes/${PROJECT}_marketing_data/_data"
+PG_IMAGE="${TA_PG_IMAGE:-postgres:16}"
+export RESTIC_REPOSITORY="$REPO"
+export RESTIC_PASSWORD_FILE="${TA_RESTIC_PASSWORD_FILE:-/etc/teleautomation/restic.password}"
+export RESTIC_CACHE_DIR="$ROOT/.cache"
+
+mkdir -p "$ROOT" "$STATUS_DIR"
+exec 9>"$STATUS_DIR/backup.lock"
+flock -n 9 || { echo "another backup is running" >&2; exit 0; }
+
+STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+VERIFY="$(mktemp -d /var/tmp/ta-verify.XXXXXX)"
+STEP="start"
+SNAPSHOT=""
+
+status() {  # status <ok|failed> [error]
+  python3 - "$STATUS_DIR/backup-status.json" "$1" "${2:-}" "$STARTED" "$SNAPSHOT" "$STAGE/manifest.json" <<'PY'
+import json, os, sys, datetime
+path, result, error, started, snapshot, manifest_path = sys.argv[1:7]
+try:
+    data = json.load(open(path))
+except Exception:
+    data = {}
+now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+data.update(last_attempt_at=now, last_attempt_started_at=started, last_result=result, last_error=error)
+if result == "ok":
+    summary = {}
+    try:
+        summary = json.load(open(manifest_path)).get("summary", {})
+    except Exception:
+        pass
+    data.update(last_success_at=now, last_snapshot=snapshot, last_summary=summary,
+                last_restore_test_at=now, consecutive_failures=0)
+else:
+    data["consecutive_failures"] = int(data.get("consecutive_failures") or 0) + 1
+tmp = path + ".tmp"
+json.dump(data, open(tmp, "w"), indent=1)
+os.replace(tmp, path)
+PY
+}
+
+cleanup() {
+  docker rm -f ta-restore-verify-operations ta-restore-verify-marketing >/dev/null 2>&1 || true
+  rm -rf "$VERIFY"
+}
+fail() {
+  local code=$?
+  echo "backup FAILED at step: $STEP (exit $code)" >&2
+  status failed "failed at step: $STEP" || true
+  cleanup
+  exit 1
+}
+trap fail ERR
+trap cleanup EXIT
+
+[ -s "$RESTIC_PASSWORD_FILE" ] || { STEP="restic password file missing ($RESTIC_PASSWORD_FILE)"; false; }
+[ -f "$REPO/config" ] || { STEP="restic repository missing ($REPO); run deploy/ops/install.sh"; false; }
+
+count_rows() {  # count_rows CONTAINER USER DB > tsv   (exact count(*) of every table)
+  docker exec -i "$1" psql -X -q -U "$2" -d "$3" -At -F $'\t' <<'SQL'
+SELECT format('SELECT %L, count(*) FROM %I.%I', table_name, table_schema, table_name)
+  FROM information_schema.tables
+ WHERE table_schema NOT IN ('pg_catalog','information_schema') AND table_type = 'BASE TABLE'
+ ORDER BY 1 \gexec
+SQL
+}
+dump_db() {  # dump_db CONTAINER LABEL
+  local user db
+  user="$(docker exec "$1" printenv POSTGRES_USER)"; db="$(docker exec "$1" printenv POSTGRES_DB)"
+  docker exec "$1" pg_dump -U "$user" -d "$db" --no-owner --no-acl > "$STAGE/db/$2.sql"
+  count_rows "$1" "$user" "$db" > "$STAGE/db/$2.counts.tsv"
+}
+
+STEP="prepare stage"
+mkdir -p "$STAGE/db"
+rm -f "$STAGE/manifest.json" "$STAGE"/db/*
+
+STEP="dump operations database"
+dump_db "$OPS_DB" operations
+STEP="dump marketing database"
+dump_db "$MKT_DB" marketing
+
+STEP="copy data volumes"
+rsync -a --delete "$OPS_VOL/" "$STAGE/operations-data/"
+rsync -a --delete "$MKT_VOL/" "$STAGE/marketing-data/"
+
+STEP="archive host configuration"
+CONFIG=()
+for p in etc/teleautomation-production.env etc/teleautomation etc/nginx etc/letsencrypt \
+         usr/local/sbin usr/local/lib/teleautomation etc/systemd/system; do
+  [ -e "/$p" ] && CONFIG+=("$p")
+done
+# The restic password is not put inside the repository it unlocks.
+tar -C / -cf "$STAGE/host-config.tar" --wildcards --exclude='etc/teleautomation/restic.password' \
+  --exclude='usr/local/sbin/[!t]*' --exclude='etc/systemd/system/[!t]*' "${CONFIG[@]}"
+
+STEP="write manifest"
+python3 "$LIB/ta_backup_verify.py" manifest "$STAGE" > "$STAGE/manifest.json.tmp"
+mv "$STAGE/manifest.json.tmp" "$STAGE/manifest.json"
+
+STEP="restic backup"
+nice -n 10 restic backup --quiet --host teleautomation-production --tag nightly "$STAGE"
+SNAPSHOT="$(restic snapshots --json --latest 1 --tag nightly | python3 -c 'import json,sys; s=json.load(sys.stdin); print(s[-1]["short_id"] if s else "")')"
+[ -n "$SNAPSHOT" ]
+
+STEP="retention (7 daily, 4 weekly, 6 monthly)"
+nice -n 10 restic forget --quiet --host teleautomation-production --tag nightly \
+  --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+
+# ---- restore test of the snapshot just taken -----------------------------------
+STEP="restore test: restic restore"
+restic restore --quiet "$SNAPSHOT" --target "$VERIFY"
+RESTORED="$VERIFY$STAGE"
+
+STEP="restore test: file checksums"
+python3 "$LIB/ta_backup_verify.py" files "$RESTORED"
+
+restore_db() {  # restore_db LABEL
+  local c="ta-restore-verify-$1"
+  docker rm -f "$c" >/dev/null 2>&1 || true
+  docker run -d --name "$c" --network none --memory 768m \
+    -e POSTGRES_PASSWORD=restore-test -e POSTGRES_DB=restore "$PG_IMAGE" >/dev/null
+  for _ in $(seq 1 90); do
+    if docker logs "$c" 2>&1 | grep -q "PostgreSQL init process complete" \
+       && docker exec "$c" pg_isready -U postgres -d restore -q; then break; fi
+    sleep 2
+  done
+  docker exec "$c" pg_isready -U postgres -d restore -q
+  docker exec -i "$c" psql -X -q -U postgres -d restore -v ON_ERROR_STOP=1 < "$RESTORED/db/$1.sql" >/dev/null
+  count_rows "$c" postgres restore > "$VERIFY/restored-$1.tsv"
+  python3 "$LIB/ta_backup_verify.py" counts "$RESTORED" "$1" "$VERIFY/restored-$1.tsv"
+  docker rm -f "$c" >/dev/null
+}
+STEP="restore test: operations database"
+restore_db operations
+STEP="restore test: marketing database"
+restore_db marketing
+
+STEP="repository integrity (restic check --read-data)"
+nice -n 10 restic check --quiet --read-data
+
+STEP="record success"
+status ok
+echo "backup ok: snapshot $SNAPSHOT, restore test and repository check passed"

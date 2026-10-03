@@ -13,6 +13,8 @@ system from quietly degrading to polling-only.
 from __future__ import annotations
 
 import asyncio
+
+from core.job_heartbeats import beat
 import logging
 import os
 
@@ -56,9 +58,11 @@ async def gmail_watch_renewal_loop() -> None:
                     result.get("renewed", 0),
                     result.get("failed", 0),
                 )
-        except Exception:
+            beat("gmail_watch_renewal", interval_sec=CHECK_INTERVAL_SEC)
+        except Exception as exc:
             # Never let a bad tick kill the loop - the next one may succeed.
             logger.exception("Gmail watch renewal tick failed")
+            beat("gmail_watch_renewal", interval_sec=CHECK_INTERVAL_SEC, ok=False, error=repr(exc))
         await asyncio.sleep(CHECK_INTERVAL_SEC)
 
 

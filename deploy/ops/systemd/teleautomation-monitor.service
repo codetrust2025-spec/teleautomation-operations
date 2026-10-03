@@ -1,0 +1,8 @@
+[Unit]
+Description=TeleAutomation production health monitor
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/teleautomation-monitor
+TimeoutStartSec=5min

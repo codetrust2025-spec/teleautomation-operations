@@ -6,9 +6,11 @@ import asyncio
 import os
 import hashlib
 import httpx
+import logging
 
 from services import cross_project_outbox as outbox
 
+logger = logging.getLogger(__name__)
 _dispatcher_task: asyncio.Task | None = None
 
 
@@ -50,10 +52,25 @@ async def dispatch_notifications_once() -> int:
     return delivered
 
 
+DISPATCH_INTERVAL_SEC = 30
+
+
 async def _dispatcher_loop() -> None:
+    # The body used to be unguarded: one unexpected error (an unreadable outbox
+    # file, a client that could not be built) ended the task, and every later
+    # notification stayed "pending" forever with nothing in the log.
+    from core.job_heartbeats import beat
+
     while True:
-        await dispatch_notifications_once()
-        await asyncio.sleep(30)
+        try:
+            await dispatch_notifications_once()
+            beat("outbox_dispatcher", interval_sec=DISPATCH_INTERVAL_SEC)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Outbox dispatch pass failed; will retry")
+            beat("outbox_dispatcher", interval_sec=DISPATCH_INTERVAL_SEC, ok=False, error=repr(exc))
+        await asyncio.sleep(DISPATCH_INTERVAL_SEC)
 
 
 def start_outbox_dispatcher() -> None:
