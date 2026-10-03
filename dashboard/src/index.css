@@ -18137,25 +18137,37 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 
 /* ── Candidates table: sticky header, tooltips, readable notes, payment cell ── */
 
-/* Sticky header. The wrapper is the scroll container, so it needs a height of
-   its own: with none, the header had nothing to stick against and scrolled away
-   with the page. Below 600px the table becomes cards and has no header. */
-@media (min-width: 600px) {
+/* Sticky header, without a second scrollbar.
+   On desktop the page body (.business-body) is the scroller and the app header
+   sits outside it, so the table header can stick to the top of the body while
+   the page scrolls. The table fits from 1200px up; below that it needs its own
+   horizontal scroll, and a scroll container cannot also stick to the page, so
+   the header stays in normal flow there (as before). A bounded-height wrapper
+   was tried and abandoned: it put a scrollbar inside the page. */
+@media (min-width: 1200px) {
   .cand-page > .cand-table-wrap {
-    max-height: calc(100vh - 220px);
-    min-height: 260px;
-    overflow: auto;
+    overflow: visible;
   }
-  /* Same specificity as the rule that keeps this page's header in normal flow
-     (the page scrolls as a document, and a sticky toolbar plus sticky columns
-     made rows slide between two layers). The header now sticks only inside the
-     table's own scroller; the toolbar stays where it is. */
+  .cand-page > .cand-table-wrap .cand-table {
+    border-collapse: separate; /* a collapsed border does not travel with a sticky cell */
+    border-spacing: 0;
+  }
   .cand-page > .cand-table-wrap .cand-table thead th {
     position: sticky;
-    top: 0;
+    /* The page body has 20px of top padding, and a sticky offset is measured
+       inside it: at 0 the header stopped 20px below the app header and rows
+       slid through that gap. Pulling it up by the padding makes it flush. */
+    top: -20px;
     z-index: 3;
     background: #171d2b; /* opaque: rows must not show through while scrolling */
-    box-shadow: 0 1px 0 rgba(148, 163, 184, 0.18);
+    box-shadow: 0 1px 0 rgba(148, 163, 184, 0.22);
+  }
+  /* A row scrolled into view, or a control focused with the keyboard, must land
+     below the sticky header, not behind it. */
+  .cand-table tbody tr,
+  .cand-table tbody tr button,
+  .cand-table tbody tr [tabindex] {
+    scroll-margin-top: 56px;
   }
 }
 
@@ -18239,31 +18251,44 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   z-index: 5;
 }
 
-/* Notes and follow-ups: the whole text, two lines at a time. */
+/* Notes and follow-ups: the whole text, wrapped. A long one is held to two lines
+   with a fade (not an ellipsis) and opened with Show more. */
 .cand-note {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
+  display: block;
   white-space: normal;
   overflow-wrap: anywhere;
-  cursor: pointer;
-}
-.cand-note--open {
-  display: block;
-  -webkit-line-clamp: unset;
-  line-clamp: unset;
 }
 .cand-cell-note.cand-note {
   margin: 3px 0 0;
 }
-.cand-cell-followup.cand-note {
-  text-overflow: clip;
+.cand-note--long:not(.cand-note--open) .cand-note__text {
+  display: block;
+  max-height: 2.9em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
 }
-.cand-note:focus-visible {
+.cand-note__toggle {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 0;
+  border: 0;
+  background: none;
+  color: #a5b4fc;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cand-note__toggle:hover {
+  color: #c7d2fe;
+}
+.cand-note__toggle:focus-visible {
   outline: 2px solid rgba(165, 180, 252, 0.7);
   outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* Payment cell: amount first and largest, then what is owed or paid, then the

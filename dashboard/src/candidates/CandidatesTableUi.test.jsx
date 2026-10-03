@@ -138,46 +138,55 @@ describe("2. the green tick says what it means", () => {
   });
 });
 
-describe("3. notes are readable in full", () => {
-  it("keeps the whole note and follow-up in the page, never cut at a fixed length", async () => {
+describe("3. notes wrap and expand cleanly", () => {
+  it("keeps the whole note and follow-up in the page, never cut with an ellipsis", async () => {
     await renderTable();
     const row = rowOf("Complete Person");
     expect(row.textContent).toContain(LONG_NOTE);
     expect(row.textContent).toContain(LONG_FOLLOW_UP);
     expect(row.textContent).not.toContain("…");
+    expect(row.textContent).not.toContain("...");
   });
 
   it("shows the full text on hover as well", async () => {
     await renderTable();
-    const note = rowOf("Complete Person").querySelector(".cand-cell-note");
-    expect(note).toHaveAttribute("title", LONG_NOTE);
+    expect(rowOf("Complete Person").querySelector(".cand-cell-note")).toHaveAttribute("title", LONG_NOTE);
   });
 
-  it("opens a long note in place on click, and closes it again, without opening the editor", async () => {
+  it("a long note gets a Show more control that opens it in place and closes it again", async () => {
     await renderTable();
     const note = rowOf("Complete Person").querySelector(".cand-cell-note");
-    expect(note).toHaveAttribute("role", "button");
-    expect(note).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(note);
-    expect(note).toHaveAttribute("aria-expanded", "true");
+    expect(note.className).toContain("cand-note--long");
+    expect(note.className).not.toContain("cand-note--open");
+    const toggle = within(note).getByRole("button", { name: "Show more" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
     expect(note.className).toContain("cand-note--open");
-    fireEvent.click(note);
-    expect(note).toHaveAttribute("aria-expanded", "false");
+    expect(within(note).getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(within(note).getByRole("button", { name: "Show less" }));
+    expect(note.className).not.toContain("cand-note--open");
+  });
+
+  it("the control never opens the row's editor", async () => {
+    await renderTable();
+    fireEvent.click(within(rowOf("Complete Person").querySelector(".cand-cell-note")).getByRole("button", { name: "Show more" }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(calls.some((c) => /\/candidates\/row-complete$/.test(c.url))).toBe(false);
   });
 
-  it("can be opened from the keyboard", async () => {
+  it("the follow-up has its own control", async () => {
     await renderTable();
     const followUp = rowOf("Complete Person").querySelector(".cand-cell-followup");
-    fireEvent.keyDown(followUp, { key: "Enter" });
-    expect(followUp).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(within(followUp).getByRole("button", { name: "Show more" }));
+    expect(followUp.className).toContain("cand-note--open");
   });
 
-  it("does not turn a short note into a control", async () => {
+  it("a short note is plain text with no control", async () => {
     await renderTable();
     const note = rowOf("Lost Person").querySelector(".cand-cell-note");
     expect(note.textContent).toContain("short note");
-    expect(note).not.toHaveAttribute("role");
+    expect(note.className).not.toContain("cand-note--long");
+    expect(within(note).queryByRole("button")).toBeNull();
   });
 });
 
@@ -266,26 +275,35 @@ describe("5. Edit and Delete say what they do, and Delete asks first", () => {
   });
 });
 
-describe("1. the header stays visible, on desktop and tablet; mobile keeps its cards", () => {
-  const block = (pattern) => {
-    const start = CSS.lastIndexOf(pattern);
+describe("1. the header stays visible without a second scrollbar; mobile keeps its cards", () => {
+  const sticky = () => {
+    const start = CSS.lastIndexOf("@media (min-width: 1200px) {\n  .cand-page > .cand-table-wrap {");
     expect(start).toBeGreaterThan(-1);
-    return CSS.slice(start, start + 900);
+    return CSS.slice(start, start + 1700);
   };
 
-  it("the table wrapper has a height to scroll within, from 600px up", () => {
-    const rules = block("@media (min-width: 600px) {\n  .cand-page > .cand-table-wrap {");
-    expect(rules).toMatch(/max-height:\s*calc\(100vh/);
-    expect(rules).toMatch(/overflow:\s*auto/);
+  it("from 1200px up the page scrolls and the header sticks to it: no inner scroller", () => {
+    const rules = sticky();
+    expect(rules).toMatch(/\.cand-page > \.cand-table-wrap\s*{\s*overflow:\s*visible/);
+    expect(rules).toMatch(/\.cand-table thead th\s*{[^}]*position:\s*sticky/);
+    expect(rules).toMatch(/top:\s*-20px/); // flush with the padded page body
   });
 
-  it("the header cells stick, above the rows, with an opaque background", () => {
-    const rules = block("@media (min-width: 600px) {\n  .cand-page > .cand-table-wrap {");
-    expect(rules).toMatch(/\.cand-table thead th\s*{[^}]*position:\s*sticky/);
-    expect(rules).toContain(".cand-page > .cand-table-wrap .cand-table thead th");
-    expect(rules).toMatch(/top:\s*0/);
+  it("no rule bounds the table's height, which is what made the nested scrollbar", () => {
+    expect(CSS).not.toMatch(/\.cand-page > \.cand-table-wrap\s*{[^}]*max-height/);
+    expect(sticky()).not.toMatch(/max-height/);
+  });
+
+  it("the header is opaque, sits above the rows, and keeps its bottom edge when it sticks", () => {
+    const rules = sticky();
     expect(rules).toMatch(/z-index:\s*3/);
     expect(rules).toMatch(/background:\s*#[0-9a-f]{6}/i);
+    expect(rules).toMatch(/border-collapse:\s*separate/);
+    expect(rules).toMatch(/box-shadow:\s*0 1px 0/);
+  });
+
+  it("a row scrolled into view or focused lands below the sticky header, not behind it", () => {
+    expect(sticky()).toMatch(/scroll-margin-top:\s*56px/);
   });
 
   it("below 600px the table is still cards with no header, as before", () => {
@@ -294,8 +312,6 @@ describe("1. the header stays visible, on desktop and tablet; mobile keeps its c
   });
 
   it("each mobile card label names its own cell", () => {
-    // Labels were assigned by position before the Service type column existed,
-    // so "Payment" sat over the stage and "Interview date" over the amount.
     const label = (selector) => {
       const m = CSS.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "::before \\{ content: '([^']+)'"));
       return m && m[1];
@@ -313,8 +329,9 @@ describe("1. the header stays visible, on desktop and tablet; mobile keeps its c
     expect(CSS).toMatch(/\.cand-tip--left\[data-tip\]::after/);
   });
 
-  it("notes clamp to two lines and open fully", () => {
-    expect(CSS).toMatch(/\.cand-note\s*{[^}]*-webkit-line-clamp:\s*2/);
-    expect(CSS).toMatch(/\.cand-note--open\s*{[^}]*-webkit-line-clamp:\s*unset/);
+  it("long notes fade out instead of ending in an ellipsis", () => {
+    expect(CSS).toMatch(/\.cand-note--long:not\(\.cand-note--open\) \.cand-note__text\s*{[^}]*mask-image/);
+    expect(CSS).not.toMatch(/\.cand-note\s*{[^}]*-webkit-line-clamp/);
+    expect(CSS).not.toMatch(/\.cand-cell-followup\.cand-note\s*{[^}]*text-overflow:\s*ellipsis/);
   });
 });

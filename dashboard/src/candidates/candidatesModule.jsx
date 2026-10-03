@@ -5898,35 +5898,37 @@ export function _Component27({ row: e, onViewProofs: t }) {
 /**
  * A note or follow-up that can be read in full.
  *
- * The table used to cut it at 30/60 characters, and the cut text could not be
- * recovered without opening the editor. The whole text is in the DOM and in the
- * hover title; it is clamped to two lines visually, and a click (or Enter)
- * opens it in place. The click never opens the row's editor.
+ * The table used to cut it at 30/60 characters, and a CSS clamp then ended it
+ * in an awkward "...". Now the whole text wraps; only a long one is held to two
+ * lines, faded rather than ellipsised, behind a Show more / Show less control.
+ * The full text is always in the page and the hover title, and the control
+ * never opens the row's editor.
  */
 function ExpandableNote({ text, className, prefix = "" }) {
   const [open, setOpen] = w.useState(false);
-  const long = String(text || "").length > 36;
-  const toggle = (event) => {
-    event.stopPropagation();
-    if (long) setOpen((value) => !value);
-  };
+  const long = String(text || "").length > 90;
   return (
     <span
-      className={`${className} cand-note${open ? " cand-note--open" : ""}`}
+      className={`${className} cand-note${long ? " cand-note--long" : ""}${open ? " cand-note--open" : ""}`}
       title={text}
-      onClick={toggle}
-      onKeyDown={(event) => {
-        if (long && (event.key === "Enter" || event.key === " ")) {
-          event.preventDefault();
-          toggle(event);
-        }
-      }}
-      role={long ? "button" : undefined}
-      tabIndex={long ? 0 : undefined}
-      aria-expanded={long ? open : undefined}
     >
-      {prefix ? <span aria-hidden={true}>{prefix}</span> : null}
-      {text}
+      <span className="cand-note__text">
+        {prefix ? <span aria-hidden={true}>{prefix}</span> : null}
+        {text}
+      </span>
+      {long && (
+        <button
+          type="button"
+          className="cand-note__toggle"
+          aria-expanded={open}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen((value) => !value);
+          }}
+        >
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
     </span>
   );
 }
