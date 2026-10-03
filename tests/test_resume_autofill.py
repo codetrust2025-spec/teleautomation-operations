@@ -156,7 +156,7 @@ def test_a_resume_that_names_nobody_cannot_vouch_for_itself():
 
 # --- a resume that is not evidence about this candidate ---------------------------------
 
-@pytest.mark.parametrize("filler", ["xyz@gmail.com", "abc@gmail.com", "test@gmail.com", "yourname@gmail.com", "example@gmail.com", "name@gmail.com"])
+@pytest.mark.parametrize("filler", ["xyz@example.test", "abc@example.test", "test@example.test", "yourname@example.test", "example@example.test", "name@example.test"])
 def test_a_template_placeholder_address_is_never_written(filler):
     assert "email" not in plan(GAPS, reading(email=filler, phone=""))["fill"]
 
@@ -166,7 +166,7 @@ def test_a_real_looking_address_with_a_common_word_is_still_accepted():
 
 
 def test_a_resume_with_a_different_phone_than_the_candidates_is_ignored_entirely():
-    """Chinthala Pavan's resume read xyz@gmail.com and a phone that was not his."""
+    """A resume that read a template placeholder address and a phone that was not the candidate's."""
     candidate = {"name": "Asha Rao", "email": "", "phone": "9000000902", "technology": ""}
     result = plan(candidate, reading(phone="9000000999", email="asha.rao@example.test"))
     assert result["fill"] == {}
