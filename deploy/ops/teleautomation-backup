@@ -104,7 +104,7 @@ dump_db() {  # dump_db CONTAINER LABEL
 
 STEP="prepare stage"
 mkdir -p "$STAGE/db"
-rm -f "$STAGE/manifest.json" "$STAGE"/db/*
+rm -f "$STAGE/manifest.json" "$STAGE"/manifest.json.tmp "$STAGE"/db/*
 
 STEP="dump operations database"
 dump_db "$OPS_DB" operations
@@ -126,8 +126,10 @@ tar -C / -cf "$STAGE/host-config.tar" --wildcards --exclude='etc/teleautomation/
   --exclude='usr/local/sbin/[!t]*' --exclude='etc/systemd/system/[!t]*' "${CONFIG[@]}"
 
 STEP="write manifest"
-python3 "$LIB/ta_backup_verify.py" manifest "$STAGE" > "$STAGE/manifest.json.tmp"
-mv "$STAGE/manifest.json.tmp" "$STAGE/manifest.json"
+# Written beside the stage, not in it: a temporary file inside the directory
+# being hashed lists itself in the manifest (the first restore test caught that).
+python3 "$LIB/ta_backup_verify.py" manifest "$STAGE" > "$ROOT/manifest.json.tmp"
+mv "$ROOT/manifest.json.tmp" "$STAGE/manifest.json"
 
 STEP="restic backup"
 nice -n 10 restic backup --quiet --host teleautomation-production --tag nightly "$STAGE"

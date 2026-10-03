@@ -414,3 +414,11 @@ def test_host_scripts_are_lf_so_they_run_on_linux():
                 continue
             with open(os.path.join(base, name), "rb") as stream:
                 assert b"\r" not in stream.read(), os.path.join(base, name)
+
+
+def test_the_manifest_is_never_written_inside_the_stage_it_hashes():
+    """First production run: manifest.json.tmp was written into the stage, listed
+    in its own manifest, and the restore test (rightly) failed the backup."""
+    script = open(os.path.join(OPS, "teleautomation-backup"), encoding="utf-8").read()
+    assert '> "$STAGE/manifest.json.tmp"' not in script
+    assert '> "$ROOT/manifest.json.tmp"' in script
