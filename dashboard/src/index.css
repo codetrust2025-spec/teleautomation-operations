@@ -18356,3 +18356,114 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
     transform: none;
   }
 }
+
+/* ── Edit Candidate modal: proof cards, footer and scroll ──────────────────────
+   Three faults, all from rules written for the old 120px thumbnail layout that
+   outranked the later card rules:
+   1. `.cand-panel .cand-proof-card` / `.cand-proofs-grid` pinned every card to
+      120px with overflow hidden, so Transaction ID / UTR, the upload date and the
+      note were cut off (the reference value was 10px wide).
+   2. The footer was `position: sticky` inside a flex column, where it does
+      nothing; the body's `max-height: calc(90vh - 100px)` guessed the footer's
+      height instead of letting the layout decide.
+   3. Because of (2) the scroll area could end up shorter or taller than the
+      room it really had.
+   The modal is now a plain column: header, resume bar, ONE scrolling body, error,
+   footer. The footer is a sibling that never scrolls, so it cannot cover proof
+   content, and every proof card is reachable by scrolling the body. */
+.cand-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  max-height: 90dvh;
+}
+.cand-modal > :not(.cand-modal-body) { flex: 0 0 auto; }
+.cand-modal .cand-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;       /* lets the body shrink and scroll instead of pushing the footer out */
+  max-height: none;    /* no guess at what the header and footer take */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: 16px;
+}
+.cand-modal .cand-modal-footer {
+  position: relative;  /* in flow below the body, never over it */
+  bottom: auto;
+  z-index: 2;
+  background: #0f172a;
+  box-shadow: 0 -8px 18px rgba(2, 6, 23, 0.35);
+}
+.cand-modal-body > .cand-panel:last-child { padding-bottom: 20px; }
+
+/* Proof card text: whole values, wrapped, never cut with an ellipsis. */
+.cand-proof-card { min-width: 0; }
+.cand-proof-meta {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+.cand-proof-facts dt { flex: 0 0 96px; min-width: 96px; }
+.cand-proof-facts dd {
+  overflow-wrap: anywhere;
+  word-break: break-all; /* a 22-character transaction ID is one unbreakable token */
+}
+.cand-proof-note {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.cand-proof-sub { flex-wrap: wrap; }
+.cand-proof-broken-label { display: block; overflow-wrap: anywhere; }
+.cand-proof-broken-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+@media (min-width: 900px) {
+  /* The proofs block is a single full-width column; the old two-column
+     (dropzone | 120px thumbnail) arrangement is what squeezed the cards. */
+  .cand-panel .cand-proofs,
+  .cand-panel .cand-proofs:has(.cand-proofs-grid) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: visible;
+  }
+  .cand-panel .cand-proofs .cand-proofs-grid,
+  .cand-panel .cand-proofs:has(.cand-proofs-grid) .cand-proofs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    gap: 12px;
+    align-items: stretch;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    overflow: visible;
+  }
+  .cand-panel .cand-proof-card {
+    width: auto;
+    max-width: none;
+    overflow: visible;
+  }
+  .cand-panel .cand-proof-card img {
+    height: 100%;
+    max-height: none;
+    object-fit: contain;
+  }
+  .cand-panel .cand-proof-meta {
+    font-size: 12px;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+    text-overflow: clip;
+    max-width: none;
+    width: auto;
+  }
+  .cand-panel--right { padding-bottom: 20px; }
+}
+@media (max-width: 899px) {
+  .cand-modal-body > .cand-panel { flex: 0 0 auto; min-width: 0; }
+}
+@media (max-width: 599px) {
+  .cand-modal { max-height: 100dvh; } /* phones: the form owns the whole viewport */
+  .cand-modal .cand-modal-footer { box-shadow: 0 -10px 24px rgba(2, 6, 23, 0.45); }
+}
