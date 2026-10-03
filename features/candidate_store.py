@@ -2061,6 +2061,22 @@ def backfill_tool_default_candidate_technology() -> int:
     return changed
 
 
+def _normalise_keeping_stored(record: dict, *, existing: dict) -> dict:
+    """`_normalise`, without discarding stored fields it does not model.
+
+    `_normalise` builds a row from a fixed list of keys. Used to replace a stored
+    row on edit, it silently dropped everything else on that row: a saved
+    `interview_feedback` ("positive") vanished the next time anyone changed an
+    unrelated field, and any field added later would have vanished the same way.
+    Edits change what they are given; everything else on the row is kept.
+    """
+    out = _normalise(record, existing=existing)
+    for key, value in (existing or {}).items():
+        if key not in out:
+            out[key] = value
+    return out
+
+
 def backfill_canonical_candidate_names() -> int:
     """Merge name variants (PERLA ABHILASH vs Abilash Perla) to one canonical label."""
     data = _load(force=True)
@@ -2071,7 +2087,7 @@ def backfill_canonical_candidate_names() -> int:
         new = canonical_candidate_name(old)
         if not new or new == old:
             continue
-        rows[i] = _normalise({"name": new}, existing=r)
+        rows[i] = _normalise_keeping_stored({"name": new}, existing=r)
         changed += 1
     if changed:
         data["candidates"] = rows
@@ -6503,7 +6519,7 @@ def update_candidate(
                     reason = slot_confirm_block_reason(_with_computed(preview))
                     if reason:
                         raise ValueError(reason)
-            rows[i] = _normalise(allowed_patch, existing=r)
+            rows[i] = _normalise_keeping_stored(allowed_patch, existing=r)
             # Profile-service slot clones represent one commercial agreement.
             # Keep shared financial fields identical so list-page consolidation
             # cannot resurrect an older, higher value after an edit.
@@ -6519,7 +6535,7 @@ def update_candidate(
                         continue
                     if str(clone.get("id")) not in profile_identity_ids:
                         continue
-                    rows[j] = _normalise(shared_patch, existing=clone)
+                    rows[j] = _normalise_keeping_stored(shared_patch, existing=clone)
             data["candidates"] = rows
             _save(data)
             return _with_computed(rows[i])
