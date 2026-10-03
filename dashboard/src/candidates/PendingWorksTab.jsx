@@ -26,7 +26,7 @@ const ACTIONS = {
   missing_resume: "Upload Resume",
   missing_phone: "Add Phone",
   missing_payment_proof: "Upload Proof",
-  payment_proof_file_lost: "Upload Proof Again",
+  payment_proof_file_lost: "Restore / Upload Proof",
   payment_evidenced_elsewhere: "Review Row",
 };
 const DEFAULT_ACTION = "Edit Candidate";

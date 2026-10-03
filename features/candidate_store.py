@@ -2423,7 +2423,7 @@ PENDING_WORK_LABELS = {
     "missing_resume": "Upload resume",
     "payment_due": "Payment pending",
     "missing_payment_proof": "Upload payment proof",
-    "payment_proof_file_lost": "Proof file lost",
+    "payment_proof_file_lost": "Restore / Upload payment proof",
     "payment_evidenced_elsewhere": "Same payment evidenced on another booking",
     "missing_follow_up": "Add follow-up remark",
     "missing_phone": "Add phone number",
@@ -2441,13 +2441,19 @@ PENDING_WORK_PRIORITY = {
 }
 
 
-def _pending_work_item(*, kind: str, row: dict, detail: str = "") -> dict:
+# A lost proof image whose payment is still backed by another stored proof: the
+# record needs its screenshot back, but no money is unevidenced. Listed, below
+# every task that puts money or a booking at risk.
+PENDING_WORK_PRIORITY_LOST_BUT_COVERED = 45
+
+
+def _pending_work_item(*, kind: str, row: dict, detail: str = "", priority: int | None = None) -> dict:
     return {
         "id": f"{kind}:{row.get('id')}",
         "kind": kind,
         "label": PENDING_WORK_LABELS[kind],
         "detail": detail,
-        "priority": PENDING_WORK_PRIORITY[kind],
+        "priority": PENDING_WORK_PRIORITY[kind] if priority is None else priority,
         "candidate_id": row.get("id"),
         "candidate_name": row.get("name") or "",
         "reference": row.get("reference") or "",
@@ -2455,6 +2461,45 @@ def _pending_work_item(*, kind: str, row: dict, detail: str = "") -> dict:
         "service_type": row.get("service_type") or "profile_service",
         "date": _clean_str(row.get("date"))[:10],
     }
+
+
+def _lost_payment_proofs(rows: list[dict]) -> list[dict]:
+    """Every payment-proof record of these rows whose image is no longer stored.
+
+    Checked per unverified proof, not per candidate. A profile whose newer slot holds a
+    verified proof can still carry an older record with nothing behind it (the
+    files written before the 25 Aug 2026 server move were never carried over).
+    The Candidates table badges that record "Proof file lost" in any month view
+    that holds only the older slots, so Pending Works must list it too: it used
+    to decide per merged profile, where the verified proof hid it entirely.
+
+    A slot clone's copy of a proof may lack `candidate_id`, so a proof counts as
+    present if any row of the group can find its file. Returns
+    [{"proof_id", "row_id", "date"}], each proof once, oldest slot first.
+    """
+    found: dict[str, dict] = {}
+    for r in sorted(rows, key=lambda x: (x.get("date") or "", x.get("id") or "")):
+        for proof in partition_candidate_attachments(r)["payment_proofs"]:
+            pid = str(proof.get("id") or "")
+            if not pid or pid in found:
+                continue
+            # A merged candidate row carries its slots' proofs with the owning
+            # slot in `candidate_id`; that slot is the one to open.
+            owner = str(proof.get("candidate_id") or r.get("id") or "")
+            date = _clean_str(r.get("date"))[:10] if owner == str(r.get("id") or "") else ""
+            found[pid] = {"proof": proof, "row_id": owner, "date": date}
+    lost = []
+    for pid, info in found.items():
+        if _clean_str(info["proof"].get("verification_state")):
+            # An adjudicated proof keeps its amount without its image: the
+            # verification record (amount, reference, receiver) is the evidence,
+            # and the table never badges it lost. Only an unverified record with
+            # nothing behind it is a proof that has to be supplied again.
+            continue
+        if any(_proof_file_present(str(r.get("id") or ""), info["proof"]) for r in rows):
+            continue
+        lost.append({"proof_id": pid, "row_id": info["row_id"], "date": info["date"]})
+    return lost
 
 
 def _merge_profile_rows_for_pending(rows: list[dict]) -> dict:
@@ -2519,6 +2564,7 @@ def _merge_profile_rows_for_pending(rows: list[dict]) -> dict:
         "phone": phone or rep.get("phone"),
         "reference": reference or rep.get("reference"),
         "follow_up": follow_up or rep.get("follow_up"),
+        "lost_payment_proofs": _lost_payment_proofs(rows),
     }
     return merged
 
@@ -2645,10 +2691,14 @@ def _collect_pending_works_for_row(row: dict) -> list[dict]:
     # but nothing evidences it. It is the same condition the Candidates table
     # badges "Recorded — proof missing", so the two must never disagree.
     gap = _payment_proof_gap(row)
+    lost = row["lost_payment_proofs"] if "lost_payment_proofs" in row else _lost_payment_proofs([row])
     if gap == "missing":
         works.append(_pending_work_item(kind="missing_payment_proof", row=row))
     elif gap == "file_lost":
-        works.append(_pending_work_item(kind="payment_proof_file_lost", row=row))
+        works.append(_pending_work_item(
+            kind="payment_proof_file_lost", row=_row_holding_lost_proof(row, lost),
+            detail=_lost_proof_detail(lost, covered=False),
+        ))
     elif gap == "evidenced_elsewhere":
         on = row.get("payment_evidenced_on") or {}
         works.append(_pending_work_item(
@@ -2656,9 +2706,38 @@ def _collect_pending_works_for_row(row: dict) -> list[dict]:
             detail=f"A verified proof for this payment is on the {on.get('date') or 'later'} booking. "
                    "This row looks like the same payment recorded twice; review it rather than uploading a proof.",
         ))
+    if lost and gap != "file_lost":
+        # The amount is backed by another stored proof, so nothing is at risk,
+        # but the record the table badges "Proof file lost" still needs its
+        # screenshot back.
+        works.append(_pending_work_item(
+            kind="payment_proof_file_lost", row=_row_holding_lost_proof(row, lost),
+            detail=_lost_proof_detail(lost, covered=True),
+            priority=PENDING_WORK_PRIORITY_LOST_BUT_COVERED,
+        ))
     if not (row.get("phone") or "").strip():
         works.append(_pending_work_item(kind="missing_phone", row=row))
     return works
+
+
+def _row_holding_lost_proof(row: dict, lost: list[dict]) -> dict:
+    """Open the slot that holds the lost record, so the editor shows it with its
+    re-upload button; keep the candidate's own name, reference and technology."""
+    if not lost or not lost[0].get("row_id") or lost[0]["row_id"] == row.get("id"):
+        return row
+    return {**row, "id": lost[0]["row_id"], "date": lost[0].get("date") or row.get("date")}
+
+
+def _lost_proof_detail(lost: list[dict], *, covered: bool) -> str:
+    count = max(1, len(lost))
+    noun = "payment proof record has" if count == 1 else "payment proof records have"
+    dates = sorted({item.get("date") for item in lost if item.get("date")})
+    when = f" (slot {', '.join(dates[:3])}{' …' if len(dates) > 3 else ''})" if dates else ""
+    if covered:
+        return (f"{count} {noun} no stored image{when}. The recorded amount is backed by another "
+                "stored proof; upload the original screenshot again if you have it.")
+    return (f"{count} {noun} no stored image{when}, and no other stored proof backs the recorded "
+            "amount. Upload the payment screenshot again; the amount is not changed.")
 
 
 def _pending_works_core(rows: list[dict]) -> dict:
@@ -2680,7 +2759,9 @@ def _pending_works_core(rows: list[dict]) -> dict:
             continue
         key = _profile_group_key(row, phones_by_name)
         if not key:
-            continue
+            # The Candidates table shows an ungroupable row on its own; this
+            # used to `continue`, so such a row could never have pending work.
+            key = f"__row__:{row.get('id')}"
         profile_groups.setdefault(key, []).append(row)
 
     merged_profiles = [

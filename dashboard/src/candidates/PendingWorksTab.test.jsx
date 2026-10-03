@@ -135,6 +135,29 @@ describe('what each row shows', () => {
     expect(screen.getByText('Add Phone')).toBeInTheDocument()
   })
 
+  it('a lost proof file is a restore task, low when another proof covers it, medium when nothing does', async () => {
+    // What the server now sends for the 11 production candidates whose older
+    // proof record lost its image (previously absent from this tab entirely).
+    const lost = (name, priority, detail) => ({
+      ...work(name, 'payment_proof_file_lost', priority),
+      label: 'Restore / Upload payment proof',
+      detail,
+    })
+    stub({
+      ...LIVE, count: 2, candidate_count: 2,
+      works: [
+        lost('Covered Person', 45, '1 payment proof record has no stored image. The recorded amount is backed by another stored proof.'),
+        lost('Bare Person', 26, '1 payment proof record has no stored image, and no other stored proof backs the recorded amount.'),
+      ],
+    })
+    render(<PendingWorksTab />)
+    await waitFor(() => expect(screen.getAllByText('Restore / Upload payment proof').length).toBe(2))
+    expect(screen.getAllByText('Restore / Upload Proof').length).toBe(2)
+    expect(screen.queryByText('Upload Proof Again')).toBeNull()
+    expect(screen.getByText('Low')).toHaveAttribute('title', 'Priority 45')
+    expect(screen.getByText('Medium')).toHaveAttribute('title', 'Priority 26')
+  })
+
   it('falls back to editing the candidate for any other gap', async () => {
     stub({
       ...LIVE, count: 1, candidate_count: 1,
