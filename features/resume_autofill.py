@@ -39,6 +39,13 @@ FIELDS = ("email", "phone", "technology", "name")
 
 _EMAIL = re.compile(r"^[a-z0-9._%+\-]+@[a-z0-9\-]+(?:\.[a-z0-9\-]+)+$")
 _JUNK_EMAIL_DOMAINS = frozenset({"example.com", "example.org", "test.com", "domain.com", "email.com", "yourmail.com"})
+#: Local parts that are template filler, not a person: a resume built from a
+#: template ("xyz@gmail.com") was read at 85 confidence and would have been written.
+_PLACEHOLDER_LOCALS = frozenset({
+    "xyz", "abc", "abcd", "xxx", "test", "testing", "example", "sample", "name", "yourname",
+    "youremail", "your.name", "your.email", "email", "mail", "username", "user", "demo",
+    "noname", "na", "none", "firstname.lastname", "firstnamelastname", "john.doe", "johndoe",
+})
 _PLACEHOLDER_NAMES = frozenset({"", "unknown", "candidate", "na", "n/a", "none", "test", "unnamed"})
 
 
@@ -72,7 +79,10 @@ def valid_email(value: str) -> str:
     email = _clean(value).lower()
     if not _EMAIL.match(email):
         return ""
-    return "" if email.split("@", 1)[1] in _JUNK_EMAIL_DOMAINS else email
+    local, domain = email.split("@", 1)
+    if domain in _JUNK_EMAIL_DOMAINS or local in _PLACEHOLDER_LOCALS:
+        return ""
+    return email
 
 
 def valid_phone(value: str, normalise) -> str:
@@ -129,6 +139,14 @@ def plan_autofill(
         # Nothing to confirm the resume is theirs: fill only what cannot be
         # someone else's -- which is nothing identifying.
         return {"fill": {}, "skipped": {}, "refused": "the resume gave no name to confirm it is this candidate's"}
+
+    # A resume whose own phone number differs from a candidate's valid one is
+    # not evidence about that candidate: a copied template, or someone else's
+    # contact block. Nothing it says about them is trusted.
+    current_phone = normalise_phone(candidate.get("phone"))
+    resume_phone = valid_phone(extraction.get("phone"), normalise_phone)
+    if current_phone and resume_phone and current_phone != resume_phone:
+        return {"fill": {}, "skipped": {}, "refused": "the phone number on the resume differs from this candidate's"}
 
     others = list(others)
     taken_emails = {valid_email(o.get("email")) for o in others} - {""}

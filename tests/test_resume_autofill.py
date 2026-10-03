@@ -35,7 +35,7 @@ def plan(candidate, extraction=None, others=()):
 
 
 GAPS = {"name": "Asha Rao", "email": "", "phone": "", "technology": ""}
-COMPLETE = {"name": "Asha Rao", "email": "asha@example.test", "phone": "9000000902", "technology": "ServiceNow"}
+COMPLETE = {"name": "Asha Rao", "email": "asha@example.test", "phone": "9000000901", "technology": "ServiceNow"}
 
 
 # --- what is filled -------------------------------------------------------------
@@ -152,6 +152,39 @@ def test_a_spelling_variant_of_the_name_is_accepted():
 
 def test_a_resume_that_names_nobody_cannot_vouch_for_itself():
     assert plan(GAPS, reading(candidate_name="")) ["fill"] == {}
+
+
+# --- a resume that is not evidence about this candidate ---------------------------------
+
+@pytest.mark.parametrize("filler", ["xyz@gmail.com", "abc@gmail.com", "test@gmail.com", "yourname@gmail.com", "example@gmail.com", "name@gmail.com"])
+def test_a_template_placeholder_address_is_never_written(filler):
+    assert "email" not in plan(GAPS, reading(email=filler, phone=""))["fill"]
+
+
+def test_a_real_looking_address_with_a_common_word_is_still_accepted():
+    assert plan(GAPS, reading(email="info.asha@example.test", phone=""))["fill"]["email"] == "info.asha@example.test"
+
+
+def test_a_resume_with_a_different_phone_than_the_candidates_is_ignored_entirely():
+    """Chinthala Pavan's resume read xyz@gmail.com and a phone that was not his."""
+    candidate = {"name": "Asha Rao", "email": "", "phone": "9000000902", "technology": ""}
+    result = plan(candidate, reading(phone="9000000999", email="asha.rao@example.test"))
+    assert result["fill"] == {}
+    assert "differs from this candidate's" in result["refused"]
+
+
+def test_a_resume_with_the_same_phone_in_another_format_is_accepted():
+    candidate = {"name": "Asha Rao", "email": "", "phone": "9000000901", "technology": ""}
+    assert plan(candidate, reading(phone="+91 90000 00901"))["fill"]["email"] == "asha.rao@example.test"
+
+
+def test_a_candidate_with_no_phone_can_still_be_filled_from_a_resume_that_has_one():
+    assert plan(GAPS, reading())["fill"]["phone"] == "9000000901"
+
+
+def test_a_resume_with_no_phone_is_not_refused_on_that_account():
+    candidate = {"name": "Asha Rao", "email": "", "phone": "9000000902", "technology": ""}
+    assert plan(candidate, reading(phone=""))["fill"]["email"] == "asha.rao@example.test"
 
 
 # --- never merge two people -----------------------------------------------------------
