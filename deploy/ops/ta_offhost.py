@@ -23,6 +23,13 @@ The repository is restic's: every file except `config` is named by the SHA-256
 of its content, so the laptop verifies each file it receives without needing the
 repository password, which never leaves this host.
 
+Only a PROVEN state is ever served. The nightly backup records the repository's
+file list (`record-proven`, run by root on this host, never reachable over SSH)
+only after the backup, its restore test and `restic check --read-data` have all
+passed. repo-plan and repo-fetch serve exactly that list: a failed night, a
+half-written run or a snapshot whose restore test failed is never mirrored. While
+a backup is running nothing is served at all.
+
 Deletions are deferred and capped. A file the server no longer has (pruned) may
 be deleted on the laptop only after it has been absent for DELETE_AFTER_DAYS, at
 most DELETE_CAP of the laptop's files per run, and never while the server holds
@@ -43,6 +50,8 @@ STATUS_DIR = os.environ.get("TA_STATUS_DIR", "/var/lib/teleautomation-monitor")
 STATUS_FILE = os.path.join(STATUS_DIR, "status.json")
 LAPTOP_REPORT = os.path.join(STATUS_DIR, "laptop-report.json")
 TOMBSTONES = os.path.join(STATUS_DIR, "mirror-tombstones.json")
+PROVEN = os.path.join(STATUS_DIR, "mirror-proven.json")
+BACKUP_LOCK = os.path.join(STATUS_DIR, "backup.lock")
 
 DELETE_AFTER_DAYS = 8
 DELETE_CAP = 0.2
@@ -65,6 +74,58 @@ def repo_listing(repo: str = REPO) -> dict[str, dict[str, Any]]:
                 st = os.stat(path)
                 out[rel] = {"size": st.st_size, "mtime": st.st_mtime}
     return out
+
+
+def _sha256(path: str) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def record_proven(snapshot: str, *, repo: str = REPO, now: float | None = None) -> dict[str, Any]:
+    """The repository state the mirror may serve: every mirrorable file with its
+    size and mtime, the SHA-256 of `config` (the one file not named by its hash)
+    and the snapshot that was just proven restorable."""
+    files = repo_listing(repo)
+    if "config" not in files:
+        raise SystemExit("repository has no config; nothing recorded")
+    if f"snapshots/{snapshot}" not in files:
+        raise SystemExit(f"snapshot {snapshot} is not in the repository; nothing recorded")
+    return {
+        "snapshot": snapshot,
+        "recorded_at": time.time() if now is None else now,
+        "config_sha256": _sha256(os.path.join(repo, "config")),
+        "files": files,
+    }
+
+
+def backup_running(lock_path: str | None = None) -> bool:
+    """True while teleautomation-backup holds its lock (it takes an exclusive flock)."""
+    lock_path = lock_path or BACKUP_LOCK
+    try:
+        import fcntl
+    except ImportError:  # not a Linux host (tests on Windows)
+        return False
+    if not os.path.exists(lock_path):
+        return False
+    with open(lock_path, "a") as stream:
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+    return False
+
+
+def proven_state() -> dict[str, Any] | None:
+    data = _load_json(PROVEN, None)
+    if not isinstance(data, dict) or not isinstance(data.get("files"), dict) or "config" not in data["files"]:
+        return None
+    return data
 
 
 def parse_inventory(text: str) -> dict[str, int]:
@@ -146,13 +207,30 @@ def handle(role: str, command: str, stdin, stdout) -> int:
         return 0
     if verb == "repo-plan":
         local = parse_inventory(stdin.read().decode("utf-8-sig", "replace"))
-        result, stones = plan(repo_listing(), local, _load_json(TOMBSTONES, {}), now=time.time())
+        idle = {"fetch": [], "fetch_bytes": 0, "delete": [], "held_deletions": 0}
+        if backup_running():
+            stdout.write(json.dumps({**idle, "busy": True, "reason": "a backup is running; try later"}).encode())
+            return 0
+        proven = proven_state()
+        if proven is None:
+            stdout.write(json.dumps({**idle, "reason": "no proven backup state recorded yet"}).encode())
+            return 0
+        result, stones = plan(proven["files"], local, _load_json(TOMBSTONES, {}), now=time.time())
         _save_json(TOMBSTONES, stones)
+        result.update(snapshot=proven["snapshot"], config_sha256=proven["config_sha256"],
+                      proven_at=proven["recorded_at"])
         stdout.write(json.dumps(result).encode())
         return 0
     if verb == "repo-fetch":
         if len(parts) != 2 or not REPO_PATH.match(parts[1]):
             sys.stderr.write("bad path\n")
+            return 2
+        if backup_running():
+            sys.stderr.write("busy: a backup is running\n")
+            return 3
+        proven = proven_state()
+        if proven is None or parts[1] not in proven["files"]:
+            sys.stderr.write("not in the proven state\n")
             return 2
         with open(os.path.join(REPO, parts[1]), "rb") as stream:
             for block in iter(lambda: stream.read(1 << 20), b""):
@@ -162,6 +240,14 @@ def handle(role: str, command: str, stdin, stdout) -> int:
 
 
 def main(argv: list[str]) -> int:
+    # Root on this host only: the backup script records the proven state. An
+    # off-server key cannot reach this branch, because its argv is fixed in
+    # authorized_keys and it always arrives with SSH_ORIGINAL_COMMAND set.
+    if len(argv) == 3 and argv[1] == "record-proven" and "SSH_ORIGINAL_COMMAND" not in os.environ:
+        data = record_proven(argv[2])
+        _save_json(PROVEN, data)
+        print(f"proven state recorded: snapshot {argv[2][:8]}, {len(data['files'])} files")
+        return 0
     role = argv[1] if len(argv) > 1 else ""
     return handle(role, os.environ.get("SSH_ORIGINAL_COMMAND", ""), sys.stdin.buffer, sys.stdout.buffer)
 

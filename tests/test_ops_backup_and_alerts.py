@@ -181,7 +181,12 @@ def test_an_unknown_role_can_do_nothing():
 
 def test_fetch_refuses_anything_outside_the_repository(tmp_path, monkeypatch):
     monkeypatch.setattr(offhost, "REPO", str(tmp_path))
+    monkeypatch.setattr(offhost, "PROVEN", str(tmp_path / "proven.json"))
+    monkeypatch.setattr(offhost, "backup_running", lambda lock_path=None: False)
     (tmp_path / "config").write_bytes(b"cfg")
+    # Only a proven state is ever served (tests/test_ops_rtx_mirror_proven_state.py).
+    (tmp_path / "proven.json").write_text(json.dumps({"snapshot": "a" * 64, "config_sha256": h(b"cfg"),
+                                                     "recorded_at": NOW, "files": {"config": {"size": 3, "mtime": NOW}}}))
     assert run_handle("rtx", "repo-fetch config") == (0, b"cfg")
     for bad in ("repo-fetch ../../etc/shadow", "repo-fetch locks/" + "a" * 64, "repo-fetch", "repo-fetch config extra"):
         assert run_handle("rtx", bad)[0] == 2
