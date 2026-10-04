@@ -2,8 +2,9 @@
  * Confirmed upcoming slots, for the Slot Booking badge in the sidebar.
  *
  * The number comes from `/public/slots/booked` — the same request the Slot
- * Booking page makes, counted the same way it counts: the length of the list it
- * renders under "Confirmed upcoming slots". There is no second calculation and
+ * Booking page makes, counted the same way it counts: every confirmed slot still
+ * awaiting an outcome, whichever of its two sections ("Needs status update" or
+ * "Upcoming slots") the page places it in. There is no second calculation and
  * no filtering here, so the badge and the page cannot disagree.
  *
  * Keeping it current takes three signals, because slots change in two places:

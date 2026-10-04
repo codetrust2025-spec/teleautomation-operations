@@ -147,6 +147,94 @@ function groupSlotsByDate(slots) {
   return [...groups.entries()].map(([date, items]) => ({ date, items }))
 }
 
+/**
+ * Whether a confirmed slot's interview has ended with no outcome recorded.
+ * Decided by the server with the rule Daily Ops uses (slot end in IST has
+ * passed); a slot without the field is treated as upcoming.
+ */
+export function needsStatusUpdate(slot) {
+  return slot?.slot_phase === 'needs_status_update'
+}
+
+/** Confirmed slots grouped by day. `needsUpdate` marks the ended-without-outcome section. */
+function ConfirmedSlotList({ slots, needsUpdate = false }) {
+  return (
+    <div className="sbs-slot-list">
+      {groupSlotsByDate(slots).map(({ date, items }) => (
+        <div key={date} className="sbs-date-group">
+          <div className="sbs-date-group__header">
+            <span className="sbs-date-group__label">{formatDayHeader(date)}</span>
+            <span className="sbs-date-group__count">{items.length} slot{items.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="sbs-date-group__cards">
+            {items.map((slot, i) => (
+                  <div key={i} className={`sbs-confirmed-card${needsUpdate ? ' sbs-confirmed-card--awaiting' : ''}`}>
+                    <div className="sbs-slot-card__icon sbs-slot-card__icon--active">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                        <rect x="3" y="4" width="18" height="18" rx="3"/>
+                        <path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/>
+                      </svg>
+                    </div>
+                    <div className="sbs-slot-card__body">
+                      <div className="sbs-slot-card__name">{formatCandidateDisplayName(slot.name)}</div>
+                      <div className="sbs-slot-card__time">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
+                        <span>{formatFriendlyTime(slot.time)}{slot.time_end ? ` – ${formatFriendlyTime(slot.time_end)}` : ''}</span>
+                      </div>
+                    </div>
+                    <div className="sbs-confirmed-card__right">
+                      {/* An assessment has no interview round -- it is
+                          a test sat alone -- so it is labelled by what
+                          it is rather than by a round it never had. */}
+                      {slot.booking_type === 'Assessment' ? (
+                        <span
+                          className="sbs-slot-card__round sbs-slot-card__round--assessment"
+                          title="Online assessment, booked inside the window the invitation allowed"
+                        >
+                          Assessment
+                        </span>
+                      ) : slot.interview_round ? (
+                        <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
+                      ) : (
+                        <span
+                          className="sbs-slot-card__round sbs-slot-card__round--unspecified"
+                          title="Interview round was not specified in invitation"
+                        >
+                          Round not specified
+                        </span>
+                      )}
+                      {needsUpdate ? (
+                        <span className="sbs-confirmed-card__status sbs-confirmed-card__status--awaiting">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" strokeLinecap="round"/></svg>
+                          Awaiting status
+                        </span>
+                      ) : (
+                        <span className="sbs-confirmed-card__status">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                          Booked
+                        </span>
+                      )}
+                      {(() => {
+                        const meta = bookingSourceMeta(slot.interview_booking_source)
+                        return (
+                          <span
+                            className={`sbs-source-badge sbs-source-badge--${meta.tone}`}
+                            title={meta.title}
+                          >
+                            {meta.label}
+                          </span>
+                        )
+                      })()}
+                    </div>
+                  </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function dedupeCandidates(rows) {
   const byName = new Map()
   for (const row of rows || []) {
@@ -349,6 +437,8 @@ export function SubmitSlotPage() {
   const [tab, setTab] = useState('book')
   const [candidates, setCandidates] = useState([])
   const [booked, setBooked] = useState([])
+  const awaitingSlots = useMemo(() => booked.filter(needsStatusUpdate), [booked])
+  const upcomingSlots = useMemo(() => booked.filter(slot => !needsStatusUpdate(slot)), [booked])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [parsing, setParsing] = useState(false)
@@ -943,14 +1033,32 @@ export function SubmitSlotPage() {
         ) : tab === 'confirmed' ? (
           /* ── Confirmed slots tab ─────────────────────────── */
           <div className="sbs-body">
+            {/* An interview whose slot has ended with no outcome recorded in Daily
+                Ops is not "upcoming": it waits for a status, at the top, until
+                one is recorded. Nothing is removed here -- only Daily Ops
+                recording the outcome takes a slot off this page. */}
+            {awaitingSlots.length > 0 && (
+              <section className="sbs-section sbs-section--needs-update" aria-labelledby="sbs-needs-update-title">
+                <div className="sbs-step-head">
+                  <div>
+                    <h2 id="sbs-needs-update-title" className="sbs-step-title">Needs status update</h2>
+                    <p className="sbs-step-sub">
+                      {awaitingSlots.length} interview{awaitingSlots.length !== 1 ? 's' : ''} ended with no outcome recorded.
+                      Record attended, not attended or rescheduled in Daily Ops; {awaitingSlots.length !== 1 ? 'they stay' : 'it stays'} here until then.
+                    </p>
+                  </div>
+                </div>
+                <ConfirmedSlotList slots={awaitingSlots} needsUpdate />
+              </section>
+            )}
             <section className="sbs-section">
               <div className="sbs-step-head">
                 <div>
-                  <h2 className="sbs-step-title">Confirmed upcoming slots</h2>
+                  <h2 className="sbs-step-title">Upcoming slots</h2>
                   {/* "interviews scheduled" undercounted what the list holds:
                       an assessment is a confirmed slot too, and it sits here
                       beside them. The wording has to cover both. */}
-                  <p className="sbs-step-sub">{booked.length > 0 ? `${booked.length} slot${booked.length !== 1 ? 's' : ''} scheduled` : 'No confirmed slots yet.'}</p>
+                  <p className="sbs-step-sub">{upcomingSlots.length > 0 ? `${upcomingSlots.length} slot${upcomingSlots.length !== 1 ? 's' : ''} scheduled` : booked.length > 0 ? 'No upcoming slots.' : 'No confirmed slots yet.'}</p>
                 </div>
               </div>
               {booked.length === 0 ? (
@@ -964,74 +1072,9 @@ export function SubmitSlotPage() {
                     Book a slot
                   </button>
                 </div>
-              ) : (
-                <div className="sbs-slot-list">
-                  {groupSlotsByDate(booked).map(({ date, items }) => (
-                    <div key={date} className="sbs-date-group">
-                      <div className="sbs-date-group__header">
-                        <span className="sbs-date-group__label">{formatDayHeader(date)}</span>
-                        <span className="sbs-date-group__count">{items.length} slot{items.length !== 1 ? 's' : ''}</span>
-                      </div>
-                      <div className="sbs-date-group__cards">
-                        {items.map((slot, i) => (
-                          <div key={i} className="sbs-confirmed-card">
-                            <div className="sbs-slot-card__icon sbs-slot-card__icon--active">
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                                <rect x="3" y="4" width="18" height="18" rx="3"/>
-                                <path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/>
-                              </svg>
-                            </div>
-                            <div className="sbs-slot-card__body">
-                              <div className="sbs-slot-card__name">{formatCandidateDisplayName(slot.name)}</div>
-                              <div className="sbs-slot-card__time">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
-                                <span>{formatFriendlyTime(slot.time)}{slot.time_end ? ` – ${formatFriendlyTime(slot.time_end)}` : ''}</span>
-                              </div>
-                            </div>
-                            <div className="sbs-confirmed-card__right">
-                              {/* An assessment has no interview round -- it is
-                                  a test sat alone -- so it is labelled by what
-                                  it is rather than by a round it never had. */}
-                              {slot.booking_type === 'Assessment' ? (
-                                <span
-                                  className="sbs-slot-card__round sbs-slot-card__round--assessment"
-                                  title="Online assessment, booked inside the window the invitation allowed"
-                                >
-                                  Assessment
-                                </span>
-                              ) : slot.interview_round ? (
-                                <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
-                              ) : (
-                                <span
-                                  className="sbs-slot-card__round sbs-slot-card__round--unspecified"
-                                  title="Interview round was not specified in invitation"
-                                >
-                                  Round not specified
-                                </span>
-                              )}
-                              <span className="sbs-confirmed-card__status">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                                Booked
-                              </span>
-                              {(() => {
-                                const meta = bookingSourceMeta(slot.interview_booking_source)
-                                return (
-                                  <span
-                                    className={`sbs-source-badge sbs-source-badge--${meta.tone}`}
-                                    title={meta.title}
-                                  >
-                                    {meta.label}
-                                  </span>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              ) : upcomingSlots.length > 0 ? (
+                <ConfirmedSlotList slots={upcomingSlots} />
+              ) : null}
             </section>
             <TrustBadges />
           </div>

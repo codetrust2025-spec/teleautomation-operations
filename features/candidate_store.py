@@ -3105,12 +3105,17 @@ def _interview_slot_still_upcoming(
         y, m, d = int(day[:4]), int(day[5:7]), int(day[8:10])
     except ValueError:
         return True
+    from datetime import timedelta
+
     now_dt = ist_now(now)
-    slot_end = now_dt.replace(
-        year=y, month=m, day=d,
-        hour=end_min // 60, minute=end_min % 60,
-        second=0, microsecond=0,
-    )
+    try:
+        midnight = now_dt.replace(year=y, month=m, day=d, hour=0, minute=0, second=0, microsecond=0)
+    except ValueError:
+        return True
+    # Added as minutes, not set as hour/minute: a slot from 23:30 (or with no end
+    # time after 23:00) ends at 24:00 or later, and replace(hour=24) raised,
+    # taking the whole Confirmed slots / Daily Ops listing down with it.
+    slot_end = midnight + timedelta(minutes=end_min)
     return now_dt < slot_end
 
 
@@ -4114,7 +4119,11 @@ def interview_upcoming(
     }
 
 
-def public_booked_interview_slots(*, days: int = 60) -> dict:
+SLOT_PHASE_UPCOMING = "upcoming"
+SLOT_PHASE_NEEDS_STATUS_UPDATE = "needs_status_update"
+
+
+def public_booked_interview_slots(*, days: int = 60, now: float | None = None) -> dict:
     """Confirmed slots awaiting an attendance outcome for the public submit page.
 
     A past slot remains visible until Daily Ops records a final attendance
@@ -4159,13 +4168,26 @@ def public_booked_interview_slots(*, days: int = 60) -> dict:
             # it if the payload says which it is. Rows booked before the type
             # existed have none, and those are interviews.
             "booking_type": _clean_str(row.get("booking_type")) or "Interview",
+            # Which section of Confirmed slots it belongs in, by the same rule
+            # Daily Ops uses to split Scheduled from Awaiting status: once the
+            # slot's end (IST) has passed with no outcome recorded, it needs a
+            # status update. It stays listed until Daily Ops records one; clock
+            # time never removes it.
+            "slot_phase": (
+                SLOT_PHASE_UPCOMING
+                if _interview_slot_still_upcoming(slot_date, slot_time, slot_end, now=now)
+                else SLOT_PHASE_NEEDS_STATUS_UPDATE
+            ),
         })
     slots.sort(key=_slot_chronological_sort_key)
+    needs_update = sum(1 for slot in slots if slot["slot_phase"] == SLOT_PHASE_NEEDS_STATUS_UPDATE)
     return {
         "from": start,
         "to": end,
         "slots": slots,
         "count": len(slots),
+        "needs_status_update_count": needs_update,
+        "upcoming_count": len(slots) - needs_update,
     }
 
 
