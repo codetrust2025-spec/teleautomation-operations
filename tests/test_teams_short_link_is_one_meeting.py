@@ -206,3 +206,28 @@ def test_another_start_or_date_is_still_another_interview(monkeypatch):
 
     outcome, writes, _ = book(monkeypatch, reminder(SHORT), date="2099-09-19")
     assert booked_separately(outcome, writes)
+
+
+# Teams for personal accounts ----------------------------------------------
+
+PERSONAL = f"https://teams.live.com/meet/{MEETING_ID}?p=TestPassAbc0"
+
+
+def test_a_personal_teams_short_link_is_one_meeting_too(monkeypatch):
+    """teams.live.com sends the same short form; a reminder in that meeting is
+    the interview it reminds about, exactly as with a work account."""
+    outcome, writes, _ = book(monkeypatch, reminder(PERSONAL), source=invite(PERSONAL), end_time="03:45 PM")
+
+    assert ignored_as_the_booked_interview(outcome, writes)
+
+
+def test_a_personal_and_a_work_meeting_sharing_an_id_are_never_one(monkeypatch):
+    outcome, writes, _ = book(monkeypatch, reminder(PERSONAL), source=invite(SHORT), end_time="03:45 PM")
+
+    assert booked_separately(outcome, writes)
+
+
+def test_the_personal_identity_keeps_its_service():
+    found = booking._source_teams_meetings({"html_body": f'<a href="{PERSONAL}&amp;anon=true">Join</a>'})
+
+    assert found == {("teams.live.com", f"/meet/{MEETING_ID}", "testpassabc0")}

@@ -890,6 +890,9 @@ def _base64_text(value: str) -> str:
     return ''
 
 
+_TEAMS_SHORT_LINK_HOSTS = frozenset({'teams.microsoft.com', 'teams.live.com'})
+
+
 def _teams_short_meeting(url: str) -> tuple[str, str, str] | None:
     """The identity of a Teams short meeting link, or None unless it is exactly one.
 
@@ -901,10 +904,15 @@ def _teams_short_meeting(url: str) -> tuple[str, str, str] | None:
     cases within a single message. Nothing else in the query identifies a
     meeting, so launcher and tracking flags are dropped. A malformed link, or
     one with more than one passcode, is no identity at all rather than a guess.
+
+    Teams for personal accounts sends the same short form from teams.live.com
+    (five stored mails by 5 Oct 2026). Its links identify a meeting the same
+    way, and the host stays part of the identity, so a personal meeting and a
+    work meeting that happen to share an id are never taken for one.
     """
     from urllib.parse import parse_qs, urlsplit
     parsed = urlsplit(url)
-    if parsed.hostname != 'teams.microsoft.com':
+    if parsed.hostname not in _TEAMS_SHORT_LINK_HOSTS:
         return None
     meeting = re.fullmatch(r'/meet/(\d{10,20})', parsed.path.rstrip('/'))
     if not meeting:
@@ -912,7 +920,7 @@ def _teams_short_meeting(url: str) -> tuple[str, str, str] | None:
     passcodes = parse_qs(parsed.query).get('p', [])
     if len(passcodes) > 1 or (passcodes and not re.fullmatch(r'[A-Za-z0-9]{4,64}', passcodes[0])):
         return None
-    return ('teams.microsoft.com', f'/meet/{meeting.group(1)}', passcodes[0].lower() if passcodes else '')
+    return (parsed.hostname, f'/meet/{meeting.group(1)}', passcodes[0].lower() if passcodes else '')
 
 
 def _recover_pending_lifecycle_slot(
