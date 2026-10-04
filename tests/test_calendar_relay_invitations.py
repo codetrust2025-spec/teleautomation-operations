@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.calendar_invite_parser import relayed_by_a_calendar_service, trusted_interview_result
+from services.calendar_invite_parser import FREE_MAIL_DOMAINS, relayed_by_a_calendar_service, trusted_interview_result
 
 INVITE = """BEGIN:VCALENDAR
 METHOD:REQUEST
@@ -71,11 +71,14 @@ def test_each_relay_we_name(relay):
 
 # ── and what it still refuses ───────────────────────────────────────────────
 
-def test_a_relay_carrying_a_personal_organiser_does_not_book():
+@pytest.mark.parametrize("domain", sorted(FREE_MAIL_DOMAINS))
+def test_a_relay_carrying_a_personal_organiser_does_not_book(domain):
     # September's "are you ready to submit your original certificates"
     # invitation was organised from a gmail address. A relay will carry
-    # anybody's invitation; this is the line that keeps it out.
-    assert books(organizer="someone@gmail.com") is None
+    # anybody's invitation; this is the line that keeps it out. Every
+    # personal-mail domain is tried, and the address is built here rather than
+    # written down, so the fixtures name no mailbox that could be somebody's.
+    assert books(organizer=f"someone@{domain}") is None
 
 
 def test_an_invitation_that_names_no_organiser_does_not_book():
@@ -141,7 +144,6 @@ def test_the_recipient_must_still_be_on_the_invitation():
     ("recruiter@employer.example", "noreply@zohocalendar.com", True),
     ("recruiter@employer.example", "recruiter@employer.example", False),   # aligned already
     ("recruiter@employer.example", "hr@employer.example", False),          # same domain already
-    ("recruiter@gmail.com", "noreply@zohocalendar.com", False),            # personal organiser
     ("", "noreply@zohocalendar.com", False),                               # nobody organised it
     ("recruiter@employer.example", "", False),
     ("recruiter@employer.example", "calendar-notification@google.com", False),  # not on the list
@@ -149,3 +151,8 @@ def test_the_recipient_must_still_be_on_the_invitation():
 ])
 def test_relayed_by_a_calendar_service(organizer, sender, relayed):
     assert relayed_by_a_calendar_service(organizer, sender) is relayed
+
+
+@pytest.mark.parametrize("domain", sorted(FREE_MAIL_DOMAINS))
+def test_a_personal_organiser_is_never_relayed(domain):
+    assert relayed_by_a_calendar_service(f"recruiter@{domain}", "noreply@zohocalendar.com") is False
