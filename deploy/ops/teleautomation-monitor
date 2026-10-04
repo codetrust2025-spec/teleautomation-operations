@@ -39,6 +39,8 @@ STATE_FILE = os.path.join(STATUS_DIR, "monitor-state.json")
 STATUS_FILE = os.path.join(STATUS_DIR, "status.json")
 BACKUP_STATUS = os.path.join(STATUS_DIR, "backup-status.json")
 LAPTOP_REPORT = os.path.join(STATUS_DIR, "laptop-report.json")
+PROVEN = os.path.join(STATUS_DIR, "mirror-proven.json")
+MIRROR_CATCH_UP_HOURS = 6   # the laptop pulls every 2 h; give a new proven state time to arrive
 PROJECT = os.environ.get("TA_COMPOSE_PROJECT", "teleautomation-production")
 CONTAINERS = [f"{PROJECT}-{n}-1" for n in ("operations-api", "marketing-api", "operations-db", "marketing-db")]
 PUBLIC_URL = os.environ.get("TA_PUBLIC_URL", "https://operations.teleautomation.online/health")
@@ -232,6 +234,16 @@ def probe_laptop(now: float) -> list[dict]:
     out.append(check("rtx:mirror_verify", verified is not False,
                      f"Off-server copy failed verification: {r.get('mirror_verify_problem') or 'checksum mismatch'}",
                      min_fail_minutes=0))
+    proven = _load(PROVEN, {}) or {}
+    latest, recorded = proven.get("snapshot"), float(proven.get("recorded_at") or 0)
+    if latest:
+        mirrored = r.get("mirror_snapshot") or ""
+        behind = mirrored != latest and (now - recorded) / 3600 > MIRROR_CATCH_UP_HOURS
+        out.append(check("rtx:mirror_snapshot", not behind,
+                         f"Off-server copy is behind: it holds snapshot {mirrored[:8] or 'none'}, the latest proven backup "
+                         f"is {latest[:8]} ({(now - recorded) / 3600:.0f} h ago)" if behind
+                         else "off-server copy holds the latest proven backup" if mirrored == latest
+                         else "off-server copy catching up", min_fail_minutes=0))
     free = r.get("disk_free_gb")
     if isinstance(free, (int, float)):
         out.append(check("rtx:disk", free >= 10, f"RTX laptop backup drive has {free:.0f} GB free",

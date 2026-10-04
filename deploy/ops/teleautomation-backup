@@ -133,12 +133,19 @@ mv "$ROOT/manifest.json.tmp" "$STAGE/manifest.json"
 
 STEP="restic backup"
 nice -n 10 restic backup --quiet --host teleautomation-production --tag nightly "$STAGE"
-SNAPSHOT="$(restic snapshots --json --latest 1 --tag nightly | python3 -c 'import json,sys; s=json.load(sys.stdin); print(s[-1]["short_id"] if s else "")')"
+SNAPSHOT_ID="$(restic snapshots --json --latest 1 --tag nightly | python3 -c 'import json,sys; s=json.load(sys.stdin); print(s[-1]["id"] if s else "")')"
+SNAPSHOT="${SNAPSHOT_ID:0:8}"
 [ -n "$SNAPSHOT" ]
 
 STEP="retention (7 daily, 4 weekly, 6 monthly)"
-nice -n 10 restic forget --quiet --host teleautomation-production --tag nightly \
-  --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+# TA_SKIP_RETENTION=1 is for a run by hand that must not forget anything (for
+# example right after installing a change). The policy itself is unchanged.
+if [ "${TA_SKIP_RETENTION:-0}" = "1" ]; then
+  echo "retention skipped for this run (TA_SKIP_RETENTION=1)"
+else
+  nice -n 10 restic forget --quiet --host teleautomation-production --tag nightly \
+    --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+fi
 
 # ---- restore test of the snapshot just taken -----------------------------------
 STEP="restore test: restic restore"
@@ -171,6 +178,11 @@ restore_db marketing
 
 STEP="repository integrity (restic check --read-data)"
 nice -n 10 restic check --quiet --read-data
+
+STEP="record the proven state for the off-server mirror"
+# Only now, after the restore test and the full read-data check, may the RTX
+# mirror see this repository state (deploy/ops/ta_offhost.py).
+python3 "$LIB/ta_offhost.py" record-proven "$SNAPSHOT_ID"
 
 STEP="record success"
 status ok
