@@ -273,23 +273,26 @@ describe('the period tabs scroll rather than being cut off', () => {
   it('shows all five tabs in one row on an iPhone, with nothing past the edge', () => {
     // The scrolling strip still hid "All unresolved" past the edge at 390px,
     // with no visible scrollbar to say it was there. On a phone the strip is
-    // now one row of five columns that shrink to fit; long labels take two
-    // lines inside their own tab. Equal specificity, so the last phone rule
-    // for the strip is the one a phone gets.
+    // one row of five content-sized columns: a label stays on one line
+    // wherever it fits (all five at 390-430px, measured) and wraps only
+    // where it cannot. Equal specificity, so the last phone rule for the
+    // strip is the one a phone gets.
     const strip = ALL.filter(r => r.selector.includes('.ops-roster-controls .ops-date-range__presets') && phoneOnly(r.media))
     const winner = strip.at(-1)
     expect(winner, 'nothing lays the strip out on a phone').toBeTruthy()
     expect(winner.body).toMatch(/display\s*:\s*grid/)
     const columns = /grid-template-columns\s*:\s*([^;]+)/.exec(winner.body)
     expect(columns, 'the grid needs its columns').toBeTruthy()
-    expect(columns[1].match(/minmax\(0,/g) || [], 'five columns, each free to shrink').toHaveLength(5)
+    expect(columns[1].trim(), 'five columns, each the width of its label while it fits').toBe('repeat(5, auto)')
     expect(winner.body).toMatch(/overflow\s*:\s*visible/)
     // A tab may wrap its label but must not be split mid-word.
     const tab = ALL.filter(r => r.selector.includes('.ops-roster-controls .ops-date-range__preset') &&
       !r.selector.includes('presets') && !r.selector.includes('--') && phoneOnly(r.media)).at(-1)
     expect(tab.body).toMatch(/min-width\s*:\s*0/)
     expect(tab.body).toMatch(/word-break\s*:\s*normal/)
-    expect(tab.body).toMatch(/min-height\s*:\s*40px/)
+    // One line of label, not two: 32px, down from 40.
+    expect(tab.body).toMatch(/min-height\s*:\s*32px/)
+    expect(tab.body).toMatch(/white-space\s*:\s*normal/)
     // The desktop's margin before "All unresolved" would make it the one narrow column.
     const unresolved = ALL.filter(r => r.selector.includes('.ops-date-range__preset--unresolved') && phoneOnly(r.media)).at(-1)
     expect(unresolved.body).toMatch(/margin-left\s*:\s*0/)
@@ -412,7 +415,9 @@ describe('on an iPhone (390-430px)', () => {
   it('lays the card out as a grid, not ten label rows', () => {
     const grid = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === CARD).at(-1)
     expect(grid.body).toMatch(/display\s*:\s*grid/)
-    expect(grid.body).toMatch(/grid-template-columns\s*:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\)/)
+    // Four shared columns and two fixed ones for the last row's thumbnail
+    // (64px plus its padding) and the 44px menu.
+    expect(grid.body).toMatch(/grid-template-columns\s*:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)\s+72px\s+52px/)
   })
 
   it('pairs date with time, and technology, round and attendee on one row', () => {
@@ -428,16 +433,38 @@ describe('on an iPhone (390-430px)', () => {
     expect(notes.body).not.toMatch(/grid-column\s*:\s*span/)
   })
 
-  it('puts the screenshot and the actions menu side by side on the last row', () => {
+  it('puts the status, the screenshot and the actions menu on one last row', () => {
     const shot = cellRule('Screenshot')
     const actions = cellRule('Actions')
-    expect([span('Screenshot'), span('Actions')]).toEqual(['3', '3'])
+    const status = cellRule('Status')
+    expect([span('Status'), span('Screenshot'), span('Actions')]).toEqual(['4', '1', '1'])
     const order = rule => /(^|[;\s])order\s*:\s*(\d)/.exec(rule.body)?.[2]
     expect(order(shot)).toBe(order(actions))
+    expect(order(status)).toBe(order(shot))
     expect(Number(order(shot))).toBeGreaterThan(Number(order(cellRule('Notes'))))
     // The menu is its own label; "Actions" above a ⋮ only costs a line.
     const label = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('td[data-label="Actions"]::before')).at(-1)
     expect(label.body).toMatch(/display\s*:\s*none/)
+  })
+
+  it('gives an empty note no space at all', () => {
+    // A row with nothing recorded holds only a dash; it took 39px of every
+    // such card. A note or a feedback pill still shows in full.
+    const empty = ALL.filter(r => phoneOnly(r.media) &&
+      r.selector.includes('td[data-label="Notes"]:not(:has(.ops-feedback-pill, .ops-interview-notes-text))')).at(-1)
+    expect(empty, 'nothing hides an empty note').toBeTruthy()
+    expect(empty.body).toMatch(/display\s*:\s*none/)
+  })
+
+  it('drops only the captions whose values name themselves', () => {
+    const hides = label => ALL.some(r => phoneOnly(r.media) && /display\s*:\s*none/.test(r.body) &&
+      r.selector.split(',').some(s => s.trim() === `${CARD} > td[data-label="${label}"]::before`))
+    for (const label of ['Date', 'Time', 'Candidate', 'Status', 'Screenshot', 'Actions']) {
+      expect(hides(label), `${label} keeps a caption it does not need`).toBe(true)
+    }
+    for (const label of ['Technology', 'Round', 'Attendee', 'Notes']) {
+      expect(hides(label), `${label} lost the caption that says what its value is`).toBe(false)
+    }
   })
 
   it('shows the booking source as a coloured chip, on a phone only', () => {
