@@ -29,21 +29,24 @@ from services import recruitment_identity
 MIGRATIONS = Path(__file__).resolve().parents[1] / "core" / "migrations"
 
 
+def _create_table(migration: str, table: str) -> str:
+    """One CREATE TABLE as its migration writes it, without the foreign keys."""
+    ddl = (MIGRATIONS / migration).read_text()
+    start = ddl.index(f"CREATE TABLE IF NOT EXISTS {table}")
+    depth = 0
+    for index in range(start, len(ddl)):
+        depth += (ddl[index] == "(") - (ddl[index] == ")")
+        if depth == 0 and ddl[index] == ")":
+            return re.sub(r"\s+REFERENCES\s+\w+\(\w+\)", "", ddl[start:index + 1]) + ";"
+    raise AssertionError(f"{table} is never closed")  # pragma: no cover - the migration would be broken
+
+
 def notifications_ddl() -> list[str]:
     """The table as the migrations define it, without its foreign keys.
 
     The two references point at analysis tables this filter never reads.
     """
-    ddl = (MIGRATIONS / "007_recruitment_mail_notifications.sql").read_text()
-    start = ddl.index("CREATE TABLE IF NOT EXISTS mail_monitoring_notifications")
-    depth = 0
-    for index in range(start, len(ddl)):
-        depth += (ddl[index] == "(") - (ddl[index] == ")")
-        if depth == 0 and ddl[index] == ")":
-            create = re.sub(r"\s+REFERENCES\s+\w+\(\w+\)", "", ddl[start:index + 1]) + ";"
-            break
-    else:  # pragma: no cover - the migration would be broken
-        raise AssertionError("mail_monitoring_notifications is never closed")
+    create = _create_table("007_recruitment_mail_notifications.sql", "mail_monitoring_notifications")
     alters = []
     for migration in ("008_recruitment_mail_auto_booking.sql", "018_recruitment_mail_booking_block_reason.sql"):
         alters += re.findall(
@@ -51,6 +54,19 @@ def notifications_ddl() -> list[str]:
         )
     assert alters, "the booking and block-reason columns come from these migrations"
     return [create, *alters]
+
+
+def events_ddl() -> list[str]:
+    """The analysis events the shared visibility rule consults: an alert whose
+    own event the validator REJECTED is not shown (`visible_rows_sql`). Only
+    `id` and `validation_status` are read, so those are what is migrated in."""
+    create = _create_table("001_recruitment_mail_tracking.sql", "ai_recruitment_events")
+    validation = re.search(
+        r"ALTER TABLE ai_recruitment_events ADD COLUMN IF NOT EXISTS validation_status[^;]*;",
+        (MIGRATIONS / "010_recruitment_mail_lifecycle_truth.sql").read_text(),
+    )
+    assert validation, "validation_status comes from this migration"
+    return [create, validation.group(0)]
 
 
 @pytest.fixture
@@ -82,7 +98,7 @@ def alerts(monkeypatch):
         cur.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
     try:
         with connect() as conn, conn.cursor() as cur:
-            for statement in notifications_ddl():
+            for statement in notifications_ddl() + events_ddl():
                 cur.execute(statement)
         monkeypatch.setattr(store, "get_connection", connect)
         monkeypatch.setattr(recruitment_identity, "load_links", lambda: {})
@@ -101,19 +117,20 @@ def alerts(monkeypatch):
 
 
 def add(connect, alert_id, *, candidate="c1", classification="interview_confirmed", status=None,
-        booking_id=None, block=None, subject="Interview", dismissed=False, minutes_ago=0):
+        booking_id=None, block=None, subject="Interview", dismissed=False, minutes_ago=0, event=None):
     reason_code, internal_code = block or (None, None)
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """INSERT INTO mail_monitoring_notifications(
                    id, candidate_id, gmail_message_id, classification, candidate_status,
                    email_subject, booking_status, booking_id, booking_block_reason_code,
-                   booking_block_reason, booking_failure_code, dismissed_at, created_at)
+                   booking_block_reason, booking_failure_code, dismissed_at, created_at,
+                   ai_recruitment_event_id)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                       CASE WHEN %s THEN now() END, now() - make_interval(mins => %s))""",
+                       CASE WHEN %s THEN now() END, now() - make_interval(mins => %s), %s)""",
             (alert_id, candidate, "gm-" + alert_id, classification, status, subject, status, booking_id,
              reason_code, "stored sentence" if reason_code else None, internal_code,
-             dismissed, minutes_ago),
+             dismissed, minutes_ago, event),
         )
 
 
@@ -181,3 +198,23 @@ def test_it_combines_with_candidate_alert_type_and_search(production_shapes):
     assert listed(booking_result="booked", classification_group="selection")[0] == []
     assert listed(booking_result="booked", search="Java")[0] == ["auto"]
     assert listed(booking_result="blocked", search="Java")[0] == ["blocked"]
+
+
+def test_an_alert_whose_own_event_was_rejected_is_not_listed_or_counted(production_shapes):
+    """2 Sep 2026: newsletters and a OneDrive welcome mail were filed as
+    shortlists and selections from events the validator had REJECTED."""
+    connect = production_shapes
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO ai_recruitment_events(id, candidate_id, primary_status, confidence,
+                   structured_result, validation_status)
+               VALUES ('ev-rejected', 'c1', 'IGNORED_NOT_OFFER_RELATED', 0.95, '{}', 'REJECTED'),
+                      ('ev-valid', 'c1', 'INTERVIEW_SHORTLISTED', 0.95, '{}', 'VALIDATED')""")
+    add(connect, "newsletter", classification="interview_shortlisted", event="ev-rejected", minutes_ago=12)
+    add(connect, "real-shortlist", classification="interview_shortlisted", event="ev-valid", minutes_ago=13)
+
+    ids, total = listed()
+    assert "newsletter" not in ids
+    assert "real-shortlist" in ids and "shortlist" in ids, "a valid event, or none at all, still shows"
+    assert total == 11
+    assert store.notification_summary()["visible_total"] == 11
