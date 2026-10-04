@@ -106,6 +106,17 @@ describe('the header lines stay put', () => {
 })
 
 describe('the lower AI sections fold away', () => {
+  it('keeps the detector\'s own wording under the plain reason, inside the same open section', () => {
+    // The backend rebuilds the reason in words and passes the original as
+    // ai_reason_technical; it must not open a section of its own.
+    const reason = jsx.indexOf('<summary>Detection reason</summary>')
+    const technical = jsx.indexOf('item.ai_reason_technical &&')
+    const action = jsx.indexOf('<summary>Recommended action</summary>')
+    expect(technical).toBeGreaterThan(reason)
+    expect(technical).toBeLessThan(action)
+    expect(jsx.slice(reason, technical)).not.toContain('</details>')
+  })
+
   it('renders Detection reason and Recommended action as details', () => {
     expect(jsx).toMatch(/<details className="mail-detail__aside" open>\s*<summary>Detection reason<\/summary>/)
     expect(jsx).toMatch(/<details className="mail-detail__aside" open>\s*<summary>Recommended action<\/summary>/)

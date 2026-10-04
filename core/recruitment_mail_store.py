@@ -3111,6 +3111,47 @@ def _project_released_booking_title(row):
         row['candidate_status'] = 'Booking Removed'
 
 
+#: The alert popup showed "Detection reason" verbatim from the detection
+#: layer: protocol names, and for mail the reader gave up on, a bare error
+#: code. What each one means to the person reading it. The stored text is
+#: evidence and is never rewritten; it travels on as `ai_reason_technical`.
+_PLAIN_DETECTION_REASONS = {
+    "Authenticated RFC 5545 calendar invitation with matching organizer and candidate attendee.":
+        "A calendar invitation from the employer that lists the candidate as an attendee; "
+        "the date and time were read from its calendar file.",
+    "Authenticated inbound calendar-style cancellation with an explicit cancelled subject.":
+        "A cancellation from the employer; its subject says the interview was cancelled.",
+    "Authenticated inbound interview invitation with explicit date, time and meeting link.":
+        "An interview invitation from the employer that names the date, time and meeting link.",
+    "AI_COULD_NOT_READ_THIS_MAIL":
+        "The automatic reader could not classify this mail, so it is listed here for a person to read.",
+    "RECRUITMENT_RELEVANCE_UNRESOLVED":
+        "The automatic reader could not tell whether this mail is part of the candidate's job search.",
+    "EVIDENCE_DOES_NOT_ENTAIL_TRANSITION":
+        "The automatic reader could not find wording in the mail that clearly supports the change it suggested.",
+    "AI_ATTEMPTS_EXHAUSTED":
+        "The automatic reader tried several times and could not finish this mail.",
+}
+#: Any other bare identifier: a person should still never read one as a reason.
+_BARE_CODE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
+_GENERIC_CODE_REASON = "The automatic reader stopped before it reached a decision on this mail."
+_TRUSTED_INVITE_PREFIX = "Trusted calendar invite: "
+
+
+def _project_plain_reason(row):
+    """Say why an alert exists in words, keeping the detector's own text."""
+    reason = str(row.get('ai_reason') or '').strip()
+    plain = _PLAIN_DETECTION_REASONS.get(reason)
+    if plain is None and _BARE_CODE.match(reason):
+        plain = _GENERIC_CODE_REASON
+    if plain:
+        row.setdefault('ai_reason_technical', reason)
+        row['ai_reason'] = plain
+    summary = str(row.get('ai_summary') or '')
+    if summary.startswith(_TRUSTED_INVITE_PREFIX):
+        row['ai_summary'] = 'Calendar invitation: ' + summary[len(_TRUSTED_INVITE_PREFIX):]
+
+
 def reconcile_booking_claims(rows):
     """Never report a booking the roster does not have.
 
@@ -3155,6 +3196,9 @@ def reconcile_booking_claims(rows):
         explanation = booking_block_reasons.explain_notification(row)
         if explanation:
             row['booking_block'] = explanation
+        # The same rule for the popup's Summary and Detection reason: rebuilt
+        # on read, so alerts written before a rewording read the new way too.
+        _project_plain_reason(row)
     claims = [
         row for row in (rows or [])
         if isinstance(row, dict)

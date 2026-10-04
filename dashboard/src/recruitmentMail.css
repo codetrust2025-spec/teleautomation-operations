@@ -2379,6 +2379,13 @@
 .mail-detail__aside > p {
   margin: 6px 0 0;
 }
+/* The detector's own wording under a plain-language reason: there for whoever
+   debugs, quiet for everyone else. */
+.mail-detail__aside > p.mail-detail__technical {
+  font-size: 11px;
+  color: #94a3b8;
+  overflow-wrap: anywhere;
+}
 
 /* A blocked booking leads the dialog: what happened, why, and what to do.
    Amber when something needs doing, quiet blue when nothing does. The codes

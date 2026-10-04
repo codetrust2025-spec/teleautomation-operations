@@ -287,6 +287,9 @@ function NotificationDetail({ item, onClose }) {
         <details className="mail-detail__aside" open>
           <summary>Detection reason</summary>
           <p>{item.ai_reason || "Contextual classification"}</p>
+          {/* The detector's own wording, kept for whoever is debugging; the
+              line above is what a person needs. */}
+          {item.ai_reason_technical && <p className="mail-detail__technical">Technical: {item.ai_reason_technical}</p>}
         </details>
         {!block && <details className="mail-detail__aside" open>
           <summary>Recommended action</summary>
