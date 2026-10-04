@@ -2934,3 +2934,91 @@
   margin-right: 10px;
   background: var(--sot-border, #21344d);
 }
+
+/* -- Mail Alerts on an iPhone (390-430px) ------------------------------------
+   Phone only: tablet and desktop keep the table and every rule above.
+   - Header: the title beside its actions; the eyebrow and the one-line
+     description go, since the top bar already names the page.
+   - The three counters sit in one row instead of three stacked cards.
+   - Filters: search on its own row, the selects two by two. They keep the
+     16px index.css sets below 1024px: under 16px, iOS Safari zooms the page
+     into a field when it is tapped.
+   - Alerts: one card per alert instead of a nine-column table that had to be
+     scrolled sideways. Candidate and received time, company, status (and why
+     a booking was blocked), the subject, the automation outcome, and Open /
+     Read / Dismiss. Confidence and "tool detected" stay one tap away, in the
+     alert itself. */
+@media (max-width: 640px) {
+  .mail-monitoring-page { gap: 10px; padding: 10px 10px 16px; }
+  .mail-monitoring-page__head { align-items: center; gap: 8px; }
+  .mail-monitoring-page__head > div:first-child { min-width: 0; }
+  .mail-monitoring-page__head .mail-eyebrow,
+  .mail-monitoring-page__head > div:first-child > p:not(.mail-eyebrow) { display: none; }
+  .mail-monitoring-page__head h1 { margin: 0; font-size: 18px; line-height: 1.25; }
+  .mail-monitoring-page__actions { flex: 0 0 auto; gap: 6px; }
+  .mail-monitoring-page__actions .mail-clear-all { padding: 6px 10px; font-size: 12px; }
+
+  .mail-summary--compact { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .mail-summary--compact button { min-width: 0; padding: 8px 10px; gap: 1px; border-radius: 10px; }
+  .mail-summary--compact strong { font-size: 18px; line-height: 1.2; }
+  .mail-summary--compact span { font-size: 11px; line-height: 1.2; }
+
+  .mail-filters--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .mail-filters--compact > input:first-child,
+  .mail-filters--compact > :last-child { grid-column: 1 / -1; }
+  .mail-filters--compact input,
+  .mail-filters--compact select { padding: 7px 10px; }
+
+  .mail-table-wrap { overflow: visible; border: 0; border-radius: 0; background: transparent; }
+  .mail-table,
+  .mail-table tbody,
+  .mail-table tbody > tr { display: block; }
+  .mail-table thead { display: none; }
+  .mail-table tr.mail-notification-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "candidate received"
+      "company company"
+      "status status"
+      "subject subject"
+      "automation actions";
+    gap: 3px 10px;
+    margin: 0 0 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
+    border-radius: 10px;
+    background: var(--panel-bg, rgba(15, 23, 42, 0.55));
+  }
+  .mail-table tr.mail-notification-row.is-unread { background: rgba(124, 58, 237, 0.09); border-color: rgba(139, 92, 246, 0.32); }
+  /* The category accent runs down the whole card, not just its first cell. */
+  .mail-table tr.mail-notification-row--interview { box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.55); }
+  .mail-table tr.mail-notification-row--selection { box-shadow: inset 3px 0 0 rgba(167, 139, 250, 0.6); }
+  .mail-table tr.mail-notification-row > td { display: block; min-width: 0; padding: 0; border: 0; box-shadow: none; }
+  .mail-table tr.mail-notification-row > .mail-cell--candidate { grid-area: candidate; font-size: 14px; }
+  .mail-table tr.mail-notification-row > .mail-cell--candidate small { margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .mail-table tr.mail-notification-row > .mail-cell--received { grid-area: received; justify-self: end; white-space: nowrap; font-size: 11px; color: var(--muted, #94a3b8); }
+  .mail-table tr.mail-notification-row > .mail-cell--company { grid-area: company; font-size: 12px; overflow-wrap: anywhere; }
+  .mail-table tr.mail-notification-row > .mail-cell--company small { display: inline; margin: 0 0 0 6px; }
+  .mail-table tr.mail-notification-row > .mail-cell--status { grid-area: status; }
+  .mail-table tr.mail-notification-row > .mail-cell--subject {
+    grid-area: subject;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    color: var(--muted, #94a3b8);
+  }
+  .mail-table tr.mail-notification-row > .mail-cell--confidence,
+  .mail-table tr.mail-notification-row > .mail-cell--detected { display: none; }
+  .mail-table tr.mail-notification-row > .mail-cell--automation { grid-area: automation; align-self: center; font-size: 11px; color: var(--muted, #94a3b8); }
+  .mail-table tr.mail-notification-row > .mail-cell--actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+  .mail-table tr.mail-notification-row > .mail-cell--actions button { min-height: 32px; margin: 0; padding: 6px 8px; font-size: 12px; }
+  /* Grouped by candidate: the name is on the group heading already. */
+  .mail-table tr.mail-notification-row > .mail-cell--candidate.mail-row__nested { display: none; }
+  .mail-table .mail-group__head th { display: block; padding: 8px 2px 6px; }
+  .mail-table td.mail-empty { display: block; padding: 16px 4px; }
+  .mail-pagination { flex-wrap: wrap; gap: 6px; }
+}

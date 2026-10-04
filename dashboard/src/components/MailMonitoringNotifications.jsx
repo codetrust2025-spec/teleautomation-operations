@@ -511,9 +511,9 @@ export function MailMonitoringNotifications() {
           event.preventDefault();
           openNotification(item);
         }}
-      ><td className={grouped ? "mail-row__nested" : undefined}>{grouped
+      ><td className={`mail-cell mail-cell--candidate${grouped ? " mail-row__nested" : ""}`}>{grouped
         ? <span className="mail-row__thread" aria-hidden="true" />
-        : <><strong>{item.candidate_name || "Candidate"}</strong><small>{item.candidate_email || ""}</small></>}</td><td>{item.company_name || "—"}<small>{item.job_role || ""}</small></td><td><span className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{item.candidate_status || human(item.classification)}</span>{(() => {
+        : <><strong>{item.candidate_name || "Candidate"}</strong><small>{item.candidate_email || ""}</small></>}</td><td className="mail-cell mail-cell--company">{item.company_name || "—"}<small>{item.job_role || ""}</small></td><td className="mail-cell mail-cell--status"><span className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{item.candidate_status || human(item.classification)}</span>{(() => {
         const reason = blockingReason(item);
         if (!reason) return null;
         // Shown in the row itself: a blocked booking is unusable information
@@ -522,7 +522,7 @@ export function MailMonitoringNotifications() {
           className="mail-status__reason"
           title={reason.action ? `What to do: ${reason.action}` : undefined}
         >Reason: {reason.reason}</span>;
-      })()}</td><td>{item.email_subject || "(no subject)"}</td><td>{confidence(item.ai_confidence)}</td><td>{when(item.email_received_at)}</td><td>{when(item.created_at)}</td><td>{human(item.booking_status || item.automation_state || "AUTOMATED")}</td><td onClick={(event) => event.stopPropagation()}><button onClick={() => openNotification(item)}>Open</button><button onClick={() => act(item,item.is_read ? "unread" : "read")}>{item.is_read ? "Unread" : "Read"}</button><button onClick={() => act(item,"dismiss")}>Dismiss</button></td></tr>)}
+      })()}</td><td className="mail-cell mail-cell--subject">{item.email_subject || "(no subject)"}</td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received">{when(item.email_received_at)}</td><td className="mail-cell mail-cell--detected">{when(item.created_at)}</td><td className="mail-cell mail-cell--automation">{human(item.booking_status || item.automation_state || "AUTOMATED")}</td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}><button onClick={() => openNotification(item)}>Open</button><button onClick={() => act(item,item.is_read ? "unread" : "read")}>{item.is_read ? "Unread" : "Read"}</button><button onClick={() => act(item,"dismiss")}>Dismiss</button></td></tr>)}
       </tbody>)}
       {!loading && !items.length && <tbody><tr><td colSpan={9} className="mail-empty">No notifications match these filters.</td></tr></tbody>}
     </table></div>
