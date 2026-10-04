@@ -270,18 +270,36 @@ describe('the period tabs scroll rather than being cut off', () => {
     }
   })
 
-  it('keeps the tabs on one scrolling row', () => {
-    // Equal specificity, so the last rule in the sheet is the one a phone
-    // gets. An earlier 600px block already scrolled the strip but left it
-    // wrapping, which is how the tabs became two rows.
-    const strip = ALL.filter(r => r.selector.includes('.ops-date-range__presets') && phoneOnly(r.media))
-    const winner = strip.filter(r => /overflow-x/.test(r.body)).at(-1)
-    expect(winner, 'nothing makes the strip scroll on a phone').toBeTruthy()
-    expect(winner.body).toMatch(/overflow-x\s*:\s*auto/)
-    expect(winner.body).toMatch(/flex-wrap\s*:\s*nowrap/)
-    // Wrapping is the other way to fit five tabs, and the brief rules it out.
-    const wrapsLater = strip.slice(strip.indexOf(winner) + 1).some(r => /flex-wrap\s*:\s*wrap/.test(r.body))
-    expect(wrapsLater, 'a later rule puts the tabs back on two rows').toBe(false)
+  it('shows all five tabs in one row on an iPhone, with nothing past the edge', () => {
+    // The scrolling strip still hid "All unresolved" past the edge at 390px,
+    // with no visible scrollbar to say it was there. On a phone the strip is
+    // now one row of five columns that shrink to fit; long labels take two
+    // lines inside their own tab. Equal specificity, so the last phone rule
+    // for the strip is the one a phone gets.
+    const strip = ALL.filter(r => r.selector.includes('.ops-roster-controls .ops-date-range__presets') && phoneOnly(r.media))
+    const winner = strip.at(-1)
+    expect(winner, 'nothing lays the strip out on a phone').toBeTruthy()
+    expect(winner.body).toMatch(/display\s*:\s*grid/)
+    const columns = /grid-template-columns\s*:\s*([^;]+)/.exec(winner.body)
+    expect(columns, 'the grid needs its columns').toBeTruthy()
+    expect(columns[1].match(/minmax\(0,/g) || [], 'five columns, each free to shrink').toHaveLength(5)
+    expect(winner.body).toMatch(/overflow\s*:\s*visible/)
+    // A tab may wrap its label but must not be split mid-word.
+    const tab = ALL.filter(r => r.selector.includes('.ops-roster-controls .ops-date-range__preset') &&
+      !r.selector.includes('presets') && !r.selector.includes('--') && phoneOnly(r.media)).at(-1)
+    expect(tab.body).toMatch(/min-width\s*:\s*0/)
+    expect(tab.body).toMatch(/word-break\s*:\s*normal/)
+    expect(tab.body).toMatch(/min-height\s*:\s*40px/)
+    // The desktop's margin before "All unresolved" would make it the one narrow column.
+    const unresolved = ALL.filter(r => r.selector.includes('.ops-date-range__preset--unresolved') && phoneOnly(r.media)).at(-1)
+    expect(unresolved.body).toMatch(/margin-left\s*:\s*0/)
+  })
+
+  it('leaves the desktop strip as it was', () => {
+    // No rule outside a phone width may turn the strip into a grid.
+    for (const rule of declaring('.ops-date-range__presets', 'grid-template-columns')) {
+      expect(phoneOnly(rule.media), `${rule.media} reaches a desktop`).toBe(true)
+    }
   })
 
   it('brings the selected tab into view when it is off the edge', async () => {
@@ -310,12 +328,14 @@ describe('the period tabs scroll rather than being cut off', () => {
 describe('the card is not a page in itself', () => {
   it('trims the padding every row of the card carries', () => {
     // 440px measurements: the card was 516px tall, of which ten rows of
-    // table-cell padding. 424px after, with nothing removed from it.
+    // table-cell padding. 424px after, with nothing removed from it; the
+    // iPhone grid (below) then puts several cells on one row.
     const padded = ALL.filter(
-      r => phoneOnly(r.media) && r.selector.includes('ta-table-responsive--cards td') && /padding\s*:/.test(r.body),
+      r => phoneOnly(r.media) && r.selector.includes('ta-table-responsive--cards') &&
+        /\btd\s*$/.test(r.selector) && /padding\s*:/.test(r.body),
     )
     expect(padded.length).toBeGreaterThan(0)
-    expect(padded.at(-1).body).toMatch(/padding\s*:\s*4px 12px/)
+    expect(padded.at(-1).body).toMatch(/padding\s*:\s*4px 10px/)
   })
 
   it('keeps the screenshot openable and the menu thumb-sized', async () => {
@@ -378,6 +398,87 @@ describe('the candidate line', () => {
     for (const rule of base.filter(r => r.media !== null)) {
       expect(phoneOnly(rule.media), `${rule.media} reaches a desktop`).toBe(true)
     }
+  })
+})
+
+describe('on an iPhone (390-430px)', () => {
+  const CARD = '.ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row'
+  /** The last phone rule for one card cell: the one a phone gets. */
+  const cellRule = label => ALL.filter(
+    r => phoneOnly(r.media) && r.selector.split(',').some(s => s.trim() === `${CARD} > td[data-label="${label}"]`),
+  ).at(-1)
+  const span = label => /grid-column\s*:\s*span\s*(\d)/.exec(cellRule(label)?.body || '')?.[1]
+
+  it('lays the card out as a grid, not ten label rows', () => {
+    const grid = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === CARD).at(-1)
+    expect(grid.body).toMatch(/display\s*:\s*grid/)
+    expect(grid.body).toMatch(/grid-template-columns\s*:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\)/)
+  })
+
+  it('pairs date with time, and technology, round and attendee on one row', () => {
+    expect([span('Date'), span('Time')]).toEqual(['3', '3'])
+    expect([span('Technology'), span('Round'), span('Attendee')]).toEqual(['2', '2', '2'])
+  })
+
+  it('gives the notes the full width the desktop cap would take away', () => {
+    // A desktop rule caps the notes cell at 160px; on a card that left a long
+    // remark in a narrow column beside empty space.
+    const notes = cellRule('Notes')
+    expect(notes.body).toMatch(/max-width\s*:\s*none/)
+    expect(notes.body).not.toMatch(/grid-column\s*:\s*span/)
+  })
+
+  it('puts the screenshot and the actions menu side by side on the last row', () => {
+    const shot = cellRule('Screenshot')
+    const actions = cellRule('Actions')
+    expect([span('Screenshot'), span('Actions')]).toEqual(['3', '3'])
+    const order = rule => /(^|[;\s])order\s*:\s*(\d)/.exec(rule.body)?.[2]
+    expect(order(shot)).toBe(order(actions))
+    expect(Number(order(shot))).toBeGreaterThan(Number(order(cellRule('Notes'))))
+    // The menu is its own label; "Actions" above a ⋮ only costs a line.
+    const label = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('td[data-label="Actions"]::before')).at(-1)
+    expect(label.body).toMatch(/display\s*:\s*none/)
+  })
+
+  it('shows the booking source as a coloured chip, on a phone only', () => {
+    expect(ROSTER).toMatch(/ops-booking-source ops-booking-source--\$\{bookingSource\.tone\}/)
+    for (const tone of ['candidate', 'auto']) {
+      const rule = ALL.filter(r => phoneOnly(r.media) && r.selector.includes(`.ops-booking-source--${tone}`)).at(-1)
+      expect(rule, `no chip colour for ${tone}`).toBeTruthy()
+      expect(rule.body).toMatch(/background\s*:/)
+    }
+    for (const rule of ALL.filter(r => /\.ops-booking-(source|type)\b/.test(r.selector))) {
+      expect(phoneOnly(rule.media), `${rule.media} restyles the desktop source text`).toBe(true)
+    }
+  })
+
+  it('puts Refresh beside the search box as an icon button that keeps its name', async () => {
+    const order = selector => /(^|[;\s])order\s*:\s*(\d)/.exec(
+      ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === selector && /order\s*:/.test(r.body)).at(-1)?.body || '',
+    )?.[2]
+    expect(order('.ops-roster-controls__filters .ops-roster-search')).toBe('0')
+    expect(order('.ops-roster-controls__filters .ops-roster-controls__actions')).toBe('1')
+    expect(order('.ops-roster-controls__filters .ops-roster-control')).toBe('2')
+    const refresh = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === '.ops-roster-controls__actions .ops-roster-refresh').at(-1)
+    expect(refresh.body).toMatch(/width\s*:\s*44px/)
+    // With a filter set, Clear joins them; the search makes room rather than
+    // the two buttons dropping to a row of their own.
+    const withClear = ALL.filter(r => phoneOnly(r.media) && r.selector.includes(':has(.ops-roster-clear) .ops-roster-search'))
+    expect(withClear.at(-1)?.body).toMatch(/flex-basis\s*:\s*calc\(100% - \d+px\)/)
+    // font-size:0 hides the word visually only; it still names the button.
+    await renderPanel()
+    expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument()
+  })
+
+  it('drops the captions above the filters only because each select names itself', async () => {
+    await renderPanel()
+    // An admin sees all four (the attendee filter is hidden for a handler).
+    for (const name of ['Candidate filter', 'Attendee filter', 'Candidate interview level filter', 'Technology filter']) {
+      expect(screen.getByRole('combobox', { name })).toBeInTheDocument()
+    }
+    const hidden = ALL.filter(r => r.selector.includes('.ops-roster-controls__filters .ops-roster-control > span'))
+    expect(hidden.length).toBeGreaterThan(0)
+    for (const rule of hidden) expect(phoneOnly(rule.media), `${rule.media} hides desktop captions`).toBe(true)
   })
 })
 

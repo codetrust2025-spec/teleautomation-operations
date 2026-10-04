@@ -2043,3 +2043,113 @@
     margin-left: 0;
   }
 }
+
+/* ── Daily Ops on an iPhone: compact controls and cards (390-430px) ──────────
+   Phone only, so nothing on a laptop or desktop moves.
+   1. Period tabs: all five in one row of equal columns, labels wrapping to two
+      lines. The scrolling strip hid "All unresolved" past the edge with no
+      visible scrollbar; a grid shows every choice and never orphans one.
+   2. Filters: the selects name themselves ("All candidates", "Everyone"...)
+      and each carries its own aria-label, so the small captions above them
+      go; Refresh is an icon button beside the search box, not a full row.
+   3. Cards: a 6-column grid instead of ten label|value rows. Date and time
+      share a row; technology, round and attendee share one; the status select
+      and the notes keep the full width; the screenshot and the actions menu
+      share the last row. Labels sit above their values.
+   4. Booking source and assessment read as small chips, not loose text. */
+@media (max-width: 767px) {
+  /* 1. period tabs */
+  .ops-roster-control-group--period .ops-roster-control-group__label { display: none; }
+  .ops-roster-controls .ops-date-range__presets {
+    display: grid;
+    /* Longer labels get a little more of the row, so none breaks mid-word. */
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr);
+    gap: 4px;
+    overflow: visible;
+    width: 100%;
+  }
+  .ops-roster-controls .ops-date-range__preset {
+    min-width: 0;
+    min-height: 40px;
+    padding: 4px 3px;
+    font-size: 12px;
+    line-height: 1.15;
+    white-space: normal;
+    text-align: center;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  /* The desktop separates it with a margin; in an equal grid it would only
+     make this one column narrower than the rest. */
+  .ops-roster-controls .ops-date-range__preset--unresolved { margin-left: 0; }
+
+  /* 2. filters */
+  .ops-roster-controls__range,
+  .ops-roster-controls__filters { padding: 8px; gap: 6px; }
+  .ops-roster-control--date > span,
+  .ops-roster-controls__filters .ops-roster-control > span { display: none; }
+  .ops-roster-controls__filters .ops-roster-control { gap: 0; min-width: 0; flex: 1 1 calc(50% - 3px); }
+  .ops-roster-controls__filters .ops-ctrl-select { min-height: 38px; }
+  /* The basis leaves just room for the buttons, so they share the search row
+     and the selects start on the next; the search grows into any slack. */
+  .ops-roster-controls__filters .ops-roster-search { order: 0; flex: 1 1 calc(100% - 56px); min-width: 0; }
+  .ops-roster-controls__filters:has(.ops-roster-clear) .ops-roster-search { flex-basis: calc(100% - 140px); }
+  .ops-roster-controls__filters .ops-roster-control { order: 2; }
+  .ops-roster-controls__filters .ops-roster-controls__actions {
+    order: 1; flex: 0 0 auto; width: auto; margin-left: 0; gap: 6px;
+  }
+  .ops-roster-controls__actions .ops-roster-refresh {
+    flex: 0 0 44px; width: 44px; min-height: 40px; padding: 0;
+    font-size: 0; justify-content: center;
+  }
+  .ops-roster-controls__actions .ops-roster-refresh > span { font-size: 18px; }
+  .ops-roster-controls__actions .ops-roster-clear { min-height: 40px; }
+
+  /* 3. cards */
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    padding: 4px 0;
+  }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td {
+    grid-column: 1 / -1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+    padding: 4px 10px;
+    border-bottom: 0;
+    min-width: 0;
+  }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td::before { min-width: 0; padding-top: 0; font-size: 9.5px; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Date"],
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Time"] { grid-column: span 3; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Technology"],
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Round"],
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Attendee"] { grid-column: span 2; overflow-wrap: anywhere; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Notes"] { order: 1; flex-direction: column; max-width: none; width: auto; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Screenshot"] { order: 2; grid-column: span 3; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Actions"] {
+    order: 2; grid-column: span 3;
+    flex-direction: row; justify-content: flex-end; align-items: flex-end;
+  }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Actions"]::before { display: none; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Candidate"] {
+    flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+  }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Candidate"]::before { flex: 0 0 100%; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Status"] .ops-attendance-select { min-height: 40px; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-notes-cell .ops-interview-notes-text { flex: 0 1 auto; }
+
+  /* 4. chips */
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source,
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-type {
+    display: inline-flex; align-items: center;
+    padding: 1px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; line-height: 1.5;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(148, 163, 184, 0.12); color: #cbd5e1;
+  }
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source--candidate { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.35); color: #6ee7b7; }
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source--auto { background: rgba(99, 102, 241, 0.14); border-color: rgba(99, 102, 241, 0.4); color: #c7d2fe; }
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-type--assessment { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.38); color: #fcd34d; }
+}
