@@ -42,6 +42,22 @@ def _body(message: dict[str, Any]) -> str:
     return " ".join(str(message.get(key) or "") for key in ("body_text", "html_body_text", "body", "html_body"))
 
 
+def cancels_an_interview(message: dict[str, Any], attachments: list[dict[str, Any]] | None = None) -> bool:
+    """Does this mail call an interview off rather than arrange one?
+
+    A cancellation is worth reading too -- a booking may need cancelling -- but
+    telling somebody to "book the interview by hand" when the mail says the
+    opposite wastes their time and risks a booking that should not exist.
+    """
+    for attachment in attachments or []:
+        if not str(attachment.get("filename") or "").lower().endswith(".ics"):
+            continue
+        invite = parse_calendar(str(attachment.get("text") or attachment.get("extracted_text") or ""))
+        if invite and (invite.get("method") == "CANCEL" or invite.get("status") == "CANCELLED"):
+            return True
+    return bool(re.match(r"\s*(Canceled|Cancelled)\s*:", str(message.get("subject") or ""), re.I))
+
+
 def interview_evidence(message: dict[str, Any], attachments: list[dict[str, Any]] | None = None) -> str | None:
     """What in this mail names a specific interview, in words, or None.
 
@@ -80,10 +96,12 @@ def surface_unread_interview_mail(*, since: datetime | None = None, limit: int =
     created: list[dict[str, Any]] = []
     for message in store.unread_interview_candidates(since=since, limit=limit):
         attachments = store.attachments_for_message(str(message["id"]), include_text=True)
-        evidence = interview_evidence(message, [{**a, "text": a.get("extracted_text") or ""} for a in attachments])
+        readable = [{**a, "text": a.get("extracted_text") or ""} for a in attachments]
+        evidence = interview_evidence(message, readable)
         if not evidence:
             continue
-        alert = store.record_unread_interview_alert(message, evidence=evidence)
+        alert = store.record_unread_interview_alert(
+            message, evidence=evidence, cancelling=cancels_an_interview(message, readable))
         if alert:
             created.append(alert)
     return created

@@ -3263,7 +3263,7 @@ def unread_interview_candidates(*, since, limit: int = 200) -> list[dict[str, An
 
 
 def record_unread_interview_alert(
-    message: dict[str, Any], *, evidence: str, reason_code: str = "",
+    message: dict[str, Any], *, evidence: str, reason_code: str = "", cancelling: bool = False,
 ) -> dict[str, Any] | None:
     """File an unread interview mail where an operator will see it.
 
@@ -3275,10 +3275,17 @@ def record_unread_interview_alert(
     if not provider_id:
         return None
     name, email = _candidate_snapshot(str(message.get("candidate_id") or ""), {})
+    # What the reader should do differs entirely: one mail arranges an
+    # interview, the other calls one off.
     summary = (
-        "The reader could not classify this mail, and it carries interview details: "
-        f"{evidence}. Open it and book the interview by hand if it is real."
+        f"The reader could not classify this mail, and it calls an interview off: {evidence}. "
+        "Open it and cancel the booking by hand if there is one."
+        if cancelling else
+        f"The reader could not classify this mail, and it carries interview details: {evidence}. "
+        "Open it and book the interview by hand if it is real."
     )
+    action = ("Read the mail and cancel the booking by hand if there is one." if cancelling
+              else "Read the mail and book the interview by hand if it is real.")
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
           gmail_message_id,gmail_thread_id,email_analysis_id,classification,candidate_status,
@@ -3292,7 +3299,7 @@ def record_unread_interview_alert(
            message.get("subject"), message.get("sender_name"), message.get("sender_email"),
            message.get("sent_at"), 0.0, summary[:1000],
            str(reason_code or message.get("ai_last_error_code") or "AI_COULD_NOT_READ_THIS_MAIL")[:1000],
-           "Read the mail and book the interview by hand if it is real."[:1000],
+           action[:1000],
            # High: an interview nobody has seen may be tomorrow's.
            "high"))
         created = _rows(cur)

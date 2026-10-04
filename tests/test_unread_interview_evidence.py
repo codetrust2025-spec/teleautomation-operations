@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.unread_interview_mail import interview_evidence
+from services.unread_interview_mail import cancels_an_interview, interview_evidence
 
 ICS = """BEGIN:VCALENDAR
 METHOD:REQUEST
@@ -95,3 +95,84 @@ def test_a_google_meet_link_needs_a_real_room_code():
     # meet.google.com/ alone, or a marketing path, is not a room.
     assert interview_evidence(mail(body_text="https://meet.google.com/"), []) is None
     assert interview_evidence(mail(body_text="https://meet.google.com/landing"), []) is None
+
+
+# ── an interview called off reads as one ────────────────────────────────────
+
+def test_a_cancelled_invitation_is_recognised_as_a_cancellation():
+    # It is still worth reading -- a booking may need cancelling -- but telling
+    # somebody to "book the interview by hand" is the opposite of the truth.
+    cancel = ICS.replace("METHOD:REQUEST", "METHOD:CANCEL")
+
+    assert cancels_an_interview(mail(), ics_attachment(cancel)) is True
+    assert interview_evidence(mail(), ics_attachment(cancel)), "and it still surfaces"
+
+
+def test_a_cancelled_status_counts_too():
+    cancel = ICS.replace("SUMMARY:L1_Java Developer", "STATUS:CANCELLED\nSUMMARY:L1_Java Developer")
+
+    assert cancels_an_interview(mail(), ics_attachment(cancel)) is True
+
+
+@pytest.mark.parametrize("subject", ["Canceled: L1 Interview", "Cancelled: L1 Interview",
+                                     "  canceled: l1 interview"])
+def test_the_subject_alone_says_it_too(subject):
+    # Some cancellations arrive with no calendar file at all.
+    assert cancels_an_interview(mail(subject=subject, body_text="https://meet.google.com/ryf-ipbr-tow"), []) is True
+
+
+@pytest.mark.parametrize("subject", ["Invitation: L1 Interview", "Rescheduled: L1 Interview",
+                                     "Your interview was not cancelled"])
+def test_an_invitation_is_not_a_cancellation(subject):
+    assert cancels_an_interview(mail(subject=subject), ics_attachment()) is False
+
+
+# ── and the alert tells the reader what to do with it ───────────────────────
+
+class _Cursor:
+    def __init__(self, sink):
+        self.sink = sink
+        self.description = []
+
+    def execute(self, sql, params=None):
+        self.sink.append(params)
+
+    def fetchall(self):
+        return []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _Connection(_Cursor):
+    def cursor(self):
+        return _Cursor(self.sink)
+
+
+def _alert_text(monkeypatch, *, cancelling):
+    from core import recruitment_mail_store as store
+
+    sink = []
+    monkeypatch.setattr(store, "get_connection", lambda: _Connection(sink))
+    monkeypatch.setattr(store, "_candidate_snapshot", lambda *_a, **_k: ("Invented Person", ""))
+    store.record_unread_interview_alert(
+        {"provider_message_id": "m-1", "candidate_id": "c-1", "subject": "x"},
+        evidence="a Teams meeting", cancelling=cancelling,
+    )
+    params = sink[-1]
+    return params[14], params[16]          # ai_summary, recommended_action
+
+
+def test_an_unread_cancellation_asks_for_a_cancellation(monkeypatch):
+    summary, action = _alert_text(monkeypatch, cancelling=True)
+    assert "calls an interview off" in summary and "cancel the booking" in summary
+    assert "cancel the booking by hand" in action
+    assert "book the interview" not in summary + action
+
+
+def test_an_unread_invitation_still_asks_for_a_booking(monkeypatch):
+    summary, action = _alert_text(monkeypatch, cancelling=False)
+    assert "book the interview by hand" in summary and "book the interview by hand" in action
