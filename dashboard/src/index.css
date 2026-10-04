@@ -18472,18 +18472,15 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-modal .cand-modal-footer { box-shadow: 0 -10px 24px rgba(2, 6, 23, 0.45); }
 }
 
-/* Confirmed slots: interviews whose slot ended with no Daily Ops outcome.
-   Listed first, in amber, until a status is recorded. */
-.sbs-section--needs-update {
-  padding: 0.7rem 0.75rem 0.8rem;
-  border-radius: 0.8rem;
-  background: rgba(245, 158, 11, 0.06);
-  border: 1px solid rgba(245, 158, 11, 0.28);
-}
-.sbs-section--needs-update .sbs-step-title { color: #fcd34d; }
-.sbs-confirmed-card--awaiting {
-  background: rgba(245, 158, 11, 0.07);
-  border-color: rgba(245, 158, 11, 0.3);
-}
-.sbs-confirmed-card__status--awaiting { color: #fcd34d; }
+/* Confirmed slots: interviews whose slot ended with no Daily Ops outcome are
+   listed first, but styled exactly like Upcoming slots -- no amber container
+   box, no card tint. A single subtle amber "Awaiting status" pill is the only
+   accent, so the section is noticeable without being alarming. */
 .sbs-section--needs-update + .sbs-section { margin-top: 0.9rem; }
+.sbs-confirmed-card__status--awaiting {
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+}
