@@ -3351,9 +3351,22 @@ def record_unread_interview_alert(
 
 
 def visible_rows_sql() -> tuple[str, list[Any]]:
-    """Not dismissed, and not a historical row the tool deliberately skipped."""
+    """Not dismissed, not a historical row the tool deliberately skipped, and
+    not an alert whose own event the validator rejected.
+
+    The last: on 2 Sep 2026 fifteen alerts were filed from events whose
+    validation was REJECTED -- webinar invitations, job-alert digests, Indeed
+    newsletters, an application receipt and a OneDrive welcome mail, three of
+    them counted as job selections with an invented "John Doe" summary.
+    Routing now fails such an event closed before any alert is written; this
+    keeps the ones written before it off the screen and out of the counts
+    without rewriting them. An alert with no event (Needs reading) is unaffected.
+    """
     return (
-        "dismissed_at IS NULL AND COALESCE(booking_status,'') <> 'Historical Skipped'",
+        "dismissed_at IS NULL AND COALESCE(booking_status,'') <> 'Historical Skipped'"
+        " AND NOT EXISTS (SELECT 1 FROM ai_recruitment_events rejected_event"
+        " WHERE rejected_event.id = ai_recruitment_event_id"
+        " AND rejected_event.validation_status = 'REJECTED')",
         [],
     )
 
