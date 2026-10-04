@@ -170,6 +170,55 @@ def parse_calendar(text: str) -> dict[str, Any] | None:
     }
 
 
+#: Services that send an invitation from their own domain on behalf of whoever
+#: organised it. Their mail is authenticated as theirs, never as the
+#: organiser's, so organiser-equals-sender can never hold for one of them.
+#:
+#: Short and evidence-led: each of these was found relaying a real interview
+#: that the alignment rule then refused. Adding one is a decision, because it
+#: is a statement that anything the service relays may book an interview.
+#: `google.com` is deliberately absent -- 431 stored invitations contain no
+#: case that needs it, and Google's own relay carries invitations from any
+#: account there is.
+CALENDAR_RELAY_DOMAINS = frozenset({
+    "zohocalendar.com", "viazohorecruit.com", "hirepro.in", "risebird.io",
+})
+
+#: An invitation organised from a personal mailbox is not an employer's.
+#: A relay will carry anybody's invitation -- one arrived in September from a
+#: gmail address, inviting a candidate to bring their original certificates --
+#: so this is what keeps the exception below from admitting it.
+FREE_MAIL_DOMAINS = frozenset({
+    "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "ymail.com", "rediffmail.com",
+    "outlook.com", "hotmail.com", "live.com", "icloud.com", "me.com", "aol.com",
+    "proton.me", "protonmail.com", "zoho.com", "zohomail.com", "mail.com", "gmx.com",
+})
+
+
+def relayed_by_a_calendar_service(organizer: str, sender: str) -> bool:
+    """Is this a calendar service carrying somebody else's invitation?
+
+    The organiser-alignment rule exists to refuse a forwarded invitation: the
+    mail must come from the organiser, not from whoever passed it on. A
+    calendar service breaks that by design -- Zoho sends from
+    `noreply@zohocalendar.com` however the invitation was made -- so three real
+    interviews in September were refused, read by nobody, and never booked.
+
+    The exception is deliberately narrow. The service must be one we name, and
+    the invitation must still say who organised it, at an address that is not a
+    personal mailbox: a relay will carry anyone's invitation, and an
+    unattributable one is exactly what should not book an interview. Every
+    other gate -- authentication of the relay itself, the recipient being an
+    attendee, the interview shape, a real start -- is unchanged and still
+    applies.
+    """
+    if not organizer or not sender:
+        return False
+    if _domain(sender) not in CALENDAR_RELAY_DOMAINS:
+        return False
+    return _domain(organizer) not in FREE_MAIL_DOMAINS
+
+
 def _sender_authenticated(decoded: dict[str, Any], sender: str) -> bool:
     auth = str(decoded.get("authentication_results") or "").lower()
     spf = str(decoded.get("received_spf") or "").lower()
@@ -514,6 +563,10 @@ def trusted_interview_result(decoded: dict[str, Any], attachments: list[dict[str
     organizer_aligned = (
         organizer == sender
         or bool(organizer and _domain(organizer) == _domain(sender))
+        # ...or a calendar service carrying the organiser's invitation, which
+        # can never be same-domain and is why three September interviews were
+        # refused (`relayed_by_a_calendar_service`).
+        or relayed_by_a_calendar_service(organizer, sender)
     )
     # Enterprise recruiting systems commonly send an invite through a shared
     # talent-acquisition mailbox while naming the individual recruiter as the
@@ -524,7 +577,12 @@ def trusted_interview_result(decoded: dict[str, Any], attachments: list[dict[str
     if not _sender_authenticated(decoded, sender):
         return None
     subject = str(decoded.get("subject") or "")
-    if not _accepts_as_interview(decoded, invite, sender, recipient, subject):
+    # Who is inviting this candidate: the organiser when a calendar service is
+    # merely carrying the invitation, the sender otherwise. Judging the shape
+    # on the relay's own domain would make any small meeting it relays look
+    # like an employer's -- a party invitation included.
+    inviter = organizer if relayed_by_a_calendar_service(organizer, sender) else sender
+    if not _accepts_as_interview(decoded, invite, inviter, recipient, subject):
         return None
 
     cancelled = invite["method"] == "CANCEL" or invite["status"] == "CANCELLED"
