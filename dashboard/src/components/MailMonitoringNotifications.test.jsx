@@ -43,6 +43,15 @@ describe("mail monitoring notifications", () => {
     expect(mailStatusTone({ candidate_status: "Historical Interview Skipped" })).toBe("neutral");
   });
 
+  it("marks a booking taken off the roster for a look, whatever the mail said", () => {
+    // Its classification still says rescheduled or confirmed, which would
+    // otherwise paint it as a live booking.
+    expect(mailStatusTone({ candidate_status: "Booking Removed", booking_status: "Booking Removed",
+      classification: "interview_rescheduled" })).toBe("warning");
+    expect(mailStatusTone({ candidate_status: "Booking Removed", booking_status: "Booking Removed",
+      classification: "interview_confirmed" })).toBe("warning");
+  });
+
   beforeEach(() => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.stubGlobal("fetch", vi.fn((url) => {

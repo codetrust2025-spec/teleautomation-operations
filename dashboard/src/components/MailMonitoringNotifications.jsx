@@ -90,6 +90,10 @@ export function mailStatusTone(item = {}) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+  // A booking someone took off the roster after the mail made it: nothing is
+  // wrong with the mail, but a person should see what became of the interview.
+  // First, because its classification still says rescheduled or confirmed.
+  if (/booking removed/.test(status)) return "warning";
   if (/automatically booked|auto booked|already booked|approved.*booked|joining confirmed|selection confirmed|selected|offer accepted|offer received/.test(status)) return "success";
   if (/final round cleared|interview confirmed|rescheduled/.test(status)) return "info";
   if (/hr confirmation|document verification|documents requested|compensation confirmation|booking blocked|blocked/.test(status)) return "warning";

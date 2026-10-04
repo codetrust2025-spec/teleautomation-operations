@@ -21,8 +21,8 @@ def test_released_claim_title_matches_automation_state(monkeypatch, title, statu
         raise AssertionError('Read projection must not write notification/audit history')
     monkeypatch.setattr(store, 'get_connection', forbid_writes)
     projected = store.reconcile_booking_claims([deepcopy(stored)])[0]
-    assert projected['candidate_status'] == 'AI Retry Pending'
-    assert projected['booking_status'] == 'AI_RETRY_PENDING'
+    assert projected['candidate_status'] == 'Booking Removed'
+    assert projected['booking_status'] == 'Booking Removed'
     assert projected['historical_candidate_status'] == title
     assert store.reconcile_booking_claims([projected])[0] == projected
     assert stored == original

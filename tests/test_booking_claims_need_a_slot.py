@@ -35,8 +35,17 @@ class TestTheClaimStatusesAreTheBookedOnes:
 
     def test_a_released_claim_is_not_a_cancellation(self):
         """Nobody cancelled these. The booking is simply not there."""
-        assert ms.RELEASED_BOOKING_STATUS == "AI_RETRY_PENDING"
+        assert ms.RELEASED_BOOKING_STATUS == "Booking Removed"
         assert ms.RELEASED_BOOKING_STATUS not in ms.BOOKED_BOOKING_STATUSES
+        assert ms.RELEASED_BOOKING_STATUS != ms.CANCELLED_BOOKING_STATUS
+
+    def test_a_released_claim_is_not_an_ai_retry(self):
+        """Nothing ever retries a removed booking, so it must not say it will.
+
+        It used to be stored as AI_RETRY_PENDING, which filled the "AI retry
+        pending" tile with bookings people had removed by hand."""
+        assert ms.RELEASED_BOOKING_STATUS != "AI_RETRY_PENDING"
+        assert ms.LEGACY_RELEASED_BOOKING_STATUS == "AI_RETRY_PENDING"
 
     def test_a_released_claim_is_not_counted_as_auto_booked(self):
         """The summary counts booking_status='Auto Booked'."""
@@ -68,7 +77,7 @@ class TestNothingReportsABookingTheRosterLacks:
     def test_a_claim_on_a_missing_slot_is_released(self, roster, status):
         rows = [{"id": "n1", "booking_status": status, "booking_id": "emptied-1"}]
         ms.reconcile_booking_claims(rows)
-        assert rows[0]["booking_status"] == "AI_RETRY_PENDING"
+        assert rows[0]["booking_status"] == "Booking Removed"
         assert rows[0]["booking_claim_released"] is True
 
     @pytest.mark.parametrize("status", ["Auto Booked", "Approved & Booked", "Rescheduled"])
@@ -81,14 +90,32 @@ class TestNothingReportsABookingTheRosterLacks:
     def test_a_claim_on_a_deleted_candidate_is_released(self, roster):
         rows = [{"id": "n1", "booking_status": "Auto Booked", "booking_id": "gone"}]
         ms.reconcile_booking_claims(rows)
-        assert rows[0]["booking_status"] == "AI_RETRY_PENDING"
+        assert rows[0]["booking_status"] == "Booking Removed"
 
-    @pytest.mark.parametrize("status", ["Cancelled", "Blocked", "Processing Failed", "AI_RETRY_PENDING"])
+    @pytest.mark.parametrize("status", ["Cancelled", "Blocked", "Processing Failed", "Booking Removed"])
     def test_statuses_that_claim_nothing_are_untouched(self, roster, status):
         """These do not assert a slot, so there is nothing to release."""
         rows = [{"id": "n1", "booking_status": status, "booking_id": "emptied-1"}]
         ms.reconcile_booking_claims(rows)
         assert rows[0]["booking_status"] == status
+
+    def test_a_claim_released_under_the_old_name_reads_as_removed(self, roster):
+        """Production holds alerts released before 5 Oct 2026 as AI_RETRY_PENDING
+        with the booking they named. They are shown for what they are, and the
+        stored row is not rewritten."""
+        stored = {"id": "n1", "booking_status": "AI_RETRY_PENDING", "booking_id": "emptied-1",
+                  "candidate_status": "Interview Automatically Booked"}
+        rows = [dict(stored)]
+        ms.reconcile_booking_claims(rows)
+        assert rows[0]["booking_status"] == "Booking Removed"
+        assert rows[0]["candidate_status"] == "Booking Removed"
+        assert rows[0]["historical_candidate_status"] == "Interview Automatically Booked"
+
+    def test_a_real_ai_retry_is_still_an_ai_retry(self, roster):
+        """A retry made no slot, so it names no booking; it is left as it is."""
+        rows = [{"id": "n1", "booking_status": "AI_RETRY_PENDING", "booking_id": ""}]
+        ms.reconcile_booking_claims(rows)
+        assert rows[0]["booking_status"] == "AI_RETRY_PENDING"
 
     def test_a_claim_with_no_booking_id_is_untouched(self, roster):
         rows = [{"id": "n1", "booking_status": "Auto Booked", "booking_id": ""}]
@@ -103,7 +130,7 @@ class TestNothingReportsABookingTheRosterLacks:
         ]
         ms.reconcile_booking_claims(rows)
         assert [row["booking_status"] for row in rows] == [
-            "Auto Booked", "AI_RETRY_PENDING", "Cancelled",
+            "Auto Booked", "Booking Removed", "Cancelled",
         ]
 
     def test_an_empty_list_is_fine(self, roster):
@@ -118,6 +145,19 @@ class TestNothingReportsABookingTheRosterLacks:
         rows = [{"id": "n1", "booking_status": "Auto Booked", "booking_id": "booked-1"}]
         assert ms.reconcile_booking_claims(rows) is rows
         assert rows[0]["id"] == "n1"
+
+
+class TestTheRetryTileCountsOnlyRetries:
+    def test_removed_bookings_are_not_counted_as_ai_retries(self):
+        """On 4 Oct 2026 the tile said 22 and none of them was retrying: eight
+        were bookings later taken off the roster. A removed booking -- under
+        either name -- names a booking; a real retry never does."""
+        import inspect
+
+        source = inspect.getsource(ms.notification_summary)
+        tile = source[source.index("ai_retry_pending") - 400:source.index(") ai_retry_pending")]
+        assert "NOT (booking_status IN ('AI_RETRY_PENDING','Booking Removed')" in tile
+        assert "COALESCE(booking_id,'')<>''" in tile
 
 
 class TestTheListPathAppliesIt:

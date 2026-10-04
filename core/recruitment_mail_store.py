@@ -3002,7 +3002,7 @@ def _without_released_bookings(rows, booking_result):
 
     `reconcile_booking_claims` releases such a claim as the row is read,
     after the query has already chosen it; under Successfully booked the
-    released row is dropped rather than listed as "AI Retry Pending".
+    released row is dropped rather than listed as "Booking Removed".
     """
     if booking_result != "booked":
         return rows
@@ -3056,8 +3056,16 @@ BOOKED_BOOKING_STATUSES = ("Auto Booked", "Approved & Booked", "Rescheduled")
 DUPLICATE_IGNORED_STATUS = "Duplicate Ignored"
 
 # Not "Cancelled": nobody cancelled these. The booking they named is simply not
-# there any more, and a human has to decide what that means.
-RELEASED_BOOKING_STATUS = "AI_RETRY_PENDING"
+# there any more -- the slot was taken off the roster after the mail booked it,
+# or its row was reused for another interview -- and a human has to decide
+# what that means.
+#
+# Until 5 Oct 2026 this was stored as "AI_RETRY_PENDING". Nothing ever retried
+# such a mail, so Mail Alerts showed bookings people had removed as mail stuck
+# in the AI queue, counted under "AI retry pending" for weeks. Rows stored
+# with the old value are presented with this one; see reconcile_booking_claims.
+RELEASED_BOOKING_STATUS = "Booking Removed"
+LEGACY_RELEASED_BOOKING_STATUS = "AI_RETRY_PENDING"
 
 
 #: Daily Ops cancelled the interview and kept its schedule. Not the same as a
@@ -3081,9 +3089,9 @@ def _reads_as_rescheduled(booked) -> bool:
 def _project_booking_title(row, title):
     """Say what happened to the booking without losing what the alert said.
 
-    The released projection says "AI Retry Pending", which is right for a
+    The released projection says "Booking Removed", which is right for a
     booking that is simply gone and wrong for these: the interview has an
-    outcome, and nothing is going to book this row again.
+    outcome, and the roster still holds it.
     """
     if row.get('candidate_status') in {
         'Interview Automatically Booked', 'Interview Manually Approved & Booked',
@@ -3100,7 +3108,7 @@ def _project_released_booking_title(row):
         'Interview Rescheduled',
     }:
         row.setdefault('historical_candidate_status', row['candidate_status'])
-        row['candidate_status'] = 'AI Retry Pending'
+        row['candidate_status'] = 'Booking Removed'
 
 
 def reconcile_booking_claims(rows):
@@ -3117,6 +3125,13 @@ def reconcile_booking_claims(rows):
     for row in rows or []:
         if not isinstance(row, dict):
             continue
+        # A claim released before the status had its own name was stored as
+        # an AI retry. A real retry never names a booking -- no slot was made
+        # -- so a stored retry that does is a removed booking. Judged on the
+        # stored value, before the review projection below can produce one.
+        if (row.get('booking_status') == LEGACY_RELEASED_BOOKING_STATUS
+                and str(row.get('booking_id') or '').strip()):
+            row['booking_status'] = RELEASED_BOOKING_STATUS
         # Compatibility projection only; retain historical source/audit rows.
         if row.get('priority') == 'review_required':
             row['priority'] = 'retry_pending'
@@ -3326,7 +3341,9 @@ def notification_summary() -> dict[str, Any]:
           count(*) FILTER(WHERE classification='joining_confirmed' AND dismissed_at IS NULL) joining_confirmations,
           count(*) FILTER(WHERE classification='interview_confirmed' AND booking_status='Auto Booked' AND dismissed_at IS NULL) auto_booked_interviews,
           count(*) FILTER(WHERE booking_status IN('Blocked','Processing Failed') AND dismissed_at IS NULL) booking_blocked,
-          count(*) FILTER(WHERE (priority IN ('review_required','retry_pending') OR booking_status='AI_RETRY_PENDING') AND dismissed_at IS NULL) ai_retry_pending,
+          count(*) FILTER(WHERE (priority IN ('review_required','retry_pending') OR booking_status='AI_RETRY_PENDING')
+            AND NOT (booking_status IN ('AI_RETRY_PENDING','Booking Removed') AND COALESCE(booking_id,'')<>'')
+            AND dismissed_at IS NULL) ai_retry_pending,
           count(*) FILTER(WHERE classification IN ('offer_received','offer_accepted','job_selection_confirmed') AND dismissed_at IS NULL) job_confirmed_count,
           count(*) FILTER(WHERE classification IN ('interview_confirmed','interview_rescheduled','interview_cancelled') AND dismissed_at IS NULL) interview_booking_count
           FROM mail_monitoring_notifications
