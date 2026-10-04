@@ -170,7 +170,16 @@ def install_dashboard_auth(app: FastAPI) -> None:
         async def dispatch(self, request: Request, call_next):
             from core.dashboard_access import is_internal_service_authorized, is_ops_request_authorized
 
-            path = request.url.path
+            # Authorise on the ASGI scope path -- the exact path the router
+            # dispatches on -- not request.url.path. Starlette rebuilds
+            # request.url from the Host header, so a header such as
+            # "Host: ops.example?" or "...#" moves the path boundary during
+            # re-parsing: request.url.path then reads "/" (public) while the
+            # router still runs the real protected route (CVE-2026-48710). The
+            # scope path and the dispatch can never disagree, so this closes
+            # that bypass regardless of the Starlette version in play. For a
+            # well-formed request the two are identical, so nothing else moves.
+            path = request.scope.get("path") or ""
             if not auth.auth_enabled():
                 return await call_next(request)
             if auth.is_public_path(path):
