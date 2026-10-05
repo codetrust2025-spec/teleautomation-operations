@@ -1,18 +1,21 @@
 /**
- * The "Mark as Attended" modal: dark custom dropdowns, a required result, a
- * gated button and a footer that stays put.
+ * The "Mark as Attended" modal: dark custom dropdowns, a gated button and a
+ * footer that stays put.
  *
- * What this holds the modal to:
+ * The required fields are Attendee, Interview feedback and Note / remark —
+ * there is no Interview result field (it was removed). What this holds the
+ * modal to:
  *   1. Feedback is the app's dark custom dropdown (a combobox + listbox), not a
  *      native <select> whose OS popup overlapped the Note field and footer, and
  *      it offers the five grades.
- *   2. There is a separate Interview result dropdown with its four values.
- *   3. The Attended button is disabled until attendee, feedback, result and a
- *      note are all present; filling them enables it.
- *   4. Saving sends both feedback and result to the server.
+ *   2. There is NO Interview result control anywhere in the modal.
+ *   3. The Attended button is disabled until attendee, feedback and a note are
+ *      all present; filling them enables it.
+ *   4. Saving sends feedback (and never a result) to the server.
  *   5. The footer (Cancel + Attended) stays in the document while a dropdown is
  *      open — the menu is portaled out of the scrolling body, so it cannot push
- *      or hide the footer.
+ *      or hide the footer — and the menu is sized to its options, not the whole
+ *      viewport, so it covers the Note field no more than necessary.
  */
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -134,31 +137,36 @@ describe('the feedback control', () => {
   })
 })
 
-describe('the result control', () => {
-  it('exists as its own dropdown with the four values', async () => {
+describe('the removed Interview result field', () => {
+  it('is nowhere in the modal', async () => {
     await renderPanel()
     openAttendedModal()
-    fireEvent.click(screen.getByRole('combobox', { name: 'Interview result' }))
 
-    const listbox = screen.getByRole('listbox', { name: 'Interview result' })
-    expect(within(listbox).getAllByRole('option').map(o => o.textContent.replace('✓', '').trim())).toEqual([
-      'Awaiting result', 'Next round', 'Selected', 'Rejected',
+    expect(screen.queryByRole('combobox', { name: 'Interview result' })).toBeNull()
+    expect(screen.queryByText('Interview result')).toBeNull()
+  })
+
+  it('leaves exactly two dropdowns in the modal: attendee and feedback', async () => {
+    await renderPanel()
+    openAttendedModal()
+
+    const dialog = document.querySelector('.ops-slot-modal')
+    const comboboxes = within(dialog).getAllByRole('combobox').map(c => c.getAttribute('aria-label'))
+    expect(comboboxes).toEqual([
+      'Attendee (who attended the interview?)', 'Interview feedback',
     ])
   })
 })
 
 describe('the Attended button', () => {
-  it('is disabled until attendee, feedback, result and a note are all set', async () => {
+  it('is disabled until attendee, feedback and a note are all set', async () => {
     await renderPanel()
     openAttendedModal()
 
-    // Attendee defaults to Bhavana, so only feedback, result and note are missing.
+    // Attendee defaults to Bhavana, so only feedback and note are missing.
     expect(submitButton()).toBeDisabled()
 
     pick('Interview feedback', 'Good')
-    expect(submitButton()).toBeDisabled()
-
-    pick('Interview result', 'Next round')
     expect(submitButton()).toBeDisabled()
 
     fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'cleared the round' } })
@@ -173,19 +181,19 @@ describe('the Attended button', () => {
 })
 
 describe('saving', () => {
-  it('sends both feedback and result to the server', async () => {
+  it('sends feedback and never a result to the server', async () => {
     await renderPanel()
     openAttendedModal()
     pick('Interview feedback', 'Excellent')
-    pick('Interview result', 'Selected')
     fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'strong hire' } })
 
     await act(async () => { fireEvent.click(submitButton()) })
 
     await waitFor(() => expect(posted.length).toBe(1))
     expect(posted[0]).toMatchObject({
-      status: 'attended', feedback: 'excellent', result: 'selected', remark: 'strong hire',
+      status: 'attended', feedback: 'excellent', remark: 'strong hire',
     })
+    expect(posted[0]).not.toHaveProperty('result')
   })
 })
 
@@ -208,5 +216,18 @@ describe('the footer', () => {
     // The menu is not inside the scrolling modal body — it is a child of <body>.
     const menu = screen.getByRole('listbox', { name: 'Interview feedback' })
     expect(dialog.contains(menu)).toBe(false)
+  })
+
+  it('opens a menu sized to its options, not the whole viewport', async () => {
+    await renderPanel()
+    openAttendedModal()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Interview feedback' }))
+
+    const menu = screen.getByRole('listbox', { name: 'Interview feedback' })
+    // Five options at ~36px plus padding is well under 240px; the compact cap
+    // keeps the menu from spanning the viewport and burying the Note/footer.
+    const cap = parseFloat(menu.style.maxHeight)
+    expect(cap).toBeGreaterThan(0)
+    expect(cap).toBeLessThanOrEqual(240)
   })
 })

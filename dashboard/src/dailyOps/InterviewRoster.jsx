@@ -24,15 +24,6 @@ const FEEDBACK_OPTIONS = [
   { value: 'negative', label: 'Negative' },
 ]
 
-// The outcome of an attended interview, independent of how it went. Values
-// match the server's normalise_interview_result set.
-const RESULT_OPTIONS = [
-  { value: 'awaiting_result', label: 'Awaiting result' },
-  { value: 'next_round', label: 'Next round' },
-  { value: 'selected', label: 'Selected' },
-  { value: 'rejected', label: 'Rejected' },
-]
-
 // A stored legacy feedback value ("positive") is not on the new scale, so the
 // dropdown would show the placeholder for it. Offer it as a one-off option so
 // an operator editing such a row sees the real stored value rather than a
@@ -174,7 +165,6 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
   const [attendee, setAttendee] = useState(row.interview_attendee_resolved || row.interview_attendee || 'Bhavana')
   const [remark, setRemark] = useState(row.interview_attendance_remark || '')
   const [feedback, setFeedback] = useState(row.interview_feedback || '')
-  const [result, setResult] = useState(row.interview_result || '')
   const [date, setDate] = useState(row.date || '')
   const [time, setTime] = useState(row.time || '')
   const [timeEnd, setTimeEnd] = useState(row.time_end || '')
@@ -184,27 +174,25 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
   const [error, setError] = useState('')
   const attendeeOnly = mode === 'attendee'
   const attendeeWithStatus = mode === 'attendee-with-status'
-  // Feedback and result only make sense once an interview actually happened.
+  // Feedback only makes sense once an interview actually happened.
   const wantsFeedback = attendeeWithStatus && targetStatus === 'attended'
   // Everything the "Mark as Attended" form needs before it can be saved. The
   // Attended button reads the same predicate it enforces, so a disabled button
   // and a rejected submit can never disagree.
   const feedbackValid = !wantsFeedback || !!feedback
-  const resultValid = !wantsFeedback || !!result
   const noteValid = !attendeeWithStatus || !!remark.trim()
   const attendeeValid = !!attendee
-  const canSubmit = attendeeValid && feedbackValid && resultValid && noteValid
+  const canSubmit = attendeeValid && feedbackValid && noteValid
   async function submit(event) {
     event.preventDefault()
     if (attendeeWithStatus && !remark.trim()) { setError('Please add a note about the interview.'); return }
     if (wantsFeedback && !feedback) { setError('Select how the interview went (Interview feedback).'); return }
-    if (wantsFeedback && !result) { setError('Select the interview result.'); return }
     setError('')
     try {
       if (attendeeOnly) {
         await onSave({ attendee })
       } else if (attendeeWithStatus) {
-        await onSave({ attendee, status: targetStatus, remark: remark.trim(), feedback: wantsFeedback ? feedback : '', result: wantsFeedback ? result : '' })
+        await onSave({ attendee, status: targetStatus, remark: remark.trim(), feedback: wantsFeedback ? feedback : '' })
       } else {
         if (!technology) { setError('Please select the interview technology.'); return }
         await onSave({ date, time, time_end: timeEnd, notes, interview_round: round, technology })
@@ -239,17 +227,6 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
                 options={feedbackOptionsFor(feedback)}
                 onChange={setFeedback}
                 placeholder="Select feedback"
-                required
-              />
-            </div>}
-            {wantsFeedback && <div className="cand-field cand-field--span2">
-              <span className="cand-field-label">Interview result <span className="cand-field-required-tag">Required</span></span>
-              <DarkSelect
-                ariaLabel="Interview result"
-                value={result}
-                options={RESULT_OPTIONS}
-                onChange={setResult}
-                placeholder="Select result"
                 required
               />
             </div>}
@@ -489,7 +466,7 @@ export function InterviewRoster({
     publishPendingWorkChanged()
   }
 
-  async function saveAttendance(row, status, attendee, remark, feedback, result) {
+  async function saveAttendance(row, status, attendee, remark, feedback) {
     setBusyId(row.id)
     setError('')
     try {
@@ -498,9 +475,6 @@ export function InterviewRoster({
         body.attendee = attendee || row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'
       }
       if (feedback !== undefined) body.feedback = feedback || ''
-      // The interview result rides with feedback: both describe an attended
-      // sitting and the server keeps them only while the round stays attended.
-      if (result !== undefined) body.result = result || ''
       const res = await fetch(`${API}/candidates/${row.id}/interview-attendance`, {
         method: 'POST',
         credentials: 'include',
@@ -787,7 +761,7 @@ export function InterviewRoster({
           </div>
         </div>
       )}
-      {editing && <SlotEditModal row={editing.row} mode={editing.mode} targetStatus={editing.targetStatus} targetLabel={editing.targetLabel} busy={busyId === editing.row.id} onClose={() => setEditing(null)} onSave={values => editing.mode === 'attendee' ? saveAttendee(editing.row, values.attendee) : editing.mode === 'attendee-with-status' ? saveAttendance(editing.row, values.status, values.attendee, values.remark, values.feedback, values.result) : saveSlot(editing.row, values)} />}
+      {editing && <SlotEditModal row={editing.row} mode={editing.mode} targetStatus={editing.targetStatus} targetLabel={editing.targetLabel} busy={busyId === editing.row.id} onClose={() => setEditing(null)} onSave={values => editing.mode === 'attendee' ? saveAttendee(editing.row, values.attendee) : editing.mode === 'attendee-with-status' ? saveAttendance(editing.row, values.status, values.attendee, values.remark, values.feedback) : saveSlot(editing.row, values)} />}
       {screenshotRow && <SlotScreenshotModal row={screenshotRow} onClose={() => setScreenshotRow(null)} />}
     </section>
   )

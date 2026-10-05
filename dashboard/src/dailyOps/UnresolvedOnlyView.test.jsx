@@ -252,11 +252,10 @@ describe('a recorded outcome lands immediately', () => {
     fireEvent.mouseDown(option)
   }
 
-  /** Attended needs an attendee, feedback, result and a note before it saves. */
+  /** Attended needs an attendee, feedback and a note before it saves. */
   async function markAttended(name) {
     fireEvent.change(screen.getByLabelText(`Attendance for ${name}`), { target: { value: 'attended' } })
     pickFromDarkSelect('Interview feedback', 'Good')
-    pickFromDarkSelect('Interview result', 'Next round')
     fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'went ahead, cleared' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Attended', hidden: false })) })
   }

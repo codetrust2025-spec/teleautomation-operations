@@ -1904,10 +1904,12 @@
   transform: rotate(180deg);
 }
 
-/* The portaled option list. z-index clears the modal (z-index: 1000). */
+/* The portaled option list. z-index clears the modal (z-index: 1000). It is
+   sized to its options in JS (DarkSelect place()), so it is only as tall as it
+   needs to be and covers the Note field and footer no more than necessary. */
 .dark-select__menu {
   margin: 0;
-  padding: 4px;
+  padding: 3px;
   list-style: none;
   background: #0f172a;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -1922,9 +1924,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 9px 12px;
+  padding: 7px 12px;
   border-radius: 7px;
   font-size: 13px;
+  line-height: 1.3;
   color: var(--text, #e5e7eb);
   cursor: pointer;
   user-select: none;
@@ -1956,7 +1959,7 @@
    placed before the Daily Ops phone block so that block stays self-contained. */
 @media (max-width: 640px) {
   .dark-select__option {
-    padding: 11px 12px;
+    padding: 9px 12px;
   }
   .dark-select__menu {
     max-width: calc(100vw - 24px);
