@@ -7,6 +7,7 @@ import { DataRoomAccountsTab } from './DataRoomAccountsTab.jsx'
 import { DataRoomPromptsTab } from './DataRoomPromptsTab.jsx'
 import { DataRoomLinksTab } from './DataRoomLinksTab.jsx'
 import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
+import { DataRoomInterviewDataTab } from './DataRoomInterviewDataTab.jsx'
 import { OPERATIONS_PUBLIC_URL } from '../config.js'
 
 const API_BASE =
@@ -374,6 +375,7 @@ const DATA_ROOM_TABS = [
   { id: 'prompts', label: 'Prompts', adminOnly: false },
   { id: 'links', label: 'Key Links', adminOnly: false },
   { id: 'offers', label: 'Offers', adminOnly: false },
+  { id: 'interview', label: 'Interview Data', adminOnly: false },
 ]
 
 export function DataRoomPanel() {
@@ -404,6 +406,7 @@ export function DataRoomPanel() {
     const prompts = credentials?.prompts || []
     const resources = credentials?.resources || []
     const offers = credentials?.offer_letters || []
+    const interview = credentials?.interview_data || []
     return {
       logins: (credentials?.handlers?.length || 0) + (credentials?.admin ? 1 : 0),
       partners: stats?.total ?? rows.length,
@@ -411,6 +414,7 @@ export function DataRoomPanel() {
       prompts: prompts.length,
       links: resources.length,
       offers: offers.length,
+      interview: interview.length,
     }
   }, [credentials, stats, rows.length])
 
@@ -608,6 +612,10 @@ export function DataRoomPanel() {
 
       {activeTab === 'offers' && credentials && (
         <DataRoomOffersTab offers={credentials.offer_letters || []} onReload={loadCredentials} />
+      )}
+
+      {activeTab === 'interview' && credentials && (
+        <DataRoomInterviewDataTab records={credentials.interview_data || []} onReload={loadCredentials} />
       )}
 
       {activeTab === 'partners' && (
