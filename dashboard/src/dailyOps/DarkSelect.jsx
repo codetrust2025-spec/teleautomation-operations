@@ -48,17 +48,25 @@ export function DarkSelect({
   const place = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect()
     if (!rect) return
+    // The menu should be only as tall as its options need, so it covers the
+    // Note field and footer no more than necessary. Each option is ~36px plus
+    // the list's 8px of vertical padding; that content height is the ceiling,
+    // never the whole viewport.
+    const OPTION_H = 36
+    const contentHeight = options.length * OPTION_H + 8
     // Flip above the trigger when there is not enough room below it, so the
     // menu stays on screen on a short viewport (an iPhone in particular).
     const spaceBelow = window.innerHeight - rect.bottom
-    const estimated = Math.min(options.length * 40 + 8, 240)
-    const above = spaceBelow < estimated && rect.top > spaceBelow
+    const above = spaceBelow < contentHeight && rect.top > spaceBelow
+    const roomForFlip = (above ? rect.top : spaceBelow) - 12
     setPosition({
       left: rect.left,
       width: rect.width,
       top: above ? undefined : rect.bottom + 4,
       bottom: above ? window.innerHeight - rect.top + 4 : undefined,
-      maxHeight: Math.max(120, (above ? rect.top : spaceBelow) - 12),
+      // Snug to the options; only scrolls if even the flipped side is tighter
+      // than the content, which for 3-5 short options effectively never happens.
+      maxHeight: Math.max(120, Math.min(contentHeight, roomForFlip)),
     })
   }, [options.length])
 
