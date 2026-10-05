@@ -1855,6 +1855,114 @@
   }
 }
 
+/* ── Dark custom dropdown (DarkSelect) ────────────────────────────────────
+   Replaces the native <select> in the "Mark as Attended" modal. The trigger
+   is a normal in-flow .cand-input-styled button; the option list is portaled
+   to <body> (position: fixed) so it floats above the modal and never clips
+   against the scrolling body or pushes the footer. Dark theme throughout, so
+   the options are legible — the native popup rendered white-on-white on some
+   platforms. These are shared desktop+mobile styles, so they sit before the
+   phone-only block below. */
+.dark-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  /* No native caret backgrounds: the trigger draws its own below. */
+  background-image: none;
+  padding-right: 12px;
+}
+.dark-select__trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.dark-select__trigger--open {
+  border-color: rgba(99, 102, 241, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+}
+.dark-select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dark-select__value--placeholder {
+  color: var(--text-dim, #94a3b8);
+}
+.dark-select__caret {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #94a3b8;
+  transition: transform 120ms ease;
+}
+.dark-select__trigger--open .dark-select__caret {
+  transform: rotate(180deg);
+}
+
+/* The portaled option list. z-index clears the modal (z-index: 1000). */
+.dark-select__menu {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(2, 6, 23, 0.6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 1100;
+}
+.dark-select__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text, #e5e7eb);
+  cursor: pointer;
+  user-select: none;
+}
+.dark-select__option--active {
+  background: rgba(99, 102, 241, 0.22);
+}
+.dark-select__option--selected {
+  color: #c7d2fe;
+  font-weight: 600;
+}
+.dark-select__tick {
+  color: #a5b4fc;
+  font-size: 12px;
+}
+
+/* A gated primary button reads as unavailable, matching :disabled dimming so
+   the Attended button looks the same whether React disables it for busy or
+   for an incomplete form. */
+.cand-btn--disabled,
+.cand-btn--primary.cand-btn--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* On a narrow viewport the modal is tight; keep the portaled menu comfortably
+   tappable and never wider than the viewport. Scoped to a phone width, and
+   placed before the Daily Ops phone block so that block stays self-contained. */
+@media (max-width: 640px) {
+  .dark-select__option {
+    padding: 11px 12px;
+  }
+  .dark-select__menu {
+    max-width: calc(100vw - 24px);
+  }
+}
+
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
    the phone breakpoint: the desktop layout above 767px is untouched.
@@ -2171,3 +2279,4 @@
   .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source--auto { background: rgba(99, 102, 241, 0.14); border-color: rgba(99, 102, 241, 0.4); color: #c7d2fe; }
   .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-type--assessment { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.38); color: #fcd34d; }
 }
+
