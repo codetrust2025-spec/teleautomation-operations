@@ -30,6 +30,33 @@ just built. That is the whole path.
 
 Nothing here is OBSOLETE.
 
+## Release concurrency (since 6 Oct 2026, `115a7a4`)
+
+`deploy.yml` used to sit in one workflow-level concurrency group,
+`production-release`. Every push to main — which only builds an image while
+`AUTO_DEPLOY` is `"false"` — held that lock through its build *and* its
+registry prune, so a manual deploy waited behind housekeeping. On 5 Oct the
+`17ec6b8` release sat pending for nine minutes behind a push run whose image was
+already built and whose prune was queued for a runner.
+
+Now:
+
+- **Only the `deploy` job** joins `production-release` (never cancelled
+  part-way). Push builds, the prune and CI run independently and never hold a
+  release up.
+- **One build per commit**: the `image` job is grouped by commit
+  (`operations-image-<sha>`), so the push for a merge and the deploy dispatched
+  right after it build once; other commits never wait.
+- **One deploy per commit**: inside the lock the deploy job reads the public
+  `/version`; a `deploy` of the commit already live skips the host (notice:
+  "already live"). `force: true` on a manual run restarts it deliberately;
+  `verify` is read-only and always runs; an unreachable site never blocks a
+  deploy.
+
+Runner availability is the one wait that remains: on 5 Oct GitHub's hosted
+runners failed to pick up jobs during an Actions incident, and a job that is
+not acquired within 15 minutes is cancelled before it reaches the host.
+
 ## G. Image retention — recommendation
 
 `prune` keeps `min-versions-to-keep: 30`. At the current cadence (28 versions
