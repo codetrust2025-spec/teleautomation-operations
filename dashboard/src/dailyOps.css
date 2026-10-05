@@ -584,7 +584,7 @@
 
 /* Row action menu (⋮) */
 .ops-row-menu{position:relative;display:inline-flex;vertical-align:middle}
-.ops-row-menu__trigger{width:28px;height:28px;padding:0;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:#ffffff08;color:#cbd5e1;font-size:16px;line-height:1;cursor:pointer}
+.ops-row-menu__trigger{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:#ffffff08;color:#cbd5e1;font-size:16px;line-height:1;cursor:pointer}
 .ops-row-menu__trigger:hover:not(:disabled){background:#ffffff14;color:#f8fafc}
 .ops-row-menu__trigger:disabled{opacity:.4;cursor:not-allowed}
 .ops-row-menu__list{position:absolute;right:0;top:calc(100% + 4px);z-index:40;min-width:196px;margin:0;padding:4px;list-style:none;background:#141820;border:1px solid rgba(255,255,255,.12);border-radius:8px;box-shadow:0 10px 28px #0000008c}
@@ -1635,13 +1635,13 @@
 .ops-roster-controls .ops-ctrl-date{width:132px!important;max-width:none!important;height:32px!important;background:#0c1119}
 .ops-roster-search{position:relative;display:flex;align-items:center;flex:1 1 270px;min-width:200px;height:34px;border:1px solid rgba(148,163,184,.16);border-radius:7px;background:#0c1119}
 .ops-roster-search:focus-within{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.12)}
-.ops-roster-search__icon{padding-left:11px;color:#64748b;font-size:18px;line-height:1}
+.ops-roster-search__icon{display:inline-flex;align-items:center;padding-left:11px;color:#64748b;font-size:18px;line-height:1}
 .ops-roster-search input{width:100%;height:100%;padding:0 10px;border:0;outline:0;background:transparent;color:#e2e8f0;font-size:12px}
 .ops-roster-search input::placeholder{color:#526071}
 .ops-roster-controls__actions{display:flex;align-items:center;gap:7px;margin-left:auto;flex-shrink:0}
 .ops-roster-clear,.ops-roster-refresh{height:34px;border-radius:7px;font-size:11px;font-weight:650;cursor:pointer;white-space:nowrap}
 .ops-roster-clear{padding:0 9px;border:0;background:transparent;color:#94a3b8}.ops-roster-clear:hover{color:#f8fafc;background:rgba(255,255,255,.06)}
-.ops-roster-clear span{display:inline-grid;place-items:center;min-width:17px;height:17px;margin-left:3px;border-radius:99px;background:rgba(148,163,184,.14);font-size:9px}
+.ops-roster-clear .ops-roster-reset__count{display:inline-grid;place-items:center;min-width:17px;height:17px;margin-left:3px;border-radius:99px;background:rgba(148,163,184,.14);font-size:9px}
 .ops-roster-refresh{display:flex;align-items:center;gap:6px;padding:0 12px;border:1px solid rgba(59,130,246,.45);background:rgba(37,99,235,.14);color:#bfdbfe}.ops-roster-refresh:hover:not(:disabled){background:rgba(37,99,235,.25);border-color:#3b82f6}.ops-roster-refresh:disabled{opacity:.55;cursor:wait}.ops-roster-refresh span{font-size:15px}
 .ops-booking-pie{display:flex;align-items:center;gap:9px;padding:4px 9px 4px 5px;border:1px solid rgba(148,163,184,.13);border-radius:9px;background:rgba(15,20,28,.72)}
 .ops-booking-pie__chart{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;box-shadow:0 0 16px rgba(59,130,246,.08)}
@@ -1966,6 +1966,58 @@
   }
 }
 
+/* ── Daily Ops desktop: column widths, Company, Reset, booking chips ────────
+   The v3 table is fixed-layout, and its <th> carried no width, so all ten
+   columns came out equal: Notes as wide as Candidate, the one-icon Actions
+   column as wide as Time. These widths go on the <col> elements the roster
+   now renders. Percentages scale with the table; the screenshot thumbnail and
+   the menu are fixed sizes, so their columns are too. Phones lay the rows out
+   as cards and never read these. */
+.ops-dash-table--v3 col.ops-col--date{width:7%}
+.ops-dash-table--v3 col.ops-col--time{width:11%}
+.ops-dash-table--v3 col.ops-col--candidate{width:14%}
+.ops-dash-table--v3 col.ops-col--company{width:11%}
+.ops-dash-table--v3 col.ops-col--tech{width:10%}
+.ops-dash-table--v3 col.ops-col--round{width:5%}
+.ops-dash-table--v3 col.ops-col--attendee{width:7%}
+.ops-dash-table--v3 col.ops-col--attendance{width:15%}
+.ops-dash-table--v3 col.ops-col--screenshot{width:88px}
+.ops-dash-table--v3 col.ops-col--notes{width:11%}
+.ops-dash-table--v3 col.ops-col--actions{width:64px}
+.ops-dash-table--v3 th.ops-col-actions-head{text-align:center;white-space:nowrap;padding-left:2px;padding-right:2px}
+.ops-dash-table--v3 td.ops-dash-attend-cell{justify-content:center}
+/* The attendance select sized itself to its longest option ("Awaiting new
+   slot") and spilled out of its column on a 1280px laptop; it fits the
+   column now and the chosen value still reads in full at every status. */
+.ops-dash-table--v3 .ops-attendance-select{width:100%;min-width:0;max-width:100%;text-overflow:ellipsis}
+/* The filter bar is one row on a wide screen; below about 1450px its
+   controls ran out of the bar instead of onto a second line. */
+@media (min-width: 1101px) {
+  .ops-roster-controls { flex-wrap: wrap; row-gap: 8px; }
+}
+
+/* Company: the name, and the role under it when one was recorded. */
+.ops-interview-company{overflow:hidden}
+.ops-interview-company__name{display:block;color:#e2e8f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ops-interview-company__role{display:block;margin-top:1px;color:#94a3b8;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ops-interview-company__none{color:#64748b;font-size:10px;font-style:italic}
+
+/* Booking source: a small chip on the phone-number line rather than a third
+   line of "Candidate booked" in every row. The chip names itself on hover and
+   to a screen reader; an AI booking also shows "AI". */
+.ops-dash-table--v3 td[data-label=Candidate] .ops-interview-phone{display:inline}
+.ops-booking-source{display:inline-flex;align-items:center;gap:2px;height:16px;margin-left:6px;padding:0 4px;border-radius:999px;border:1px solid rgba(148,163,184,.3);background:rgba(148,163,184,.1);color:#94a3b8;font-size:9px;font-weight:700;line-height:1;vertical-align:middle;cursor:default}
+.ops-booking-source--candidate{border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.1);color:#6ee7b7}
+.ops-booking-source--auto{border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.14);color:#c7d2fe}
+.ops-booking-source__text{letter-spacing:.04em}
+
+/* A screenshot whose file will not load: an icon, never a broken image. */
+.ops-slot-shot-thumb--missing{display:inline-flex;align-items:flex-start;justify-content:center;padding-top:6px;color:#64748b;border-color:rgba(148,163,184,.25)}
+
+/* Reset: icon, word and how many things it will put back. */
+.ops-roster-reset{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(148,163,184,.22)}
+.ops-roster-reset:hover{border-color:rgba(148,163,184,.45)}
+
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
    the phone breakpoint: the desktop layout above 767px is untouched.
@@ -2283,3 +2335,19 @@
   .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-type--assessment { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.38); color: #fcd34d; }
 }
 
+@media (max-width: 767px) {
+  /* Cards: no columns to size. */
+  .ops-dash-table-wrap.ta-table-responsive--cards colgroup { display: none; }
+  /* The card already puts the phone on its own line under the name. */
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source { margin-left: 0; height: auto; }
+  /* Company keeps its caption, beside the value rather than above it, so the
+     line it adds to every card is one short line. */
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Company"] {
+    flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px;
+  }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__role { flex-basis: 100%; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Company"]::before { flex: 0 0 auto; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__name,
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__role { white-space: normal; overflow-wrap: anywhere; }
+  .ops-roster-controls__actions .ops-roster-refresh svg { width: 18px; height: 18px; }
+}

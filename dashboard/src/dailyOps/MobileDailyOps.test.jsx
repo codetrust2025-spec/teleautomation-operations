@@ -467,16 +467,20 @@ describe('on an iPhone (390-430px)', () => {
     }
   })
 
-  it('shows the booking source as a coloured chip, on a phone only', () => {
+  it('shows the booking source as a coloured chip', () => {
     expect(ROSTER).toMatch(/ops-booking-source ops-booking-source--\$\{bookingSource\.tone\}/)
     for (const tone of ['candidate', 'auto']) {
       const rule = ALL.filter(r => phoneOnly(r.media) && r.selector.includes(`.ops-booking-source--${tone}`)).at(-1)
       expect(rule, `no chip colour for ${tone}`).toBeTruthy()
       expect(rule.body).toMatch(/background\s*:/)
     }
-    for (const rule of ALL.filter(r => /\.ops-booking-(source|type)\b/.test(r.selector))) {
-      expect(phoneOnly(rule.media), `${rule.media} restyles the desktop source text`).toBe(true)
+    // The desktop draws the same source as a compact chip now (it used to be a
+    // third line of text in every row); the Assessment chip stays phone-only.
+    for (const rule of ALL.filter(r => /\.ops-booking-type\b/.test(r.selector))) {
+      expect(phoneOnly(rule.media), `${rule.media} restyles the desktop assessment text`).toBe(true)
     }
+    const desktop = ALL.filter(r => r.media === null && r.selector.trim() === '.ops-booking-source').at(-1)
+    expect(desktop?.body).toMatch(/height\s*:\s*16px/)
   })
 
   it('puts Refresh beside the search box as an icon button that keeps its name', async () => {

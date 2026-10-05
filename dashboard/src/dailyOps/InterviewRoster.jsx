@@ -10,6 +10,7 @@ import { ALL_TIME_RANGE } from './dateRangePresets.js'
 import { publishPendingWorkChanged } from './PendingWorksProvider.jsx'
 import { STATUS_OPTIONS, countStatusRows, emptyStatusCounts, matchesStatusFilter, statusLabel, statusTone } from './interviewStatuses.js'
 import { DarkSelect } from './DarkSelect.jsx'
+import { Icon } from '../components/ui/Icon.jsx'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
@@ -105,6 +106,29 @@ function bookingSourceMeta(row) {
   return sharedBookingSourceMeta(row?.interview_booking_source)
 }
 
+/**
+ * The booking screenshot's thumbnail. Some stored screenshots no longer have
+ * their file (proofs lost in the August cutover), and the browser drew its
+ * broken-image glyph for them. A file that fails to load shows a plain icon
+ * instead, and still opens the viewer, which says what is missing.
+ */
+function SlotShotThumb({ row, onOpen }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <button
+      type="button"
+      className={`ops-slot-shot-thumb${failed ? ' ops-slot-shot-thumb--missing' : ''}`}
+      onClick={onOpen}
+      title={failed ? `Booking screenshot for ${row.name} could not be loaded` : `View booking screenshot for ${row.name}`}
+    >
+      {failed
+        ? <Icon name="image-off" size={18} />
+        : <img src={`${API}${row.slot_screenshot_proof.url}`} alt="" loading="lazy" onError={() => setFailed(true)} />}
+      <span>View</span>
+    </button>
+  )
+}
+
 function SlotScreenshotModal({ row, onClose }) {
   const proof = row?.slot_screenshot_proof
   useEffect(() => {
@@ -155,7 +179,7 @@ function RowActions({ row, busy, canEditAttendee, onEditAttendee, onEditSlot, on
     </ul>, document.body)
   return (
     <div className="ops-row-menu">
-      <button ref={triggerRef} type="button" className="ops-row-menu__trigger" aria-label={`Actions for ${row.name}`} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={toggleMenu}>⋮</button>
+      <button ref={triggerRef} type="button" className="ops-row-menu__trigger" aria-label={`Actions for ${row.name}`} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={toggleMenu}><Icon name="more-vertical" size={16} strokeWidth={2.4} /></button>
       {menu}
     </div>
   )
@@ -588,6 +612,10 @@ export function InterviewRoster({
       ? 'Every interview on record has an outcome against it.'
       : 'Pick another date in the calendar, or switch the period above.'
 
+  // Shown unless one attendee is already chosen (every row would repeat it)
+  // or this is a handler's own roster.
+  const showAttendeeColumn = !handlerView && !effectiveAttendee
+
   const scopeHint = handlerView
     ? `${reference} — your interview roster`
     : effectiveAttendee
@@ -660,18 +688,36 @@ export function InterviewRoster({
         <div className={`ops-interview-table-wrap ta-table-responsive ta-table-responsive--cards${isDashboard ? ' ops-dash-table-wrap' : ' ops-interview-table-wrap--bounded'}`}>
           <div className="ta-table-responsive__scroll">
             <table className={`ops-interview-table${isDashboard ? ' ops-dash-table ops-dash-table--v3' : ''}`}>
+          {/* The table is fixed-layout, so without these every column got an
+              equal share: Notes as wide as Candidate, Actions as wide as Time.
+              One <col> per <th>, in the same order and under the same
+              conditions, so the two cannot drift apart. */}
+          <colgroup>
+            <col className="ops-col ops-col--date" />
+            <col className="ops-col ops-col--time" />
+            <col className="ops-col ops-col--candidate" />
+            <col className="ops-col ops-col--company" />
+            <col className="ops-col ops-col--tech" />
+            <col className="ops-col ops-col--round" />
+            {showAttendeeColumn && <col className="ops-col ops-col--attendee" />}
+            <col className="ops-col ops-col--attendance" />
+            <col className="ops-col ops-col--screenshot" />
+            <col className="ops-col ops-col--notes" />
+            {canManage && <col className="ops-col ops-col--actions" />}
+          </colgroup>
           <thead>
             <tr>
               <th>Date</th>
               <th>Time</th>
               <th>Candidate</th>
+              <th>Company</th>
               <th>Technology</th>
               <th>Round</th>
-              {!handlerView && !effectiveAttendee && <th>Attendee</th>}
+              {showAttendeeColumn && <th>Attendee</th>}
               <th>Attendance</th>
               <th>Screenshot</th>
               <th>Notes</th>
-              {canManage && <th aria-label="Actions" />}
+              {canManage && <th className="ops-col-actions-head">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -696,12 +742,23 @@ export function InterviewRoster({
                       <strong>{row.name}</strong>
                       {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
                     </span>
-                    <span
-                      className={`ops-booking-source ops-booking-source--${bookingSource.tone}`}
-                      title={bookingSource.title}
-                    >
-                      {bookingSource.label}
-                    </span>
+                    {/* Every row said "Candidate booked" on a line of its own.
+                        The source is still here, as a small chip that names it
+                        on hover and to a screen reader; AI bookings keep a
+                        visible "AI" because they are the ones worth noticing.
+                        A row with no recorded source shows nothing: "Booked"
+                        told nobody anything a roster row does not. */}
+                    {bookingSource.known && (
+                      <span
+                        className={`ops-booking-source ops-booking-source--${bookingSource.tone}`}
+                        title={`${bookingSource.label}: ${bookingSource.title}`}
+                        role="img"
+                        aria-label={bookingSource.label}
+                      >
+                        <Icon name={bookingSource.tone === 'auto' ? 'sparkles' : 'user-check'} size={11} strokeWidth={2.2} />
+                        {bookingSource.tone === 'auto' && <span className="ops-booking-source__text" aria-hidden="true">AI</span>}
+                      </span>
+                    )}
                     {/* An assessment holds a roster slot like an interview
                         but is a test the candidate sits alone, inside a
                         window. The row has to say which it is. */}
@@ -714,9 +771,17 @@ export function InterviewRoster({
                       </span>
                         )}
                       </td>
+                      <td data-label="Company" className="ops-interview-company">
+                        {row.interview_company
+                          ? <span className="ops-interview-company__name" title={row.interview_company}>{row.interview_company}</span>
+                          : <span className="ops-interview-company__none" title="No company recorded for this interview">Not recorded</span>}
+                        {/* The role is recorded far more often than the company,
+                            so it shows under either. */}
+                        {row.interview_role && <span className="ops-interview-company__role" title={row.interview_role}>{row.interview_role}</span>}
+                      </td>
                       <td data-label="Technology">{row.technology || '—'}</td>
                       <td data-label="Round">{row.interview_round || 'Round not specified'}</td>
-                      {!handlerView && !effectiveAttendee && (
+                      {showAttendeeColumn && (
                         <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
                       )}
                       <td data-label="Status" className="ops-interview-attendance-cell">
@@ -739,7 +804,7 @@ export function InterviewRoster({
                       </td>
                       <td data-label="Screenshot" className="ops-slot-shot-cell">
                         {row.slot_screenshot_proof
-                          ? <button type="button" className="ops-slot-shot-thumb" onClick={() => setScreenshotRow(row)} title={`View booking screenshot for ${row.name}`}><img src={`${API}${row.slot_screenshot_proof.url}`} alt="" loading="lazy" /><span>View</span></button>
+                          ? <SlotShotThumb row={row} onOpen={() => setScreenshotRow(row)} />
                           : <span className="ops-slot-shot-empty">Not available</span>}
                       </td>
                       <td data-label="Notes" className="ops-interview-notes-cell">

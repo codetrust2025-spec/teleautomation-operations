@@ -1,11 +1,11 @@
 /**
  * Mail Alerts in the sidebar: quiet when the inbox is clear.
  *
- * The bell was always drawn, so the sidebar looked the same whether anything
- * was waiting or not. It now appears with a count and disappears with it — and
- * the count has to move with the click that marks a mail read, not with the
- * next poll, which is why the page publishes it rather than the sidebar
- * polling alone.
+ * The bell is the section's icon and is always drawn, like every other item's.
+ * What says something is waiting is the unread badge, which appears with a
+ * count and disappears with it -- and the count has to move with the click
+ * that marks a mail read, not with the next poll, which is why the page
+ * publishes it rather than the sidebar polling alone.
  */
 import React from 'react'
 import fs from 'node:fs'
@@ -26,10 +26,9 @@ import { publishMailUnread, useMailUnreadCount } from './mailUnread.js'
 /** Minimal stand-in for the sidebar row, with the same conditional rules. */
 function SidebarRow() {
   const unread = useMailUnreadCount()
-  const showIcon = unread > 0
   return (
     <button type="button">
-      <span data-testid="icon">{showIcon ? '🔔' : ''}</span>
+      <span data-testid="icon">bell</span>
       <span>Mail Alerts</span>
       {unread > 0 && (
         <span data-testid="badge" aria-label={`${unread} unread`}>
@@ -51,11 +50,11 @@ beforeEach(() => subscribers.clear())
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('nothing unread', () => {
-  it('shows plain text with no bell and no badge', async () => {
+  it('shows the bell and no badge', async () => {
     stubSummary(0)
     render(<SidebarRow />)
     await waitFor(() => expect(screen.getByText('Mail Alerts')).toBeInTheDocument())
-    expect(screen.getByTestId('icon').textContent).toBe('')
+    expect(screen.getByTestId('icon').textContent).toBe('bell')
     expect(screen.queryByTestId('badge')).toBeNull()
   })
 
@@ -73,7 +72,7 @@ describe('something unread', () => {
     stubSummary(4)
     render(<SidebarRow />)
     await waitFor(() => expect(screen.getByTestId('badge').textContent).toBe('4'))
-    expect(screen.getByTestId('icon').textContent).toBe('🔔')
+    expect(screen.getByTestId('icon').textContent).toBe('bell')
   })
 
   it('caps the badge at 99+', async () => {
@@ -99,14 +98,14 @@ describe('the count follows the click', () => {
     await waitFor(() => expect(screen.getByTestId('badge').textContent).toBe('1'))
   })
 
-  it('clears the bell entirely when the last one is read', async () => {
+  it('clears the badge, not the bell, when the last one is read', async () => {
     stubSummary(1)
     render(<SidebarRow />)
     await waitFor(() => expect(screen.getByTestId('badge')).toBeInTheDocument())
 
     act(() => publishMailUnread(0))
     await waitFor(() => expect(screen.queryByTestId('badge')).toBeNull())
-    expect(screen.getByTestId('icon').textContent).toBe('')
+    expect(screen.getByTestId('icon').textContent).toBe('bell')
   })
 
   it('comes back when a mail is marked unread again', async () => {
@@ -116,7 +115,7 @@ describe('the count follows the click', () => {
 
     act(() => publishMailUnread(1))
     await waitFor(() => expect(screen.getByTestId('badge').textContent).toBe('1'))
-    expect(screen.getByTestId('icon').textContent).toBe('🔔')
+    expect(screen.getByTestId('icon').textContent).toBe('bell')
   })
 
   it('never goes negative', async () => {
@@ -154,16 +153,15 @@ describe('the real sidebar is wired to this', () => {
     expect(app).toMatch(/item\.badge === 'mail'\s*\?\s*mailUnread/)
   })
 
-  it('hides the bell when nothing is unread', () => {
-    // Daily Ops now wants the same behaviour, so the rule moved onto the item
-    // as `alertIcon` rather than naming this one badge.
-    expect(app).toMatch(/id: 'mail-notifications'[^}]*alertIcon: true/)
-    expect(app).toContain('const showIcon = item.alertIcon ? badgeValue > 0 : true')
-    expect(app).toMatch(/\{showIcon \? item\.icon : ''\}/)
+  it('draws the bell always and leaves the signal to the badge', () => {
+    // The bell used to vanish at zero, which left the row unaligned with the
+    // rest of the sidebar; every item now draws its icon unconditionally.
+    expect(app).toMatch(/id: 'mail-notifications'[^}]*icon: 'bell'/)
+    expect(app).not.toContain('alertIcon')
+    expect(app).toContain('<Icon name={item.icon}')
   })
 
   it('keeps the icon slot in the markup either way', () => {
-    // Conditional content, not a conditional element: the 20px slot stays.
     expect(app).not.toMatch(/\{showIcon && <span className="desktop-sidebar__link-icon"/)
   })
 

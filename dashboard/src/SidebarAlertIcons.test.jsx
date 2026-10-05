@@ -1,10 +1,11 @@
 /**
- * Sidebar items that report a count, not a section.
+ * Sidebar icons and counts.
  *
- * Daily Ops and Mail Alerts both draw their glyph only when something is
- * waiting; the rest of the sidebar keeps its icon either way, because those
- * icons name a section rather than signal a number. The rule now lives on the
- * item as `alertIcon` instead of being a growing list of badge names.
+ * Every item draws its own line icon, always. Daily Ops and Mail Alerts used to
+ * drop their glyph whenever their count was zero (`alertIcon`), which left those
+ * two rows unaligned and textless beside icons that never moved -- the sidebar
+ * looked inconsistent precisely when nothing was wrong. The count is the
+ * signal: the badge appears with it and goes when it reaches zero.
  *
  * The count behind Daily Ops also has to move when attendance changes. Its
  * provider polls every two minutes, so without a signal the badge sat on a
@@ -17,6 +18,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { publishPendingWorkChanged } from './dailyOps/PendingWorksProvider.jsx'
+import { Icon, ICON_NAMES } from './components/ui/Icon.jsx'
 
 const app = fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8')
 const provider = fs.readFileSync(
@@ -28,10 +30,9 @@ const roster = fs.readFileSync(
 
 /** The sidebar's own rules, applied to one row. */
 function SidebarRow({ item, badgeValue }) {
-  const showIcon = item.alertIcon ? badgeValue > 0 : true
   return (
     <button type="button">
-      <span data-testid="icon">{showIcon ? item.icon : ''}</span>
+      <span data-testid="icon"><Icon name={item.icon} /></span>
       <span>{item.label}</span>
       {badgeValue > 0 && (
         <span data-testid="badge" aria-label={`${badgeValue} pending`}>
@@ -42,30 +43,24 @@ function SidebarRow({ item, badgeValue }) {
   )
 }
 
-const DAILY_OPS = { id: 'daily-ops', label: 'Daily Ops', icon: '▤', alertIcon: true }
-const CANDIDATES = { id: 'candidates', label: 'Candidates', icon: '▣' }
+const DAILY_OPS = { id: 'daily-ops', label: 'Daily Ops', icon: 'clipboard' }
+const CANDIDATES = { id: 'candidates', label: 'Candidates', icon: 'users' }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('Daily Ops with nothing pending', () => {
-  it('shows plain text, no icon and no badge', () => {
+  it('keeps its icon, with no badge', () => {
     render(<SidebarRow item={DAILY_OPS} badgeValue={0} />)
     expect(screen.getByText('Daily Ops')).toBeInTheDocument()
-    expect(screen.getByTestId('icon').textContent).toBe('')
+    expect(screen.getByTestId('icon').querySelector('svg.ta-icon--clipboard')).not.toBeNull()
     expect(screen.queryByTestId('badge')).toBeNull()
-  })
-
-  it('keeps the icon slot so the label stays aligned', () => {
-    // Fixed 20px in CSS; dropping the element would shift this row's text.
-    render(<SidebarRow item={DAILY_OPS} badgeValue={0} />)
-    expect(screen.getByTestId('icon')).toBeInTheDocument()
   })
 })
 
 describe('Daily Ops with work pending', () => {
-  it('shows the icon and the real count', () => {
+  it('shows the same icon and the real count', () => {
     render(<SidebarRow item={DAILY_OPS} badgeValue={5} />)
-    expect(screen.getByTestId('icon').textContent).toBe('▤')
+    expect(screen.getByTestId('icon').querySelector('svg.ta-icon--clipboard')).not.toBeNull()
     expect(screen.getByTestId('badge').textContent).toBe('5')
   })
 
@@ -79,31 +74,34 @@ describe('Daily Ops with work pending', () => {
     expect(screen.getByLabelText('2 pending')).toBeInTheDocument()
   })
 
-  it('drops the icon again when the count reaches zero', () => {
+  it('drops the badge, not the icon, when the count reaches zero', () => {
     const { rerender } = render(<SidebarRow item={DAILY_OPS} badgeValue={2} />)
-    expect(screen.getByTestId('icon').textContent).toBe('▤')
     rerender(<SidebarRow item={DAILY_OPS} badgeValue={0} />)
-    expect(screen.getByTestId('icon').textContent).toBe('')
+    expect(screen.getByTestId('icon').querySelector('svg')).not.toBeNull()
     expect(screen.queryByTestId('badge')).toBeNull()
   })
 })
 
-describe('items that are not counters keep their icon', () => {
-  it('leaves Candidates showing its glyph at zero', () => {
+describe('items that are not counters', () => {
+  it('draw their icon the same way', () => {
     render(<SidebarRow item={CANDIDATES} badgeValue={0} />)
-    expect(screen.getByTestId('icon').textContent).toBe('▣')
+    expect(screen.getByTestId('icon').querySelector('svg.ta-icon--users')).not.toBeNull()
   })
 })
 
 describe('the shell applies this rule', () => {
-  it('flags Daily Ops and Mail Alerts, and nothing else', () => {
-    expect(app).toMatch(/id: 'daily-ops'[^}]*alertIcon: true/)
-    expect(app).toMatch(/id: 'mail-notifications'[^}]*alertIcon: true/)
-    expect((app.match(/alertIcon: true/g) || []).length).toBe(2)
+  it("draws every item's icon unconditionally, from the one icon set", () => {
+    expect(app).not.toContain('alertIcon')
+    expect(app).not.toContain('showIcon')
+    expect(app).toContain('<span className="desktop-sidebar__link-icon" aria-hidden><Icon name={item.icon}')
+    const icons = [...app.matchAll(/\bicon:\s*'([^']+)'/g)].map((m) => m[1])
+    expect(icons.length).toBe(7)
+    for (const icon of icons) expect(ICON_NAMES, `${icon} is not in the icon set`).toContain(icon)
+    expect(new Set(icons).size, 'two sections share an icon').toBe(icons.length)
   })
 
-  it('reads the flag rather than naming badges one by one', () => {
-    expect(app).toContain('const showIcon = item.alertIcon ? badgeValue > 0 : true')
+  it('shows a badge only when there is a count', () => {
+    expect(app).toMatch(/\{badgeValue > 0 && \(/)
   })
 
   it('still feeds Daily Ops the real pending interview count', () => {

@@ -22,6 +22,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ICON_NAMES } from './components/ui/Icon.jsx'
 
 const SRC = dirname(fileURLToPath(import.meta.url))
 const app = readFileSync(join(SRC, 'App.jsx'), 'utf8')
@@ -80,17 +81,15 @@ describe('operations sidebar order', () => {
     }
   })
 
-  it('has no icon that repeats a word of its own label', () => {
-    // The icon span renders immediately before the label, so a word-shaped
-    // icon reads as duplicated text rather than as an icon: `icon: 'AI'`
-    // beside 'AI Mail Review' painted "AI AI Mail Review" in the live
-    // sidebar for as long as it shipped. Every other entry uses a glyph,
-    // which cannot collide with the label this way.
+  it('never paints an icon as text beside its label', () => {
+    // `icon: 'AI'` beside 'AI Mail Review' once painted "AI AI Mail Review".
+    // Icons are now names in the shared line-icon set, drawn as SVG through
+    // <Icon>, so an icon can no longer render as a word at all.
     const pairs = [...app.matchAll(/\blabel:\s*'([^']+)',\s*icon:\s*'([^']+)'/g)]
     expect(pairs).toHaveLength(EXPECTED.length)
-    for (const [, label, icon] of pairs) {
-      expect(label.toLowerCase().split(/\s+/)).not.toContain(icon.toLowerCase())
-    }
+    for (const [, , icon] of pairs) expect(ICON_NAMES).toContain(icon)
+    expect(app).toContain('<Icon name={item.icon}')
+    expect(app).not.toMatch(/>\s*\{item\.icon\}\s*</)
   })
 
   it('has no icon that collides with the status glyph below it', () => {

@@ -7,6 +7,7 @@ import { PendingWorksStrip } from './PendingWorksStrip.jsx'
 import { ALL_TIME_RANGE, PRESETS, detectPresetFromRange, resolvePresetRange } from './dateRangePresets.js'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { isValidIsoDay, monthRangeIso, parseMonthKey } from './calendarDates.js'
+import { Icon } from '../components/ui/Icon.jsx'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 const ROUNDS = ['L1', 'L2', 'HR', 'Final', 'Screening']
@@ -133,6 +134,7 @@ export function DailyOpsPanel({
   const [error, setError] = useState('')
   const [rosterCounts, setRosterCounts] = useState(null)
   const [refreshNonce, setRefreshNonce] = useState(0)
+  const [summaryReload, setSummaryReload] = useState(0)
 
   function applyMonth(monthValue) {
     // Choosing a period is choosing the dated view again.
@@ -229,7 +231,7 @@ export function DailyOpsPanel({
     } finally {
       setLoading(false)
     }
-  }, [fromDate, toDate, attendeeFilter, roundFilter, technologyFilter, candidateSearch, candidateFilter, effectiveUpcomingOnly, unresolvedOnly])
+  }, [fromDate, toDate, attendeeFilter, roundFilter, technologyFilter, candidateSearch, candidateFilter, effectiveUpcomingOnly, unresolvedOnly, summaryReload])
 
   // Refresh has to move the counters, and they come from the roster's rows,
   // so it reloads the roster as well as the range summary. Declared after
@@ -274,6 +276,28 @@ export function DailyOpsPanel({
     setTechnologyFilter('')
     setCandidateSearch('')
     setCandidateFilter('')
+  }
+
+  // Everything Reset puts back, counted for its badge: the period (Upcoming is
+  // where the page opens), a picked date, All unresolved, the status tab, and
+  // the five filters beside the search box.
+  const resetCount = activeFilterCount
+    + (unresolvedOnly || rangePreset !== 'upcoming' ? 1 : 0)
+    + (statusFilter ? 1 : 0)
+
+  /** One click back to the page as it opens, then a fresh read of both the
+   *  counters and the table -- also when nothing was set, so it doubles as a
+   *  full refresh. */
+  function resetAll() {
+    clearFilters()
+    setStatusFilter('')
+    const range = resolvePresetRange('upcoming')
+    setUnresolvedOnly(false)
+    setRangePreset('upcoming')
+    setFromDate(range.from)
+    setToDate(range.to)
+    setSummaryReload(value => value + 1)
+    setRefreshNonce(value => value + 1)
   }
 
   return (
@@ -377,7 +401,7 @@ export function DailyOpsPanel({
         </div>
 
         <div className="ops-roster-controls__filters">
-        <label className="ops-roster-search"><span className="ops-roster-search__icon" aria-hidden="true">&#8981;</span><input placeholder="Search candidate or phone..." value={candidateSearch} onChange={e => setCandidateSearch(e.target.value)} aria-label="Candidate search" /></label>
+        <label className="ops-roster-search"><span className="ops-roster-search__icon" aria-hidden="true"><Icon name="search" size={15} /></span><input placeholder="Search candidate or phone..." value={candidateSearch} onChange={e => setCandidateSearch(e.target.value)} aria-label="Candidate search" /></label>
         <label className="ops-roster-control ops-roster-control--candidate"><span>Candidate</span><select className="cand-input ops-ctrl-select" value={candidateFilter} onChange={e => { setCandidateFilter(e.target.value); setCandidateSearch('') }} aria-label="Candidate filter"><option value="">All candidates</option>{candidateOptions.map(item => <option key={item.name} value={item.name}>{item.name} ({item.scheduled})</option>)}</select></label>
 
         {!handlerScoped && (
@@ -410,8 +434,21 @@ export function DailyOpsPanel({
           {technologyOptions.map(t => <option key={t} value={t}>{t}</option>)}
         </select></label>
         <div className="ops-roster-controls__actions">
-          {activeFilterCount > 0 && <button type="button" className="ops-roster-clear" onClick={clearFilters}>Clear <span>{activeFilterCount}</span></button>}
-          <button type="button" className="ops-roster-refresh" onClick={refreshAll} disabled={loading}><span aria-hidden="true">&#8635;</span>{loading ? 'Updating' : 'Refresh'}</button>
+          {/* Reset is always here: period, date, search, candidate, attendee,
+              level, profile and the status tab, all at once. "Clear" only
+              reached the five filters and only appeared once one was set. */}
+          <button
+            type="button"
+            className="ops-roster-clear ops-roster-reset"
+            onClick={resetAll}
+            title="Reset period, date, search, candidate, attendee, level, profile and status, and reload"
+            aria-label={resetCount > 0 ? `Reset all filters (${resetCount} set)` : 'Reset all filters'}
+          >
+            <Icon name="reset" size={13} strokeWidth={2.1} />
+            <span className="ops-roster-reset__label">Reset</span>
+            {resetCount > 0 && <span className="ops-roster-reset__count">{resetCount}</span>}
+          </button>
+          <button type="button" className="ops-roster-refresh" onClick={refreshAll} disabled={loading}><span aria-hidden="true"><Icon name="refresh" size={14} strokeWidth={2.1} /></span>{loading ? 'Updating' : 'Refresh'}</button>
         </div>
         </div>
       </div>

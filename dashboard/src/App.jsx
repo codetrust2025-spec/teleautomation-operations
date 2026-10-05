@@ -15,6 +15,7 @@ import { useMailUnreadCount } from './notifications/mailUnread.js'
 import { useGmailExpiredCount } from './notifications/gmailExpired.js'
 import { useConfirmedSlotCount } from './notifications/slotBooking.js'
 import { useAuth } from './context/AuthContext.jsx'
+import { Icon } from './components/ui/Icon.jsx'
 
 // The Operations features currently shipped. Daily Briefing, Mail Audit, Payment
 // Reconciliation, BGV Register, Handler Kit and Settings were decommissioned;
@@ -24,19 +25,16 @@ import { useAuth } from './context/AuthContext.jsx'
 // then the records behind it. Attendance and Slot Booking sit last, after the
 // records, as the two pages opened least from here.
 const VIEWS = [
-  // alertIcon: the glyph is a signal, not a section label, so it appears
-  // with the count and goes when the count does.
-  { id: 'daily-ops', label: 'Daily Ops', icon: '▤', badge: 'interviews', alertIcon: true },
-  { id: 'mail-notifications', label: 'Mail Alerts', icon: '🔔', badge: 'mail', alertIcon: true },
-  // No alertIcon: this badge counts a fault, but the icon still names the
-  // section, so it stays whether or not anything is broken.
-  { id: 'ai-recruitment', label: 'AI Mail Review', icon: '▧', badge: 'gmail-expired' },
-  { id: 'candidates', label: 'Candidates', icon: '▣', badge: 'works' },
-  { id: 'data-room', label: 'Data Room', icon: '▥' },
-  { id: 'attendance', label: 'Attendance', icon: '▩' },
-  // No alertIcon: the count is scheduled work, not a fault, and the icon
-  // names the section whether or not anything is booked.
-  { id: 'slot-booking', label: 'Slot Booking', icon: '▦', external: '/submit-slot', badge: 'slots' },
+  // One line icon per section, always drawn: the icon names the section and
+  // the badge beside it carries any count. (Daily Ops and Mail Alerts used to
+  // drop their glyph at zero, which left two rows unaligned with the rest.)
+  { id: 'daily-ops', label: 'Daily Ops', icon: 'clipboard', badge: 'interviews' },
+  { id: 'mail-notifications', label: 'Mail Alerts', icon: 'bell', badge: 'mail' },
+  { id: 'ai-recruitment', label: 'AI Mail Review', icon: 'mail', badge: 'gmail-expired' },
+  { id: 'candidates', label: 'Candidates', icon: 'users', badge: 'works' },
+  { id: 'data-room', label: 'Data Room', icon: 'database' },
+  { id: 'attendance', label: 'Attendance', icon: 'user-check' },
+  { id: 'slot-booking', label: 'Slot Booking', icon: 'calendar-plus', external: '/submit-slot', badge: 'slots' },
 ]
 
 // The view the shell opens on. There is no routing or persistence behind the
@@ -110,7 +108,7 @@ function OperationsShell({ view, onNavigate }) {
           onClick={() => navigate('candidates')}
           aria-label="Go to candidates"
         >
-          <span className="desktop-sidebar__logo" aria-hidden>⚡</span>
+          <span className="desktop-sidebar__logo" aria-hidden><Icon name="bolt" size={16} strokeWidth={2} /></span>
           <span className="desktop-sidebar__title">TeleAutomation</span>
         </button>
 
@@ -131,10 +129,6 @@ function OperationsShell({ view, onNavigate }) {
                     : item.badge === 'slots'
                       ? confirmedSlots
                       : 0
-            // An item flagged alertIcon is plain text when its count is zero.
-            // The rest keep their icon either way: theirs name the section,
-            // these two report something waiting.
-            const showIcon = item.alertIcon ? badgeValue > 0 : true
             return (
               <button
                 key={item.id}
@@ -146,7 +140,7 @@ function OperationsShell({ view, onNavigate }) {
                 aria-current={view === item.id ? 'page' : undefined}
                 onClick={() => navigate(item.id)}
               >
-                <span className="desktop-sidebar__link-icon" aria-hidden>{showIcon ? item.icon : ''}</span>
+                <span className="desktop-sidebar__link-icon" aria-hidden><Icon name={item.icon} size={17} /></span>
                 <span>{item.label}</span>
                 {/* The badge is a bare number, which reads as "Candidates 3"
                     with nothing saying what the 3 counts. */}
