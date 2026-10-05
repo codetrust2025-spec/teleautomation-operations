@@ -9,7 +9,11 @@ anything visible. These tests fail when one of those guarantees goes.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -85,11 +89,125 @@ class TestWhatCanStartARelease:
         assert "merge-base --is-ancestor" in run and "origin/main" in run
 
     def test_releases_are_serialised_and_never_cancelled(self, deploy):
-        assert deploy["concurrency"] == {"group": "production-release", "cancel-in-progress": False}
+        # On the job that touches the host, not the workflow: see the class
+        # below for why the whole run must not hold this lock.
+        assert deploy["jobs"]["deploy"]["concurrency"] == {"group": "production-release", "cancel-in-progress": False}
 
     def test_the_stage_switch_is_committed_not_a_setting(self, deploy):
         assert deploy["env"]["AUTO_DEPLOY"] in {"true", "false"}
         assert "auto_deploy == 'true'" in deploy["jobs"]["deploy"]["if"]
+
+
+class TestOnlyTheHostReleaseIsSerialised:
+    """A push must never make a manual deploy wait.
+
+    The workflow used to sit in one `production-release` group as a whole. A
+    push -- which only builds while AUTO_DEPLOY is off -- held the lock through
+    its build and its registry prune, so a manual deploy waited behind
+    housekeeping (on 5 Oct, behind a prune queued for a runner). Only the deploy
+    job takes the release lock now.
+    """
+
+    def test_the_workflow_itself_takes_no_lock(self, deploy):
+        assert "concurrency" not in deploy
+
+    def test_no_job_but_deploy_joins_the_release_group(self, deploy):
+        for name, job in deploy["jobs"].items():
+            group = (job.get("concurrency") or {}).get("group", "")
+            if name == "deploy":
+                assert group == "production-release"
+            else:
+                assert "production-release" not in group, f"{name} would hold up releases"
+
+    def test_housekeeping_never_waits_on_anything(self, deploy):
+        for name in ("preflight", "prune"):
+            assert "concurrency" not in deploy["jobs"][name]
+
+    def test_a_commit_is_built_once_and_other_commits_never_wait(self, deploy):
+        # Keyed by the commit, so the push for a merge and a deploy dispatched
+        # right after it share one build; any other commit builds in parallel.
+        image = deploy["jobs"]["image"]["concurrency"]
+        assert image == {"group": "operations-image-${{ inputs.sha || github.sha }}", "cancel-in-progress": False}
+
+
+class TestOneDeployPerCommit:
+    """Two deploys of one commit restart the service once.
+
+    The skip runs inside the release lock, so the second request sees what the
+    first did. Exercised for real: the step's own script runs under bash with
+    stand-ins for curl, gh and python3.
+    """
+
+    def test_a_restart_of_the_live_commit_must_be_asked_for(self, deploy):
+        force = triggers(deploy)["workflow_dispatch"]["inputs"]["force"]
+        assert force["type"] == "boolean" and force["default"] is False
+
+    def test_the_step_reads_the_live_commit_inside_the_lock(self, deploy):
+        job = deploy["jobs"]["deploy"]
+        names = [s.get("name") or "" for s in steps(job)]
+        check = names.index("Skip a stale push or a commit that is already live")
+        assert check < names.index("Configure SSH") < names.index("Release on the host")
+        assert step_named(job, "Release on the host")["if"] == "steps.current.outputs.release == 'true'"
+        assert step_named(job, "Configure SSH")["if"] == "steps.current.outputs.release == 'true'"
+
+    SHA = "a" * 40
+    OTHER = "b" * 40
+
+    @pytest.fixture()
+    def run_check(self, deploy, tmp_path):
+        bash = shutil.which("bash")
+        if not bash:
+            pytest.skip("bash is not available")
+        script = step_named(deploy["jobs"]["deploy"], "Skip a stale push")["run"]
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        python = sys.executable.replace("\\", "/")
+
+        def stub(name: str, body: str) -> None:
+            path = bin_dir / name
+            path.write_text("#!/usr/bin/env bash\n" + body + "\n", encoding="utf-8", newline="\n")
+            path.chmod(0o755)
+
+        def run(*, event: str, action: str, force: str = "false", live: str | None, head: str | None = None) -> str:
+            # curl answers like /version, or fails as an unreachable site does.
+            stub("curl", f'echo \'{{"service":"x","sha":"{live}"}}\'' if live else "exit 7")
+            stub("gh", f"echo {head or self.SHA}")
+            stub("python3", f'exec "{python}" "$@"')
+            out = tmp_path / "out"
+            out.write_text("", encoding="utf-8")
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir.as_posix()}{os.pathsep}{os.environ.get('PATH', '')}",
+                "SHA": self.SHA, "EVENT": event, "ACTION": action, "FORCE": force,
+                "PUBLIC_URL": "https://ops.example.invalid/", "GH_TOKEN": "x",
+                "GITHUB_REPOSITORY": "owner/repo", "GITHUB_OUTPUT": out.as_posix(),
+            }
+            subprocess.run([bash, "-c", script], env=env, check=True, capture_output=True, timeout=60)
+            return out.read_text(encoding="utf-8").strip()
+
+        return run
+
+    def test_a_second_deploy_of_the_live_commit_is_skipped(self, run_check):
+        assert run_check(event="workflow_dispatch", action="deploy", live=self.SHA) == "release=false"
+
+    def test_a_push_of_the_live_commit_is_skipped_too(self, run_check):
+        assert run_check(event="push", action="deploy", live=self.SHA) == "release=false"
+
+    def test_a_new_commit_is_deployed(self, run_check):
+        assert run_check(event="workflow_dispatch", action="deploy", live=self.OTHER) == "release=true"
+
+    def test_force_restarts_the_live_commit(self, run_check):
+        assert run_check(event="workflow_dispatch", action="deploy", force="true", live=self.SHA) == "release=true"
+
+    def test_verify_is_read_only_and_always_runs(self, run_check):
+        assert run_check(event="workflow_dispatch", action="verify", live=self.SHA) == "release=true"
+
+    def test_an_unreachable_site_does_not_block_a_deploy(self, run_check):
+        # A site that is down is a reason to deploy, not to skip.
+        assert run_check(event="workflow_dispatch", action="deploy", live=None) == "release=true"
+
+    def test_a_push_main_has_moved_past_is_still_skipped(self, run_check):
+        assert run_check(event="push", action="deploy", live=self.OTHER, head=self.OTHER) == "release=false"
 
 
 class TestTheImage:

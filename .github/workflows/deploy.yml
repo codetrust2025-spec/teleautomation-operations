@@ -24,17 +24,21 @@ on:
         type: choice
         options: [verify, deploy, build]
         default: verify
+      force:
+        description: "deploy only: release even if this commit is already live (a deliberate restart)."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# One release at a time, and never cancelled part-way: a deploy interrupted
-# between restart and verification is exactly the state rollback exists for.
-# GitHub keeps only the newest pending run, so a burst of merges releases the
-# last of them rather than each in turn.
-concurrency:
-  group: production-release
-  cancel-in-progress: false
+# No workflow-wide concurrency. It used to put the whole run in one
+# `production-release` group, so every push -- which only builds an image while
+# AUTO_DEPLOY is off -- held the lock through its build and its registry prune,
+# and a manual deploy sat pending behind that housekeeping (19:31-19:40 on
+# 5 Oct, waiting on a queued prune). Only the job that touches the host is
+# serialised now (see `deploy`), and an image is built once per commit (see
+# `image`).
 
 env:
   IMAGE_REPO: ghcr.io/codetrust2025-spec/teleautomation-operations
@@ -71,6 +75,14 @@ jobs:
     needs: preflight
     if: needs.preflight.outputs.configured == 'true'
     runs-on: ubuntu-latest
+    # The push for a merge and the manual deploy dispatched right after it name
+    # the same commit. Built side by side they push two different digests (the
+    # build time is baked in) under one tag; serialised per commit, the second
+    # waits for the first and then reuses its image. Different commits never
+    # wait for each other here.
+    concurrency:
+      group: operations-image-${{ inputs.sha || github.sha }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -172,6 +184,14 @@ jobs:
       (github.event_name == 'push' && needs.preflight.outputs.auto_deploy == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # One host release at a time, and never cancelled part-way: a deploy
+    # interrupted between restart and verification is exactly the state
+    # rollback exists for. GitHub keeps only the newest pending job in a group,
+    # so a burst of requests releases the last of them rather than each in turn.
+    # Builds, CI and the registry prune are outside this group and never wait.
+    concurrency:
+      group: production-release
+      cancel-in-progress: false
     # The SSH key and host details live only in this environment, which is
     # limited to main. A branch, a fork or a pull request cannot read them.
     environment:
@@ -183,18 +203,35 @@ jobs:
       # no registry credential is ever stored on the server.
       packages: read
     steps:
-      - name: Skip a push that main has already moved past
+      # Runs inside the production-release lock, so a second request for the
+      # same commit sees what the first one did: two deploys of one SHA (a push
+      # and a dispatch, or a dispatch sent twice) restart the service once.
+      - name: Skip a stale push or a commit that is already live
         id: current
         env:
           SHA: ${{ needs.image.outputs.sha }}
           EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || 'deploy' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+          PUBLIC_URL: ${{ vars.OPERATIONS_PUBLIC_URL }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -uo pipefail
           if [ "$EVENT" = "push" ]; then
             head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)
             if [ -n "$head" ] && [ "$head" != "$SHA" ]; then
               echo "release=false" >> "$GITHUB_OUTPUT"
               echo "::notice::main is now ${head:0:7}; its own run releases it, so ${SHA:0:7} is not deployed"
+              exit 0
+            fi
+          fi
+          # Only a deploy restarts anything; verify is read-only and may repeat.
+          if [ "$ACTION" = "deploy" ] && [ "$FORCE" != "true" ] && [ -n "$PUBLIC_URL" ]; then
+            live=$(curl -fsS -m 15 "${PUBLIC_URL%/}/version" 2>/dev/null \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin).get("sha", ""))' 2>/dev/null || true)
+            if [ "$live" = "$SHA" ]; then
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::${SHA:0:7} is already live; not deploying it again (run with force to restart it)"
               exit 0
             fi
           fi
