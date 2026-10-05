@@ -51,6 +51,31 @@ describe('Mail Alerts on a phone', () => {
     expect(PHONE, 'no 640px block holds the card layout').not.toBe('')
   })
 
+  it('keeps the header to one title line with Live beside it and a small Clear all', () => {
+    // At 390px the title had been squeezed to 153px and two or three lines by
+    // a 12px Clear all button sharing its row. Now: title and Live on one row,
+    // Live centred on the title; Clear all at 11px under it, same right edge.
+    const head = rule('.mail-monitoring-page__head')
+    expect(head).toMatch(/display:\s*grid/)
+    expect(head).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/)
+    expect(head).toMatch(/align-items:\s*center/)
+    expect(rule('.mail-monitoring-page__actions')).toMatch(/display:\s*contents/)
+    const live = rule('.mail-monitoring-page__actions .mail-live')
+    expect(live).toMatch(/grid-row:\s*1/)
+    expect(live).toMatch(/justify-self:\s*end/)
+    const clear = rule('.mail-monitoring-page__actions .mail-clear-all')
+    expect(clear).toMatch(/grid-row:\s*2/)
+    expect(clear).toMatch(/justify-self:\s*end/)
+    expect(clear).toMatch(/font-size:\s*11px/)
+  })
+
+  it('leaves the desktop header controls as they were', () => {
+    // The base rules the phone block overrides are untouched.
+    const base = CSS.replace(PHONE, '')
+    expect(base).toMatch(/\.mail-monitoring-page__actions \{\s*display: flex;/)
+    expect(base).toMatch(/\.mail-clear-all \{[^}]*padding: 6px 12px;[^}]*font-size: 12px;/)
+  })
+
   it('puts the three counters in one row', () => {
     expect(rule('.mail-summary--compact')).toMatch(/grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/)
   })
