@@ -3040,3 +3040,151 @@
   .mail-table td.mail-empty { display: block; padding: 16px 4px; }
   .mail-pagination { flex-wrap: wrap; gap: 6px; }
 }
+
+/* -- AI Mail Review (Candidate Mailboxes) on an iPhone (375-430px) -----------
+   Phone only; tablet and desktop keep every rule above. Measured at 390px
+   before this: the header 172px, the AI nodes 321px, the list tabs running to
+   x=509, the mailbox table 537px wide inside a 307px card (scrolling
+   sideways: a long Gmail address set the width), each mailbox about 285px
+   tall, and its Reconnect Gmail button at x=550, off the screen.
+   - Header: the title alone; then the candidate filter beside Refresh, the two
+     policy switches side by side, and the last-updated time small beneath.
+   - AI nodes: two short lines per node -- name and latency, then its state
+     and its actions.
+   - Toolbar: the three tabs share one row; Active and Add Gmail the next;
+     search takes the full width so its placeholder is not cut.
+   - Mailboxes: a card -- candidate and its menu, the Gmail address (wrapping
+     anywhere rather than widening the card), then status and last sync --
+     with the Reconnect row joined beneath and its button on the screen.
+   - Pending and Reconnect lists keep their labelled cells, with a narrower
+     label column and long values wrapping.
+   Controls stay at the 16px index.css sets below 1024px, so iOS Safari does
+   not zoom into a field when it is tapped. */
+@media (max-width: 640px) {
+  .sot-mailboxes-page.sot-page { padding: 12px 10px 20px; }
+
+  /* header */
+  .sot-mailboxes-page .sot-header { gap: 8px; margin-bottom: 10px; }
+  .sot-mailboxes-page .sot-title .sot-page-eyebrow,
+  .sot-mailboxes-page .sot-title p { display: none; }
+  .sot-mailboxes-page .sot-title h1 { font-size: 17px; }
+  .sot-mailboxes-page .sot-brand-avatar { width: 28px; height: 28px; font-size: 11px; }
+  .sot-mailboxes-page .sot-header-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 10px;
+    width: 100%;
+  }
+  .sot-mailboxes-page .sot-header-actions > .sot-global-candidate-filter { grid-column: 1; grid-row: 1; min-width: 0; }
+  .sot-mailboxes-page .sot-header-actions > .sot-global-candidate-filter select { width: 100%; min-width: 0; }
+  .sot-mailboxes-page .sot-header-actions > button { grid-column: 2; grid-row: 1; padding: 6px 12px; }
+  .sot-mailboxes-page .sot-header-actions > .sot-ocr-toggle { min-width: 0; gap: 6px; font-size: 11px; }
+  .sot-mailboxes-page .sot-header-actions > span:not(.sot-ocr-toggle) { grid-column: 1 / -1; font-size: 11px; color: var(--sot-muted, #8da0bd); }
+
+  /* AI nodes */
+  .sot-mailboxes-page .sot-ai-node-grid { gap: 6px; }
+  .sot-mailboxes-page .sot-ai-node {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "name name latency"
+      "up ready actions";
+    align-items: center;
+    gap: 4px 10px;
+    min-height: 0;
+    padding: 7px 10px;
+  }
+  .sot-mailboxes-page .sot-ai-node-name { grid-area: name; min-width: 0; }
+  .sot-mailboxes-page .sot-ai-node-state.is-up,
+  .sot-mailboxes-page .sot-ai-node-state.is-down { grid-area: up; }
+  .sot-mailboxes-page .sot-ai-node-state:not(.is-up):not(.is-down) { grid-area: ready; }
+  .sot-mailboxes-page .sot-ai-node-latency { grid-area: latency; justify-self: end; }
+  .sot-mailboxes-page .sot-ai-node-actions { grid-area: actions; justify-self: end; flex: none; gap: 4px; }
+  .sot-mailboxes-page .sot-ai-node-actions button { flex: 0 0 auto; min-height: 28px; padding: 4px 8px; font-size: 11px; }
+
+  /* toolbar: tabs, then Active and Add Gmail, then search */
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-list-toolbar { gap: 8px; }
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-mailbox-view-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    flex: 1 1 100%;
+    gap: 4px;
+    width: 100%;
+  }
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-mailbox-view-tabs button { justify-content: center; min-width: 0; padding: 6px 4px; font-size: 12px; }
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-mailbox-view-tabs button i { display: none; }
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-list-toolbar-actions { display: contents; }
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-mailbox-status { order: 1; flex: 1 1 auto; }
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-add-mailbox-button { order: 1; flex: 0 0 auto; padding: 6px 12px; }
+  .sot-mailboxes-page .sot-mailbox-toolbar .sot-list-toolbar-actions .sot-search { order: 2; flex: 1 1 100%; width: 100%; min-width: 0; }
+  .sot-mailboxes-page .sot-search input { min-width: 0; text-overflow: ellipsis; }
+
+  /* lists: cards that never widen the page */
+  .sot-mailboxes-page .sot-table-wrap { overflow: visible; border: 0; }
+  .sot-mailboxes-page .sot-mailbox-table tr { width: 100%; margin: 0 0 8px; }
+  .sot-mailboxes-page .sot-mailbox-table td { grid-template-columns: 84px minmax(0, 1fr); gap: 8px; padding: 8px 12px; overflow-wrap: anywhere; }
+
+  /* a linked mailbox: candidate and menu, Gmail address, status and last sync */
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row {
+    display: grid;
+    /* The menu gets a fixed column of its own: sharing one with the
+       last-sync time let that text size the column and squeeze the name. */
+    grid-template-columns: minmax(0, 1fr) auto 44px;
+    grid-template-areas:
+      "candidate candidate actions"
+      "gmail gmail gmail"
+      "status sync sync";
+    align-items: center;
+    padding: 4px 0;
+  }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td { display: block; width: auto; min-width: 0; padding: 4px 12px; border-bottom: 0; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td::before { display: none; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Candidate"] { grid-area: candidate; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Actions"] { grid-area: actions; justify-self: end; padding-right: 6px; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Gmail Account"] { grid-area: gmail; font-size: 13px; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Status"] { grid-area: status; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"] { grid-area: sync; justify-self: end; font-size: 11px; color: var(--sot-muted, #8da0bd); text-align: right; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"]::before { display: inline; content: "Last sync "; font-size: 11px; font-weight: 600; }
+  /* Its reconnect warning stays joined to the card, button on the screen. */
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row { margin-top: -9px; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td { flex-wrap: wrap; gap: 6px 10px; padding: 8px 12px; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > span { flex: 1 1 140px; min-width: 0; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > button { flex: 0 0 auto; margin-left: auto; min-height: 34px; }
+
+  /* Pending Gmail and Reconnect: the same card shape -- name with its key
+     fact, the address, then the rest with a small inline caption. Rows that
+     carry data cells only, so an empty-state row is left alone. */
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr:has(td[data-label]),
+  .sot-mailboxes-page .sot-reconnect-table tbody tr:has(td[data-label]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 4px 0;
+  }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr:has(td[data-label]) { grid-template-areas: "candidate action" "phone tech" "email email"; }
+  /* The name gets the full width: the grant pill ("authorisation revoked")
+     beside it squeezed long names onto three lines. The action -- possibly
+     Reconnect Gmail and Copy link -- shares the last row with the reminders. */
+  .sot-mailboxes-page .sot-reconnect-table tbody tr:has(td[data-label]) { grid-template-areas: "candidate candidate" "gmail gmail" "grant grant" "reminders action"; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label],
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label] { display: block; width: auto; min-width: 0; padding: 3px 12px; border-bottom: 0; font-size: 12px; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label]::before,
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label]::before { display: none; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Phone"]::before,
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Technology"]::before,
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Email on profile"]::before,
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Grant"]::before,
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Reminders"]::before { display: inline; content: attr(data-label) " "; font-size: 11px; font-weight: 600; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Candidate"] { grid-area: candidate; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Action"] { grid-area: action; justify-self: end; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Phone"] { grid-area: phone; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Technology"] { grid-area: tech; justify-self: end; text-align: right; }
+  .sot-mailboxes-page .sot-pending-mailbox-table tbody tr > td[data-label="Email on profile"] { grid-area: email; }
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Candidate"] { grid-area: candidate; font-size: 14px; font-weight: 650; }
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Grant"] { grid-area: grant; }
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Gmail"] { grid-area: gmail; font-size: 13px; }
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Reminders"] { grid-area: reminders; }
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Reminders"] .sot-reconnect-reminders { display: inline; }
+  .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Action"] { grid-area: action; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+}
