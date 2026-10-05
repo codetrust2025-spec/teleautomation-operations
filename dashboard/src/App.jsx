@@ -21,21 +21,22 @@ import { useAuth } from './context/AuthContext.jsx'
 // their panels and backend routes are gone, not hidden, so there is no view id
 // left for them to be reached through.
 // Ordered the way the day runs: what needs doing now, then what has come in,
-// then the records behind it.
+// then the records behind it. Attendance and Slot Booking sit last, after the
+// records, as the two pages opened least from here.
 const VIEWS = [
   // alertIcon: the glyph is a signal, not a section label, so it appears
   // with the count and goes when the count does.
   { id: 'daily-ops', label: 'Daily Ops', icon: '▤', badge: 'interviews', alertIcon: true },
-  { id: 'attendance', label: 'Attendance', icon: '▩' },
   { id: 'mail-notifications', label: 'Mail Alerts', icon: '🔔', badge: 'mail', alertIcon: true },
   // No alertIcon: this badge counts a fault, but the icon still names the
   // section, so it stays whether or not anything is broken.
   { id: 'ai-recruitment', label: 'AI Mail Review', icon: '▧', badge: 'gmail-expired' },
   { id: 'candidates', label: 'Candidates', icon: '▣', badge: 'works' },
+  { id: 'data-room', label: 'Data Room', icon: '▥' },
+  { id: 'attendance', label: 'Attendance', icon: '▩' },
   // No alertIcon: the count is scheduled work, not a fault, and the icon
   // names the section whether or not anything is booked.
   { id: 'slot-booking', label: 'Slot Booking', icon: '▦', external: '/submit-slot', badge: 'slots' },
-  { id: 'data-room', label: 'Data Room', icon: '▥' },
 ]
 
 // The view the shell opens on. There is no routing or persistence behind the

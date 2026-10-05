@@ -3,7 +3,7 @@
  *
  * Requested order runs the day forwards: what needs doing now (Daily Ops),
  * then what has come in (Mail Alerts, AI Mail Review), then the records behind
- * it (Candidates, Slot Booking, Data Room).
+ * it (Candidates, Data Room), and last Attendance and Slot Booking.
  *
  * The landing view matters as much as the order. It used to be `candidates`,
  * so the first item in the sidebar was not the page anyone actually arrived on
@@ -28,12 +28,12 @@ const app = readFileSync(join(SRC, 'App.jsx'), 'utf8')
 
 const EXPECTED = [
   'Daily Ops',
-  'Attendance',
   'Mail Alerts',
   'AI Mail Review',
   'Candidates',
-  'Slot Booking',
   'Data Room',
+  'Attendance',
+  'Slot Booking',
 ]
 
 const labels = [...app.matchAll(/\blabel:\s*'([^']+)'/g)].map((m) => m[1])
