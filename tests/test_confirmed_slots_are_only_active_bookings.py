@@ -21,7 +21,7 @@ TODAY = date.today().isoformat()
 LATER = (date.today() + timedelta(days=2)).isoformat()
 ATTENDANCE_FIELDS = {"interview_attendance_status", "interview_attended", "interview_attendance_remark",
                      "interview_attended_at", "interview_attended_by", "interview_feedback",
-                     "interview_attendee", "updated_at"}
+                     "interview_result", "interview_attendee", "updated_at"}
 
 
 def row(**overrides):
