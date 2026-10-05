@@ -3125,32 +3125,48 @@
   .sot-mailboxes-page .sot-mailbox-table tr { width: 100%; margin: 0 0 8px; }
   .sot-mailboxes-page .sot-mailbox-table td { grid-template-columns: 84px minmax(0, 1fr); gap: 8px; padding: 8px 12px; overflow-wrap: anywhere; }
 
-  /* a linked mailbox: candidate and menu, Gmail address, status and last sync */
+  /* a linked mailbox: candidate and menu, Gmail address, last sync, status */
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row {
     display: grid;
-    /* The menu gets a fixed column of its own: sharing one with the
-       last-sync time let that text size the column and squeeze the name. */
-    grid-template-columns: minmax(0, 1fr) auto 44px;
+    /* The menu has a fixed column of its own, and the last sync a line of
+       its own: sharing the status row squeezed "Waiting to start…" and the
+       sync time beside a "Reconnect Required" badge. */
+    grid-template-columns: minmax(0, 1fr) 44px;
     grid-template-areas:
-      "candidate candidate actions"
-      "gmail gmail gmail"
-      "status sync sync";
+      "candidate actions"
+      "gmail gmail"
+      "sync sync"
+      "status status";
     align-items: center;
-    padding: 4px 0;
+    padding: 4px 0 0;
   }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td { display: block; width: auto; min-width: 0; padding: 4px 12px; border-bottom: 0; }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td::before { display: none; }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Candidate"] { grid-area: candidate; }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Actions"] { grid-area: actions; justify-self: end; padding-right: 6px; }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Gmail Account"] { grid-area: gmail; font-size: 13px; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Status"] { grid-area: status; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"] { grid-area: sync; justify-self: end; font-size: 11px; color: var(--sot-muted, #8da0bd); text-align: right; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Status"] { grid-area: status; display: flex; align-items: center; box-sizing: border-box; min-height: 36px; padding-top: 2px; padding-bottom: 2px; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"] { grid-area: sync; padding-top: 0; padding-bottom: 0; font-size: 11px; color: var(--sot-muted, #8da0bd); }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"] .sot-sync-progress { white-space: normal; font-size: 11px; }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"]::before { display: inline; content: "Last sync "; font-size: 11px; font-weight: 600; }
-  /* Its reconnect warning stays joined to the card, button on the screen. */
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row { margin-top: -9px; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td { flex-wrap: wrap; gap: 6px 10px; padding: 8px 12px; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > span { flex: 1 1 140px; min-width: 0; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > button { flex: 0 0 auto; margin-left: auto; min-height: 34px; }
+  /* An expired Gmail: its badge already says Reconnect Required, so the
+     warning sentence and its red band go, and the row's one Reconnect Gmail
+     button is laid over the card's last 36px -- the badge's row -- instead
+     of adding a second block beneath. Still one control for the action. */
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row:has(+ tr.sot-reconnect-row) { margin-bottom: 0; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row { position: relative; margin: -36px 0 8px; border: 0; background: transparent; pointer-events: none; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    box-sizing: border-box;
+    height: 36px;
+    padding: 0 12px;
+    border: 0;
+    background: transparent;
+  }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > span { display: none; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > button { pointer-events: auto; min-height: 30px; padding: 4px 10px; font-size: 12px; }
 
   /* Pending Gmail and Reconnect: the same card shape -- name with its key
      fact, the address, then the rest with a small inline caption. Rows that

@@ -7,7 +7,8 @@
  * sideways), each mailbox about 285px tall with its Reconnect Gmail button at
  * x=550, off the screen. After, at 375, 390 and 430px: nothing past the edge,
  * no clipped text, no sideways scroller; header 134px, nodes 245px, a linked
- * mailbox 134px (its warning row 73px), Pending 98-107px, Reconnect 122-139px.
+ * mailbox 146px (an expired one 146px including its Reconnect button, which
+ * had been a further 73px warning row), Pending 98-107px, Reconnect 122-139px.
  *
  * Stylesheet checks, because jsdom performs no layout: the phone rules live in
  * one 640px block, every one scoped to this page.
@@ -87,18 +88,40 @@ describe('AI Mail Review on a phone', () => {
     expect(cell).toMatch(/overflow-wrap:\s*anywhere/)
   })
 
-  it('gives a linked mailbox a card, with the menu in a column of its own', () => {
+  it('gives a linked mailbox a card: menu in its own column, last sync on its own line', () => {
+    // Sharing the status row squeezed "Waiting to start…" and the sync time
+    // beside a "Reconnect Required" badge; at 375-390px the two cannot fit.
     const card = rule(`${P} .sot-mailbox-table tr.sot-mailbox-row`)
-    expect(card).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+44px/)
-    for (const area of ['"candidate candidate actions"', '"gmail gmail gmail"', '"status sync sync"']) {
+    expect(card).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+44px/)
+    for (const area of ['"candidate actions"', '"gmail gmail"', '"sync sync"', '"status status"']) {
       expect(card).toContain(area)
     }
+    expect(rule(`${P} .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"] .sot-sync-progress`))
+      .toMatch(/white-space:\s*normal/)
   })
 
-  it('keeps the Reconnect Gmail button on the screen beside its warning', () => {
-    expect(rule(`${P} .sot-mailbox-table tr.sot-reconnect-row td`)).toMatch(/flex-wrap:\s*wrap/)
-    expect(rule(`${P} .sot-mailbox-table tr.sot-reconnect-row td > span`)).toMatch(/flex:\s*1 1 140px/)
-    expect(rule(`${P} .sot-mailbox-table tr.sot-reconnect-row td > button`)).toMatch(/margin-left:\s*auto/)
+  it('folds an expired Gmail into one bottom row: badge and its one Reconnect button', () => {
+    // The badge already says Reconnect Required, so the warning sentence and
+    // its red band go on a phone, and the row's single Reconnect Gmail button
+    // is laid over the badge's row instead of adding a block beneath.
+    const T = `${P} .sot-mailbox-table`
+    expect(rule(`${T} tr.sot-mailbox-row:has(+ tr.sot-reconnect-row)`)).toMatch(/margin-bottom:\s*0/)
+    const row = rule(`${T} tr.sot-reconnect-row`)
+    expect(row).toMatch(/margin:\s*-36px 0 8px/)
+    expect(row).toMatch(/background:\s*transparent/)
+    expect(row).toMatch(/pointer-events:\s*none/)
+    expect(rule(`${T} tr.sot-reconnect-row td`)).toMatch(/height:\s*36px/)
+    expect(rule(`${T} tr.sot-reconnect-row td > span`)).toMatch(/display:\s*none/)
+    expect(rule(`${T} tr.sot-reconnect-row td > button`)).toMatch(/pointer-events:\s*auto/)
+    // The badge's row is the 36px the overlay covers, centred on it.
+    const status = rule(`${T} tr.sot-mailbox-row > td[data-label="Status"]`)
+    expect(status).toMatch(/min-height:\s*36px/)
+    expect(status).toMatch(/align-items:\s*center/)
+  })
+
+  it('keeps one Reconnect Gmail control per row, as the rest of the page does', () => {
+    const panel = readFileSync(join(here, 'RecruitmentMailPanelRedesign.jsx'), 'utf-8')
+    expect(panel.match(/Reconnect Gmail/g) || []).toHaveLength(1)
   })
 
   it('gives Pending Gmail and Reconnect the same compact card', () => {
