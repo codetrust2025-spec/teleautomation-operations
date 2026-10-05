@@ -784,19 +784,85 @@ def normalise_interview_attendee_name(raw: str | None) -> str:
     raise ValueError("Interview attendee must be Nikhila, Bhavana, or Tool")
 
 
-INTERVIEW_FEEDBACK_VALUES = {"positive", "negative"}
+# The graded feedback scale the "Mark as Attended" modal now offers, best to
+# worst. "negative" is shared with the legacy two-value scale, so a row saved
+# before the grades existed stays valid and keeps its meaning.
+INTERVIEW_FEEDBACK_VALUES = {
+    "excellent", "good", "average", "needs_improvement", "negative",
+}
+# Still accepted and stored as-is: rows written before the grading scale carry
+# "positive", and old API callers may still send it. Kept valid so no stored
+# data is rewritten and no existing caller breaks.
+LEGACY_INTERVIEW_FEEDBACK_VALUES = {"positive"}
 
 
 def normalise_interview_feedback(raw: str | None) -> str:
-    """Map free-text feedback onto the two supported outcomes ("" = not set)."""
-    key = (raw or "").strip().lower()
+    """Map feedback onto a supported outcome ("" = not set).
+
+    The scale is Excellent / Good / Average / Needs Improvement / Negative.
+    The legacy "positive" (and its synonyms) stays valid and unchanged so a row
+    saved before the grades existed is never rewritten; legacy "good"/"pass"
+    map onto the grade "good". Free-text synonyms are mapped where unambiguous.
+    """
+    key = (raw or "").strip().lower().replace("-", "_").replace(" ", "_")
     if key in {"", "pending", "none"}:
         return ""
-    if key in {"positive", "good", "pass", "passed"}:
-        return "positive"
-    if key in {"negative", "bad", "fail", "failed"}:
+    if key in INTERVIEW_FEEDBACK_VALUES:
+        return key
+    if key in LEGACY_INTERVIEW_FEEDBACK_VALUES:
+        return key
+    # Unambiguous synonyms onto the new scale / legacy values.
+    if key in {"good", "pass", "passed"}:
+        return "good"
+    if key in {"excellent", "outstanding", "great"}:
+        return "excellent"
+    if key in {"average", "ok", "okay", "fair", "mediocre"}:
+        return "average"
+    if key in {"needs_improvement", "needsimprovement", "weak", "below_average"}:
+        return "needs_improvement"
+    if key in {"negative", "bad", "fail", "failed", "poor"}:
         return "negative"
-    raise ValueError("Interview feedback must be positive or negative")
+    if key in {"positive"}:
+        return "positive"
+    raise ValueError(
+        "Interview feedback must be one of: excellent, good, average, "
+        "needs_improvement, negative"
+    )
+
+
+# The outcome of an attended interview, independent of how it went: whether the
+# candidate is through to the next round, selected, rejected, or still waiting
+# to hear. Additive and optional — a row that never recorded one reads "" and
+# nothing downstream requires it, so this field is backward compatible.
+INTERVIEW_RESULT_VALUES = {
+    "awaiting_result", "next_round", "selected", "rejected",
+}
+
+
+def normalise_interview_result(raw: str | None) -> str:
+    """Map an interview result onto a supported value ("" = not set).
+
+    Values are Awaiting result / Next round / Selected / Rejected. Common
+    synonyms map on where unambiguous; anything else is rejected so a typo
+    cannot silently store a meaningless result.
+    """
+    key = (raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if key in {"", "pending", "none"}:
+        return ""
+    if key in INTERVIEW_RESULT_VALUES:
+        return key
+    if key in {"awaiting_result", "awaiting", "awaited", "waiting", "result_awaited"}:
+        return "awaiting_result"
+    if key in {"next_round", "nextround", "next", "proceed", "shortlisted"}:
+        return "next_round"
+    if key in {"selected", "select", "offer", "offered", "hired"}:
+        return "selected"
+    if key in {"rejected", "reject", "not_selected", "declined"}:
+        return "rejected"
+    raise ValueError(
+        "Interview result must be one of: awaiting_result, next_round, "
+        "selected, rejected"
+    )
 
 
 def normalise_interview_attendance_status(
@@ -4484,6 +4550,7 @@ def set_interview_attendance(
     attended: bool | None = None,
     attendee: str | None = None,
     feedback: str | None = None,
+    result: str | None = None,
     by: str,
     allow_future: bool = False,
 ) -> dict | None:
@@ -4535,6 +4602,23 @@ def set_interview_attendance(
                 r["interview_feedback"] = normalise_interview_feedback(feedback)
         else:
             r["interview_feedback"] = ""
+        # The interview result (next round / selected / rejected / awaiting)
+        # belongs to an attended interview, exactly like feedback: it is kept
+        # while the round stays "attended" and cleared otherwise. Omitting the
+        # field (None) re-normalises whatever was stored rather than wiping it,
+        # so an unrelated attendance re-save does not discard a recorded result.
+        if resolved_status == "attended":
+            if result is None:
+                try:
+                    r["interview_result"] = normalise_interview_result(
+                        r.get("interview_result")
+                    )
+                except ValueError:
+                    r["interview_result"] = ""
+            else:
+                r["interview_result"] = normalise_interview_result(result)
+        else:
+            r["interview_result"] = ""
         if resolved_status in {"attended", "not_attended"}:
             r["interview_attendance_remark"] = remark_text
             r["interview_attended_at"] = _now_iso()

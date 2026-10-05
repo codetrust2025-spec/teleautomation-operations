@@ -244,12 +244,21 @@ describe('the list', () => {
 })
 
 describe('a recorded outcome lands immediately', () => {
-  /** Attended needs an attendee, feedback and a note before it can be saved. */
+  /** Pick an option in a DarkSelect custom dropdown by its trigger aria-label. */
+  function pickFromDarkSelect(triggerName, optionText) {
+    const trigger = screen.getByRole('combobox', { name: triggerName })
+    fireEvent.click(trigger)
+    const option = screen.getByRole('option', { name: optionText })
+    fireEvent.mouseDown(option)
+  }
+
+  /** Attended needs an attendee, feedback, result and a note before it saves. */
   async function markAttended(name) {
     fireEvent.change(screen.getByLabelText(`Attendance for ${name}`), { target: { value: 'attended' } })
-    fireEvent.change(screen.getByLabelText(/Interview feedback/), { target: { value: 'positive' } })
+    pickFromDarkSelect('Interview feedback', 'Good')
+    pickFromDarkSelect('Interview result', 'Next round')
     fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'went ahead, cleared' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Attended' })) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Attended', hidden: false })) })
   }
 
   function pendingCard() {
