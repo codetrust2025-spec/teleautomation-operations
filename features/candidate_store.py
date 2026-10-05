@@ -518,6 +518,18 @@ def canonical_candidate_name(name: str) -> str:
     return _title_case_name(raw)
 
 
+def candidate_filter_key(name: str) -> str:
+    """The one person a Candidate dropdown selects, as a comparable key.
+
+    The dropdown lists canonical names, so a row belongs to the selection only
+    when its own name canonicalises to the same person. This is an equality
+    test on purpose: `candidate_matches_search` is a free-text search that
+    accepts any word of the query, which is right for a search box and wrong
+    for a selection -- "Ram Charan M S" matched "Rama Krishna" through "ram".
+    """
+    return _normalise_candidate_name_key(canonical_candidate_name(name))
+
+
 def candidate_defaults_to_tool_attendee(name: str) -> bool:
     """Keerthana / Satyanarayana — Tool attends and Data Analyst tech stack."""
     return is_free_service_candidate(name)
@@ -2932,6 +2944,7 @@ def daily_interview_roster(
     filter_round: str | None = None,
     filter_technology: str | None = None,
     include_unconfirmed: bool = False,
+    filter_candidate: str | None = None,
 ) -> dict:
     """Confirmed interview slots for one calendar day (YYYY-MM-DD).
 
@@ -2951,6 +2964,7 @@ def daily_interview_roster(
         filter_channel=filter_channel,
         filter_round=filter_round,
         filter_technology=filter_technology,
+        filter_candidate=filter_candidate,
     )
     counts = _interview_attendance_counts(rows)
     rows = _enrich_interview_rows_with_slot_screenshots(rows)
@@ -3915,9 +3929,13 @@ def _filter_interview_rows(
     filter_channel: str | None = None,
     filter_round: str | None = None,
     filter_technology: str | None = None,
+    filter_candidate: str | None = None,
 ) -> list[dict]:
     attendee_filter = (filter_attendee or "").strip()
     search_filter = (filter_search or "").strip()
+    # Only text is a selection: a route called as a plain function hands over
+    # its unfilled `Query(...)` default, which must mean "no candidate chosen".
+    candidate_key = candidate_filter_key(filter_candidate) if isinstance(filter_candidate, str) else ""
     channel_filter = (filter_channel or "").strip().lower()
     viewer = (viewer_reference or "").strip()
     # Daily Ops is a shared operations roster.  Do not hide another
@@ -3933,6 +3951,12 @@ def _filter_interview_rows(
         rows = [
             r for r in rows
             if candidate_matches_search(r.get("name") or "", search_filter)
+        ]
+    # A selected candidate is exact: that person's rows and nobody else's.
+    if candidate_key:
+        rows = [
+            r for r in rows
+            if candidate_filter_key(r.get("name") or "") == candidate_key
         ]
     if channel_filter and channel_filter != "all":
         if channel_filter == "round_wise":
@@ -3990,6 +4014,7 @@ def interview_monitor(
     include_unconfirmed: bool = False,
     upcoming_only: bool = False,
     unresolved_only: bool = False,
+    filter_candidate: str | None = None,
 ) -> dict:
     """All confirmed interview slots in a date range — admin monitor view.
 
@@ -4012,6 +4037,7 @@ def interview_monitor(
         filter_channel=filter_channel,
         filter_round=filter_round,
         filter_technology=filter_technology,
+        filter_candidate=filter_candidate,
     )
     # No view splits its rows in two any more. The key stays, always empty, so
     # a reader that has not been redeployed reads "nothing awaiting" rather
@@ -4234,6 +4260,7 @@ def interview_global_summary(
     include_unconfirmed: bool = False,
     upcoming_only: bool = False,
     unresolved_only: bool = False,
+    filter_candidate: str | None = None,
 ) -> dict:
     """Ops snapshot — interviews by attendee/referrer/tech + tasks (scoped per viewer).
 
@@ -4257,7 +4284,6 @@ def interview_global_summary(
         *(_ALL_TIME_SPAN if unresolved_only else (start, end)),
         include_unconfirmed=include_unconfirmed,
     )
-    overview_rows = _filter_interview_rows(list(rows), viewer_reference=viewer_reference)
     rows = _filter_interview_rows(
         rows,
         viewer_reference=viewer_reference,
@@ -4269,10 +4295,22 @@ def interview_global_summary(
     )
     if upcoming_only or unresolved_only:
         rows = _filter_upcoming_only_rows(rows)
-    if unresolved_only:
-        # The pie describes what the table holds, or it is describing a
-        # different question than the one the operator asked.
-        overview_rows = _filter_upcoming_only_rows(overview_rows)
+    # The Candidate dropdown is built from by_candidate, so that list is taken
+    # before the candidate selection narrows the rows: choosing one person
+    # must not remove everyone else from the list it was chosen from. Every
+    # count below it describes the selection.
+    candidate_option_rows = rows
+    if isinstance(filter_candidate, str) and filter_candidate.strip():
+        rows = _filter_interview_rows(rows, filter_candidate=filter_candidate)
+    # The booking overview (the "Bookings by candidate" pie, its total and the
+    # level/technology breakdowns beside it) describes the active selection,
+    # the candidate filter included. Reading it off the fully narrowed rows is
+    # what keeps it from saying "208 across all candidates" above a table that
+    # a candidate filter has cut down to one person -- the counters above the
+    # table already describe the selection, and the pie must not disagree with
+    # them. Only `candidate_option_rows` stays wide, so the dropdown the
+    # selection was made from keeps listing everyone.
+    overview_rows = rows
     interview_counts = _interview_attendance_counts(rows)
 
     overview_candidates: dict[str, dict] = {}
@@ -4351,8 +4389,10 @@ def interview_global_summary(
         status = row_interview_attendance_status(row)
         _bump(by_attendee, row_interview_attendee(row), status)
         _bump(by_referrer, (row.get("reference") or "").strip() or "Unknown", status)
-        _bump(by_candidate, canonical_candidate_name((row.get("name") or "").strip()) or "Unknown", status)
         _bump(by_technology, row_candidate_technology(row) or "Unspecified", status)
+    for row in candidate_option_rows:
+        status = row_interview_attendance_status(row)
+        _bump(by_candidate, canonical_candidate_name((row.get("name") or "").strip()) or "Unknown", status)
 
     def _bucket_rows(bucket: dict[str, dict[str, int]]) -> list[dict]:
         return [

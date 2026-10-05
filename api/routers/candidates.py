@@ -143,6 +143,9 @@ async def candidates_interviews_daily(
     channel: str | None = Query(default=None),
     round: str | None = Query(default=None),
     technology: str | None = Query(default=None),
+    # A Candidate dropdown selection: one person, matched exactly. `search`
+    # stays the loose free-text match for the search box.
+    candidate: str | None = Query(default=None),
 ):
     from fastapi import HTTPException
 
@@ -161,6 +164,7 @@ async def candidates_interviews_daily(
             filter_channel=channel,
             filter_round=round,
             filter_technology=technology,
+            filter_candidate=candidate,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -175,6 +179,9 @@ async def candidates_interviews_monitor(
     channel: str | None = Query(default=None),
     round: str | None = Query(default=None),
     technology: str | None = Query(default=None),
+    # A Candidate dropdown selection: one person, matched exactly. `search`
+    # stays the loose free-text match for the search box.
+    candidate: str | None = Query(default=None),
     upcoming_only: bool = Query(default=False),
     # The global Pending view: every interview still waiting for an outcome,
     # whatever its date. from/to stay required so the request shape does not
@@ -200,6 +207,7 @@ async def candidates_interviews_monitor(
             filter_channel=channel,
             filter_round=round,
             filter_technology=technology,
+            filter_candidate=candidate,
             upcoming_only=upcoming_only,
             unresolved_only=unresolved_only,
         )
@@ -241,6 +249,9 @@ async def candidates_interviews_global(
     channel: str | None = Query(default=None),
     round: str | None = Query(default=None),
     technology: str | None = Query(default=None),
+    # A Candidate dropdown selection: one person, matched exactly. `search`
+    # stays the loose free-text match for the search box.
+    candidate: str | None = Query(default=None),
     upcoming_only: bool = Query(default=False),
     unresolved_only: bool = Query(default=False),
 ):
@@ -263,6 +274,7 @@ async def candidates_interviews_global(
             filter_channel=channel,
             filter_round=round,
             filter_technology=technology,
+            filter_candidate=candidate,
             upcoming_only=upcoming_only,
             unresolved_only=unresolved_only,
         )

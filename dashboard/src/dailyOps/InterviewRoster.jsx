@@ -197,6 +197,8 @@ export function InterviewRoster({
   dashboardRoundFilter = '',
   dashboardTechnologyFilter = '',
   dashboardCandidateSearch = '',
+  // The Candidate dropdown's choice. Exact, unlike the search text above.
+  dashboardCandidate = '',
   dashboardCandidateTypeFilter = '',
   dashboardStatusFilter = '',
   upcomingOnly = false,
@@ -296,7 +298,10 @@ export function InterviewRoster({
   }, [unresolvedOnly, upcomingOnly, pendingOnlyView])
 
   const effectiveAttendee = isDashboard ? dashboardAttendeeFilter : attendeeFilter
-  const effectiveSearch = isDashboard ? dashboardCandidateSearch : candidateFilter
+  // A chosen candidate goes as `candidate` (one person, exactly); only typed
+  // text goes as `search`, which matches any word of it.
+  const effectiveSearch = isDashboard ? dashboardCandidateSearch : ''
+  const effectiveCandidate = isDashboard ? dashboardCandidate : candidateFilter
   const effectiveChannel = isDashboard ? dashboardCandidateTypeFilter : channelFilter
   const effectiveRound = isDashboard ? dashboardRoundFilter : ''
   const effectiveTechnology = isDashboard ? dashboardTechnologyFilter : ''
@@ -320,6 +325,7 @@ export function InterviewRoster({
         params.set('date', hasRange ? dashboardFromDate : day)
       }
       if (effectiveAttendee) params.set('attendee', effectiveAttendee)
+      if (effectiveCandidate) params.set('candidate', effectiveCandidate)
       const search = effectiveSearch.trim()
       if (search) params.set('search', search)
       if (effectiveChannel) params.set('channel', effectiveChannel)
@@ -352,6 +358,7 @@ export function InterviewRoster({
     dashboardToDate,
     effectiveAttendee,
     effectiveSearch,
+    effectiveCandidate,
     effectiveChannel,
     effectiveRound,
     effectiveTechnology,
@@ -511,6 +518,7 @@ export function InterviewRoster({
     effectiveAttendee && `attendee ${effectiveAttendee}`,
     effectiveRound && `level ${effectiveRound}`,
     effectiveTechnology && `profile ${effectiveTechnology}`,
+    effectiveCandidate && `candidate ${effectiveCandidate}`,
     effectiveSearch.trim() && `search "${effectiveSearch.trim()}"`,
   ].filter(Boolean)
   // This list is not about a date, so an empty one must not name one.

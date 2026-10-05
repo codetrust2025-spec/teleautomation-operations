@@ -209,7 +209,10 @@ export function DailyOpsPanel({
       if (attendeeFilter) params.set('attendee', attendeeFilter)
       if (roundFilter) params.set('round', roundFilter)
       if (technologyFilter) params.set('technology', technologyFilter)
-      const search = candidateFilter || candidateSearch.trim()
+      // The dropdown is a selection and the search box is a search: sent as
+      // one `search`, "Ram Charan M S" also matched "Rama Krishna" on "ram".
+      if (candidateFilter) params.set('candidate', candidateFilter)
+      const search = candidateSearch.trim()
       if (search) params.set('search', search)
       if (unresolvedOnly) params.set('unresolved_only', 'true')
       else if (effectiveUpcomingOnly) params.set('upcoming_only', 'true')
@@ -433,7 +436,8 @@ export function DailyOpsPanel({
           dashboardAttendeeFilter={attendeeFilter}
           dashboardRoundFilter={roundFilter}
           dashboardTechnologyFilter={technologyFilter}
-          dashboardCandidateSearch={candidateFilter || candidateSearch}
+          dashboardCandidate={candidateFilter}
+          dashboardCandidateSearch={candidateSearch}
           dashboardStatusFilter={statusFilter}
           upcomingOnly={upcomingOnly && !unresolvedOnly}
           unresolvedOnly={unresolvedOnly}
