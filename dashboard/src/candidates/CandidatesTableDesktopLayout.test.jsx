@@ -32,8 +32,8 @@ const base = {
   payment_proofs: [], proof_count: 0, resume_count: 0, slot_count: 1,
 };
 const ROWS = [
-  { ...base, id: "r1", name: "Ram Charan M S", phone: "8328646540", resume_count: 1 },
-  { ...base, id: "r2", name: "ram charan m s", phone: "9876501234", reference: "Bhavana", service_type: "round_wise", technology: "React JS" },
+  { ...base, id: "r1", name: "Ram Charan M S", phone: "9000000811", resume_count: 1 },
+  { ...base, id: "r2", name: "ram charan m s", phone: "9000000812", reference: "Bhavana", service_type: "round_wise", technology: "React JS" },
   { ...base, id: "r3", name: "Deepa Shetty", phone: "9000000804" },
 ];
 
@@ -68,7 +68,7 @@ describe("headings", () => {
 describe("a repeated name", () => {
   it("carries its phone and referrer under the name", async () => {
     await renderTable();
-    for (const [id, phone, ref] of [["r1", "8328646540", "Karthik"], ["r2", "9876501234", "Bhavana"]]) {
+    for (const [id, phone, ref] of [["r1", "9000000811", "Karthik"], ["r2", "9000000812", "Bhavana"]]) {
       const meta = rowById(id).querySelector(".cand-cell-name .cand-name-meta");
       expect(meta.className).toContain("cand-name-meta--dup");
       expect(meta.textContent).toContain(phone);
