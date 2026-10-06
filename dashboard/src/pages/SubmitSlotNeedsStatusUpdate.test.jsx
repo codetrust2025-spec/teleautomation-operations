@@ -76,7 +76,7 @@ describe('Needs status update', () => {
     await openConfirmed(MIXED)
     await screen.findByText('Overdue One')
     expect(within(card('Overdue One')).getByText('L1')).toBeTruthy()
-    expect(within(card('Overdue One')).getByText('Candidate booked')).toBeTruthy()
+    expect(within(card('Overdue One')).getByLabelText('Candidate booked')).toBeTruthy()
   })
 
   it('is not shown at all when nothing needs an update', async () => {
@@ -87,13 +87,13 @@ describe('Needs status update', () => {
 })
 
 describe('Upcoming slots', () => {
-  it('holds the current and future interviews, marked Booked, with their count', async () => {
+  it('holds the current and future interviews, with their count and no redundant Booked chip', async () => {
     await openConfirmed(MIXED)
     const upcoming = (await screen.findByRole('heading', { name: 'Upcoming slots' })).closest('section')
     expect(sectionOf('Soon Person')).toBe(upcoming)
     expect(sectionOf('Later Person')).toBe(upcoming)
     expect(upcoming.textContent).toMatch(/2 slots scheduled/)
-    expect(within(card('Soon Person')).getByText('Booked', { selector: '.sbs-confirmed-card__status' })).toBeTruthy()
+    expect(card('Soon Person').querySelector('.sbs-confirmed-card__status')).toBeNull()
   })
 
   it('says there is nothing upcoming when every slot needs an update', async () => {

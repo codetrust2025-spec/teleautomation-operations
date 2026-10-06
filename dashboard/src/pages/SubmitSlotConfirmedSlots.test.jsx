@@ -73,35 +73,36 @@ afterEach(() => {
 })
 
 describe('confirmed slot booking source', () => {
-  it('labels an AI auto-booked slot, alongside its stage and Booked status', async () => {
+  it('labels an AI auto-booked slot, alongside its stage, with no redundant Booked chip', async () => {
     await openConfirmed()
     await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
     const card = within(cardFor('Aniket'))
     expect(card.getByText('L1')).toBeTruthy()
-    expect(card.getByText('Booked')).toBeTruthy()
-    expect(card.getByText('AI Auto-booked')).toBeTruthy()
+    expect(card.queryByText('Booked')).toBeNull()
+    // A compact chip: "AI" on screen, the full source as its name.
+    const chip = card.getByLabelText('AI Auto-booked')
+    expect(chip.textContent).toBe('AI')
+    expect(chip.getAttribute('title')).toMatch(/^AI Auto-booked:/)
   })
 
-  it('labels a candidate-booked slot, alongside its stage and Booked status', async () => {
+  it('labels a candidate-booked slot, alongside its stage', async () => {
     await openConfirmed()
     await waitFor(() => expect(cardFor('Manu')).toBeTruthy())
     const card = within(cardFor('Manu'))
     expect(card.getByText('L1')).toBeTruthy()
-    expect(card.getByText('Booked')).toBeTruthy()
-    expect(card.getByText('Candidate booked')).toBeTruthy()
+    const chip = card.getByLabelText('Candidate booked')
+    expect(chip.textContent).toBe('Candidate')
   })
 
-  it('falls back to the historical muted Booked badge when no source was recorded', async () => {
+  it('shows no source chip when no source was recorded, and never guesses one', async () => {
     await openConfirmed()
     await waitFor(() => expect(cardFor('Ashok uppuluri')).toBeTruthy())
     const card = cardFor('Ashok uppuluri')
-    const badge = card.querySelector('.sbs-source-badge')
-    expect(badge).toBeTruthy()
-    expect(badge.textContent).toBe('Booked')
-    expect(badge.className).toContain('sbs-source-badge--unknown')
-    // Never guessed into one of the two real sources.
-    expect(card.textContent).not.toContain('AI Auto-booked')
-    expect(card.textContent).not.toContain('Candidate booked')
+    // A grey "Booked" chip said nothing every card on the page does not.
+    expect(card.querySelector('.sbs-source-badge')).toBeNull()
+    expect(within(card).queryByText('Booked')).toBeNull()
+    expect(within(card).queryByLabelText('AI Auto-booked')).toBeNull()
+    expect(within(card).queryByLabelText('Candidate booked')).toBeNull()
   })
 
   it('tones the two real sources apart from each other and from unknown', async () => {
@@ -123,7 +124,7 @@ describe('confirmed slot booking source', () => {
     expect(source).toBeTruthy()
     expect(round).not.toBe(source)
     expect(round.textContent).toBe('L1')
-    expect(source.textContent).toBe('AI Auto-booked')
+    expect(source.getAttribute('aria-label')).toBe('AI Auto-booked')
   })
 })
 
@@ -217,8 +218,8 @@ describe('assessments in the confirmed list', () => {
   it('keeps the AI Auto-booked badge on both', async () => {
     await openConfirmed(MIXED)
 
-    await waitFor(() => expect(within(cardFor('Dinesh')).getByText(/auto-booked/i)).toBeTruthy())
-    expect(within(cardFor('Lavanya')).getByText(/auto-booked/i)).toBeTruthy()
+    await waitFor(() => expect(within(cardFor('Dinesh')).getByLabelText(/auto-booked/i)).toBeTruthy())
+    expect(within(cardFor('Lavanya')).getByLabelText(/auto-booked/i)).toBeTruthy()
   })
 
   it('counts slots rather than interviews', async () => {

@@ -16817,8 +16817,31 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   border: 1px solid rgba(16,185,129,0.15);
 }
 .sbs-confirmed-card__right {
-  display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; flex-shrink: 0;
+  display: flex; flex-direction: row; align-items: center; gap: 0.3rem; flex-shrink: 0;
 }
+/* Card body: name and round, then time, company and technology on one line
+   that wraps on a phone. */
+.sbs-confirmed-card .sbs-slot-card__name-row { gap: 0.35rem; }
+.sbs-slot-card__line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.45rem;
+  margin-top: 0.15rem; min-width: 0;
+  font-size: 0.68rem; color: var(--text-muted,#a8b4c4);
+}
+.sbs-slot-card__line .sbs-slot-card__time { margin-top: 0; }
+.sbs-slot-card__company,
+.sbs-slot-card__tech {
+  min-width: 0; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sbs-slot-card__company { color: var(--text, #e2e8f0); font-weight: 600; }
+.sbs-slot-card__company::before,
+.sbs-slot-card__tech::before { content: "\00b7"; margin-right: 0.45rem; color: var(--text-dim,#7b8a9e); font-weight: 400; }
+.sbs-slot-card__company--none { color: var(--text-dim,#7b8a9e); font-weight: 400; }
+/* Company and Interview round side by side; the round keeps the room its
+   select needs. */
+.sbs-field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.6rem; align-items: start; }
+.sbs-field-row > label { min-width: 0; }
+.sbs-optional { margin-left: 0.3rem; font-size: 0.6rem; font-weight: 500; color: var(--text-dim,#7b8a9e); text-transform: none; letter-spacing: 0; }
 .sbs-confirmed-card__status {
   display: flex; align-items: center; gap: 0.2rem;
   font-size: 0.6rem; font-weight: 600; color: #6ee7b7;
@@ -16826,7 +16849,9 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-source-badge {
   display: inline-flex;
   align-items: center;
-  align-self: flex-end;
+  gap: 0.18rem;
+  align-self: center;
+  cursor: default;
   white-space: nowrap;
   border-radius: 999px;
   padding: 0.08rem 0.35rem;

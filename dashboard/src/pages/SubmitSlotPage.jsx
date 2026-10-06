@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '../Loader.jsx'
 import { SubmitSlotFileDrop } from './SubmitSlotFileDrop.jsx'
 import { bookingSourceMeta } from '../utils/bookingSource.js'
+import { Icon } from '../components/ui/Icon.jsx'
 import AiNodeProgress, { analysedByLine, analysisSeconds, useAiAnalysis } from '../components/AiNodeProgress.jsx'
 
 const API_BASE = typeof window !== 'undefined' && window.location.port === '3000'
@@ -167,7 +168,11 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
             <span className="sbs-date-group__count">{items.length} slot{items.length !== 1 ? 's' : ''}</span>
           </div>
           <div className="sbs-date-group__cards">
-            {items.map((slot, i) => (
+            {items.map((slot, i) => {
+                  const source = bookingSourceMeta(slot.interview_booking_source)
+                  const company = String(slot.company || '').trim()
+                  const technology = String(slot.technology || '').trim()
+                  return (
                   <div key={i} className={`sbs-confirmed-card${needsUpdate ? ' sbs-confirmed-card--awaiting' : ''}`}>
                     <div className="sbs-slot-card__icon sbs-slot-card__icon--active">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -175,14 +180,12 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
                         <path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/>
                       </svg>
                     </div>
+                    {/* Two lines: who and which round; when, where and what.
+                        The round used to be the first of three chips stacked
+                        down the right edge, which set every card's height. */}
                     <div className="sbs-slot-card__body">
+                      <div className="sbs-slot-card__name-row">
                       <div className="sbs-slot-card__name">{formatCandidateDisplayName(slot.name)}</div>
-                      <div className="sbs-slot-card__time">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
-                        <span>{formatFriendlyTime(slot.time)}{slot.time_end ? ` – ${formatFriendlyTime(slot.time_end)}` : ''}</span>
-                      </div>
-                    </div>
-                    <div className="sbs-confirmed-card__right">
                       {/* An assessment has no interview round -- it is
                           a test sat alone -- so it is labelled by what
                           it is rather than by a round it never had. */}
@@ -203,31 +206,50 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
                           Round not specified
                         </span>
                       )}
-                      {needsUpdate ? (
+                      </div>
+                      <div className="sbs-slot-card__line">
+                        <div className="sbs-slot-card__time">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
+                          <span>{formatFriendlyTime(slot.time)}{slot.time_end ? ` – ${formatFriendlyTime(slot.time_end)}` : ''}</span>
+                        </div>
+                        {/* Every card names its company, so two bookings for one
+                            candidate tell apart by company, technology, round
+                            and time. "—" when none was recorded. */}
+                        {company
+                          ? <span className="sbs-slot-card__company" title={company}>{company}</span>
+                          : <span className="sbs-slot-card__company sbs-slot-card__company--none" title="No company recorded" aria-label="No company recorded">—</span>}
+                        {technology && <span className="sbs-slot-card__tech" title={technology}>{technology}</span>}
+                      </div>
+                    </div>
+                    <div className="sbs-confirmed-card__right">
+                      {/* Every card on this page is a booked slot, so a
+                          "Booked" chip on each said nothing; only an ended
+                          interview still waiting for its outcome is marked. */}
+                      {needsUpdate && (
                         <span className="sbs-confirmed-card__status sbs-confirmed-card__status--awaiting">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" strokeLinecap="round"/></svg>
                           Awaiting status
                         </span>
-                      ) : (
-                        <span className="sbs-confirmed-card__status">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                          Booked
+                      )}
+                      {/* AI or candidate, as a small chip that names itself
+                          in full on hover and to a reader. A slot with no
+                          recorded source shows none: beside "Booked" a grey
+                          "Booked" chip said nothing new. */}
+                      {source.known && (
+                        <span
+                          className={`sbs-source-badge sbs-source-badge--${source.tone}`}
+                          title={`${source.label}: ${source.title}`}
+                          role="img"
+                          aria-label={source.label}
+                        >
+                          <Icon name={source.tone === 'auto' ? 'sparkles' : 'user-check'} size={10} strokeWidth={2.2} />
+                          <span aria-hidden="true">{source.tone === 'auto' ? 'AI' : 'Candidate'}</span>
                         </span>
                       )}
-                      {(() => {
-                        const meta = bookingSourceMeta(slot.interview_booking_source)
-                        return (
-                          <span
-                            className={`sbs-source-badge sbs-source-badge--${meta.tone}`}
-                            title={meta.title}
-                          >
-                            {meta.label}
-                          </span>
-                        )
-                      })()}
                     </div>
                   </div>
-            ))}
+                  )
+            })}
           </div>
         </div>
       ))}
@@ -460,6 +482,9 @@ export function SubmitSlotPage() {
   const [manualTime, setManualTime] = useState('')
   const [interviewRound, setInterviewRound] = useState('')
   const [technology, setTechnology] = useState('')
+  // The company the interview is with. Optional: an invite does not always
+  // name it. Saved with the booking, so Confirmed slots and Daily Ops show it.
+  const [company, setCompany] = useState('')
   const [serviceType, setServiceType] = useState('profile_service')
   const [showServiceDrop, setShowServiceDrop] = useState(false)
   // Which one field the form is currently asking for, not merely that a
@@ -634,7 +659,7 @@ export function SubmitSlotPage() {
   const resetBookForm = useCallback(() => {
     setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
     setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
-    setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology('')
+    setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setCompany('')
     setSessionFile(null); setSessionPreview('')
     setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
     resetInviteAnalysis()
@@ -707,6 +732,9 @@ export function SubmitSlotPage() {
         if (ext.technology && !technology && !userEditedFields.technology) {
           setTechnology(ext.technology)
         }
+        // Only if the reader ever returns one; it does not ask for it today.
+        const extCompany = String((ext.company && ext.company.name) || (typeof ext.company === 'string' ? ext.company : '') || '').trim()
+        if (extCompany && !company && !userEditedFields.company) setCompany(extCompany)
         if (ext.interview_round && !interviewRound && !userEditedFields.round) {
           setInterviewRound(ext.interview_round)
           slot.interview_round = ext.interview_round
@@ -925,6 +953,7 @@ export function SubmitSlotPage() {
       if (bookingSlot?.time_end) fd.append('time_end', bookingSlot.time_end)
       if (bookingSlot?.interview_round) fd.append('interview_round', bookingSlot.interview_round)
       if (effectiveTechnology) fd.append('technology', effectiveTechnology)
+      if (company.trim()) fd.append('company', company.trim())
       if (serviceType === 'round_wise') fd.append('phone', roundWisePhone.trim())
       fd.append('candidate_id', selected?.id || '')
       if (paymentProofIds.length) fd.append('payment_proof_ids', paymentProofIds.join(','))
@@ -1157,6 +1186,22 @@ export function SubmitSlotPage() {
                 </label>
               )}
 
+              {/* Company and round share one row: the company is new, and a
+                  row of its own would have made every booking form taller. */}
+              <div className="sbs-field-row">
+              <label className="sbs-field sbs-field--company">
+                <span className="sbs-label">Company <span className="sbs-optional">optional</span></span>
+                <input
+                  className="sbs-input"
+                  type="text"
+                  value={company}
+                  maxLength={120}
+                  onChange={e => { setCompany(e.target.value); setUserEditedFields(prev => ({ ...prev, company: true })) }}
+                  placeholder="e.g. Capgemini"
+                  disabled={busy || parsing}
+                  aria-label="Company"
+                />
+              </label>
               <label className="sbs-field">
                 <span className="sbs-label">Interview round <span className="sbs-required" aria-hidden="true">*</span></span>
                 <div className={`sbs-select-wrap${missingField === 'round' ? ' sbs-select-wrap--required' : ''}`}>
@@ -1167,6 +1212,7 @@ export function SubmitSlotPage() {
                 </div>
                 {missingField === 'round' && <span className="sbs-hint sbs-hint--warn" role="alert">Choose the interview round.</span>}
               </label>
+              </div>
 
               {/* Amber only when payment needs attention: a screenshot was
                   refused, or the sequence is asking for one. Otherwise this is

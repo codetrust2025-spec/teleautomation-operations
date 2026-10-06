@@ -4245,6 +4245,9 @@ def public_booked_interview_slots(*, days: int = 60, now: float | None = None) -
         slots.append({
             "name": canonical_candidate_name((row.get("name") or "").strip()),
             "technology": row_candidate_technology(row) or row.get("technology") or "",
+            # The company the interview is with, as Daily Ops shows it. Empty
+            # when nobody recorded one.
+            "company": _clean_str(row.get("interview_company")),
             "interview_round": normalise_interview_round(row.get("interview_round")),
             "date": _normalize_iso_date(slot_date),
             "time": slot_time,
@@ -5871,13 +5874,24 @@ def _finish_public_slot_import(
     return row, action
 
 
+def normalise_interview_company(value: str | None) -> str:
+    """A company name as typed on the booking form: one line, spaces collapsed, 120 chars."""
+    return " ".join(str(value or "").split())[:120]
+
+
 def import_confirmed_interview_slot(**kwargs) -> tuple[dict, str]:
     """Book the slot, then record whether it consumed a Re-Service grant.
 
     The grant is resolved before booking because the booking itself may create
     a fresh round row; stamping the provenance afterwards lets the completed
     interview burn the benefit on whichever row originally carried it.
+
+    `interview_company`, when the form gave one, is stamped onto the booked
+    row afterwards the same way: one targeted field, so none of the booking
+    paths change, and a blank never clears a company already recorded (by the
+    mail pipeline, say).
     """
+    company = normalise_interview_company(kwargs.pop("interview_company", ""))
     grant = find_re_service_grant(
         name=_clean_str(kwargs.get("name") or ""),
         phone=_clean_str(kwargs.get("phone") or ""),
@@ -5889,6 +5903,8 @@ def import_confirmed_interview_slot(**kwargs) -> tuple[dict, str]:
         row = _mark_re_service_booking(
             str(row["id"]), grant_row_id=str(grant.get("id") or "")
         ) or row
+    if company and isinstance(row, dict) and row.get("id") and _clean_str(row.get("interview_company")) != company:
+        row = _patch_row_fields(str(row["id"]), {"interview_company": company}) or row
     return row, action
 
 

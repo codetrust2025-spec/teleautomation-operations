@@ -928,6 +928,9 @@ def install_public_slot_routes(app) -> None:
         payment_proof_ids: str = Form(default=""),
         idempotency_key: str = Form(default=""),
         invite_trace_id: str = Form(default=""),
+        # Optional: the company the interview is with. Kept on the booked
+        # slot as interview_company, the field Daily Ops already shows.
+        company: str = Form(default=""),
         invite_display_date: str = Form(default=""),
         invite_display_time: str = Form(default=""),
         invite_extracted_start_time: str = Form(default=""),
@@ -936,6 +939,7 @@ def install_public_slot_routes(app) -> None:
         trace_id = _invite_trace_id(invite_trace_id)
         normalized_service_type = service_type.strip() or "round_wise"
         normalized_technology = technology.strip()
+        normalized_company = cs.normalise_interview_company(company if isinstance(company, str) else "")
         normalized_phone = phone.strip() if normalized_service_type == "round_wise" else ""
         normalized_round = cs.normalise_interview_round(interview_round)
         if not name.strip():
@@ -1174,6 +1178,7 @@ def install_public_slot_routes(app) -> None:
                     row, action = cs.import_confirmed_interview_slot(
                         name=name, date=day, time=slot_time, time_end=slot_end,
                         interview_round=normalized_round, technology=normalized_technology,
+                        interview_company=normalized_company,
                         phone=normalized_phone, service_type=normalized_service_type,
                         notes=notes, source="submit-slot form",
                         payment_proof_id=normalized_proof_id or None,
