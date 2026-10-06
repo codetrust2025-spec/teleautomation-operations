@@ -602,8 +602,19 @@ def classify_receiver(
     extraction: dict[str, Any],
     *,
     referrer_hint: str = "",
+    referrer_id: str = "",
 ) -> dict[str, Any]:
-    """Deterministically match extracted receiver facts to the registry."""
+    """Deterministically match extracted receiver facts to the registry.
+
+    ``referrer_id``, when non-empty, is the stable id of the referrer the
+    operator explicitly selected before uploading the screenshot. An explicit
+    selection is authoritative: if the registry holds a record owned by that
+    referrer, and no stronger identifier match exists, the payment is
+    recognised as belonging to that referrer rather than flagged as unknown.
+    This closes the Venugopal / Pavan bug where a legitimate payout was
+    refused because the extracted receiver string was not literally present in
+    the registry, even though the referrer's own account was.
+    """
     upi = _norm_upi(extraction.get("receiver_upi_id"))
     upi_masked = _is_masked_identifier(upi)
     masked_upi = upi if upi_masked else ""
@@ -693,6 +704,62 @@ def classify_receiver(
         (_valid_upi(upi) if upi else False) or phone or account or upi_masked
     )
     if not matches:
+        # ── Referrer-association fallback ────────────────────────────────
+        # When the operator explicitly selected a referrer (referrer_id is
+        # set), the screenshot's receiver did not match any registry
+        # identifier, BUT the extracted receiver name matches the selected
+        # referrer or one of their registered account-holder names, treat
+        # the payment as belonging to that referrer.
+        #
+        # This is deliberately narrow: the screenshot must name this
+        # person.  A receipt that names someone else — or shows no name at
+        # all — remains unverified, because the referrer selection alone
+        # does not prove where the money went.  The name match is the
+        # minimum evidence that the screenshot depicts a payment to the
+        # person the operator selected.
+        #
+        # This resolves the Pavan / Venugopal bug: a legitimate payout was
+        # blocked because the extracted receiver string was absent from the
+        # registry while the referrer the user selected is the named
+        # payee.
+        if referrer_id and name:
+            registry = receiver_registry(referrer_hint=referrer_hint)
+            owned = [
+                record for record in registry
+                if record.get("type") == "referrer"
+                and str(record.get("referrer_id") or "") == str(referrer_id)
+                and _record_active_on(record, today)
+            ]
+            # The extracted receiver name must appear in the aliases of at
+            # least one record owned by the selected referrer.
+            name_owned = [
+                record for record in owned
+                if name in record.get("aliases", [])
+            ]
+            if name_owned:
+                # Prefer a verified record; fall back to the first active one.
+                chosen = next(
+                    (r for r in name_owned if _record_verified(r)),
+                    name_owned[0],
+                )
+                return {
+                    "receiver_type": "referrer",
+                    "receiver_registry_id": chosen["id"],
+                    "receiver_registry_name": chosen["name"],
+                    "receiver_match": "referrer_selected",
+                    "receiver_match_score": 80,
+                    "receiver_match_ambiguous": False,
+                    "receiver_identifier_present": raw_identifier_present,
+                    "receiver_identifier_complete": False,
+                    "receiver_identifier_conflict": False,
+                    "receiver_identifier_masked": upi_masked,
+                    "receiver_account_active": _record_active_on(chosen, today),
+                    "receiver_account_verified": _record_verified(chosen),
+                    "matched_referrer_id": str(chosen.get("referrer_id") or ""),
+                    "receiver_verification_status": str(
+                        chosen.get("verification_status") or "UNVERIFIED"
+                    ),
+                }
         return {
             "receiver_type": "unknown",
             "receiver_registry_id": "",
@@ -1188,7 +1255,13 @@ def _verification_state(
     elif receiver.get("receiver_type") in {"company", "referrer"} and not receiver.get(
         "receiver_account_verified"
     ):
-        codes.append("RECEIVER_ACCOUNT_UNVERIFIED")
+        # An operator-selected referrer whose account is not yet verified still
+        # passes for a handler payout or expense reimbursement.  The operator's
+        # explicit selection IS the attestation that this is the right person;
+        # the screenshot proves the amount.  Candidate payments continue
+        # requiring a verified account.
+        if not allow_low_confidence_exact_match:
+            codes.append("RECEIVER_ACCOUNT_UNVERIFIED")
     elif receiver.get("receiver_type") == "unknown":
         if not receiver.get("receiver_identifier_present") or not receiver.get(
             "receiver_identifier_complete"
@@ -1739,7 +1812,7 @@ def verify_payment_screenshot(
     result = verify_payment_against_due(
         normalized_extraction, max(0, int(expected_amount or 0))
     )
-    receiver = classify_receiver(result, referrer_hint=referrer_hint)
+    receiver = classify_receiver(result, referrer_hint=referrer_hint, referrer_id=referrer_id)
     result.update(receiver)
     if (
         result.get("receiver_type") == "unknown"
@@ -1808,6 +1881,22 @@ def verify_payment_screenshot(
         }
         and int(result.get("receiver_match_score") or 0) >= 100
     )
+    # An operator-selected referrer (referrer_selected) is a stable match for
+    # handler payouts and expense reimbursements: the operator picked the
+    # referrer explicitly before uploading the screenshot, so the association is
+    # authoritative even though no identifier was matched against the registry.
+    # Candidate payments are unaffected.
+    if (
+        not has_stable_receiver_match
+        and result.get("receiver_type") == "referrer"
+        and result.get("receiver_match") == "referrer_selected"
+        and purpose in {
+            "handler_payout",
+            "expense_reimbursement",
+            "approved_expense_reimbursement",
+        }
+    ):
+        has_stable_receiver_match = True
     if (
         result.get("receiver_type") == "referrer"
         and os.environ.get("REFERRER_RECEIVER_FLOW_ENABLED", "true").strip().lower()
@@ -1919,7 +2008,14 @@ def verify_payment_screenshot(
     ):
         reasons.append("The matched receiver account is not verified.")
     elif result["receiver_type"] not in {"company", "referrer"}:
-        reasons.append("The receiver is not present in the configured receiver registry.")
+        if referrer_hint and referrer_id:
+            reasons.append(
+                f"The receiver does not match any payment account registered to "
+                f"{referrer_hint}. Add their account via Manage payment accounts, "
+                f"or map this receiver to the referrer."
+            )
+        else:
+            reasons.append("The receiver is not present in the configured receiver registry.")
     elif not has_stable_receiver_match:
         reasons.append(
             "A configured receiver UPI, phone, or account identifier must be visible; "
