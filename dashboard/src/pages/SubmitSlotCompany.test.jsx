@@ -113,13 +113,36 @@ describe('a Confirmed slots card', () => {
     expect(card.querySelector('.sbs-slot-card__line .sbs-slot-card__time')).not.toBeNull()
   })
 
-  it('shows "—" for the company when none was recorded', async () => {
+  it('reads Time · Company · Technology, the values in that order', async () => {
+    await openConfirmed()
+    const meta = cardFor('Asha Rao').querySelector('.sbs-slot-card__line .sbs-slot-card__meta')
+    expect([...meta.children].map(c => [c.className, c.textContent])).toEqual([
+      ['sbs-slot-card__company', 'Capgemini'],
+      ['sbs-slot-card__tech', 'Automation Testing'],
+    ])
+    expect(meta.previousElementSibling.className).toBe('sbs-slot-card__time')
+  })
+
+  it('reads Time · Technology when no company was recorded: no "—", no empty slot', async () => {
     await openConfirmed()
     const card = cardFor('Vikram Devi')
-    const none = card.querySelector('.sbs-slot-card__company--none')
-    expect(none.textContent).toBe('\u2014')
-    expect(none).toHaveAttribute('aria-label', 'No company recorded')
-    expect(card.querySelector('.sbs-slot-card__tech').textContent).toBe('React JS')
+    expect(card.querySelector('.sbs-slot-card__company')).toBeNull()
+    const meta = card.querySelector('.sbs-slot-card__meta')
+    expect([...meta.children].map(c => c.className)).toEqual(['sbs-slot-card__tech'])
+    expect(meta.textContent).toBe('React JS')
+    expect(card.querySelector('.sbs-slot-card__line').textContent).not.toContain('\u2014')
+  })
+
+  it('keeps a long company whole in the DOM and on hover, for the CSS to shorten', async () => {
+    SLOTS[0].company = 'Capgemini Technology Services India Private Limited, Bengaluru Delivery Centre'
+    try {
+      await openConfirmed()
+      const company = cardFor('Asha Rao').querySelector('.sbs-slot-card__company')
+      expect(company.textContent).toBe(SLOTS[0].company)
+      expect(company).toHaveAttribute('title', SLOTS[0].company)
+    } finally {
+      SLOTS[0].company = 'Capgemini'
+    }
   })
 
   it('puts the round beside the name and the two chips side by side', async () => {
@@ -143,13 +166,20 @@ describe('a Confirmed slots card', () => {
     expect(CSS).toMatch(/\.sbs-field-row \.sbs-input,\n\.sbs-field-row \.sbs-select \{ height: 44px; min-height: 44px;/)
   })
 
-  it('on a phone puts the time on its own line, so no line starts with a dot', () => {
-    const at = CSS.indexOf('/* On a phone: time on its own line')
+  it('puts dots only between values, and shortens a long company before the technology', () => {
+    expect(CSS).toContain('.sbs-slot-card__meta > *::before { content: "\\00b7";')
+    expect(CSS).not.toContain('.sbs-slot-card__company--none')
+    expect(CSS).toContain('\n.sbs-slot-card__company { flex: 0 1 auto;')
+    expect(CSS).toContain('\n.sbs-slot-card__tech { flex: 0 0 auto; max-width: 12rem; }')
+    expect(CSS).toMatch(/\.sbs-slot-card__company,\n\.sbs-slot-card__tech \{\n\s*min-width: 0; max-width: 100%;\n\s*overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/)
+  })
+
+  it('on a phone puts the time on its own line and starts the next without a dot', () => {
+    const at = CSS.indexOf('/* On a phone: the time on its own line')
     expect(at).toBeGreaterThan(-1)
     const block = CSS.slice(at, CSS.indexOf('\n}\n', at))
     expect(block).toMatch(/\.sbs-slot-card__time \{ flex-basis: 100%; \}/)
-    expect(block).toMatch(/\.sbs-slot-card__company::before \{ content: none; \}/)
-    // A long company shortens so the technology stays on the same line.
-    expect(block).toMatch(/\.sbs-slot-card__company \{ margin-left: 0; max-width: 60%; \}/)
+    expect(block).toMatch(/\.sbs-slot-card__meta \{ flex: 1 1 100%; \}/)
+    expect(block).toMatch(/\.sbs-slot-card__meta > :first-child::before \{ content: none; \}/)
   })
 })

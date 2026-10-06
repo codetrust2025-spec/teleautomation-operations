@@ -212,13 +212,16 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
                           <span>{formatFriendlyTime(slot.time)}{slot.time_end ? ` – ${formatFriendlyTime(slot.time_end)}` : ''}</span>
                         </div>
-                        {/* Every card names its company, so two bookings for one
-                            candidate tell apart by company, technology, round
-                            and time. "—" when none was recorded. */}
-                        {company
-                          ? <span className="sbs-slot-card__company" title={company}>{company}</span>
-                          : <span className="sbs-slot-card__company sbs-slot-card__company--none" title="No company recorded" aria-label="No company recorded">—</span>}
-                        {technology && <span className="sbs-slot-card__tech" title={technology}>{technology}</span>}
+                        {/* Time · Company · Technology, or Time · Technology when
+                            no company was recorded -- never a "· — ·" gap. The
+                            two share one span, so on a phone they stay together
+                            on the line under the time. */}
+                        {(company || technology) && (
+                          <span className="sbs-slot-card__meta">
+                            {company && <span className="sbs-slot-card__company" title={company}>{company}</span>}
+                            {technology && <span className="sbs-slot-card__tech" title={technology}>{technology}</span>}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="sbs-confirmed-card__right">

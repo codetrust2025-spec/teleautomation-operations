@@ -16747,38 +16747,40 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-confirmed-card__right {
   display: flex; flex-direction: row; align-items: center; gap: 0.3rem; flex-shrink: 0;
 }
-/* Card body: name and round, then time, company and technology on one line
-   that wraps on a phone. */
+/* Card body: name and round, then Time · Company · Technology -- or Time ·
+   Technology when no company was recorded. Company and technology share one
+   span (.sbs-slot-card__meta) so the dots only ever sit between values. */
 .sbs-confirmed-card .sbs-slot-card__name-row { gap: 0.35rem; }
 .sbs-slot-card__line {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.45rem;
   margin-top: 0.15rem; min-width: 0;
   font-size: 0.68rem; color: var(--text-muted,#a8b4c4);
 }
-.sbs-slot-card__line .sbs-slot-card__time { margin-top: 0; }
+.sbs-slot-card__line .sbs-slot-card__time { margin-top: 0; flex: none; }
+.sbs-slot-card__meta {
+  display: flex; align-items: center; gap: 0.45rem;
+  flex: 0 1 auto; min-width: 0; white-space: nowrap;
+}
 .sbs-slot-card__company,
 .sbs-slot-card__tech {
   min-width: 0; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.sbs-slot-card__company { color: var(--text, #e2e8f0); font-weight: 600; }
-.sbs-slot-card__company::before,
-.sbs-slot-card__tech::before { content: "\00b7"; margin-right: 0.45rem; color: var(--text-dim,#7b8a9e); font-weight: 400; }
-.sbs-slot-card__company--none { color: var(--text-dim,#7b8a9e); font-weight: 400; }
-/* From 600px the line stays one line: a long company shortens (full name on
-   hover) rather than wrapping and starting the next line with a "·". */
+/* A long company is the one that shortens (full name on hover); the
+   technology stays whole, up to a cap that keeps an odd long one in the card. */
+.sbs-slot-card__company { flex: 0 1 auto; color: var(--text, #e2e8f0); font-weight: 600; }
+.sbs-slot-card__tech { flex: 0 0 auto; max-width: 12rem; }
+.sbs-slot-card__meta > *::before { content: "\00b7"; margin-right: 0.45rem; color: var(--text-dim,#7b8a9e); font-weight: 400; }
+/* From 600px it is all one line. */
 @media (min-width: 600px) {
   .sbs-slot-card__line { flex-wrap: nowrap; }
-  .sbs-slot-card__line .sbs-slot-card__time { flex: none; }
-  .sbs-slot-card__company,
-  .sbs-slot-card__tech { flex: 0 1 auto; }
 }
-/* On a phone: time on its own line, then company · technology, so a wrapped
-   line never starts with a "·". */
+/* On a phone: the time on its own line, then company · technology (or the
+   technology alone) on the next, starting without a dot. */
 @media (max-width: 599px) {
   .sbs-slot-card__line .sbs-slot-card__time { flex-basis: 100%; }
-  .sbs-slot-card__line .sbs-slot-card__company::before { content: none; }
-  .sbs-slot-card__line .sbs-slot-card__company { margin-left: 0; max-width: 60%; }
+  .sbs-slot-card__meta { flex: 1 1 100%; }
+  .sbs-slot-card__meta > :first-child::before { content: none; }
 }
 /* Company and Interview round side by side; the round keeps the room its
    select needs. */
