@@ -440,14 +440,50 @@ export default function PayoutModal({
         run.finish(res.analysis, { ok: res.status === "ok", failureLabel: "Not verified" });
       }
       if (res.status !== "ok") { setError(res.message || "Save failed"); return; }
-      const deductionDelta = amt - previousAmount;
-      setHandlerStats((current) => current
-        ? { ...current, net_payable: (Number(current.net_payable) || 0) - deductionDelta }
-        : current);
+      // What the server stored is what is reported -- never the form's value
+      // or the balance on screen.
+      const saved = res.expense && typeof res.expense === "object" ? res.expense : {};
+      const savedAmount = Number(saved.amount);
+      const confirmedAmount = Number.isFinite(savedAmount) && savedAmount > 0 ? savedAmount : amt;
+      const savedMonth = String(saved.date || form.date || "").slice(0, 7);
+      const savedMonthValid = /^\d{4}-\d{2}$/.test(savedMonth);
+      // A month's balance and list count only payouts dated in that month or
+      // earlier. An expense dated in another month than the one this modal is
+      // showing (today's, while the page was on last month) would leave the
+      // owed figure and the history looking untouched -- as if nothing saved.
+      // The modal moves to the month the expense belongs to.
+      const movesPeriod = savedMonthValid && filterMonth !== "all" && savedMonth !== filterMonth;
+      const deductionDelta = confirmedAmount - previousAmount;
+      if (movesPeriod) {
+        setHandlerStats(null);
+        setHandlerStatsLoading(true);
+        setEntries([]);
+        setLoading(true);
+        setFilterMonth(savedMonth);
+      } else {
+        setHandlerStats((current) => current
+          ? { ...current, net_payable: (Number(current.net_payable) || 0) - deductionDelta }
+          : current);
+      }
+      // The history month follows the saved expense so the new row is in view.
+      if (savedMonthValid) setHistoryMonth((current) => (current === "all" ? current : savedMonth));
       resetForm();
-      await fetchData();
+      // On a move, the new month's data loads from the state change itself.
+      if (!movesPeriod) await fetchData();
       setHandlerStatsRevision((revision) => revision + 1);
-      setSuccess(`Expense added successfully. ${Jc(amt)} was deducted from the amount owed.`);
+      let notice;
+      if (editId) {
+        notice = confirmedAmount === previousAmount
+          ? "Expense updated."
+          : `Expense updated. Now ${Jc(confirmedAmount)} (was ${Jc(previousAmount)}).`;
+      } else {
+        notice = `Expense added successfully. ${Jc(confirmedAmount)} was deducted from the amount owed.`;
+        if (confirmedAmount !== amt) notice += ` Saved as ${Jc(confirmedAmount)}, not the ${Jc(amt)} entered.`;
+      }
+      if (movesPeriod) {
+        notice += ` It is dated ${formatMonthLabel(savedMonth)}, so the figures below now show ${formatMonthLabel(savedMonth)}.`;
+      }
+      setSuccess(notice);
       onChanged?.();
     } catch (err) {
       setError(err.message || "Network error");
@@ -650,7 +686,16 @@ export default function PayoutModal({
               </div>
 
               {error && <div className="cand-modal-error payout-modal__error" role="alert">{error}</div>}
-              {success && <div className="payout-modal__success" role="status">{success}</div>}
+              {/* The owed figure is the header's own, read live: this message
+                  and the header can never disagree about it. */}
+              {success && (
+                <div className="payout-modal__success" role="status">
+                  {success}{" "}
+                  <span className="payout-modal__success-owed">
+                    Currently owed: <strong>{handlerStatsLoading ? "Loading…" : Jc(currentOutstanding)}</strong>.
+                  </span>
+                </div>
+              )}
             </form>
 
             <section className="payout-modal__history" aria-labelledby="recent-expenses-title">
