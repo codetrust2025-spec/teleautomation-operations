@@ -446,9 +446,14 @@
 .payout-modal__summary strong {
   color: var(--text, #eef2f7);
 }
-.payout-modal__summary span:last-child strong {
+.payout-modal__summary span:nth-child(2) strong {
   color: #4ade80;
   font-size: 14px;
+}
+.payout-modal__summary .payout-modal__overpaid,
+.payout-modal__summary .payout-modal__overpaid strong {
+  color: #fbbf24;
+  font-size: 12px;
 }
 .payout-modal__accounts-action {
   white-space: nowrap;
@@ -498,6 +503,15 @@
   border-radius: 8px;
   background: rgba(16, 185, 129, .1);
   color: #6ee7b7;
+  font-size: 12px;
+}
+.payout-modal__checking {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(251, 191, 36, .4);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, .08);
+  color: #fcd34d;
   font-size: 12px;
 }
 .payout-modal__history {

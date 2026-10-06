@@ -117,9 +117,14 @@ beforeEach(() => {
   FakeEventSource.instances = [];
   vi.stubGlobal("EventSource", FakeEventSource);
   window.__TA_CONFIRM_VALUE__ = { confirm: vi.fn().mockResolvedValue(true) };
+  // These cases happen in September, the month the modal opens on: pin "today" so
+  // that month is the current one whatever the real date is.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-25T10:00:00"));
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   delete window.__TA_CONFIRM_VALUE__;
 });
