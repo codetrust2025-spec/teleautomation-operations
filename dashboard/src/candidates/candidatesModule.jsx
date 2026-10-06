@@ -14,6 +14,7 @@ import { CandidatesActiveRoster } from "./CandidatesActiveRoster.jsx";
 import { triggerRosterDownload } from "./candidatesRosterUtils.js";
 import { consumePendingWorkOpenIntent } from "../dailyOps/PendingWorksProvider.jsx";
 import { PendingWorksTab } from "./PendingWorksTab.jsx";
+import { Icon } from "../components/ui/Icon.jsx";
 import PayoutModal from "./PayoutModal.jsx";
 import "./PayoutModal.css";
 import EarningsBreakdown from "./EarningsBreakdown.jsx";
@@ -1916,7 +1917,7 @@ export function ResumeCell({ candidate, onRefresh }) {
           aria-label={`${count} ${count === 1 ? "resume" : "resumes"}: view or update`}
           disabled={busy}
         >
-          <span aria-hidden="true">📄</span>
+          <Icon name="file" size={13} />
           <span className="cand-resume-chip__count">
             {count} {count === 1 ? "resume" : "resumes"}
           </span>
@@ -2044,7 +2045,7 @@ function _Component23({
         onClick={(p) => p.stopPropagation()}
       >
         <span className="cand-phone-icon" aria-hidden={true}>
-          ☎
+          <Icon name="phone" size={12} />
         </span>
         <span className="cand-phone-num">{n}</span>
       </a>
@@ -5807,7 +5808,7 @@ export function _Component27({ row: e, onViewProofs: t }) {
         title={`View ${l} payment screenshot${l === 1 ? "" : "s"}`}
         aria-label={`View ${l} payment screenshot${l === 1 ? "" : "s"}`}
       >
-        <span aria-hidden={true}>📎</span>
+        <Icon name="paperclip" size={12} />
         <span className="cand-pay-proofs-count">
           {l} {l === 1 ? "proof" : "proofs"}
         </span>
@@ -6716,7 +6717,7 @@ function CandidatesPanelImpl() {
           onClick={() => setRo(true)}
           title="View all in-progress candidates grouped by technology"
         >
-          ☷ Active list
+          <Icon name="list" size={14} /> Active list
         </button>
         <button
           type="button"
@@ -6724,7 +6725,7 @@ function CandidatesPanelImpl() {
           onClick={() => triggerRosterDownload({ month: "all", reference: T })}
           title="Download CSV of all active (in-progress) candidates"
         >
-          ⇩ Download active CSV
+          <Icon name="download" size={14} /> Download active CSV
         </button>
         {a && (
           <button
@@ -6733,7 +6734,7 @@ function CandidatesPanelImpl() {
             onClick={() => setShowExpenditure(true)}
             title="View total company expenditure — handler payouts + operational costs"
           >
-            📊 Total expenditure
+            <Icon name="chart" size={14} /> Total expenditure
           </button>
         )}
         <button
@@ -6948,7 +6949,7 @@ function CandidatesPanelImpl() {
                             aria-label={`Edit ${ge.name}`}
                             data-tip="Edit candidate: details, payment and proofs"
                           >
-                            ✎
+                            <Icon name="pencil" size={14} />
                           </button>
                           {a && (
                             <button
@@ -6958,7 +6959,7 @@ function CandidatesPanelImpl() {
                               aria-label={`Delete ${ge.name}`}
                               data-tip="Delete this row. You will be asked to confirm first."
                             >
-                              🗑
+                              <Icon name="trash" size={14} />
                             </button>
                           )}
                         </td>

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
 import "./EarningsBreakdown.css";
 import { normalizePaymentProofs } from "./paymentProofs.js";
+import { Icon } from "../components/ui/Icon.jsx";
 
 /** "2026-07" → "Jul 2026". Returns "" for anything that is not a real month. */
 function monthLabel(value) {
@@ -425,7 +426,7 @@ export default function EarningsBreakdown({
                                             }
                                             aria-label={`View payment proofs for ${c.name || c.candidate_name || "candidate"}`}
                                           >
-                                            📷
+                                            <Icon name="camera" size={13} />
                                           </button>
                                         )}
                                       </span>

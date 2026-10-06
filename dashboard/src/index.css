@@ -18680,6 +18680,19 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   text-underline-offset: 2px;
 }
 
+/* Line icons (components/ui/Icon) in the Candidates and Earnings controls sit
+   on the text's centre line and never shrink. */
+.cand-page--candidates > .cand-toolbar > .cand-btn,
+.cand-page--candidates .cand-cell-actions .cand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.cand-page .ta-icon,
+.earn-breakdown-proof-btn .ta-icon { flex-shrink: 0; }
+.cand-phone-icon { display: inline-flex; }
+
 /* ── Data Room: compact, aligned tabs, cards and tables ──────────────────────
    The section tabs were six equal 152px slabs, the KPI cards 127px tall, and
    the Accounts table ran 19px past its box (and was clipped on a phone, where
