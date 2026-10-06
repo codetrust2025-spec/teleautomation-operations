@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
+import { Icon } from './ui/Icon.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { formatIstDateTime } from '../utils/istTime.js'
 import { DataRoomAccountsTab } from './DataRoomAccountsTab.jsx'
@@ -142,42 +143,78 @@ export function formatCredentialBlock(site, row, { isAdmin = false } = {}) {
   return lines.join('\n')
 }
 
-function CopyChip({ label, text, copyKey, activeKey, onCopy }) {
+// A square icon copy button, matching the Accounts tab. The accessible name
+// says exactly what gets copied ("Copy username", "Copy password", "Copy all"),
+// so the control is clear without a text label crowding the cell. `variant`
+// chooses the compact icon-only chip or the labelled "Copy all" button.
+function CopyChip({ label, text, copyKey, activeKey, onCopy, variant = 'icon' }) {
   const copied = activeKey === copyKey
+  const name = copied ? `Copied ${label}` : `Copy ${label}`
+  if (variant === 'all') {
+    return (
+      <button
+        type="button"
+        className={`dr-copy-btn dr-copy-btn--all${copied ? ' dr-copy-btn--copied' : ''}`}
+        title={name}
+        aria-label={name}
+        onClick={() => onCopy(copyKey, text)}
+      >
+        <Icon name={copied ? 'check' : 'copy'} size={13} />
+        {copied ? 'Copied' : 'Copy all'}
+      </button>
+    )
+  }
   return (
     <button
       type="button"
-      className={`dr-copy-btn${copied ? ' dr-copy-btn--copied' : ''}`}
-      title={`Copy ${label}`}
+      className={`dr-copy-btn dr-copy-btn--icon${copied ? ' dr-copy-btn--copied' : ''}`}
+      title={name}
+      aria-label={name}
       onClick={() => onCopy(copyKey, text)}
     >
-      {copied ? 'Copied' : label}
+      <Icon name={copied ? 'check' : 'copy'} size={13} />
     </button>
   )
 }
 
+// A password is never shown in clear here — not the admin's, not anyone's. The
+// dots are a fixed-width placeholder so every Password cell lines up whether or
+// not the value exists; the real value only ever leaves via the copy button
+// (admin, where the server still returns it) and the clipboard. Handlers'
+// passwords are hashed and not returned, so their cell says so plainly.
+function MaskedPassword({ hasValue }) {
+  return hasValue
+    ? <code className="dr-creds-pass" aria-label="Password hidden">••••••••</code>
+    : <code className="dr-creds-pass dr-creds-pass--none" title="Hashed on the server — set a new one to share it">Not stored</code>
+}
+
 function CredentialRow({ rowKey, site, row, isAdmin, activeKey, onCopy, onEdit, onDelete }) {
   const block = formatCredentialBlock(site, row, { isAdmin })
+  const hasPassword = Boolean(row.password)
   return (
     <tr>
       <td><span className={`dr-creds-role${isAdmin ? ' dr-creds-role--admin' : ''}`}>{isAdmin ? 'Admin' : 'Handler'}</span></td>
       <td>{row.reference || (isAdmin ? 'Full dashboard' : '—')}</td>
       <td>
-        <code>{row.username}</code>
-        <CopyChip label="User" text={row.username} copyKey={`${rowKey}-user`} activeKey={activeKey} onCopy={onCopy} />
+        <div className="dr-creds-cell">
+          <code title={row.username || undefined}>{row.username}</code>
+          {row.username && <CopyChip label="username" text={row.username} copyKey={`${rowKey}-user`} activeKey={activeKey} onCopy={onCopy} />}
+        </div>
       </td>
       <td>
-        <code className="dr-creds-pass">{row.password}</code>
-        <CopyChip label="Pass" text={row.password} copyKey={`${rowKey}-pass`} activeKey={activeKey} onCopy={onCopy} />
+        <div className="dr-creds-cell">
+          <MaskedPassword hasValue={hasPassword} />
+          {hasPassword && <CopyChip label="password" text={row.password} copyKey={`${rowKey}-pass`} activeKey={activeKey} onCopy={onCopy} />}
+        </div>
       </td>
       <td className="dr-creds-copy-all">
-        <CopyChip label="Copy all" text={block} copyKey={`${rowKey}-all`} activeKey={activeKey} onCopy={onCopy} />
+        <CopyChip label="all" text={block} copyKey={`${rowKey}-all`} activeKey={activeKey} onCopy={onCopy} variant="all" />
       </td>
       <td className="dr-actions">
         {onEdit ? (
           <button type="button" className="cand-btn cand-btn--sm" onClick={onEdit}>Edit</button>
         ) : (
-          <span className="dr-muted" title="Use Change password from the account menu">Account menu</span>
+          <button type="button" className="cand-btn cand-btn--sm" disabled title="The admin password is changed from the account menu, not here">Account menu</button>
         )}
         {!isAdmin && (
           <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={onDelete}>Delete</button>
@@ -293,13 +330,19 @@ function CredentialsSection({ creds, loading, active, onReload }) {
             Admin and handler credentials for the configured Operations site. Use Copy on each row.
           </p>
         </div>
-        <button type="button" className="cand-btn cand-btn--primary" onClick={openAddHandler}>
-          + Add handler
-        </button>
+        <div className="dr-creds-head-actions">
+          <span className="dr-creds-site" title={site || undefined}>
+            <span className="dr-creds-site-label">Site</span>
+            {site
+              ? <a href={site} target="_blank" rel="noopener noreferrer">{site.replace(/^https?:\/\//, '')}</a>
+              : <span className="dr-muted">not configured</span>}
+          </span>
+          <button type="button" className="cand-btn cand-btn--primary cand-btn--sm dr-add-btn" onClick={openAddHandler}>
+            <Icon name="plus" size={14} strokeWidth={2.2} />
+            Add handler
+          </button>
+        </div>
       </div>
-      <p className="dr-muted dr-creds-site">
-        Site: {site ? <a href={site} target="_blank" rel="noopener noreferrer">{site}</a> : 'not configured'}
-      </p>
       <div className="cand-table-wrap">
         <table className="cand-table dr-table dr-creds-table">
           <thead>
@@ -344,7 +387,7 @@ function CredentialsSection({ creds, loading, active, onReload }) {
         <p className="dr-muted dr-creds-vps">
           VPS SSH: <code>root@{creds.vps_host}</code>
           <CopyChip
-            label="Copy host"
+            label="SSH host"
             text={`root@${creds.vps_host}`}
             copyKey="vps-host"
             activeKey={activeKey}

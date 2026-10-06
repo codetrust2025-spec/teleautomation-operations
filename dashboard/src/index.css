@@ -15158,13 +15158,56 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   background: rgba(30, 27, 75, 0.25);
 }
 .dr-creds-site {
-  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  max-width: 320px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+.dr-creds-site-label {
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #64748b;
+}
+.dr-creds-site a {
+  color: #94a3b8;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px dotted rgba(148, 163, 184, 0.4);
+}
+.dr-creds-site a:hover { color: #cbd5e1; }
+/* Username / password cell: the value and its copy button sit on one row with
+   a real gap, so "charan" and its copy control are never jammed together. */
+.dr-creds-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dr-creds-cell code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dr-creds-table code {
   font-size: 0.82rem;
 }
+/* Masked dots, a fixed-width placeholder so every Password cell lines up. */
 .dr-creds-pass {
   color: #fde68a;
+  letter-spacing: 0.12em;
+}
+.dr-creds-pass--none {
+  color: #64748b;
+  letter-spacing: 0;
+  font-style: italic;
 }
 .dr-creds-role {
   display: inline-block;
@@ -18842,4 +18885,44 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-acct-table td.dr-muted { white-space: nowrap; }
 
   .dr-page .dr-tip-bar { margin-top: 10px; padding: 8px 12px; }
+
+  /* ── Logins (Dashboard logins) tab ──────────────────────────────────────
+     The admin password was shown in clear while handler rows had no masked
+     value, so the Password column and its copy buttons never lined up; the
+     username ran straight into its copy control; and the admin's actions were
+     a bare "Account menu" string next to the handlers' buttons. Balanced
+     fixed widths, one masked placeholder per row, and real buttons throughout
+     put every one of the six rows on the same grid. */
+  .dr-page .dr-creds-table { table-layout: fixed; }
+  .dr-page .dr-creds-table th,
+  .dr-page .dr-creds-table td { vertical-align: middle; padding: 8px 12px; }
+  .dr-page .dr-creds-table th:nth-child(1),
+  .dr-page .dr-creds-table td:nth-child(1) { width: 86px; }
+  .dr-page .dr-creds-table th:nth-child(2),
+  .dr-page .dr-creds-table td:nth-child(2) { width: 20%; }
+  .dr-page .dr-creds-table th:nth-child(3),
+  .dr-page .dr-creds-table td:nth-child(3) { width: auto; }
+  .dr-page .dr-creds-table th:nth-child(4),
+  .dr-page .dr-creds-table td:nth-child(4) { width: 150px; }
+  .dr-page .dr-creds-table th:nth-child(5),
+  .dr-page .dr-creds-table td:nth-child(5) { width: 92px; }
+  .dr-page .dr-creds-table th:nth-child(6),
+  .dr-page .dr-creds-table td:nth-child(6) { width: 160px; text-align: right; }
+  .dr-page .dr-creds-table .dr-actions { justify-content: flex-end; gap: 6px; flex-wrap: nowrap; }
+  .dr-page .dr-creds-copy-all { text-align: left; }
+
+  /* Header: title left; the site chip and Add handler aligned right, on one
+     line and the same height — the add button no longer floats off on its own. */
+  .dr-page .dr-credentials-section .dr-section-head--row { align-items: center; gap: 12px; margin-bottom: 10px; }
+  .dr-page .dr-creds-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 0 0 auto;
+  }
+  .dr-page .dr-credentials-section .dr-section-head--row .dr-section-desc { margin: 2px 0 0; }
+
+  /* A tighter section: the table box carries the panel, not a tall empty card. */
+  .dr-page .dr-credentials-section { padding-bottom: 4px; }
+  .dr-page .dr-credentials-section .cand-table-wrap { margin-top: 2px; }
 }
