@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API } from "../config.js";
+import { Icon } from "../components/ui/Icon.jsx";
 import {
   publishPendingWorkChanged,
   stashPendingWorkOpenIntent,
@@ -26,7 +27,9 @@ const ACTIONS = {
   missing_resume: "Upload Resume",
   missing_phone: "Add Phone",
   missing_payment_proof: "Upload Proof",
-  payment_proof_file_lost: "Restore / Upload Proof",
+  // The missing item already reads "Restore / Upload payment proof"; the
+  // button only has to name the act.
+  payment_proof_file_lost: "Restore Proof",
   payment_evidenced_elsewhere: "Review Row",
 };
 const DEFAULT_ACTION = "Edit Candidate";
@@ -36,6 +39,9 @@ const DEFAULT_ACTION = "Edit Candidate";
  * 30, follow-up 35, phone 50. These bands keep that order while giving the
  * column something readable; the number itself stays in the title.
  */
+/** An explanation longer than this waits behind "Why?" instead of filling the row. */
+const INLINE_DETAIL_MAX = 70;
+
 function priorityBand(priority) {
   const value = Number(priority);
   if (!Number.isFinite(value)) return { label: "—", tone: "low" };
@@ -49,6 +55,16 @@ export function PendingWorksTab({ onOpenCandidate }) {
   const [totals, setTotals] = useState({ tasks: 0, candidates: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Tasks whose long explanation is open.
+  const [openDetails, setOpenDetails] = useState(() => new Set());
+  const toggleDetail = useCallback((key) => {
+    setOpenDetails((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   // The last count this tab told the rest of the shell about. null until the
   // first read, so arriving at a number is not itself announced as a change.
   const announced = useRef(null);
@@ -181,11 +197,14 @@ export function PendingWorksTab({ onOpenCandidate }) {
           <strong>{totals.tasks}</strong>{" "}
           {totals.tasks === 1 ? "pending task" : "pending tasks"}
         </p>
+        {/* Beside the figures it refreshes, not across the page from them. */}
         <button
           type="button"
-          className="cand-pending-action cand-pending-action--ghost"
+          className="cand-pending-action cand-pending-action--ghost cand-pending-refresh"
           onClick={() => load()}
+          disabled={loading}
         >
+          <Icon name="refresh" size={13} />
           Refresh
         </button>
       </header>
@@ -194,25 +213,37 @@ export function PendingWorksTab({ onOpenCandidate }) {
         <table className="cand-table cand-pending-table">
           <thead>
             <tr>
-              <th>Candidate</th>
-              <th>Technology</th>
-              <th>Missing item</th>
-              <th>Priority</th>
-              <th>Action</th>
+              <th className="cand-pending-th--cand">Candidate</th>
+              <th className="cand-pending-th--tech">Technology</th>
+              <th className="cand-pending-th--item">Missing item</th>
+              <th className="cand-pending-th--prio">Priority</th>
+              <th className="cand-pending-th--action">Action</th>
             </tr>
           </thead>
           <tbody>
             {groups.map((group) =>
               group.tasks.map((task, index) => {
                 const band = priorityBand(task.priority);
+                const taskKey = task.id || `${group.key}-${task.kind}`;
+                const detail = String(task.detail || "");
+                const longDetail = detail.length > INLINE_DETAIL_MAX;
+                const detailOpen = openDetails.has(taskKey);
+                const groupBand = priorityBand(Math.min(...group.tasks.map((t) => Number(t.priority) || 999)));
                 return (
                   <tr
-                    key={task.id || `${group.key}-${task.kind}`}
-                    className={index === 0 ? "cand-pending-row--first" : undefined}
+                    key={taskKey}
+                    className={[
+                      index === 0 ? "cand-pending-row--first" : "",
+                      `cand-pending-row--${band.tone}`,
+                    ].filter(Boolean).join(" ")}
                   >
                     {index === 0 ? (
                       <>
-                        <td data-label="Candidate" rowSpan={group.tasks.length}>
+                        <td
+                          data-label="Candidate"
+                          rowSpan={group.tasks.length}
+                          className={`cand-pending__cand cand-pending__cand--${groupBand.tone}`}
+                        >
                           <span className="cand-pending__name">{group.name}</span>
                           {task.service_type === "round_wise" && task.date ? (
                             <span className="cand-pending__task-count">
@@ -230,10 +261,27 @@ export function PendingWorksTab({ onOpenCandidate }) {
                         </td>
                       </>
                     ) : null}
-                    <td data-label="Missing item">
-                      {task.label || task.kind}
-                      {task.detail ? (
-                        <span className="cand-pending__detail">{task.detail}</span>
+                    <td data-label="Missing item" className="cand-pending__item">
+                      <span className="cand-pending__label" title={longDetail ? detail : undefined}>
+                        {task.label || task.kind}
+                      </span>
+                      {longDetail ? (
+                        <button
+                          type="button"
+                          className="cand-pending__why"
+                          aria-expanded={detailOpen}
+                          title={detail}
+                          onClick={() => toggleDetail(taskKey)}
+                        >
+                          {detailOpen ? "Hide" : "Why?"}
+                        </button>
+                      ) : null}
+                      {detail ? (
+                        <span
+                          className={`cand-pending__detail${longDetail && !detailOpen ? " cand-pending__detail--collapsed" : ""}`}
+                        >
+                          {detail}
+                        </span>
                       ) : null}
                     </td>
                     <td data-label="Priority">
@@ -247,7 +295,7 @@ export function PendingWorksTab({ onOpenCandidate }) {
                     <td data-label="Action">
                       <button
                         type="button"
-                        className="cand-pending-action"
+                        className="cand-pending-action cand-pending-action--row"
                         onClick={() => openCandidate(task)}
                       >
                         {ACTIONS[task.kind] || DEFAULT_ACTION}

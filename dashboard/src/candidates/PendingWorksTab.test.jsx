@@ -152,7 +152,8 @@ describe('what each row shows', () => {
     })
     render(<PendingWorksTab />)
     await waitFor(() => expect(screen.getAllByText('Restore / Upload payment proof').length).toBe(2))
-    expect(screen.getAllByText('Restore / Upload Proof').length).toBe(2)
+    // The missing item names the task; the button only names the act.
+    expect(screen.getAllByRole('button', { name: 'Restore Proof' }).length).toBe(2)
     expect(screen.queryByText('Upload Proof Again')).toBeNull()
     expect(screen.getByText('Low')).toHaveAttribute('title', 'Priority 45')
     expect(screen.getByText('Medium')).toHaveAttribute('title', 'Priority 26')

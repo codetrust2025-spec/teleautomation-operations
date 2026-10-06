@@ -153,3 +153,80 @@
   color: var(--cand-muted, #8da0bd);
   white-space: normal;
 }
+
+/* ── Compact rows (every width) ─────────────────────────────────────────────
+   The full explanation of a lost proof repeated on every such row and made it
+   90px tall. A long one now waits behind "Why?" (and on hover); a short one,
+   such as the amount recorded, stays on the row. */
+.cand-pending__detail--collapsed { display: none; }
+.cand-pending__why {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #a5b4fc;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cand-pending__why:hover { color: #c7d2fe; }
+.cand-pending__why:focus-visible {
+  outline: 2px solid rgba(165, 180, 252, 0.7);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.cand-pending__detail { margin-top: 2px; font-size: 11.5px; }
+.cand-pending-refresh { display: inline-flex; align-items: center; gap: 5px; }
+
+/* Priority: High is filled and outlined, Medium tinted, Low only a quiet
+   outline -- so High reads first and Low does not compete with it. */
+.cand-pending__priority { min-width: 56px; padding: 2px 8px; line-height: 1.35; border: 1px solid transparent; }
+.cand-pending__priority.is-high {
+  background: rgba(255, 91, 97, 0.2);
+  border-color: rgba(255, 91, 97, 0.55);
+  color: #ffb1b4;
+  font-weight: 800;
+}
+.cand-pending__priority.is-low {
+  background: transparent;
+  border-color: rgba(148, 163, 184, 0.25);
+  color: #7e8ca3;
+  font-weight: 600;
+}
+
+@media (min-width: 721px) {
+  /* Refresh sits right after the summary it updates. */
+  .cand-pending__head { justify-content: flex-start; gap: 10px; margin-bottom: 10px; }
+  .cand-pending-refresh { padding: 3px 9px; font-size: 11.5px; }
+
+  /* Set widths: the name column took a third of the row for one name. */
+  .cand-pending-table { table-layout: fixed; }
+  .cand-pending-th--cand { width: 26%; }
+  .cand-pending-th--tech { width: 15%; }
+  .cand-pending-th--prio { width: 92px; }
+  .cand-pending-th--action { width: 150px; }
+  .cand-pending-table thead th,
+  .cand-pending-table tbody td { padding-top: 7px; padding-bottom: 7px; }
+  .cand-pending-table tbody td { overflow-wrap: anywhere; }
+
+  /* A group with a High task carries a red bar down its candidate cell. */
+  .cand-pending__cand--high { box-shadow: inset 3px 0 0 rgba(255, 91, 97, 0.75); }
+  .cand-pending-table tbody tr:hover > td:not([rowspan]) { background: rgba(99, 102, 241, 0.06); }
+  .cand-pending-table tbody tr.cand-pending-row--first > td { border-top-color: rgba(148, 163, 184, 0.2); }
+
+  .cand-pending-action--row {
+    padding: 3px 10px;
+    font-size: 11.5px;
+    border-radius: 6px;
+  }
+}
+
+@media (max-width: 720px) {
+  /* The Candidates table's phone labels are assigned by column position
+     ("Service", "Stage" ...) and, loaded later, outranked this table's own, so a Pending
+     Works card read "Stage: High". Each cell here says what it holds. */
+  .cand-page .cand-pending .cand-pending-table tbody td[data-label]::before { content: attr(data-label); }
+}
