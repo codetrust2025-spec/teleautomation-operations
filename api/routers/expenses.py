@@ -69,6 +69,32 @@ async def handler_expenses_create(
     return ai_activity.with_analysis(response, analysis)
 
 
+def _receipt_reference(verification: dict) -> str:
+    """The bank / UPI reference the verifier read off a receipt."""
+    return str(
+        verification.get("utr_number")
+        or verification.get("transaction_id")
+        or verification.get("reference_number")
+        or ""
+    )
+
+
+def _duplicate_response(exc: transaction_identity.DuplicateTransactionError) -> dict:
+    """What the dashboard is told when a save would record a payment twice."""
+    return {
+        "status": "error",
+        "message": str(exc),
+        "duplicate_of": {
+            "record_id": exc.existing.get("record_id"),
+            "kind": exc.existing.get("kind"),
+            "source_module": exc.existing.get("source_module"),
+            "date": exc.existing.get("date"),
+            "amount": exc.existing.get("amount"),
+            "matched_on": exc.existing.get("matched_on"),
+        },
+    }
+
+
 async def _create_expense(reference: str, amount: str, category: str, note: str, date: str, file: UploadFile):
     from features import handler_expenses
     from features.referrer_registry import resolve_referrer
@@ -131,29 +157,19 @@ async def _create_expense(reference: str, amount: str, category: str, note: str,
     # The verifier has just read the transaction reference and the payer off
     # this screenshot. Storing them is what lets the same money be recognised
     # if it was already recorded as a recovery or a payout somewhere else.
-    body["external_transaction_id"] = (
-        verification.get("utr_number")
-        or verification.get("transaction_id")
-        or verification.get("reference_number")
-        or ""
-    )
+    body["external_transaction_id"] = _receipt_reference(verification)
+    # What the verifier established about this receipt, for the duplicate
+    # check: the payment the engine matched it to (the same one when the same
+    # receipt is filed again) and the image's own hash.
+    body["payment_id"] = str(verification.get("payment_id") or "")
+    body["screenshot_hash"] = transaction_identity.screenshot_hash(raw)
     body["payer"] = (
         verification.get("sender_name") or verification.get("sender_upi_id") or ""
     )
     try:
         row = handler_expenses.create_expense(body)
     except transaction_identity.DuplicateTransactionError as exc:
-        return {
-            "status": "error",
-            "message": str(exc),
-            "duplicate_of": {
-                "record_id": exc.existing.get("record_id"),
-                "kind": exc.existing.get("kind"),
-                "source_module": exc.existing.get("source_module"),
-                "date": exc.existing.get("date"),
-                "amount": exc.existing.get("amount"),
-            },
-        }
+        return _duplicate_response(exc)
 
     # Attach the proof to the newly created expense
     try:
@@ -220,7 +236,10 @@ async def handler_expenses_void(eid: str, body: dict = Body(default=None)):
 async def handler_expenses_update(eid: str, body: dict):
     from features import handler_expenses
 
-    row = handler_expenses.update_expense(eid, body or {})
+    try:
+        row = handler_expenses.update_expense(eid, body or {})
+    except transaction_identity.DuplicateTransactionError as exc:
+        return _duplicate_response(exc)
     if row is None:
         return {"status": "error", "message": "Expense not found"}
     return {"status": "ok", "expense": row}
@@ -306,6 +325,17 @@ async def _attach_expense_proof(eid: str, file: UploadFile, note: str):
                 or "Payment screenshot could not be verified.",
                 "ai_extraction": verification,
             }
+        # The same screenshot, or the same payment, must not end up as the
+        # receipt of a second expense.
+        try:
+            handler_expenses.refuse_duplicate_proof(
+                eid,
+                screenshot_hash=transaction_identity.screenshot_hash(raw),
+                payment_id=str(verification.get("payment_id") or ""),
+                reference=_receipt_reference(verification),
+            )
+        except transaction_identity.DuplicateTransactionError as exc:
+            return _duplicate_response(exc)
         entry = handler_expenses.add_proof(
             eid,
             data=raw,

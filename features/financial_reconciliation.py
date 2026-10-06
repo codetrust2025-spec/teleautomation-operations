@@ -149,28 +149,44 @@ def _ledger_transactions() -> list[dict[str, Any]]:
     return rows
 
 
+def expense_transaction(
+    row: dict[str, Any], by_screenshot: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """One handler expense in the comparable shape.
+
+    The same shape whether it is being scanned or about to be saved or edited,
+    so a record is never compared against itself in a different form.
+    """
+    from features import handler_expenses
+
+    if by_screenshot is None:
+        by_screenshot = _payment_id_by_screenshot()
+    tx = handler_expenses.as_transaction(row)
+    tx["receiver"] = _canonical(tx.get("receiver"))
+    hashes = handler_expenses.proof_hashes(row)
+    tx["screenshot_hashes"] = hashes
+    # An expense filed from a screenshot the engine has already seen inherits
+    # that screenshot's payment, which is what links it to a recovery recorded
+    # from the same receipt.
+    if not tx.get("payment_id"):
+        for digest in hashes:
+            payment_id = by_screenshot.get(digest)
+            if payment_id:
+                tx["payment_id"] = payment_id
+                tx.setdefault("screenshot_hash", digest)
+                break
+    return tx
+
+
 def _handler_expense_transactions(*, exclude_id: str = "") -> list[dict[str, Any]]:
     from features import handler_expenses
 
     by_screenshot = _payment_id_by_screenshot()
-    rows = []
-    for row in handler_expenses.list_expenses(include_voided=True):
-        if row.get("id") == exclude_id:
-            continue
-        tx = handler_expenses.as_transaction(row)
-        tx["receiver"] = _canonical(tx.get("receiver"))
-        # An expense filed from a screenshot the engine has already seen
-        # inherits that screenshot's payment, which is what links it to a
-        # recovery recorded from the same receipt.
-        if not tx.get("payment_id"):
-            for digest in handler_expenses.proof_hashes(row):
-                payment_id = by_screenshot.get(digest)
-                if payment_id:
-                    tx["payment_id"] = payment_id
-                    tx.setdefault("screenshot_hash", digest)
-                    break
-        rows.append(tx)
-    return rows
+    return [
+        expense_transaction(row, by_screenshot)
+        for row in handler_expenses.list_expenses(include_voided=True)
+        if row.get("id") != exclude_id
+    ]
 
 
 def _company_expense_transactions() -> list[dict[str, Any]]:

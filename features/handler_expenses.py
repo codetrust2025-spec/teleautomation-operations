@@ -303,19 +303,103 @@ def create_expense(record: dict) -> dict:
     data = _load()
     row = _normalise(record)
 
-    from features import financial_reconciliation
-
-    existing = financial_reconciliation.collect_transactions(exclude_expense_id=row["id"])
-    incoming = financial_reconciliation.canonical_transaction(as_transaction(row))
-    clash = transaction_identity.duplicate_of(incoming, existing)
-    if clash is not None:
-        raise transaction_identity.DuplicateTransactionError(
-            transaction_identity.duplicate_message(clash), existing=clash
-        )
+    # What reading the receipt just established, which the new row cannot show
+    # yet: the payment the engine matched it to and the image's own hash.
+    receipt_payment = _clean_str(record.get("payment_id"))
+    receipt_hash = _clean_str(record.get("screenshot_hash"))
+    refuse_duplicate(_transaction_of(row, payment_id=receipt_payment, screenshot_hash=receipt_hash), row["id"])
+    if receipt_hash:
+        row["screenshot_hash"] = receipt_hash
 
     data.setdefault("expenses", []).append(row)
     _save(data)
     return row
+
+
+def _transaction_of(
+    row: dict, *, payment_id: str = "", screenshot_hash: str = "", reference: str = ""
+) -> dict:
+    """This expense as the duplicate check compares it, plus what is new.
+
+    `payment_id`, `screenshot_hash` and `reference` describe a receipt that has
+    been read but is not stored on the row yet.
+    """
+    from features import financial_reconciliation
+
+    try:
+        tx = financial_reconciliation.expense_transaction(row)
+    except Exception:
+        # The payment engine's ledger could not be read. Compare on what the
+        # row itself carries rather than not at all.
+        tx = financial_reconciliation.canonical_transaction(as_transaction(row))
+        tx["screenshot_hashes"] = proof_hashes(row)
+    if payment_id and not tx.get("payment_id"):
+        tx["payment_id"] = payment_id
+    if screenshot_hash:
+        tx["screenshot_hashes"] = sorted({*(tx.get("screenshot_hashes") or []), screenshot_hash})
+        tx["screenshot_hash"] = tx.get("screenshot_hash") or screenshot_hash
+    if reference:
+        # Listed ahead of `external_transaction_id`, so it is the one compared.
+        tx["utr"] = reference
+    return tx
+
+
+def _recorded_elsewhere(exclude_id: str) -> list[dict]:
+    """Every record this expense could double-count.
+
+    The cross-module scan skips a source it cannot read, which suits a report.
+    A check that goes quiet because one store would not load lets the same
+    payment through, so this store's own rows are always compared as well.
+    """
+    from features import financial_reconciliation
+
+    rows = list(financial_reconciliation.collect_transactions(exclude_expense_id=exclude_id))
+    seen = {str(r.get("record_id")) for r in rows if r.get("source_module") == "handler_expenses"}
+    for stored in (_load().get("expenses") or []):
+        if stored.get("id") == exclude_id or str(stored.get("id")) in seen:
+            continue
+        tx = financial_reconciliation.canonical_transaction(as_transaction(stored))
+        tx["screenshot_hashes"] = proof_hashes(stored)
+        rows.append(tx)
+    return rows
+
+
+def refuse_duplicate(incoming: dict, exclude_id: str, *, before: dict | None = None) -> None:
+    """Raise DuplicateTransactionError when `incoming` double-counts a record.
+
+    `before` is the stored row an edit started from. A pair that already
+    duplicated each other before the edit stays editable -- a note can still be
+    changed -- because the edit did not create the duplicate; the edit may not
+    create a new one.
+    """
+    clashes = transaction_identity.duplicates_of(incoming, _recorded_elsewhere(exclude_id))
+    if before is not None:
+        # Every clash must have been there before the edit. Judging only the
+        # first would let an old duplicate hide a new one.
+        was = _transaction_of(before)
+        clashes = [c for c in clashes if transaction_identity.duplicate_of(was, [c]) is None]
+    if clashes:
+        raise transaction_identity.DuplicateTransactionError(
+            transaction_identity.duplicate_message(clashes[0]), existing=clashes[0]
+        )
+
+
+def refuse_duplicate_proof(
+    eid: str, *, screenshot_hash: str, payment_id: str = "", reference: str = ""
+) -> None:
+    """A screenshot attached to an existing expense must not be the receipt of
+    a payment that is already recorded elsewhere.
+
+    The edit flow's twin of the check made when an expense is created: a second
+    expense could otherwise be given the first one's receipt after the fact.
+    """
+    row = next((r for r in (_load().get("expenses") or []) if r.get("id") == eid), None)
+    if row is None or is_voided(row):
+        return
+    incoming = _transaction_of(
+        row, payment_id=payment_id, screenshot_hash=screenshot_hash, reference=reference
+    )
+    refuse_duplicate(incoming, eid, before=row)
 
 
 def void_expense(
@@ -365,7 +449,11 @@ def update_expense(eid: str, patch: dict) -> dict | None:
     for i, r in enumerate(rows):
         if r.get("id") == eid:
             allowed = {k: v for k, v in patch.items() if k in _ALLOWED_FIELDS}
-            rows[i] = _normalise(allowed, existing=r)
+            updated = _normalise(allowed, existing=r)
+            # An edit may not turn this expense into a copy of another one.
+            if not is_voided(updated):
+                refuse_duplicate(_transaction_of(updated), eid, before=r)
+            rows[i] = updated
             data["expenses"] = rows
             _save(data)
             return rows[i]
