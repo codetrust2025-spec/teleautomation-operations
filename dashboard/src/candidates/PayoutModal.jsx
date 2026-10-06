@@ -26,6 +26,13 @@ function currentMonthValue() {
   return todayInputValue().slice(0, 7);
 }
 
+// The server verifies a receipt before it saves, and that can outlast the
+// proxy in front of it. How long, and how often, the modal looks for a save
+// whose answer never arrived.
+const SAVE_CHECK_EVERY_MS = 4000;
+const SAVE_CHECK_ATTEMPTS = 25;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function selectedMonthValue(value) {
   return /^\d{4}-\d{2}$/.test(String(value || "")) ? String(value) : "all";
 }
@@ -38,6 +45,18 @@ function formatMonthLabel(value) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+/**
+ * What the balance on screen is called. A past month's figure is what was owed
+ * when that month ended: a payment dated later counts in its own month, so
+ * calling it "currently owed" made a settled referrer look unpaid.
+ */
+function owedLabel(month) {
+  if (/^\d{4}-\d{2}$/.test(String(month || "")) && month < currentMonthValue()) {
+    return `Owed at end of ${formatMonthLabel(month)}`;
+  }
+  return "Currently owed";
 }
 
 function isValidExpenseRecord(row) {
@@ -71,6 +90,12 @@ export default function PayoutModal({
   const rR = formatDate;
 
   const [entries, setEntries] = useState([]);
+  // Accounting entries deliberately follow the selected Earnings period: they
+  // drive the outstanding-balance calculation. History must not share that
+  // filter, though. A real payment filed in October still needs to be visible
+  // when this dialog was opened from August or September.
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterHandler, setFilterHandler] = useState("all");
@@ -91,6 +116,11 @@ export default function PayoutModal({
     date: todayInputValue(),
   }));
   const [saving, setSaving] = useState(false);
+  // Set while the modal is finding out whether a save that got no answer
+  // actually happened. The save is never repeated in the meantime.
+  const [checking, setChecking] = useState("");
+  const aliveRef = useRef(true);
+  useEffect(() => () => { aliveRef.current = false; }, []);
   // Saving a proof runs AI payment verification server-side, so the button
   // alone cannot explain the wait: the node verifying the screenshot is shown
   // beside it, then who verified it and how long it took. Null until a
@@ -132,6 +162,33 @@ export default function PayoutModal({
   }, [filterMonth, ve]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const fetchHistory = useCallback(async () => {
+    if (filterHandler === "all") {
+      setHistoryEntries([]);
+      setHistoryLoading(false);
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      // No `month` here. The History month control below is intentionally a
+      // date filter over this referrer's complete, existing ledger; it does
+      // not alter the accounting-period balance above.
+      const params = new URLSearchParams({ reference: filterHandler });
+      const res = await (await fetch(`${ve}/handler-expenses?${params.toString()}`)).json();
+      if (res.status === "ok") {
+        setHistoryEntries(res.expenses || []);
+      } else {
+        setError(res.message || "Failed to load expense history");
+      }
+    } catch (err) {
+      setError(err.message || "Network error");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [filterHandler, ve]);
+
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,7 +321,7 @@ export default function PayoutModal({
     // the month only appears once a row already exists in it.
     const enteredMonth = String(form.date || "").slice(0, 7);
     if (/^\d{4}-\d{2}$/.test(enteredMonth)) values.add(enteredMonth);
-    filtered.forEach((row) => {
+    historyEntries.forEach((row) => {
       const value = String(row.date || "").slice(0, 7);
       if (/^\d{4}-\d{2}$/.test(value)) values.add(value);
     });
@@ -274,17 +331,21 @@ export default function PayoutModal({
         .map((value) => ({ value, label: formatMonthLabel(value) })),
       { value: "all", label: "All months" },
     ];
-  }, [filtered, historyMonth, form.date]);
+  }, [historyEntries, historyMonth, form.date]);
 
   const historyFiltered = useMemo(() => {
-    return filtered.filter((row) => (
+    return historyEntries.filter((row) => (
       isValidExpenseRecord(row) &&
       (historyMonth === "all" || String(row.date || "").startsWith(historyMonth))
     ));
-  }, [filtered, historyMonth]);
+  }, [historyEntries, historyMonth]);
   const historyTotal = useMemo(
     () => historyFiltered.reduce((sum, row) => sum + Number(row.amount), 0),
     [historyFiltered],
+  );
+  const accountingEntryIds = useMemo(
+    () => new Set(entries.map((row) => row.id)),
+    [entries],
   );
 
   // ── Pagination ──
@@ -436,18 +497,56 @@ export default function PayoutModal({
         fd.append("file", proofFile);
         run = beginProofAnalysis();
         fd.append("analysis_id", run.id);
-        res = await (await fetch(`${ve}/handler-expenses`, { method: "POST", body: fd })).json();
-        run.finish(res.analysis, { ok: res.status === "ok", failureLabel: "Not verified" });
+        res = await saveNewExpense(fd, { reference: handlerRef, amount: amt, date: form.date });
+        run.finish(res.analysis ?? null, { ok: res.status === "ok", failureLabel: "Not verified" });
       }
       if (res.status !== "ok") { setError(res.message || "Save failed"); return; }
-      const deductionDelta = amt - previousAmount;
-      setHandlerStats((current) => current
-        ? { ...current, net_payable: (Number(current.net_payable) || 0) - deductionDelta }
-        : current);
+      // What the server stored is what is reported -- never the form's value
+      // or the balance on screen.
+      const saved = res.expense && typeof res.expense === "object" ? res.expense : {};
+      const savedAmount = Number(saved.amount);
+      const confirmedAmount = Number.isFinite(savedAmount) && savedAmount > 0 ? savedAmount : amt;
+      const savedMonth = String(saved.date || form.date || "").slice(0, 7);
+      const savedMonthValid = /^\d{4}-\d{2}$/.test(savedMonth);
+      // A month's balance and list count only payouts dated in that month or
+      // earlier. An expense dated in another month than the one this modal is
+      // showing (today's, while the page was on last month) would leave the
+      // owed figure and the history looking untouched -- as if nothing saved.
+      // The modal moves to the month the expense belongs to.
+      const movesPeriod = savedMonthValid && filterMonth !== "all" && savedMonth !== filterMonth;
+      const deductionDelta = confirmedAmount - previousAmount;
+      if (movesPeriod) {
+        setHandlerStats(null);
+        setHandlerStatsLoading(true);
+        setEntries([]);
+        setLoading(true);
+        setFilterMonth(savedMonth);
+      } else {
+        setHandlerStats((current) => current
+          ? { ...current, net_payable: (Number(current.net_payable) || 0) - deductionDelta }
+          : current);
+      }
+      // The history month follows the saved expense so the new row is in view.
+      if (savedMonthValid) setHistoryMonth((current) => (current === "all" ? current : savedMonth));
       resetForm();
-      await fetchData();
+      // On a move, the new month's data loads from the state change itself.
+      if (!movesPeriod) await fetchData();
+      await fetchHistory();
       setHandlerStatsRevision((revision) => revision + 1);
-      setSuccess(`Expense added successfully. ${Jc(amt)} was deducted from the amount owed.`);
+      let notice;
+      if (editId) {
+        notice = confirmedAmount === previousAmount
+          ? "Expense updated."
+          : `Expense updated. Now ${Jc(confirmedAmount)} (was ${Jc(previousAmount)}).`;
+      } else {
+        notice = `Expense added successfully. ${Jc(confirmedAmount)} was deducted from the amount owed.`;
+        if (confirmedAmount !== amt) notice += ` Saved as ${Jc(confirmedAmount)}, not the ${Jc(amt)} entered.`;
+        if (res.recovered) notice += " The server was slow to answer, but the expense was saved once.";
+      }
+      if (movesPeriod) {
+        notice += ` It is dated ${formatMonthLabel(savedMonth)}, so the figures below now show ${formatMonthLabel(savedMonth)}.`;
+      }
+      setSuccess(notice);
       onChanged?.();
     } catch (err) {
       setError(err.message || "Network error");
@@ -455,6 +554,60 @@ export default function PayoutModal({
       run?.finish(null, { ok: false, failureLabel: "Not saved" });
     }
     finally { setSaving(false); }
+  }
+
+  /** One referrer's expenses as the server holds them, or null if unreadable. */
+  async function listExpensesFor(reference) {
+    try {
+      const params = new URLSearchParams({ reference });
+      const res = await (await fetch(`${ve}/handler-expenses?${params.toString()}`)).json();
+      return res.status === "ok" && Array.isArray(res.expenses) ? res.expenses : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Saving verifies the receipt first, which can take longer than the proxy
+   * allows. A timeout, a dropped connection or an error page says nothing
+   * about whether the expense was saved -- the server carries on regardless --
+   * so reporting it as a failure made the operator file the same payment
+   * again. An answer that is not the server's own is checked against what the
+   * server now holds instead.
+   */
+  async function saveNewExpense(formData, { reference, amount, date }) {
+    const before = await listExpensesFor(reference);
+    try {
+      const response = await fetch(`${ve}/handler-expenses`, { method: "POST", body: formData });
+      return await response.json();
+    } catch {
+      // No usable answer: the expense may or may not exist.
+    }
+    return confirmSavedExpense({ reference, amount, date, before });
+  }
+
+  async function confirmSavedExpense({ reference, amount, date, before }) {
+    const known = new Set((before || []).map((row) => row.id));
+    const sameExpense = (row) => String(row.reference || "").trim().toLowerCase() === reference.trim().toLowerCase()
+      && Number(row.amount) === amount
+      && String(row.date || "").slice(0, 10) === date;
+    setChecking("The server did not answer in time. Checking whether the expense was saved. Do not save it again.");
+    try {
+      for (let attempt = 0; attempt < SAVE_CHECK_ATTEMPTS; attempt += 1) {
+        if (attempt) await wait(SAVE_CHECK_EVERY_MS);
+        if (!aliveRef.current) return { status: "error", message: "" };
+        const rows = before ? await listExpensesFor(reference) : null;
+        const found = rows?.find((row) => !known.has(row.id) && sameExpense(row));
+        if (found) return { status: "ok", expense: found, recovered: true };
+      }
+    } finally {
+      if (aliveRef.current) setChecking("");
+    }
+    return {
+      status: "error",
+      message: "The server did not confirm this expense. It may still be processing, so check the history before saving it again. "
+        + "The same receipt cannot be saved twice.",
+    };
   }
 
   async function handleDelete(row) {
@@ -472,6 +625,7 @@ export default function PayoutModal({
           ? { ...current, net_payable: (Number(current.net_payable) || 0) + (Number(row.amount) || 0) }
           : current);
         fetchData();
+        fetchHistory();
         setHandlerStatsRevision((revision) => revision + 1);
         onChanged?.();
       }
@@ -484,6 +638,10 @@ export default function PayoutModal({
 
   const selectedName = filterHandler === "all" ? "" : filterHandler;
   const currentOutstanding = Math.max(0, balance);
+  // More recorded as paid than was owed. Showing it as ₹0 owed made the same
+  // payment filed four times look like a correct, settled balance.
+  const overpaid = Math.max(0, -balance);
+  const owedText = owedLabel(filterMonth);
 
   return <Fragment>
     <div className="cand-modal-backdrop" onClick={ev => ev.target === ev.currentTarget && onClose?.()}>
@@ -502,7 +660,12 @@ export default function PayoutModal({
             {!showPaymentAccounts && selectedName && (
               <div className="payout-modal__summary">
                 <span>Referrer: <strong>{selectedName}</strong></span>
-                <span>Currently owed: <strong>{handlerStatsLoading ? "Loading…" : Jc(currentOutstanding)}</strong></span>
+                <span>{owedText}: <strong>{handlerStatsLoading ? "Loading…" : Jc(currentOutstanding)}</strong></span>
+                {!handlerStatsLoading && overpaid > 0 && (
+                  <span className="payout-modal__overpaid" role="alert">
+                    Overpaid by <strong>{Jc(overpaid)}</strong>: more is recorded as paid than was owed. Check for a duplicate expense.
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -639,7 +802,7 @@ export default function PayoutModal({
                   className="cand-btn cand-btn--primary payout-modal__save"
                   disabled={saving || handlerStatsLoading || filterHandler === "all" || (!editId && !proofFile)}
                 >
-                  {saving ? "Saving…" : editId ? "Save changes" : "Save expense"}
+                  {checking ? "Checking…" : saving ? "Saving…" : editId ? "Save changes" : "Save expense"}
                 </button>
                 {proofAnalysis && (
                   <AiNodeProgress
@@ -649,8 +812,18 @@ export default function PayoutModal({
                 )}
               </div>
 
+              {checking && <div className="payout-modal__checking" role="status">{checking}</div>}
               {error && <div className="cand-modal-error payout-modal__error" role="alert">{error}</div>}
-              {success && <div className="payout-modal__success" role="status">{success}</div>}
+              {/* The owed figure is the header's own, read live: this message
+                  and the header can never disagree about it. */}
+              {success && (
+                <div className="payout-modal__success" role="status">
+                  {success}{" "}
+                  <span className="payout-modal__success-owed">
+                    {owedText}: <strong>{handlerStatsLoading ? "Loading…" : Jc(currentOutstanding)}</strong>.
+                  </span>
+                </div>
+              )}
             </form>
 
             <section className="payout-modal__history" aria-labelledby="recent-expenses-title">
@@ -664,7 +837,7 @@ export default function PayoutModal({
               <div className="payout-modal__table-area">
                 {filterHandler === "all" ? (
                   <div className="cand-exp-empty">Select a referrer to view recent expenses.</div>
-                ) : loading ? <div className="cand-exp-empty">Loading…</div> : historyFiltered.length === 0 ? (
+                ) : loading || historyLoading ? <div className="cand-exp-empty">Loading…</div> : historyFiltered.length === 0 ? (
                   <div className="cand-exp-empty">
                     {historyMonth === "all"
                       ? "No expenses found."
@@ -675,6 +848,7 @@ export default function PayoutModal({
                     <thead><tr>
                       <th className="payout-col--amount">Amount</th>
                       <th className="payout-col--date">Date</th>
+                      <th className="payout-col--classification">Classification</th>
                       <th className="payout-col--note">Note</th>
                       <th className="payout-col--proof">Proof</th>
                       <th className="payout-col--actions">Actions</th>
@@ -684,6 +858,7 @@ export default function PayoutModal({
                         <tr className={`payout-modal__row${editId === row.id ? " payout-modal__row--editing" : ""}`} key={row.id}>
                           <td className="payout-col--amount payout-col--amount-positive">{Jc(row.amount)}</td>
                           <td className="payout-col--date">{rR(row.date)}</td>
+                          <td className="payout-col--classification">Handler Expense</td>
                           <td className="payout-col--note">{row.note || <em>—</em>}</td>
                           <td className="payout-col--proof">
                             {(row.proofs?.length > 0)
@@ -691,8 +866,10 @@ export default function PayoutModal({
                               : <em>—</em>}
                           </td>
                           <td className="payout-col--actions">
-                            <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" onClick={() => startEdit(row)} title="Edit">✎</button>
-                            <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost" onClick={() => handleDelete(row)} title="Delete">🗑</button>
+                            {accountingEntryIds.has(row.id) ? <>
+                              <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" onClick={() => startEdit(row)} title="Edit">✎</button>
+                              <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost" onClick={() => handleDelete(row)} title="Delete">🗑</button>
+                            </> : <em>—</em>}
                           </td>
                         </tr>
                       ))}

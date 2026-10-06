@@ -105,32 +105,32 @@ describe('a Confirmed slots card', () => {
   }
   const cardFor = name => screen.getByText(name).closest('.sbs-confirmed-card')
 
-  it('shows company and technology on the line under the name', async () => {
+  it('puts the interview on the right: company, then technology with the round', async () => {
     await openConfirmed()
-    const card = cardFor('Asha Rao')
-    expect(card.querySelector('.sbs-slot-card__company').textContent).toBe('Capgemini')
-    expect(card.querySelector('.sbs-slot-card__tech').textContent).toBe('Automation Testing')
-    expect(card.querySelector('.sbs-slot-card__line .sbs-slot-card__time')).not.toBeNull()
+    const right = cardFor('Asha Rao').querySelector('.sbs-confirmed-card__right.sbs-slot-card__data')
+    expect([...right.children].map(c => c.className)).toEqual(['sbs-slot-card__company', 'sbs-slot-card__data-line'])
+    expect(right.querySelector('.sbs-slot-card__company').textContent).toBe('Capgemini')
+    const line = right.querySelector('.sbs-slot-card__data-line')
+    expect([...line.children].map(c => c.textContent)).toEqual(['Automation Testing', 'L2'])
+    expect(line.lastElementChild.className).toContain('sbs-slot-card__round--l2')
   })
 
-  it('reads Time · Company · Technology, the values in that order', async () => {
+  it('keeps who and when on the left, with the round no longer beside the name', async () => {
     await openConfirmed()
-    const meta = cardFor('Asha Rao').querySelector('.sbs-slot-card__line .sbs-slot-card__meta')
-    expect([...meta.children].map(c => [c.className, c.textContent])).toEqual([
-      ['sbs-slot-card__company', 'Capgemini'],
-      ['sbs-slot-card__tech', 'Automation Testing'],
-    ])
-    expect(meta.previousElementSibling.className).toBe('sbs-slot-card__time')
+    const body = cardFor('Asha Rao').querySelector('.sbs-slot-card__body')
+    expect(body.querySelector('.sbs-slot-card__name').textContent).toBe('Asha Rao')
+    expect(body.querySelector('.sbs-slot-card__line .sbs-slot-card__time')).not.toBeNull()
+    expect(body.querySelector('.sbs-slot-card__round')).toBeNull()
+    expect(body.querySelector('.sbs-slot-card__company, .sbs-slot-card__tech')).toBeNull()
   })
 
-  it('reads Time · Technology when no company was recorded: no "—", no empty slot', async () => {
+  it('shows technology and round alone when no company was recorded: no "—", no empty slot', async () => {
     await openConfirmed()
     const card = cardFor('Vikram Devi')
     expect(card.querySelector('.sbs-slot-card__company')).toBeNull()
-    const meta = card.querySelector('.sbs-slot-card__meta')
-    expect([...meta.children].map(c => c.className)).toEqual(['sbs-slot-card__tech'])
-    expect(meta.textContent).toBe('React JS')
-    expect(card.querySelector('.sbs-slot-card__line').textContent).not.toContain('\u2014')
+    const right = card.querySelector('.sbs-slot-card__data')
+    expect(right.textContent).toBe('React JSL1')
+    expect(card.textContent).not.toContain('\u2014')
   })
 
   it('keeps a long company whole in the DOM and on hover, for the CSS to shorten', async () => {
@@ -145,41 +145,55 @@ describe('a Confirmed slots card', () => {
     }
   })
 
-  it('puts the round beside the name and the two chips side by side', async () => {
+  it('shows the booking source as a small icon beside the name, not a text chip', async () => {
     await openConfirmed()
-    const card = cardFor('Asha Rao')
-    expect(card.querySelector('.sbs-slot-card__name-row .sbs-slot-card__round').textContent).toBe('L2')
-    const right = card.querySelector('.sbs-confirmed-card__right')
-    // No per-card "Booked" chip: only the source (and "Awaiting status" when due).
-    expect([...right.children].map(c => c.className.split(' ')[0])).toEqual(['sbs-source-badge'])
-    expect(within(card).getByLabelText('AI Auto-booked').textContent).toBe('AI')
-    expect(within(cardFor('Vikram Devi')).getByLabelText('Candidate booked').textContent).toBe('Candidate')
+    const ai = within(cardFor('Asha Rao')).getByLabelText('AI Auto-booked')
+    expect(ai.className).toBe('sbs-source-icon sbs-source-icon--auto')
+    expect(ai.textContent).toBe('')
+    expect(ai.querySelector('svg.ta-icon--sparkles')).not.toBeNull()
+    expect(ai.getAttribute('title')).toMatch(/^AI Auto-booked: /)
+    expect(ai.parentElement.className).toBe('sbs-slot-card__name-row')
+    const candidate = within(cardFor('Vikram Devi')).getByLabelText('Candidate booked')
+    expect(candidate.textContent).toBe('')
+    expect(candidate.querySelector('svg.ta-icon--user-check')).not.toBeNull()
+    expect(document.querySelector('.sbs-source-badge')).toBeNull()
+    expect(screen.queryByText('Candidate')).toBeNull()
+    expect(screen.queryByText('AI')).toBeNull()
   })
 
-  it('lays the chips in a row and lets the details line wrap on a phone', () => {
+  it('says "Awaiting status" beside the time when an ended interview has no outcome', async () => {
+    SLOTS.push({ name: 'Late Person', technology: 'Java', company: 'Infosys', interview_round: 'HR',
+      date: '2026-09-30', time: '16:00', time_end: '16:30', interview_booking_source: 'candidate_booked',
+      slot_phase: 'needs_status_update' })
+    try {
+      await openConfirmed()
+      const card = cardFor('Late Person')
+      const awaiting = card.querySelector('.sbs-confirmed-card__status--awaiting')
+      expect(awaiting.textContent).toBe('Awaiting status')
+      expect(awaiting.parentElement.className).toBe('sbs-slot-card__line')
+      expect(card.querySelector('.sbs-slot-card__data').textContent).toBe('InfosysJavaHR')
+      expect(cardFor('Asha Rao').querySelector('.sbs-confirmed-card__status--awaiting')).toBeNull()
+    } finally {
+      SLOTS.pop()
+    }
+  })
+
+  it('stacks the right side and lets the time line wrap on a phone', () => {
     const rule = sel => { const at = CSS.indexOf(`${sel} {`); return at < 0 ? '' : CSS.slice(at, CSS.indexOf('}', at)) }
-    expect(rule('.sbs-confirmed-card__right')).toMatch(/flex-direction:\s*row/)
+    expect(rule('.sbs-confirmed-card__right.sbs-slot-card__data')).toMatch(/flex-direction: column; align-items: flex-end;/)
     expect(rule('.sbs-slot-card__line')).toMatch(/flex-wrap:\s*wrap/)
+    expect(rule('.sbs-slot-card__company')).toMatch(/text-overflow: ellipsis; white-space: nowrap;/)
   })
 
   it('gives the company input and the round select one height in their row', () => {
     expect(CSS).toMatch(/\.sbs-field-row \.sbs-input,\n\.sbs-field-row \.sbs-select \{ height: 44px; min-height: 44px;/)
   })
 
-  it('puts dots only between values, and shortens a long company before the technology', () => {
-    expect(CSS).toContain('.sbs-slot-card__meta > *::before { content: "\\00b7";')
-    expect(CSS).not.toContain('.sbs-slot-card__company--none')
-    expect(CSS).toContain('\n.sbs-slot-card__company { flex: 0 1 auto;')
-    expect(CSS).toContain('\n.sbs-slot-card__tech { flex: 0 0 auto; max-width: 12rem; }')
-    expect(CSS).toMatch(/\.sbs-slot-card__company,\n\.sbs-slot-card__tech \{\n\s*min-width: 0; max-width: 100%;\n\s*overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/)
-  })
-
-  it('on a phone puts the time on its own line and starts the next without a dot', () => {
-    const at = CSS.indexOf('/* On a phone: the time on its own line')
+  it('gives the name the larger share on a phone and lets a long round label drop under', () => {
+    const at = CSS.indexOf('/* On a phone the name keeps the larger share')
     expect(at).toBeGreaterThan(-1)
     const block = CSS.slice(at, CSS.indexOf('\n}\n', at))
-    expect(block).toMatch(/\.sbs-slot-card__time \{ flex-basis: 100%; \}/)
-    expect(block).toMatch(/\.sbs-slot-card__meta \{ flex: 1 1 100%; \}/)
-    expect(block).toMatch(/\.sbs-slot-card__meta > :first-child::before \{ content: none; \}/)
+    expect(block).toMatch(/\.sbs-confirmed-card__right\.sbs-slot-card__data \{ max-width: 45%; \}/)
+    expect(block).toMatch(/\.sbs-slot-card__data-line \{ flex-wrap: wrap;/)
   })
 })

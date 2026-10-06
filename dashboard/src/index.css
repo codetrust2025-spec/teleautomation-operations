@@ -16790,40 +16790,48 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-confirmed-card__right {
   display: flex; flex-direction: row; align-items: center; gap: 0.3rem; flex-shrink: 0;
 }
-/* Card body: name and round, then Time · Company · Technology -- or Time ·
-   Technology when no company was recorded. Company and technology share one
-   span (.sbs-slot-card__meta) so the dots only ever sit between values. */
-.sbs-confirmed-card .sbs-slot-card__name-row { gap: 0.35rem; }
+/* Confirmed slot card: who and when on the left; the interview itself on the
+   right, most telling first -- company, then technology with the round. The
+   booking source is a small icon beside the name rather than a text chip. */
+.sbs-confirmed-card .sbs-slot-card__name-row { gap: 0.35rem; flex-wrap: nowrap; min-width: 0; }
+.sbs-confirmed-card .sbs-slot-card__name { min-width: 0; overflow-wrap: anywhere; }
 .sbs-slot-card__line {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.45rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem 0.45rem;
   margin-top: 0.15rem; min-width: 0;
   font-size: 0.68rem; color: var(--text-muted,#a8b4c4);
 }
 .sbs-slot-card__line .sbs-slot-card__time { margin-top: 0; flex: none; }
-.sbs-slot-card__meta {
-  display: flex; align-items: center; gap: 0.45rem;
-  flex: 0 1 auto; min-width: 0; white-space: nowrap;
+.sbs-confirmed-card__right.sbs-slot-card__data {
+  flex: 0 1 auto; min-width: 0; max-width: 55%;
+  flex-direction: column; align-items: flex-end; justify-content: center; gap: 0.2rem;
+  text-align: right;
 }
-.sbs-slot-card__company,
-.sbs-slot-card__tech {
-  min-width: 0; max-width: 100%;
+.sbs-slot-card__company {
+  display: block; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.72rem; font-weight: 600; color: var(--text, #e2e8f0);
 }
-/* A long company is the one that shortens (full name on hover); the
-   technology stays whole, up to a cap that keeps an odd long one in the card. */
-.sbs-slot-card__company { flex: 0 1 auto; color: var(--text, #e2e8f0); font-weight: 600; }
-.sbs-slot-card__tech { flex: 0 0 auto; max-width: 12rem; }
-.sbs-slot-card__meta > *::before { content: "\00b7"; margin-right: 0.45rem; color: var(--text-dim,#7b8a9e); font-weight: 400; }
-/* From 600px it is all one line. */
-@media (min-width: 600px) {
-  .sbs-slot-card__line { flex-wrap: nowrap; }
+.sbs-slot-card__data-line {
+  display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem;
+  min-width: 0; max-width: 100%;
 }
-/* On a phone: the time on its own line, then company · technology (or the
-   technology alone) on the next, starting without a dot. */
+.sbs-slot-card__tech {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.68rem; color: var(--text-muted,#a8b4c4);
+}
+.sbs-source-icon {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 18px; height: 18px; border-radius: 999px;
+  border: 1px solid transparent; cursor: default;
+}
+.sbs-source-icon--candidate { color: #93c5fd; background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.32); }
+.sbs-source-icon--auto { color: #d8b4fe; background: rgba(168, 85, 247, 0.14); border-color: rgba(168, 85, 247, 0.32); }
+/* On a phone the name keeps the larger share: a long company shortens rather
+   than squeezing the name onto three lines. */
 @media (max-width: 599px) {
-  .sbs-slot-card__line .sbs-slot-card__time { flex-basis: 100%; }
-  .sbs-slot-card__meta { flex: 1 1 100%; }
-  .sbs-slot-card__meta > :first-child::before { content: none; }
+  .sbs-confirmed-card__right.sbs-slot-card__data { max-width: 45%; }
+  /* A long round label drops under the technology instead of cutting it. */
+  .sbs-slot-card__data-line { flex-wrap: wrap; row-gap: 0.2rem; }
 }
 /* Company and Interview round side by side; the round keeps the room its
    select needs. */
@@ -16839,35 +16847,6 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-confirmed-card__status {
   display: flex; align-items: center; gap: 0.2rem;
   font-size: 0.6rem; font-weight: 600; color: #6ee7b7;
-}
-.sbs-source-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.18rem;
-  align-self: center;
-  cursor: default;
-  white-space: nowrap;
-  border-radius: 999px;
-  padding: 0.08rem 0.35rem;
-  font-size: 0.55rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  border: 1px solid transparent;
-}
-.sbs-source-badge--candidate {
-  color: #93c5fd;
-  background: rgba(59, 130, 246, 0.14);
-  border-color: rgba(59, 130, 246, 0.32);
-}
-.sbs-source-badge--auto {
-  color: #d8b4fe;
-  background: rgba(168, 85, 247, 0.14);
-  border-color: rgba(168, 85, 247, 0.32);
-}
-.sbs-source-badge--unknown {
-  color: #9aa4b2;
-  background: rgba(148, 163, 184, 0.12);
-  border-color: rgba(148, 163, 184, 0.28);
 }
 /* Date groups */
 .sbs-date-group { display: flex; flex-direction: column; gap: 0.3rem; }

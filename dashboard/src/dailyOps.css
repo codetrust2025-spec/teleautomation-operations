@@ -2055,6 +2055,14 @@
 .ops-roster-reset{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(148,163,184,.22)}
 .ops-roster-reset:hover{border-color:rgba(148,163,184,.45)}
 
+/* Interview feedback in the Notes column: the stored value's own label, in
+   its tone -- green for Excellent / Good / (legacy) Positive, slate for
+   Average, amber for Needs improvement, red only for Negative. */
+.ops-feedback-pill{display:inline-block;align-self:flex-start;max-width:100%;overflow:hidden;text-overflow:ellipsis;height:18px;line-height:16px;margin-right:6px;padding:0 7px;border-radius:999px;border:1px solid rgba(148,163,184,.3);background:rgba(148,163,184,.1);color:#cbd5e1;font-size:10.5px;font-weight:700;white-space:nowrap;vertical-align:middle}
+.ops-feedback-pill--positive{border-color:rgba(16,185,129,.35);background:rgba(16,185,129,.12);color:#6ee7b7}
+.ops-feedback-pill--caution{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.12);color:#fcd34d}
+.ops-feedback-pill--negative{border-color:rgba(248,113,113,.4);background:rgba(239,68,68,.12);color:#fca5a5}
+
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
    the phone breakpoint: the desktop layout above 767px is untouched.

@@ -15,6 +15,12 @@ This module gives every financial record a comparable identity:
                 case where no reference was captured
   screenshot    sha256 of the proof image, used as a supporting signal only
 
+Two records are one transaction when they share ANY of these -- the engine's
+payment id, the bank reference, or (for the same amount) the screenshot --
+whichever identifier each happens to rank strongest. A stored expense and the
+same payment filed again often differ in which they carry, and comparing only
+the strongest of each let one payment be saved three times.
+
 The external id is authoritative. The fingerprint is a strong hint but not
 proof: two genuine payments of the same amount on the same day between the same
 parties are possible, so a fingerprint match is reported for review rather than
@@ -145,6 +151,12 @@ def identity_of(record: dict) -> dict[str, str]:
         "external_id": external,
         "fingerprint": fingerprint(record),
         "screenshot_hash": str(record.get("screenshot_hash") or record.get("proof_sha256") or ""),
+        # Every digest of an image documenting it: an expense can carry more
+        # than one proof, and any of them can be the one filed again.
+        "screenshot_hashes": sorted({
+            str(h) for h in [record.get("screenshot_hash"), record.get("proof_sha256"),
+                             *(record.get("screenshot_hashes") or [])] if h
+        }),
         # The strongest identity this record can offer.
         "identity": (f"pay:{payment_id}" if payment_id else "") or external or fingerprint(record),
     }
@@ -255,23 +267,67 @@ def find_duplicates(records: Iterable[dict]) -> list[dict]:
     return groups
 
 
-def duplicate_of(candidate: dict, existing: Iterable[dict]) -> dict | None:
-    """The already-recorded transaction this one would double-count, if any.
+def shared_signal(a: dict, b: dict) -> str:
+    """What two records have in common that says they are one transaction.
 
-    Used before saving, so a second money effect is never posted silently.
+    Compares every identifier each record carries, not only the one it ranks
+    strongest. The old check compared a single "identity" per record, and a
+    stored expense that had inherited the engine's payment id (identity
+    `pay:...`) never equalled the same payment filed again with only its bank
+    reference (identity `UTR...`) -- so one payment was saved three times.
+
+    Returns the basis, strongest first, or "" when nothing is shared:
+
+      payment_id       the engine matched both to one payment
+      external_id      the same UPI / bank reference
+      fingerprint      the same amount, day, payer and receiver, when neither
+                       has a stronger identity (unchanged from before)
+      screenshot_hash  the same image, filed for the same amount. An image
+                       alone proves nothing -- it can document one transaction
+                       in two places -- but the same image for the same amount
+                       is the same payment filed twice.
+    """
+    ia = a if "payment_id" in a and "identity" in a else {**a, **identity_of(a)}
+    ib = b if "payment_id" in b and "identity" in b else {**b, **identity_of(b)}
+    if ia["payment_id"] and ia["payment_id"] == ib["payment_id"]:
+        return "payment_id"
+    if ia["external_id"] and ia["external_id"] == ib["external_id"]:
+        return "external_id"
+    if ia["identity"] and ia["identity"] == ib["identity"]:
+        return "fingerprint"
+    if set(ia["screenshot_hashes"]) & set(ib["screenshot_hashes"]) and (
+        normalize_amount(ia.get("amount")) == normalize_amount(ib.get("amount"))
+    ):
+        return "screenshot_hash"
+    return ""
+
+
+def duplicates_of(candidate: dict, existing: Iterable[dict]) -> list[dict]:
+    """Every already-recorded transaction this one would double-count.
+
+    Each record returned says what matched (`matched_on`).
     """
     incoming = {**candidate, **identity_of(candidate)}
-    if not incoming["identity"]:
-        return None
+    found: list[dict] = []
     for record in existing:
         row = {**record, **identity_of(record)}
         if row.get("voided"):
             continue
-        if row["identity"] != incoming["identity"]:
+        if not _conflicting(incoming, row):
             continue
-        if _conflicting(incoming, row):
-            return row
-    return None
+        basis = shared_signal(incoming, row)
+        if basis:
+            found.append({**row, "matched_on": basis})
+    return found
+
+
+def duplicate_of(candidate: dict, existing: Iterable[dict]) -> dict | None:
+    """The first already-recorded transaction this one would double-count.
+
+    Used before saving, so a second money effect is never posted silently.
+    """
+    found = duplicates_of(candidate, existing)
+    return found[0] if found else None
 
 
 def duplicate_message(existing: dict) -> str:
@@ -285,8 +341,14 @@ def duplicate_message(existing: dict) -> str:
         "refund": "a refund",
         "adjustment": "an adjustment",
     }
+    matched = {
+        "payment_id": " (same payment)",
+        "external_id": " (same bank reference)",
+        "screenshot_hash": " (same screenshot and amount)",
+    }.get(str(existing.get("matched_on") or ""), "")
     return (
         f"This transaction is already recorded as {labels.get(kind, kind)}"
-        f"{' on ' + normalize_date(existing.get('payment_date') or existing.get('date')) if (existing.get('payment_date') or existing.get('date')) else ''}."
+        f"{' on ' + normalize_date(existing.get('payment_date') or existing.get('date')) if (existing.get('payment_date') or existing.get('date')) else ''}"
+        f"{matched}."
         " Reclassify the existing record instead of adding a second one."
     )

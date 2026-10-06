@@ -306,10 +306,7 @@ def merge_vault_entries(
     return get_credentials()
 
 
-# The sections the vault routes may create, edit and delete rows in. An
-# "interview_data" list may still sit in an older credentials file; it is no
-# longer a section, so nothing reads, returns or writes it, and saving the file
-# carries it over untouched.
+# The sections the vault routes may create, edit and delete rows in.
 _VAULT_SECTIONS = frozenset({"service_accounts", "prompts", "resources", "offer_letters"})
 
 

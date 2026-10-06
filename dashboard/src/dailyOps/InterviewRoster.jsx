@@ -25,6 +25,30 @@ const FEEDBACK_OPTIONS = [
   { value: 'negative', label: 'Negative' },
 ]
 
+// What the Notes column shows for a stored feedback value: its own label and
+// a tone. The column used to print "Positive" for the legacy "positive" and
+// "Negative" for everything else, so a row the operator marked Good or
+// Excellent read "Negative". Every value now names itself; only "negative"
+// says Negative.
+const FEEDBACK_TONES = {
+  excellent: 'positive',
+  good: 'positive',
+  positive: 'positive',
+  average: 'neutral',
+  needs_improvement: 'caution',
+  negative: 'negative',
+}
+
+export function feedbackMeta(value) {
+  const key = String(value || '').trim()
+  if (!key) return null
+  const option = FEEDBACK_OPTIONS.find(o => o.value === key)
+  const label = option
+    ? option.label
+    : key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
+  return { value: key, label, tone: FEEDBACK_TONES[key] || 'neutral' }
+}
+
 // A stored legacy feedback value ("positive") is not on the new scale, so the
 // dropdown would show the placeholder for it. Offer it as a one-off option so
 // an operator editing such a row sees the real stored value rather than a
@@ -808,11 +832,18 @@ export function InterviewRoster({
                           : <span className="ops-slot-shot-empty" title="No booking screenshot" aria-label="No booking screenshot">—</span>}
                       </td>
                       <td data-label="Notes" className="ops-interview-notes-cell">
-                        {row.interview_feedback && (
-                          <span className={`ops-feedback-pill ops-feedback-pill--${row.interview_feedback}`}>
-                            {row.interview_feedback === 'positive' ? 'Positive' : 'Negative'}
-                          </span>
-                        )}
+                        {(() => {
+                          const feedback = feedbackMeta(row.interview_feedback)
+                          return feedback && (
+                            <span
+                              className={`ops-feedback-pill ops-feedback-pill--${feedback.tone}`}
+                              data-feedback={feedback.value}
+                              title={`Interview feedback: ${feedback.label}`}
+                            >
+                              {feedback.label}
+                            </span>
+                          )
+                        })()}
                         {row.interview_attendance_remark
                           ? <span className="ops-interview-notes-text" title={row.interview_attendance_remark}>{row.interview_attendance_remark}</span>
                           : (row.interview_feedback ? null : '—')}

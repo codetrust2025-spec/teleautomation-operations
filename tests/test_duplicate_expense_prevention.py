@@ -170,7 +170,10 @@ def test_a_proof_upload_records_the_image_hash(store):
     assert stored["screenshot_hash"] == entry["sha256"]
 
 
-def test_the_same_screenshot_filed_against_a_second_expense_is_refused(store):
+def test_the_same_screenshot_filed_against_a_second_expense_is_reported(store):
+    # add_proof itself stores whatever it is given; this is what the read-only report finds.
+    # Refusing the re-attached receipt happens in refuse_duplicate_proof, which the proof
+    # route calls first -- see tests/test_expense_duplicate_guard.py.
     first = store.create_expense(
         {"reference": "Pavan Kalyan", "amount": 500, "date": "2026-07-22", "category": "food"}
     )
