@@ -797,9 +797,9 @@ export function InterviewRoster({
                               setEditing({ row, mode: 'attendee-with-status', targetStatus: val, targetLabel: label })
                             }}
                           />
-                          <span className={`ops-status-pill ops-status-pill--${statusTone(status)}`}>
-                            {statusLabel(status)}
-                          </span>
+                          {/* The dropdown is the status. A pill under it repeated
+                              the same word ("Pending" under "Pending"), so it is
+                              gone; the row's colour still carries the tone. */}
                         </div>
                       </td>
                       <td data-label="Screenshot" className="ops-slot-shot-cell">

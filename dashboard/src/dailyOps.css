@@ -2023,9 +2023,9 @@
    the phone breakpoint: the desktop layout above 767px is untouched.
    ───────────────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
-  /* The status is in the dropdown. In a card the pill sits directly under it
-     saying the same word again, so the row reads "Pending / Pending". The
-     dropdown is the one that can be acted on, so the pill goes. */
+  /* The status is in the dropdown. The roster no longer renders the pill that
+     sat under it saying the same word again (6 Oct, desktop too); this rule
+     stays as a guard should a pill ever come back inside the form. */
   .ops-interview-attendance-form .ops-status-pill {
     display: none;
   }

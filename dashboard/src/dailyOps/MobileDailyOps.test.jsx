@@ -140,9 +140,11 @@ describe('the status reads once', () => {
     await renderPanel()
     await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 
-    // Both are in the markup; the phone hides the pill, which is the one that
-    // cannot be acted on. Stacked under the dropdown it read "Pending" twice.
+    // The dropdown alone says the status. The pill that sat under it read
+    // "Pending" twice and is no longer rendered at all; the phone rule that
+    // hid it stays as a guard.
     expect(screen.getByLabelText('Attendance for Asha Rao').value).toBe('')
+    expect(document.querySelector('.ops-interview-attendance-form .ops-status-pill')).toBeNull()
     const hidden = declaring('.ops-interview-attendance-form .ops-status-pill', 'display')
     expect(hidden.length, 'no rule hides the duplicate pill').toBeGreaterThan(0)
     for (const rule of hidden) {
