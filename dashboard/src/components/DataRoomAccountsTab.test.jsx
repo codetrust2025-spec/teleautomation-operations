@@ -17,7 +17,7 @@ describe('DataRoomAccountsTab service account modal', () => {
       </ConfirmProvider>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '+ Add account' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
 
     const dialog = screen.getByRole('dialog', { name: 'Add service account' })
     expect(dialog).toHaveClass('dr-modal')
@@ -41,7 +41,7 @@ describe('DataRoomAccountsTab service account modal', () => {
         <DataRoomAccountsTab accounts={[]} onReload={() => {}} />
       </ConfirmProvider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: '+ Add account' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
 
     // Scoped to the dialog: "Password" is also a column header in the table
     // behind it, so an unscoped query matches both.
@@ -76,7 +76,7 @@ describe('DataRoomAccountsTab service account modal', () => {
           <DataRoomAccountsTab accounts={[]} onReload={() => {}} />
         </ConfirmProvider>,
       )
-      fireEvent.click(screen.getByRole('button', { name: '+ Add account' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
       const inputs = screen.getByRole('dialog').querySelectorAll('.dr-form-grid input, .dr-form-grid textarea')
       fireEvent.change(inputs[0], { target: { value: 'Karthik Gmail 2026' } })
       fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -102,7 +102,7 @@ describe('DataRoomAccountsTab service account modal', () => {
         <DataRoomAccountsTab accounts={[]} onReload={() => {}} />
       </ConfirmProvider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: '+ Add account' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
     expect(screen.getByText('No image')).toBeInTheDocument()
 
     const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
@@ -120,7 +120,7 @@ describe('DataRoomAccountsTab service account modal', () => {
         <DataRoomAccountsTab accounts={[]} onReload={() => {}} />
       </ConfirmProvider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: '+ Add account' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
     const file = new File([new Uint8Array([1])], 'notes.pdf', { type: 'application/pdf' })
     fireEvent.change(screen.getByRole('dialog').querySelector('input[type="file"]'), {
       target: { files: [file] },
@@ -138,7 +138,7 @@ describe('DataRoomAccountsTab service account modal', () => {
         />
       </ConfirmProvider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit/ }))
     const view = screen.getByRole('link', { name: 'View image' })
     expect(view).toHaveAttribute('href', expect.stringContaining('/data-room/service-accounts/gmail_a/image'))
     expect(screen.getByAltText('Screenshot for Gmail A')).toBeInTheDocument()
@@ -160,7 +160,7 @@ describe('DataRoomAccountsTab service account modal', () => {
         <DataRoomAccountsTab accounts={[]} onReload={() => {}} />
       </ConfirmProvider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: '+ Add account' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
     const dialog = screen.getByRole('dialog')
     fireEvent.change(dialog.querySelector('.dr-form-grid input'), { target: { value: 'Gmail B' } })
     fireEvent.change(dialog.querySelector('input[type="file"]'), {

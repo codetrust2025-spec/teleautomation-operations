@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
 import { copyToClipboard } from '../utils/copyToClipboard.js'
+import { Icon } from './ui/Icon.jsx'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -24,11 +25,12 @@ function CopyChip({ label, text, copyKey, activeKey, onCopy }) {
   return (
     <button
       type="button"
-      className={`dr-copy-btn${copied ? ' dr-copy-btn--copied' : ''}`}
-      title={`Copy ${label}`}
+      className={`dr-copy-btn dr-copy-btn--icon${copied ? ' dr-copy-btn--copied' : ''}`}
+      title={copied ? `Copied ${label}` : `Copy ${label}`}
+      aria-label={copied ? `Copied ${label}` : `Copy ${label}`}
       onClick={() => onCopy(copyKey, text)}
     >
-      {copied ? '✓' : '📋'}
+      <Icon name={copied ? 'check' : 'copy'} size={13} />
     </button>
   )
 }
@@ -250,16 +252,20 @@ export function DataRoomAccountsTab({ accounts = [], onReload }) {
         </div>
         <div className="dr-tab-header-actions">
           <div className="dr-search-wrap">
-            <span className="dr-search-icon">🔍</span>
+            <span className="dr-search-icon"><Icon name="search" size={14} /></span>
             <input
               type="search"
               className="cand-input dr-search-input"
               placeholder="Search accounts..."
+              aria-label="Search accounts"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <button type="button" className="cand-btn cand-btn--primary" onClick={openAdd}>+ Add account</button>
+          <button type="button" className="cand-btn cand-btn--primary dr-add-btn" onClick={openAdd}>
+            <Icon name="plus" size={14} strokeWidth={2.2} />
+            Add account
+          </button>
         </div>
       </div>
 
@@ -297,16 +303,16 @@ export function DataRoomAccountsTab({ accounts = [], onReload }) {
 
       {/* Table */}
       <div className="dr-tab-table-wrap">
-        <table className="dr-tab-table">
+        <table className="dr-tab-table dr-acct-table">
           <thead>
             <tr>
-              <th>Account</th>
-              <th>Type</th>
-              <th>Username</th>
-              <th>Password</th>
-              <th>Status</th>
-              <th>Last used</th>
-              <th>Actions</th>
+              <th className="dr-acct-th--account">Account</th>
+              <th className="dr-acct-th--type">Type</th>
+              <th className="dr-acct-th--user">Username</th>
+              <th className="dr-acct-th--pass">Password</th>
+              <th className="dr-acct-th--status">Status</th>
+              <th className="dr-acct-th--used">Last used</th>
+              <th className="dr-acct-th--actions">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -330,14 +336,14 @@ export function DataRoomAccountsTab({ accounts = [], onReload }) {
                   <td>{row.service || 'Gmail'}</td>
                   <td>
                     <div className="dr-acct-cred-cell">
-                      <code>{row.username || '—'}</code>
-                      {row.username && <CopyChip label="Copy" text={row.username} copyKey={`${row.id}-user`} activeKey={activeKey} onCopy={onCopy} />}
+                      <code title={row.username || undefined}>{row.username || '—'}</code>
+                      {row.username && <CopyChip label="username" text={row.username} copyKey={`${row.id}-user`} activeKey={activeKey} onCopy={onCopy} />}
                     </div>
                   </td>
                   <td>
                     <div className="dr-acct-cred-cell">
                       <code className="dr-creds-pass">{row.password || '—'}</code>
-                      {row.password && <CopyChip label="Copy" text={row.password} copyKey={`${row.id}-pass`} activeKey={activeKey} onCopy={onCopy} />}
+                      {row.password && <CopyChip label="password" text={row.password} copyKey={`${row.id}-pass`} activeKey={activeKey} onCopy={onCopy} />}
                     </div>
                   </td>
                   <td>
@@ -348,15 +354,17 @@ export function DataRoomAccountsTab({ accounts = [], onReload }) {
                   <td className="dr-muted">{row.last_used || '—'}</td>
                   <td>
                     <div className="dr-acct-actions">
-                      <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)}>Edit</button>
-                      <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)}>Delete</button>
                       <button
                         type="button"
-                        className={`dr-copy-btn${activeKey === `${row.id}-all` ? ' dr-copy-btn--copied' : ''}`}
+                        className={`dr-copy-btn dr-copy-btn--all${activeKey === `${row.id}-all` ? ' dr-copy-btn--copied' : ''}`}
+                        title="Copy the account name, username, password and notes"
                         onClick={() => onCopy(`${row.id}-all`, [row.label || row.id, row.service ? `Service: ${row.service}` : '', row.username ? `Username: ${row.username}` : '', row.password ? `Password: ${row.password}` : '', row.notes || ''].filter(Boolean).join('\n'))}
                       >
-                        {activeKey === `${row.id}-all` ? '✓' : 'Copy all'}
+                        <Icon name={activeKey === `${row.id}-all` ? 'check' : 'copy'} size={13} />
+                        {activeKey === `${row.id}-all` ? 'Copied' : 'Copy all'}
                       </button>
+                      <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)} aria-label={`Edit ${row.label || row.id}`}>Edit</button>
+                      <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)} aria-label={`Delete ${row.label || row.id}`}>Delete</button>
                     </div>
                   </td>
                 </tr>

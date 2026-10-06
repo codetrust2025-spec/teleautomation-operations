@@ -580,9 +580,10 @@ export function DataRoomPanel() {
             key={tab.id}
             type="button"
             className={`dr-tab${activeTab === tab.id ? ' dr-tab--active' : ''}`}
+            aria-current={activeTab === tab.id ? 'page' : undefined}
             onClick={() => setActiveTab(tab.id)}
           >
-            {tab.label}
+            <span className="dr-tab-label">{tab.label}</span>
             <span className="dr-tab-count">{tabCounts[tab.id] ?? 0}</span>
           </button>
         ))}
