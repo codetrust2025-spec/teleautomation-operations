@@ -1909,12 +1909,18 @@ export function ResumeCell({ candidate, onRefresh }) {
       {count > 0 && (
         <button
           type="button"
-          className="cand-resume-link"
+          className="cand-resume-link cand-resume-chip"
           onMouseDown={(ev) => ev.stopPropagation()}
           onClick={openManager}
+          title="View, download or update resumes"
+          aria-label={`${count} ${count === 1 ? "resume" : "resumes"}: view or update`}
+          disabled={busy}
         >
-          <span aria-hidden="true">📄</span> {count}{" "}
-          {count === 1 ? "resume" : "resumes"}
+          <span aria-hidden="true">📄</span>
+          <span className="cand-resume-chip__count">
+            {count} {count === 1 ? "resume" : "resumes"}
+          </span>
+          <span className="cand-resume-chip__cta">{busy ? "…" : "Update"}</span>
         </button>
       )}
       <input
@@ -1925,23 +1931,22 @@ export function ResumeCell({ candidate, onRefresh }) {
         onChange={(ev) => upload(ev.target.files && ev.target.files[0])}
         disabled={busy}
       />
-      <button
-        type="button"
-        className="cand-btn cand-btn--ghost cand-btn--xs"
-        onMouseDown={(ev) => ev.stopPropagation()}
-        onClick={
-          count > 0
-            ? openManager
-            : (ev) => {
-                ev.stopPropagation();
-                ev.preventDefault();
-                if (inputRef.current) inputRef.current.click();
-              }
-        }
-        disabled={busy}
-      >
-        {busy ? "…" : count ? "Update" : "Upload resume"}
-      </button>
+      {count === 0 && (
+        <button
+          type="button"
+          className="cand-btn cand-btn--ghost cand-btn--xs cand-resume-chip cand-resume-chip--upload"
+          onMouseDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            ev.preventDefault();
+            if (inputRef.current) inputRef.current.click();
+          }}
+          title="Upload a resume (PDF, DOC or DOCX)"
+          disabled={busy}
+        >
+          {busy ? "…" : "Upload resume"}
+        </button>
+      )}
       {analysis && (
         <AiNodeProgress
           analysis={analysis}
@@ -6570,8 +6575,21 @@ function CandidatesPanelImpl() {
       })),
     ];
   }, [c, m]);
+  // Two rows with one name (a repeat booking, or two people) read as the same
+  // candidate; those rows carry their phone and referrer under the name.
+  const duplicateNames = w.useMemo(() => {
+    const seen = new Set();
+    const repeated = new Set();
+    for (const row of i) {
+      const key = String(row.name || "").trim().toLowerCase();
+      if (!key) continue;
+      if (seen.has(key)) repeated.add(key);
+      seen.add(key);
+    }
+    return repeated;
+  }, [i]);
   return (
-    <div className="cand-page">
+    <div className="cand-page cand-page--candidates">
       <header className="cand-header">
         <div className="cand-header-titles">
           <h2 className="cand-title">Candidates</h2>
@@ -6694,7 +6712,7 @@ function CandidatesPanelImpl() {
         </label>
         <button
           type="button"
-          className="cand-btn cand-btn--ghost cand-btn--sm"
+          className="cand-btn cand-btn--ghost cand-btn--sm cand-toolbar-actions-start"
           onClick={() => setRo(true)}
           title="View all in-progress candidates grouped by technology"
         >
@@ -6767,7 +6785,7 @@ function CandidatesPanelImpl() {
           <table className="cand-table">
             <thead>
               <tr>
-                <th>
+                <th className="cand-th--name">
                   Name{" "}
                   <span
                     className="cand-th-hint cand-tip cand-tip--below"
@@ -6779,15 +6797,15 @@ function CandidatesPanelImpl() {
                     ⓘ
                   </span>
                 </th>
-                <th>Service type</th>
-                <th>Technology</th>
-                <th>Stage</th>
-                <th>Payment</th>
-                <th>Date</th>
-                <th>Phone</th>
-                {a && <th>Reference</th>}
-                <th>Resume</th>
-                <th aria-label="Actions" />
+                <th className="cand-th--service">Service type</th>
+                <th className="cand-th--tech">Technology</th>
+                <th className="cand-th--stage">Stage</th>
+                <th className="cand-th--pay">Payment</th>
+                <th className="cand-th--date">Date</th>
+                <th className="cand-th--phone">Phone</th>
+                {a && <th className="cand-th--ref">Reference</th>}
+                <th className="cand-th--resume">Resume</th>
+                <th className="cand-th--actions">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -6840,6 +6858,19 @@ function CandidatesPanelImpl() {
                           <span className="cand-cid" hidden>
                             {ge.id}
                           </span>
+                          {(ge.phone || (a && ge.reference)) && (
+                            <span
+                              className={`cand-name-meta${duplicateNames.has(String(ge.name || "").trim().toLowerCase()) ? " cand-name-meta--dup" : ""}`}
+                              onClick={(Ze) => Ze.stopPropagation()}
+                            >
+                              {ge.phone && <_Component23 phone={ge.phone} inline={true} />}
+                              {a && ge.reference && (
+                                <span className="cand-name-meta__ref" title={`Reference: ${ge.reference}`}>
+                                  {ge.reference}
+                                </span>
+                              )}
+                            </span>
+                          )}
                           {ge.notes && (
                             <ExpandableNote
                               className="cand-cell-note"
@@ -6855,7 +6886,7 @@ function CandidatesPanelImpl() {
                             />
                           )}
                         </td>
-                        <td>
+                        <td className="cand-cell-service">
                           {ge.service_type === "round_wise" ? (
                             <span className="cand-channel-tag cand-channel-tag--roundwise">
                               Round-wise
@@ -6866,13 +6897,21 @@ function CandidatesPanelImpl() {
                             </span>
                           )}
                         </td>
-                        <td>{ge.technology || "—"}</td>
-                        <td>
+                        <td className="cand-cell-tech">
+                          {ge.technology || "—"}
+                          {/* Shown only where the Service type column folds away. */}
+                          <span
+                            className={`cand-tech-service cand-channel-tag cand-channel-tag--${ge.service_type === "round_wise" ? "roundwise" : "profile"}`}
+                          >
+                            {ge.service_type === "round_wise" ? "Round-wise" : "Profile-wise"}
+                          </span>
+                        </td>
+                        <td className="cand-cell-stage">
                           <span className={`cand-badge ${Ge.cls}`}>
                             {Ge.label}
                           </span>
                         </td>
-                        <td>
+                        <td className="cand-cell-pay">
                           <_Component27 row={ge} onViewProofs={Z} />
                         </td>
                         <td className="cand-cell-mono">

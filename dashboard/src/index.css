@@ -17402,8 +17402,6 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
  * modal's upload button (components/AiNodeProgress). */
 .cand-resume-cell-react .ai-node-progress { margin-top: 4px; }
 .cand-resume-ai-progress:not(:empty) { margin: 8px 0 4px; }
-.cand-row--pending-focus td { background: rgba(250, 204, 21, .20) !important; box-shadow: inset 0 2px 0 #facc15, inset 0 -2px 0 #facc15; animation: cand-pending-focus 1s ease-in-out 5; }
-@keyframes cand-pending-focus { 50% { background: rgba(250, 204, 21, .38) !important; } }
 .cand-service-filter{display:inline-flex;align-items:center;border:1px solid rgba(129,140,248,.34);border-radius:8px;overflow:hidden;background:#0f172a}
 .cand-service-filter__btn{display:inline-flex;align-items:center;gap:4px;border:0;border-right:1px solid rgba(129,140,248,.24);background:transparent;color:#94a3b8;padding:6px 8px;font:600 11px/1 inherit;cursor:pointer}
 .cand-service-filter__btn:last-child{border-right:0}.cand-service-filter__btn:hover{background:#ffffff0d;color:#e2e8f0}.cand-service-filter__btn--active{background:#4f46e533;color:#c7d2fe}
@@ -18508,4 +18506,176 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   color: #fbbf24;
   background: rgba(251, 191, 36, 0.12);
   border: 1px solid rgba(251, 191, 36, 0.28);
+}
+
+/* ── Candidates table, desktop: set column widths that fit the page ──────────
+   The table was laid out by its content, so a long note widened Name while
+   Payment, Phone, Resume and the actions were squeezed, and at 1280px the
+   table (1158px) ran past its 961px box. Columns now have set widths and Name
+   takes what is left. Where the page is too narrow for all ten, columns fold
+   rather than scroll: Service type moves under the technology (below 1600px),
+   and Phone and Reference move under the name (below 1440px). Phones (<600px)
+   keep their cards: nothing here applies there. */
+.cand-tech-service,
+.cand-name-meta { display: none; }
+
+@media (min-width: 600px) {
+  .cand-page--candidates > .cand-table-wrap .cand-table {
+    table-layout: fixed;
+    min-width: 860px;
+  }
+  .cand-page--candidates > .cand-table-wrap .cand-table thead th,
+  .cand-page--candidates > .cand-table-wrap .cand-table tbody td {
+    padding: 8px;
+  }
+  .cand-page--candidates > .cand-table-wrap .cand-table thead th:first-child,
+  .cand-page--candidates > .cand-table-wrap .cand-table tbody td:first-child { padding-left: 12px; }
+  .cand-page--candidates > .cand-table-wrap .cand-table thead th:last-child,
+  .cand-page--candidates > .cand-table-wrap .cand-table tbody td:last-child { padding-right: 12px; }
+  .cand-page--candidates .cand-table thead th { white-space: nowrap; }
+  .cand-page--candidates .cand-th--service { width: 92px; }
+  .cand-page--candidates .cand-th--tech { width: 11%; }
+  .cand-page--candidates .cand-th--stage { width: 96px; }
+  .cand-page--candidates .cand-th--pay { width: 196px; }
+  .cand-page--candidates .cand-th--date { width: 96px; }
+  .cand-page--candidates .cand-th--phone { width: 124px; }
+  .cand-page--candidates .cand-th--ref { width: 8%; }
+  .cand-page--candidates .cand-th--resume { width: 128px; }
+  .cand-page--candidates .cand-th--actions { width: 72px; text-align: right; }
+
+  /* The cell was a flex box, so it was not a table cell and drifted out from
+     under its heading. */
+  .cand-page--candidates .cand-table tbody td.cand-cell-actions {
+    display: table-cell;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .cand-page--candidates .cand-table tbody td.cand-cell-actions .cand-btn + .cand-btn { margin-left: 4px; }
+  .cand-page--candidates .cand-cell-tech { overflow-wrap: anywhere; }
+  .cand-page--candidates .cand-cell-stage .cand-badge { white-space: normal; text-align: center; }
+  .cand-page--candidates .cand-cell-ref {
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cand-page--candidates .cand-cell-name { overflow-wrap: anywhere; }
+
+  /* Phone and referrer under the name: on every row where their columns fold
+     away, and on a repeated name everywhere, so two "Ram Charan M S" rows
+     tell apart at a glance. */
+  .cand-page--candidates .cand-name-meta--dup { display: flex; }
+  .cand-name-meta {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 8px;
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-dim, #94a3b8);
+  }
+  .cand-name-meta .cand-phone-trigger { padding: 1px 7px; font-size: 11px; }
+  .cand-name-meta__ref {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cand-name-meta__ref::before { content: "Ref "; opacity: 0.65; }
+  .cand-tech-service {
+    margin: 3px 0 0;
+    padding: 0;
+    width: fit-content;
+    font-size: 9.5px;
+    color: var(--text-dim, #94a3b8);
+  }
+  .cand-tech-service.cand-channel-tag--roundwise { color: #a5b4fc; }
+
+  /* Payment: amount, then what is owed or paid with its evidence beside it. */
+  .cand-page--candidates .cand-pay { min-width: 0; gap: 5px; }
+  .cand-page--candidates .cand-pay-pillrow { gap: 4px; }
+  .cand-page--candidates .cand-pay-proofs { gap: 3px; padding: 2px 2px 2px 6px; }
+  .cand-page--candidates .cand-pay-proofs-cta { margin-left: 1px; padding: 0 4px; }
+
+  /* Toolbar: filters on the left, actions together on the right, wrapping to a
+     second line rather than scrolling sideways. */
+  .cand-page--candidates > .cand-toolbar {
+    flex-wrap: wrap !important;
+    overflow: visible;
+    row-gap: 4px;
+  }
+  /* A zero-height full-width item ends the filter line; the actions follow
+     on their own line, together at the right. */
+  .cand-page--candidates > .cand-toolbar::after {
+    content: "";
+    order: 1;
+    flex: 0 0 100%;
+    height: 0;
+  }
+  .cand-page--candidates > .cand-toolbar > .cand-btn { order: 2; }
+  .cand-page--candidates > .cand-toolbar > * { flex-shrink: 1; }
+  .cand-page--candidates > .cand-toolbar .cand-input--search {
+    flex: 1 1 200px;
+    min-width: 180px;
+    max-width: 340px;
+  }
+  .cand-page--candidates > .cand-toolbar > select.cand-input { flex: 0 1 auto; min-width: 0; max-width: 170px; }
+  .cand-page--candidates > .cand-toolbar .cand-toolbar-actions-start { margin-left: auto; }
+}
+
+/* Below 1600px: Service type folds under the technology. */
+@media (min-width: 600px) and (max-width: 1599px) {
+  .cand-page--candidates .cand-table .cand-th--service,
+  .cand-page--candidates .cand-table td.cand-cell-service { display: none; }
+  .cand-page--candidates .cand-tech-service { display: flex; }
+}
+/* Below 1440px: Phone and Reference fold under the name as well. */
+@media (min-width: 600px) and (max-width: 1439px) {
+  .cand-page--candidates .cand-table .cand-th--phone,
+  .cand-page--candidates .cand-table td.cand-cell-phone,
+  .cand-page--candidates .cand-table .cand-th--ref,
+  .cand-page--candidates .cand-table td.cand-cell-ref { display: none; }
+  .cand-page--candidates .cand-name-meta { display: flex; }
+}
+
+/* Resume: one control in the same place on every row -- "Upload resume" when
+   there is none, "1 resume · Update" (opens the manager) when there is. */
+.cand-resume-cell-react { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.cand-resume-cell-react .cand-resume-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #c7d2fe;
+  font: 600 11px/1.3 inherit;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.cand-resume-cell-react .cand-resume-chip:hover {
+  border-color: rgba(129, 140, 248, 0.6);
+  background: rgba(99, 102, 241, 0.18);
+  color: #e0e7ff;
+  text-decoration: none;
+}
+.cand-resume-cell-react .cand-resume-chip--upload {
+  padding-right: 8px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-dim, #94a3b8);
+}
+.cand-resume-chip__count { font-variant-numeric: tabular-nums; }
+.cand-resume-chip__cta {
+  padding: 0 5px;
+  border-left: 1px solid rgba(199, 210, 254, 0.3);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
