@@ -572,3 +572,87 @@
   color: var(--text-muted, #a8b4c4);
   font-size: 12px;
 }
+
+/* ── Earnings, desktop cleanup ───────────────────────────────────────────────
+   Leads and Done were 43px columns ("LEA..."), the complimentary note was cut
+   mid-word, the month chip stretched across the header and the Totals row
+   read like one more handler. Layout only: no figure is computed here. */
+
+/* The chevron turns when a handler is open (every width). */
+.earn-expand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  transition: transform .12s, background .12s, color .12s;
+}
+.earn-row:hover .earn-expand-icon { background: rgba(99,102,241,.18); color: #c7d2fe; }
+.earn-row--open .earn-expand-icon { transform: rotate(90deg); color: #c7d2fe; }
+
+@media (min-width: 769px) {
+  .earn-section { gap: 10px; padding: 10px 12px; }
+  .earn-header { align-items: center; gap: 10px; }
+  .earn-header-left { gap: 3px; }
+  .earn-header-left .earn-scope { align-self: flex-start; }
+
+  /* Sort by: label beside the select, the same height as Add expense. */
+  .earn-header-right { align-items: center; gap: 8px; }
+  .earn-filter { flex-direction: row; align-items: center; gap: 6px; }
+  .earn-filter .cand-input { height: 32px; min-height: 32px; }
+  .earn-add-expense { min-height: 32px; height: 32px; }
+
+  /* Columns: 16 + 6 + 6 + 6 x 10.5 + 9 = 100. Counts and money right-aligned,
+     heading over figure. */
+  .earn-th--name   { width: 16%; }
+  .earn-th--num    { width: 6%; text-align: right; }
+  .earn-th--money  { width: 10.5%; }
+  .earn-th--status { width: 9%; }
+  .earn-td--num { text-align: right; }
+  /* Two-word headings ("Current payable", "Closing balance") take two lines
+     rather than an ellipsis. */
+  .earn-table thead th {
+    padding: 8px 10px;
+    white-space: normal;
+    line-height: 1.25;
+    vertical-align: bottom;
+  }
+  .earn-table tbody td,
+  .earn-foot td { padding: 8px 10px; }
+
+  /* The complimentary note wraps under its amount instead of being cut. */
+  .earn-table tbody td.earn-td--money { white-space: normal; }
+  .earn-td--money .earn-carry-fwd {
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .earn-carry-fwd--comp { color: #a7b4c6; }
+
+  /* Status: one size for every chip, centred in its column. */
+  .earn-status {
+    min-width: 76px;
+    text-align: center;
+    line-height: 1.3;
+  }
+
+  /* An open handler and its breakdown read as one block. */
+  .earn-row--open > td { background: rgba(99,102,241,.1); }
+  .earn-row--open > td:first-child { box-shadow: inset 3px 0 0 #818cf8; }
+  .earn-detail { padding: 10px 14px 12px 30px; border-left: 3px solid #818cf8; }
+
+  /* Totals: set apart from the handlers above it. */
+  .earn-foot td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-top: 2px solid rgba(129,140,248,.55);
+    background: rgba(99,102,241,.12);
+    color: var(--text, #eef2f7);
+    font-size: 12.5px;
+  }
+  .earn-foot td.earn-td--name strong {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+}

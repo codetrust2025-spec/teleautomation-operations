@@ -336,9 +336,14 @@ export default function EarningsBreakdown({
 
               return (
                 <Fragment key={p.ref_key || p.name}>
-                  <tr className={`earn-row${isExpanded ? " earn-row--open" : ""}`} onClick={() => toggleExpand(p.name)}>
+                  <tr
+                    className={`earn-row${isExpanded ? " earn-row--open" : ""}`}
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleExpand(p.name)}
+                  >
                     <td className="earn-td--name">
-                      <span className="earn-expand-icon">{isExpanded ? "▾" : "▸"}</span>
+                      {/* One chevron, turned when open, in a small hit target. */}
+                      <span className="earn-expand-icon" aria-hidden="true">▸</span>
                       <strong>{p.name}</strong>
                     </td>
                     <td className="earn-td--num">{p.count || 0}</td>
@@ -347,7 +352,7 @@ export default function EarningsBreakdown({
                     <td className="earn-td--money earn-green">
                       {fmt(commission)}
                       {complimentary > 0 && (
-                        <span className="earn-carry-fwd" title="Included completed-profile complimentary amounts">
+                        <span className="earn-carry-fwd earn-carry-fwd--comp" title="Included completed-profile complimentary amounts">
                           incl. {fmt(complimentary)} complimentary
                         </span>
                       )}
@@ -541,7 +546,7 @@ export default function EarningsBreakdown({
           </tbody>
           <tfoot>
             <tr className="earn-foot">
-              <td><strong>Totals</strong></td>
+              <td className="earn-td--name"><strong>Totals</strong></td>
               <td className="earn-td--num">{performers.reduce((s, p) => s + (p.count || 0), 0)}</td>
               <td className="earn-td--num">{performers.reduce((s, p) => s + (p.completed || 0), 0)}</td>
               <td className="earn-td--money">{fmt(performers.reduce((s, p) => s + (Number(p.revenue_total) || 0), 0))}</td>
