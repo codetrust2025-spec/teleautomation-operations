@@ -16773,13 +16773,23 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .sbs-slot-card__company,
   .sbs-slot-card__tech { flex: 0 1 auto; }
 }
+/* On a phone: time on its own line, then company · technology, so a wrapped
+   line never starts with a "·". */
+@media (max-width: 599px) {
+  .sbs-slot-card__line .sbs-slot-card__time { flex-basis: 100%; }
+  .sbs-slot-card__line .sbs-slot-card__company::before { content: none; }
+  .sbs-slot-card__line .sbs-slot-card__company { margin-left: 0; max-width: 60%; }
+}
 /* Company and Interview round side by side; the round keeps the room its
    select needs. */
 .sbs-field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.6rem; align-items: start; }
 .sbs-field-row > label { min-width: 0; }
-/* The pair reads as one line: the round select matches the company input's
-   height (the row is already that tall, so the form grows by nothing). */
-.sbs-field-row .sbs-select { min-height: 44px; }
+/* The pair reads as one line: both controls are 44px at every width. A global
+   rule enlarges input text (not select text) at 1024px and below to stop iOS
+   zooming, which made the company input 48px beside a 44px select; a fixed
+   height with the text centred keeps them level. */
+.sbs-field-row .sbs-input,
+.sbs-field-row .sbs-select { height: 44px; min-height: 44px; padding-top: 0; padding-bottom: 0; }
 .sbs-optional { margin-left: 0.3rem; font-size: 0.6rem; font-weight: 500; color: var(--text-dim,#7b8a9e); text-transform: none; letter-spacing: 0; }
 .sbs-confirmed-card__status {
   display: flex; align-items: center; gap: 0.2rem;

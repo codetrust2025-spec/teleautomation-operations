@@ -140,6 +140,16 @@ describe('a Confirmed slots card', () => {
   })
 
   it('gives the company input and the round select one height in their row', () => {
-    expect(CSS).toMatch(/\.sbs-field-row \.sbs-select \{ min-height: 44px; \}/)
+    expect(CSS).toMatch(/\.sbs-field-row \.sbs-input,\n\.sbs-field-row \.sbs-select \{ height: 44px; min-height: 44px;/)
+  })
+
+  it('on a phone puts the time on its own line, so no line starts with a dot', () => {
+    const at = CSS.indexOf('/* On a phone: time on its own line')
+    expect(at).toBeGreaterThan(-1)
+    const block = CSS.slice(at, CSS.indexOf('\n}\n', at))
+    expect(block).toMatch(/\.sbs-slot-card__time \{ flex-basis: 100%; \}/)
+    expect(block).toMatch(/\.sbs-slot-card__company::before \{ content: none; \}/)
+    // A long company shortens so the technology stays on the same line.
+    expect(block).toMatch(/\.sbs-slot-card__company \{ margin-left: 0; max-width: 60%; \}/)
   })
 })
