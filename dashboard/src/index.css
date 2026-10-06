@@ -18895,32 +18895,41 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
      put every one of the six rows on the same grid. */
   .dr-page .dr-creds-table { table-layout: fixed; }
   .dr-page .dr-creds-table th,
-  .dr-page .dr-creds-table td { vertical-align: middle; padding: 8px 12px; }
+  .dr-page .dr-creds-table td { vertical-align: middle; padding: 6px 12px; line-height: 1.3; }
+  /* Username was `auto`, so it greedily ate the slack and left a wide empty
+     gap before Password. Giving every column a share (Username a percentage,
+     not auto) pulls Password back next to the username and keeps the Copy
+     column wide enough for the "Copy username" label on handler rows. */
   .dr-page .dr-creds-table th:nth-child(1),
-  .dr-page .dr-creds-table td:nth-child(1) { width: 86px; }
+  .dr-page .dr-creds-table td:nth-child(1) { width: 80px; }
   .dr-page .dr-creds-table th:nth-child(2),
-  .dr-page .dr-creds-table td:nth-child(2) { width: 20%; }
+  .dr-page .dr-creds-table td:nth-child(2) { width: 23%; }
   .dr-page .dr-creds-table th:nth-child(3),
-  .dr-page .dr-creds-table td:nth-child(3) { width: auto; }
+  .dr-page .dr-creds-table td:nth-child(3) { width: 25%; }
   .dr-page .dr-creds-table th:nth-child(4),
-  .dr-page .dr-creds-table td:nth-child(4) { width: 150px; }
+  .dr-page .dr-creds-table td:nth-child(4) { width: 128px; }
   .dr-page .dr-creds-table th:nth-child(5),
-  .dr-page .dr-creds-table td:nth-child(5) { width: 92px; }
+  .dr-page .dr-creds-table td:nth-child(5) { width: 128px; }
   .dr-page .dr-creds-table th:nth-child(6),
-  .dr-page .dr-creds-table td:nth-child(6) { width: 160px; text-align: right; }
+  .dr-page .dr-creds-table td:nth-child(6) { width: 148px; text-align: right; }
   .dr-page .dr-creds-table .dr-actions { justify-content: flex-end; gap: 6px; flex-wrap: nowrap; }
   .dr-page .dr-creds-copy-all { text-align: left; }
+  /* The labelled copy button fills its cell so "Copy all" and "Copy username"
+     present as the same single, obvious action across every row. */
+  .dr-page .dr-creds-copy-all .dr-copy-btn--all { width: 100%; justify-content: center; }
 
-  /* Header: title left; the site chip and Add handler aligned right, on one
-     line and the same height — the add button no longer floats off on its own. */
-  .dr-page .dr-credentials-section .dr-section-head--row { align-items: center; gap: 12px; margin-bottom: 10px; }
+  /* Header: title, helper text and a subtle Site line stack on the left; Add
+     handler sits alone on the right, aligned to the top of the text block. */
+  .dr-page .dr-credentials-section .dr-section-head--row { align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+  .dr-page .dr-creds-head-text { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   .dr-page .dr-creds-head-actions {
     display: flex;
     align-items: center;
     gap: 12px;
     flex: 0 0 auto;
   }
-  .dr-page .dr-credentials-section .dr-section-head--row .dr-section-desc { margin: 2px 0 0; }
+  .dr-page .dr-credentials-section .dr-section-head--row .dr-section-desc { margin: 0; }
+  .dr-page .dr-creds-head-text .dr-creds-site { margin-top: 2px; }
 
   /* A tighter section: the table box carries the panel, not a tall empty card. */
   .dr-page .dr-credentials-section { padding-bottom: 4px; }

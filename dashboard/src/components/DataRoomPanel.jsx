@@ -150,7 +150,11 @@ export function formatCredentialBlock(site, row, { isAdmin = false } = {}) {
 function CopyChip({ label, text, copyKey, activeKey, onCopy, variant = 'icon' }) {
   const copied = activeKey === copyKey
   const name = copied ? `Copied ${label}` : `Copy ${label}`
-  if (variant === 'all') {
+  // The labelled variants ("all" and "username") share one wide button; only
+  // the resting text differs, so the Copy column stays a single clear action
+  // whether the row has a password to bundle or just a username to grab.
+  if (variant === 'all' || variant === 'username') {
+    const resting = variant === 'all' ? 'Copy all' : 'Copy username'
     return (
       <button
         type="button"
@@ -160,7 +164,7 @@ function CopyChip({ label, text, copyKey, activeKey, onCopy, variant = 'icon' })
         onClick={() => onCopy(copyKey, text)}
       >
         <Icon name={copied ? 'check' : 'copy'} size={13} />
-        {copied ? 'Copied' : 'Copy all'}
+        {copied ? 'Copied' : resting}
       </button>
     )
   }
@@ -208,13 +212,15 @@ function CredentialRow({ rowKey, site, row, isAdmin, activeKey, onCopy, onEdit, 
         </div>
       </td>
       <td className="dr-creds-copy-all">
-        <CopyChip label="all" text={block} copyKey={`${rowKey}-all`} activeKey={activeKey} onCopy={onCopy} variant="all" />
+        {hasPassword
+          ? <CopyChip label="all" text={block} copyKey={`${rowKey}-all`} activeKey={activeKey} onCopy={onCopy} variant="all" />
+          : <CopyChip label="username" text={row.username} copyKey={`${rowKey}-all`} activeKey={activeKey} onCopy={onCopy} variant="username" />}
       </td>
       <td className="dr-actions">
         {onEdit ? (
           <button type="button" className="cand-btn cand-btn--sm" onClick={onEdit}>Edit</button>
         ) : (
-          <button type="button" className="cand-btn cand-btn--sm" disabled title="The admin password is changed from the account menu, not here">Account menu</button>
+          <button type="button" className="cand-btn cand-btn--sm cand-btn--ghost" title="The admin password is changed from the top-bar account menu, not here">Account menu</button>
         )}
         {!isAdmin && (
           <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={onDelete}>Delete</button>
@@ -324,19 +330,19 @@ function CredentialsSection({ creds, loading, active, onReload }) {
       aria-labelledby="dr-creds-title"
     >
       <div className="dr-section-head dr-section-head--row">
-        <div>
+        <div className="dr-creds-head-text">
           <h2 id="dr-creds-title" className="dr-section-title">Dashboard logins</h2>
           <p className="dr-section-desc">
-            Admin and handler credentials for the configured Operations site. Use Copy on each row.
+            Admin and handler credentials for the configured Operations site. Use Copy username, Copy password, or Copy all on each row.
           </p>
-        </div>
-        <div className="dr-creds-head-actions">
           <span className="dr-creds-site" title={site || undefined}>
             <span className="dr-creds-site-label">Site</span>
             {site
               ? <a href={site} target="_blank" rel="noopener noreferrer">{site.replace(/^https?:\/\//, '')}</a>
               : <span className="dr-muted">not configured</span>}
           </span>
+        </div>
+        <div className="dr-creds-head-actions">
           <button type="button" className="cand-btn cand-btn--primary cand-btn--sm dr-add-btn" onClick={openAddHandler}>
             <Icon name="plus" size={14} strokeWidth={2.2} />
             Add handler
