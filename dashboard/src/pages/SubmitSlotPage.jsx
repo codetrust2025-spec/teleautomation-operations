@@ -180,75 +180,65 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
                         <path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/>
                       </svg>
                     </div>
-                    {/* Two lines: who and which round; when, where and what.
-                        The round used to be the first of three chips stacked
-                        down the right edge, which set every card's height. */}
+                    {/* Left: who and when. The booking source is a small icon
+                        beside the name (its full name on hover and to a
+                        reader), and an ended interview still waiting for its
+                        outcome says so beside the time. */}
                     <div className="sbs-slot-card__body">
                       <div className="sbs-slot-card__name-row">
-                      <div className="sbs-slot-card__name">{formatCandidateDisplayName(slot.name)}</div>
-                      {/* An assessment has no interview round -- it is
-                          a test sat alone -- so it is labelled by what
-                          it is rather than by a round it never had. */}
-                      {slot.booking_type === 'Assessment' ? (
-                        <span
-                          className="sbs-slot-card__round sbs-slot-card__round--assessment"
-                          title="Online assessment, booked inside the window the invitation allowed"
-                        >
-                          Assessment
-                        </span>
-                      ) : slot.interview_round ? (
-                        <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
-                      ) : (
-                        <span
-                          className="sbs-slot-card__round sbs-slot-card__round--unspecified"
-                          title="Interview round was not specified in invitation"
-                        >
-                          Round not specified
-                        </span>
-                      )}
+                        <div className="sbs-slot-card__name">{formatCandidateDisplayName(slot.name)}</div>
+                        {source.known && (
+                          <span
+                            className={`sbs-source-icon sbs-source-icon--${source.tone}`}
+                            title={`${source.label}: ${source.title}`}
+                            role="img"
+                            aria-label={source.label}
+                          >
+                            <Icon name={source.tone === 'auto' ? 'sparkles' : 'user-check'} size={11} strokeWidth={2.2} />
+                          </span>
+                        )}
                       </div>
                       <div className="sbs-slot-card__line">
                         <div className="sbs-slot-card__time">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round"/></svg>
                           <span>{formatFriendlyTime(slot.time)}{slot.time_end ? ` – ${formatFriendlyTime(slot.time_end)}` : ''}</span>
                         </div>
-                        {/* Time · Company · Technology, or Time · Technology when
-                            no company was recorded -- never a "· — ·" gap. The
-                            two share one span, so on a phone they stay together
-                            on the line under the time. */}
-                        {(company || technology) && (
-                          <span className="sbs-slot-card__meta">
-                            {company && <span className="sbs-slot-card__company" title={company}>{company}</span>}
-                            {technology && <span className="sbs-slot-card__tech" title={technology}>{technology}</span>}
+                        {needsUpdate && (
+                          <span className="sbs-confirmed-card__status sbs-confirmed-card__status--awaiting">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" strokeLinecap="round"/></svg>
+                            Awaiting status
                           </span>
                         )}
                       </div>
                     </div>
-                    <div className="sbs-confirmed-card__right">
-                      {/* Every card on this page is a booked slot, so a
-                          "Booked" chip on each said nothing; only an ended
-                          interview still waiting for its outcome is marked. */}
-                      {needsUpdate && (
-                        <span className="sbs-confirmed-card__status sbs-confirmed-card__status--awaiting">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" strokeLinecap="round"/></svg>
-                          Awaiting status
-                        </span>
-                      )}
-                      {/* AI or candidate, as a small chip that names itself
-                          in full on hover and to a reader. A slot with no
-                          recorded source shows none: beside "Booked" a grey
-                          "Booked" chip said nothing new. */}
-                      {source.known && (
-                        <span
-                          className={`sbs-source-badge sbs-source-badge--${source.tone}`}
-                          title={`${source.label}: ${source.title}`}
-                          role="img"
-                          aria-label={source.label}
-                        >
-                          <Icon name={source.tone === 'auto' ? 'sparkles' : 'user-check'} size={10} strokeWidth={2.2} />
-                          <span aria-hidden="true">{source.tone === 'auto' ? 'AI' : 'Candidate'}</span>
-                        </span>
-                      )}
+                    {/* Right: the interview itself, most telling first --
+                        company, then technology, then the round. Two
+                        bookings for one candidate tell apart here. */}
+                    <div className="sbs-confirmed-card__right sbs-slot-card__data">
+                      {company && <span className="sbs-slot-card__company" title={company}>{company}</span>}
+                      <span className="sbs-slot-card__data-line">
+                        {technology && <span className="sbs-slot-card__tech" title={technology}>{technology}</span>}
+                        {/* An assessment has no interview round -- it is a
+                            test sat alone -- so it is labelled by what it is
+                            rather than by a round it never had. */}
+                        {slot.booking_type === 'Assessment' ? (
+                          <span
+                            className="sbs-slot-card__round sbs-slot-card__round--assessment"
+                            title="Online assessment, booked inside the window the invitation allowed"
+                          >
+                            Assessment
+                          </span>
+                        ) : slot.interview_round ? (
+                          <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
+                        ) : (
+                          <span
+                            className="sbs-slot-card__round sbs-slot-card__round--unspecified"
+                            title="Interview round was not specified in invitation"
+                          >
+                            Round not specified
+                          </span>
+                        )}
+                      </span>
                     </div>
                   </div>
                   )

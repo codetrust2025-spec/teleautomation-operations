@@ -73,16 +73,16 @@ afterEach(() => {
 })
 
 describe('confirmed slot booking source', () => {
-  it('labels an AI auto-booked slot, alongside its stage, with no redundant Booked chip', async () => {
+  it('marks an AI auto-booked slot with a small icon, alongside its stage, with no Booked chip', async () => {
     await openConfirmed()
     await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
     const card = within(cardFor('Aniket'))
     expect(card.getByText('L1')).toBeTruthy()
     expect(card.queryByText('Booked')).toBeNull()
-    // A compact chip: "AI" on screen, the full source as its name.
-    const chip = card.getByLabelText('AI Auto-booked')
-    expect(chip.textContent).toBe('AI')
-    expect(chip.getAttribute('title')).toMatch(/^AI Auto-booked:/)
+    // An icon, named in full on hover and to a reader; no text on screen.
+    const icon = card.getByLabelText('AI Auto-booked')
+    expect(icon.textContent).toBe('')
+    expect(icon.getAttribute('title')).toMatch(/^AI Auto-booked:/)
   })
 
   it('labels a candidate-booked slot, alongside its stage', async () => {
@@ -90,8 +90,8 @@ describe('confirmed slot booking source', () => {
     await waitFor(() => expect(cardFor('Manu')).toBeTruthy())
     const card = within(cardFor('Manu'))
     expect(card.getByText('L1')).toBeTruthy()
-    const chip = card.getByLabelText('Candidate booked')
-    expect(chip.textContent).toBe('Candidate')
+    const icon = card.getByLabelText('Candidate booked')
+    expect(icon.textContent).toBe('')
   })
 
   it('shows no source chip when no source was recorded, and never guesses one', async () => {
@@ -99,7 +99,7 @@ describe('confirmed slot booking source', () => {
     await waitFor(() => expect(cardFor('Ashok uppuluri')).toBeTruthy())
     const card = cardFor('Ashok uppuluri')
     // A grey "Booked" chip said nothing every card on the page does not.
-    expect(card.querySelector('.sbs-source-badge')).toBeNull()
+    expect(card.querySelector('.sbs-source-icon')).toBeNull()
     expect(within(card).queryByText('Booked')).toBeNull()
     expect(within(card).queryByLabelText('AI Auto-booked')).toBeNull()
     expect(within(card).queryByLabelText('Candidate booked')).toBeNull()
@@ -108,10 +108,10 @@ describe('confirmed slot booking source', () => {
   it('tones the two real sources apart from each other and from unknown', async () => {
     await openConfirmed()
     await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
-    expect(cardFor('Aniket').querySelector('.sbs-source-badge').className)
-      .toContain('sbs-source-badge--auto')
-    expect(cardFor('Manu').querySelector('.sbs-source-badge').className)
-      .toContain('sbs-source-badge--candidate')
+    expect(cardFor('Aniket').querySelector('.sbs-source-icon').className)
+      .toContain('sbs-source-icon--auto')
+    expect(cardFor('Manu').querySelector('.sbs-source-icon').className)
+      .toContain('sbs-source-icon--candidate')
   })
 
   it('keeps the stage badge a separate element from the source badge', async () => {
@@ -119,7 +119,7 @@ describe('confirmed slot booking source', () => {
     await waitFor(() => expect(cardFor('Aniket')).toBeTruthy())
     const card = cardFor('Aniket')
     const round = card.querySelector('.sbs-slot-card__round')
-    const source = card.querySelector('.sbs-source-badge')
+    const source = card.querySelector('.sbs-source-icon')
     expect(round).toBeTruthy()
     expect(source).toBeTruthy()
     expect(round).not.toBe(source)
@@ -165,16 +165,17 @@ describe('the rest of the confirmed slots view is unchanged', () => {
 describe('the badge ships with its stylesheet', () => {
   // The split lost the markup and the CSS together, so asserting the class is
   // rendered proves only half of it.
-  it('index.css defines all three source tones', async () => {
+  it('index.css defines both source icon tones, and the old text chip is gone', async () => {
     const { readFileSync } = await import('node:fs')
     const { join, dirname } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
     const css = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), '..', 'index.css'), 'utf8')
-    expect(css).toMatch(/\.sbs-source-badge\s*\{/)
-    for (const tone of ['auto', 'candidate', 'unknown']) {
-      expect(css).toMatch(new RegExp(`\\.sbs-source-badge--${tone}\\s*\\{`))
+    expect(css).toMatch(/\.sbs-source-icon\s*\{/)
+    for (const tone of ['auto', 'candidate']) {
+      expect(css).toMatch(new RegExp(`\\.sbs-source-icon--${tone}\\s*\\{`))
     }
+    expect(css).not.toContain('.sbs-source-badge')
   })
 })
 
