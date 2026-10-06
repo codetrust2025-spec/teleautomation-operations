@@ -6650,7 +6650,7 @@ function CandidatesPanelImpl() {
           onChange={(ge) => b(ge.target.value)}
         />
         <select
-          className="cand-input"
+          className={`cand-input${service !== "all" ? " cand-input--active" : ""}`}
           value={service}
           onChange={(ge) => setService(ge.target.value)}
           aria-label="Filter by service type"
@@ -6672,9 +6672,10 @@ function CandidatesPanelImpl() {
           ))}
         </select>
         <select
-          className="cand-input"
+          className={`cand-input${g !== "all" ? " cand-input--active" : ""}`}
           value={g}
           onChange={(ge) => p(ge.target.value)}
+          aria-label="Filter by stage"
         >
           {dR.map((ge) => (
             <option value={ge.value} key={ge.value}>
@@ -6782,6 +6783,19 @@ function CandidatesPanelImpl() {
         />
       )}
       {candTab === "candidates" && (
+        <p className="cand-table-legend">
+          <span className="cand-table-legend__item">
+            <span className="cand-table-legend__bar cand-table-legend__bar--unpaid" aria-hidden="true" />
+            <span className="cand-table-legend__bar cand-table-legend__bar--partial" aria-hidden="true" />
+            Balance due (red: nothing paid, amber: part paid)
+          </span>
+          <span className="cand-table-legend__item">
+            <span className="cand-table-legend__tick" aria-hidden="true">✓</span>
+            All details entered
+          </span>
+        </p>
+      )}
+      {candTab === "candidates" && (
         <div className="cand-table-wrap">
           <table className="cand-table">
             <thead>
@@ -6838,7 +6852,7 @@ function CandidatesPanelImpl() {
                     const Ge = fR(ge.stage);
                     return (
                       <tr
-                        className={`cand-row${ge.needs_followup ? " cand-row--pending" : ""}`}
+                        className={`cand-row${ge.needs_followup ? ` cand-row--pending cand-row--due-${Number(ge.payment) > 0 ? "partial" : "unpaid"}` : ""}`}
                         onClick={() => I(ge)}
                         key={ge.id}
                         data-cid={ge.id}

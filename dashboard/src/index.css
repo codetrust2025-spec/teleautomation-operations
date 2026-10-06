@@ -18579,8 +18579,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
    Payment, Phone, Resume and the actions were squeezed, and at 1280px the
    table (1158px) ran past its 961px box. Columns now have set widths and Name
    takes what is left. Where the page is too narrow for all ten, columns fold
-   rather than scroll: Service type moves under the technology (below 1600px),
-   and Phone and Reference move under the name (below 1440px). Phones (<600px)
+   rather than scroll: Service type moves under the technology (below 1700px),
+   and Phone and Reference move under the name (below 1536px). Phones (<600px)
    keep their cards: nothing here applies there. */
 .cand-tech-service,
 .cand-name-meta { display: none; }
@@ -18599,15 +18599,31 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page--candidates > .cand-table-wrap .cand-table thead th:last-child,
   .cand-page--candidates > .cand-table-wrap .cand-table tbody td:last-child { padding-right: 12px; }
   .cand-page--candidates .cand-table thead th { white-space: nowrap; }
-  .cand-page--candidates .cand-th--service { width: 92px; }
+  .cand-page--candidates .cand-th--service { width: 112px; }
   .cand-page--candidates .cand-th--tech { width: 11%; }
   .cand-page--candidates .cand-th--stage { width: 96px; }
   .cand-page--candidates .cand-th--pay { width: 196px; }
   .cand-page--candidates .cand-th--date { width: 96px; }
-  .cand-page--candidates .cand-th--phone { width: 124px; }
-  .cand-page--candidates .cand-th--ref { width: 8%; }
-  .cand-page--candidates .cand-th--resume { width: 128px; }
-  .cand-page--candidates .cand-th--actions { width: 72px; text-align: right; }
+  .cand-page--candidates .cand-th--phone { width: 140px; }
+  .cand-page--candidates .cand-th--ref { width: 9%; }
+  .cand-page--candidates .cand-th--resume { width: 140px; }
+  .cand-page--candidates .cand-th--actions { width: 84px; text-align: right; }
+
+  /* Neighbouring columns never touch: the service tag sits inside its own
+     column, the phone chip fits its column, and Technology, Reference and the
+     actions each start with clear space. */
+  .cand-page--candidates td.cand-cell-service .cand-channel-tag {
+    margin-left: 0; padding-left: 0; padding-right: 0;
+    font-size: 10px; letter-spacing: 0.3px;
+  }
+  .cand-page--candidates .cand-table td.cand-cell-tech,
+  .cand-page--candidates .cand-table td.cand-cell-ref { padding-left: 12px; }
+  .cand-page--candidates td.cand-cell-phone .cand-phone-trigger {
+    max-width: 100%; gap: 5px; padding: 3px 8px 3px 7px; font-size: 12px;
+  }
+  .cand-page--candidates .cand-table td.cand-cell-resume { padding-right: 12px; overflow: hidden; }
+  .cand-page--candidates .cand-resume-chip__count { overflow: hidden; text-overflow: ellipsis; }
+  .cand-page--candidates .cand-table td.cand-cell-actions { padding-left: 10px; }
 
   /* The cell was a flex box, so it was not a table cell and drifted out from
      under its heading. */
@@ -18616,7 +18632,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
     text-align: right;
     white-space: nowrap;
   }
-  .cand-page--candidates .cand-table tbody td.cand-cell-actions .cand-btn + .cand-btn { margin-left: 4px; }
+  .cand-page--candidates .cand-table tbody td.cand-cell-actions .cand-btn + .cand-btn { margin-left: 6px; }
   .cand-page--candidates .cand-cell-tech { overflow-wrap: anywhere; }
   .cand-page--candidates .cand-cell-stage .cand-badge { white-space: normal; text-align: center; }
   .cand-page--candidates .cand-cell-ref {
@@ -18626,10 +18642,9 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   }
   .cand-page--candidates .cand-cell-name { overflow-wrap: anywhere; }
 
-  /* Phone and referrer under the name: on every row where their columns fold
-     away, and on a repeated name everywhere, so two "Ram Charan M S" rows
-     tell apart at a glance. */
-  .cand-page--candidates .cand-name-meta--dup { display: flex; }
+  /* Phone and referrer under the name only where their columns fold away
+     (below 1536px). With the Phone and Reference columns showing, a repeated
+     name is told apart by those columns, so nothing is repeated under it. */
   .cand-name-meta {
     flex-wrap: wrap;
     align-items: center;
@@ -18662,40 +18677,80 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page--candidates .cand-pay-proofs { gap: 3px; padding: 2px 2px 2px 6px; }
   .cand-page--candidates .cand-pay-proofs-cta { margin-left: 1px; padding: 0 4px; }
 
-  /* Toolbar: filters on the left, actions together on the right, wrapping to a
-     second line rather than scrolling sideways. */
+  /* Toolbar: two full lines and no gaps. The search grows to fill the first
+     line beside the four actions; the filters share the second line equally.
+     (It was filters on one line and the actions alone on another, leaving
+     half of each line empty.) */
   .cand-page--candidates > .cand-toolbar {
     flex-wrap: wrap !important;
     overflow: visible;
     row-gap: 4px;
   }
-  /* A zero-height full-width item ends the filter line; the actions follow
-     on their own line, together at the right. */
+  .cand-page--candidates > .cand-toolbar .cand-input--search {
+    order: 0;
+    flex: 1 1 220px;
+    min-width: 200px;
+    max-width: none;
+  }
+  .cand-page--candidates > .cand-toolbar > .cand-btn { order: 1; flex: none; }
+  /* A zero-height full-width item ends the first line. */
   .cand-page--candidates > .cand-toolbar::after {
     content: "";
-    order: 1;
+    order: 2;
     flex: 0 0 100%;
     height: 0;
   }
-  .cand-page--candidates > .cand-toolbar > .cand-btn { order: 2; }
-  .cand-page--candidates > .cand-toolbar > * { flex-shrink: 1; }
-  .cand-page--candidates > .cand-toolbar .cand-input--search {
-    flex: 1 1 200px;
-    min-width: 180px;
-    max-width: 340px;
+  .cand-page--candidates > .cand-toolbar > select.cand-input,
+  .cand-page--candidates > .cand-toolbar > .cand-toggle {
+    order: 3;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
   }
-  .cand-page--candidates > .cand-toolbar > select.cand-input { flex: 0 1 auto; min-width: 0; max-width: 170px; }
-  .cand-page--candidates > .cand-toolbar .cand-toolbar-actions-start { margin-left: auto; }
+  .cand-page--candidates > .cand-toolbar > .cand-toggle { justify-content: center; }
+
+  /* What the marks on a row mean, said once above the table. */
+  .cand-page--candidates > .cand-table-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 16px;
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-dim, #94a3b8);
+  }
+  /* Outranks the page's 12px gap between sections, so the legend sits on the table. */
+  .cand-page.cand-page--candidates > .cand-table-legend { margin-top: 10px; margin-bottom: 0; }
+  .cand-page.cand-page--candidates > .cand-table-legend + .cand-table-wrap { margin-top: 0; }
+}
+.cand-table-legend { display: none; }
+.cand-table-legend__item { display: inline-flex; align-items: center; gap: 5px; }
+.cand-table-legend__bar { display: inline-block; width: 3px; height: 12px; border-radius: 2px; }
+.cand-table-legend__bar--unpaid { background: rgba(248, 113, 113, 0.85); }
+.cand-table-legend__bar--partial { background: rgba(245, 158, 11, 0.9); margin-left: -2px; }
+.cand-table-legend__tick {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, .38); background: rgba(6, 78, 59, .32);
+  color: #6ee7b7; font-size: 9px; font-weight: 800;
+}
+/* From 600px the balance-due bar takes the colour of the payment pill beside
+   it: red when nothing is paid, amber when part is (phones keep their bar as
+   it was). Hover only tints; nothing looks selected. */
+@media (min-width: 600px) {
+  .cand-page--candidates > .cand-table-legend { display: flex; }
+  .cand-page--candidates .cand-row--pending.cand-row--due-partial { box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.85); }
+  .cand-page--candidates .cand-row--pending.cand-row--due-unpaid { box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.8); }
 }
 
-/* Below 1600px: Service type folds under the technology. */
-@media (min-width: 600px) and (max-width: 1599px) {
+/* Below 1700px: Service type folds under the technology. */
+@media (min-width: 600px) and (max-width: 1699px) {
   .cand-page--candidates .cand-table .cand-th--service,
   .cand-page--candidates .cand-table td.cand-cell-service { display: none; }
   .cand-page--candidates .cand-tech-service { display: flex; }
 }
-/* Below 1440px: Phone and Reference fold under the name as well. */
-@media (min-width: 600px) and (max-width: 1439px) {
+/* Below 1536px: Phone and Reference fold under the name as well. */
+@media (min-width: 600px) and (max-width: 1535px) {
   .cand-page--candidates .cand-table .cand-th--phone,
   .cand-page--candidates .cand-table td.cand-cell-phone,
   .cand-page--candidates .cand-table .cand-th--ref,
