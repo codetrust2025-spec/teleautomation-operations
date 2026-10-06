@@ -123,10 +123,10 @@ describe('the Screenshot column', () => {
   it('draws every screenshot cell as one centred box of one size', () => {
     expect(DESKTOP, 'the desktop block is missing').not.toBe('')
     expect(rule('.ops-dash-table--v3 td.ops-slot-shot-cell')).toMatch(/text-align:\s*center/)
-    const thumb = rule('.ops-dash-table--v3 .ops-slot-shot-thumb')
-    expect(thumb).toMatch(/width:\s*60px/)
-    expect(thumb).toMatch(/height:\s*34px/)
-    expect(rule('.ops-dash-table--v3 .ops-slot-shot-empty')).toMatch(/width:\s*60px/)
+    // The thumbnail and the empty cell share one rule, so one frame size.
+    const frame = rule('.ops-dash-table--v3 .ops-slot-shot-thumb,\n  .ops-dash-table--v3 .ops-slot-shot-empty')
+    expect(frame).toMatch(/width:\s*60px/)
+    expect(frame).toMatch(/height:\s*34px/)
   })
 })
 

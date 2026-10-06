@@ -2001,14 +2001,27 @@
   /* One screenshot box for every row: a thumbnail, a file that will not
      load, or none at all, all the same size and centred in the column. */
   .ops-dash-table--v3 td.ops-slot-shot-cell { text-align: center; vertical-align: middle; padding-left: 4px; padding-right: 4px; }
-  .ops-dash-table--v3 .ops-slot-shot-thumb {
+  /* One 60x34 frame for all three states -- an image, a file that will not
+     load, and no screenshot -- so every row's preview sits in the same place. */
+  .ops-dash-table--v3 .ops-slot-shot-thumb,
+  .ops-dash-table--v3 .ops-slot-shot-empty {
+    box-sizing: border-box; flex: none;
     display: inline-flex; align-items: center; justify-content: center;
-    width: 60px; height: 34px; vertical-align: middle;
+    width: 60px; height: 34px; margin: 0; vertical-align: middle;
   }
-  .ops-dash-table--v3 .ops-slot-shot-thumb span { padding: 1px; font-size: 8px; }
+  /* The image is pinned to the frame, so its own proportions (a tall phone
+     capture, a wide desktop one, a tiny icon) or a slow load never change
+     the box. Every preview is cropped the same way and shows the top of its
+     screenshot, where an invite's title and time are. */
+  .ops-dash-table--v3 .ops-slot-shot-thumb img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%; max-width: none; max-height: none;
+    object-fit: cover; object-position: center top; transform-origin: center top;
+  }
+  .ops-dash-table--v3 .ops-slot-shot-thumb span { z-index: 1; padding: 1px; font-size: 8px; }
   .ops-dash-table--v3 .ops-slot-shot-thumb--missing { padding-top: 0; align-items: center; }
   .ops-dash-table--v3 .ops-slot-shot-thumb--missing > svg { margin-bottom: 8px; }
-  .ops-dash-table--v3 .ops-slot-shot-empty { display: inline-block; width: 60px; color: #64748b; font-size: 12px; }
+  .ops-dash-table--v3 .ops-slot-shot-empty { color: #64748b; font-size: 12px; }
 }
 /* The attendance select sized itself to its longest option ("Awaiting new
    slot") and spilled out of its column on a 1280px laptop; it fits the
