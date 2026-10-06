@@ -34,7 +34,6 @@ def _empty() -> dict:
         "prompts": [],
         "resources": [],
         "offer_letters": [],
-        "interview_data": [],
         "updated_at": None,
     }
 
@@ -53,7 +52,6 @@ def _load() -> dict:
             data.setdefault("prompts", [])
             data.setdefault("resources", [])
             data.setdefault("offer_letters", [])
-            data.setdefault("interview_data", [])
             return data
         except (OSError, json.JSONDecodeError):
             return _empty()
@@ -216,7 +214,6 @@ def get_credentials() -> dict:
     prompts = _clean_list(data.get("prompts"))
     resources = _clean_list(data.get("resources"))
     offer_letters = _clean_list(data.get("offer_letters"))
-    interview_data = _clean_list(data.get("interview_data"))
     return {
         "site_url": (data.get("site_url") or "").strip(),
         "vps_host": (data.get("vps_host") or "").strip(),
@@ -232,7 +229,6 @@ def get_credentials() -> dict:
         "prompts": prompts,
         "resources": resources,
         "offer_letters": offer_letters,
-        "interview_data": interview_data,
         "updated_at": data.get("updated_at"),
         "count": (1 if admin else 0) + len(handlers),
     }
@@ -310,18 +306,16 @@ def merge_vault_entries(
     return get_credentials()
 
 
-# Interview Data holds dated operational history (interviews, payments noted in
-# chats, process notes) with the source each record came from. It is admin-only
-# like the rest of this file, and it is a record of what a source said -- it
-# never writes to the candidate, slot or payment stores.
-_VAULT_SECTIONS = frozenset({"service_accounts", "prompts", "resources", "offer_letters", "interview_data"})
+# The sections the vault routes may create, edit and delete rows in. An
+# "interview_data" list may still sit in an older credentials file; it is no
+# longer a section, so nothing reads, returns or writes it, and saving the file
+# carries it over untouched.
+_VAULT_SECTIONS = frozenset({"service_accounts", "prompts", "resources", "offer_letters"})
 
 
 def _section_sort_key(section: str):
     if section == "offer_letters":
         return lambda r: str(r.get("filename") or r.get("id"))
-    if section == "interview_data":
-        return lambda r: (str(r.get("event_date") or ""), str(r.get("id") or ""))
     return lambda r: str(r.get("label") or r.get("title") or r.get("id"))
 
 
