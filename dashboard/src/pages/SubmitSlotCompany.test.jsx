@@ -138,4 +138,8 @@ describe('a Confirmed slots card', () => {
     expect(rule('.sbs-confirmed-card__right')).toMatch(/flex-direction:\s*row/)
     expect(rule('.sbs-slot-card__line')).toMatch(/flex-wrap:\s*wrap/)
   })
+
+  it('gives the company input and the round select one height in their row', () => {
+    expect(CSS).toMatch(/\.sbs-field-row \.sbs-select \{ min-height: 44px; \}/)
+  })
 })
