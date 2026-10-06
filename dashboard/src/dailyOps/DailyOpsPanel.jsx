@@ -12,18 +12,31 @@ import { Icon } from '../components/ui/Icon.jsx'
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 const ROUNDS = ['L1', 'L2', 'HR', 'Final', 'Screening']
 
-function KpiCard({ label, value, tone = 'default', loading = false, active = false, onClick }) {
+function KpiCard({ label, value, tone = 'default', loading = false, active = false, onClick, title }) {
   return (
     <button
       type="button"
       className={`ops-dash-kpi ops-dash-kpi--${tone}${loading ? ' ops-dash-kpi--loading' : ''}${active ? ' ops-dash-kpi--active' : ''}`}
       onClick={onClick}
       aria-pressed={active}
+      title={title}
     >
       <span className="ops-dash-kpi__label">{label}</span>
       <strong className="ops-dash-kpi__value">{loading ? '…' : value}</strong>
     </button>
   )
+}
+
+/**
+ * What a status counter counts. The tabs and the "Candidate tasks" pill beside
+ * them both used to say "pending" -- one for interviews in this view without a
+ * status, the other for open work across every candidate -- with nothing on
+ * screen to tell the two apart.
+ */
+export function kpiScope(tab) {
+  if (tab.id === 'scheduled') return 'Every interview in the current view'
+  if (tab.filterValue === 'pending') return 'Interviews in the current view with no status recorded yet'
+  return `Interviews in the current view marked ${tab.label}`
 }
 
 const PIE_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4', '#f43f5e', '#84cc16']
@@ -327,6 +340,7 @@ export function DailyOpsPanel({
                 label={tab.label}
                 value={interviews[tab.countKey] ?? 0}
                 tone={tab.kpiTone}
+                title={kpiScope(tab)}
                 loading={loading}
                 active={active}
                 onClick={() => setStatusFilter(active && !isScheduled ? '' : token)}

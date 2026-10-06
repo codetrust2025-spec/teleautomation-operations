@@ -774,7 +774,7 @@ export function InterviewRoster({
                       <td data-label="Company" className="ops-interview-company">
                         {row.interview_company
                           ? <span className="ops-interview-company__name" title={row.interview_company}>{row.interview_company}</span>
-                          : <span className="ops-interview-company__none" title="No company recorded for this interview">Not recorded</span>}
+                          : <span className="ops-interview-company__none" title="No company recorded for this interview" aria-label="No company recorded">—</span>}
                         {/* The role is recorded far more often than the company,
                             so it shows under either. */}
                         {row.interview_role && <span className="ops-interview-company__role" title={row.interview_role}>{row.interview_role}</span>}
@@ -805,7 +805,7 @@ export function InterviewRoster({
                       <td data-label="Screenshot" className="ops-slot-shot-cell">
                         {row.slot_screenshot_proof
                           ? <SlotShotThumb row={row} onOpen={() => setScreenshotRow(row)} />
-                          : <span className="ops-slot-shot-empty">Not available</span>}
+                          : <span className="ops-slot-shot-empty" title="No booking screenshot" aria-label="No booking screenshot">—</span>}
                       </td>
                       <td data-label="Notes" className="ops-interview-notes-cell">
                         {row.interview_feedback && (

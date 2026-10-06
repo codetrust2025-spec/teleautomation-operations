@@ -118,16 +118,19 @@ describe('company', () => {
     expect(company.querySelector('.ops-interview-company__role').textContent).toBe('Senior Test Engineer')
   })
 
-  it('says so when no company was recorded, instead of leaving the cell blank', async () => {
+  it('shows a compact dash when no company was recorded, still named for a reader', async () => {
     await renderPanel()
-    expect(cellOf('Vikram Devi', 'Company').textContent).toBe('Not recorded')
+    const none = cellOf('Vikram Devi', 'Company').querySelector('.ops-interview-company__none')
+    expect(cellOf('Vikram Devi', 'Company').textContent).toBe('—')
+    expect(none.getAttribute('aria-label')).toBe('No company recorded')
+    expect(none.getAttribute('title')).toBe('No company recorded for this interview')
   })
 
   it('still shows the role when only the role was recorded', async () => {
     // In production the role is on far more rows than the company is.
     await renderPanel()
     const company = cellOf('Meera Iyer', 'Company')
-    expect(company.querySelector('.ops-interview-company__none').textContent).toBe('Not recorded')
+    expect(company.querySelector('.ops-interview-company__none').textContent).toBe('—')
     expect(company.querySelector('.ops-interview-company__role').textContent).toBe('Java Developer')
   })
 

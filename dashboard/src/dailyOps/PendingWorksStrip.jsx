@@ -29,14 +29,18 @@ export function PendingWorksStrip({ onOpenCandidates, maxPreview = 4, compact = 
         type="button"
         className="pending-works-pill"
         onClick={() => navigatePendingWorkToCandidates(null, { onNavCandidates: onOpenCandidates })}
-        aria-label={`Pending works: ${count} tasks`}
+        // "12 pending" sat beside the "Pending" interview counter and read as
+        // the same thing. This is open work on candidates (resume, payment,
+        // proof...) across the whole roster, not interviews in this view.
+        aria-label={`Candidate tasks: ${count} open across ${candidateCount} candidate${candidateCount === 1 ? '' : 's'}. Opens Candidates.`}
+        title={`${count} open task${count === 1 ? '' : 's'} (resume, payment, proof…) across ${candidateCount} candidate${candidateCount === 1 ? '' : 's'}, not limited to this view. Opens Candidates.`}
       >
         <span className="pending-works-pill__dot" aria-hidden />
         <span className="pending-works-pill__label">
-          {loading ? 'Checking…' : `${count} pending`}
+          {loading ? 'Checking…' : 'Candidate tasks'}
         </span>
-        {!loading && candidateCount > 0 && (
-          <span className="pending-works-pill__count">{candidateCount}</span>
+        {!loading && (
+          <span className="pending-works-pill__count" aria-hidden>{count}</span>
         )}
       </button>
     )

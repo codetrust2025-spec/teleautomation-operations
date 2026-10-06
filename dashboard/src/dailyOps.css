@@ -1978,14 +1978,38 @@
 .ops-dash-table--v3 col.ops-col--candidate{width:14%}
 .ops-dash-table--v3 col.ops-col--company{width:11%}
 .ops-dash-table--v3 col.ops-col--tech{width:10%}
-.ops-dash-table--v3 col.ops-col--round{width:5%}
+.ops-dash-table--v3 col.ops-col--round{width:6%}
 .ops-dash-table--v3 col.ops-col--attendee{width:7%}
-.ops-dash-table--v3 col.ops-col--attendance{width:15%}
+.ops-dash-table--v3 col.ops-col--attendance{width:14%}
 .ops-dash-table--v3 col.ops-col--screenshot{width:88px}
-.ops-dash-table--v3 col.ops-col--notes{width:11%}
+.ops-dash-table--v3 col.ops-col--notes{width:10%}
 .ops-dash-table--v3 col.ops-col--actions{width:64px}
-.ops-dash-table--v3 th.ops-col-actions-head{text-align:center;white-space:nowrap;padding-left:2px;padding-right:2px}
-.ops-dash-table--v3 td.ops-dash-attend-cell{justify-content:center}
+.ops-dash-table--v3 th.ops-col-actions-head{text-align:left;white-space:nowrap;padding-left:2px;padding-right:2px}
+/* Laptop and desktop table only (phones lay rows out as cards).
+   The Actions cell was display:flex, which takes a <td> out of the row: it
+   stopped sharing the row's height and alignment, and the menu floated apart
+   from the row it belongs to. It is a table cell again, and the menu sits at
+   its left edge, right after Notes. */
+@media (min-width: 768px) {
+  .ops-dash-table--v3 td.ops-dash-attend-cell {
+    display: table-cell; width: auto; text-align: left; vertical-align: middle;
+    padding-left: 2px; padding-right: 4px;
+  }
+  .ops-dash-table--v3 td.ops-interview-notes-cell { padding-right: 4px; }
+  /* A heading is one line: "ROUND" broke into "ROUN / D" at 1440px. */
+  .ops-dash-table--v3 thead th { white-space: nowrap; }
+  /* One screenshot box for every row: a thumbnail, a file that will not
+     load, or none at all, all the same size and centred in the column. */
+  .ops-dash-table--v3 td.ops-slot-shot-cell { text-align: center; vertical-align: middle; padding-left: 4px; padding-right: 4px; }
+  .ops-dash-table--v3 .ops-slot-shot-thumb {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 60px; height: 34px; vertical-align: middle;
+  }
+  .ops-dash-table--v3 .ops-slot-shot-thumb span { padding: 1px; font-size: 8px; }
+  .ops-dash-table--v3 .ops-slot-shot-thumb--missing { padding-top: 0; align-items: center; }
+  .ops-dash-table--v3 .ops-slot-shot-thumb--missing > svg { margin-bottom: 8px; }
+  .ops-dash-table--v3 .ops-slot-shot-empty { display: inline-block; width: 60px; color: #64748b; font-size: 12px; }
+}
 /* The attendance select sized itself to its longest option ("Awaiting new
    slot") and spilled out of its column on a 1280px laptop; it fits the
    column now and the chosen value still reads in full at every status. */
@@ -2000,7 +2024,7 @@
 .ops-interview-company{overflow:hidden}
 .ops-interview-company__name{display:block;color:#e2e8f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ops-interview-company__role{display:block;margin-top:1px;color:#94a3b8;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ops-interview-company__none{color:#64748b;font-size:10px;font-style:italic}
+.ops-interview-company__none{color:#64748b}
 
 /* Booking source: a small chip on the phone-number line rather than a third
    line of "Candidate booked" in every row. The chip names itself on hover and
