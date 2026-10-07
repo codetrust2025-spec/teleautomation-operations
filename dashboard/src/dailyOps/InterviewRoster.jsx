@@ -279,34 +279,7 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
               />
             </div>}
             {attendeeWithStatus && <label className="cand-field cand-field--span2"><span className="cand-field-label">Note / remark <span className="cand-field-required-tag">Required</span></span><input className="cand-input" value={remark} onChange={event => setRemark(event.target.value)} placeholder="e.g. Interview went well, next round scheduled" required /></label>}
-          </> : <><label className="cand-field"><span className="cand-field-label">Date</span><input className="cand-input" type="date" value={date} onChange={event => setDate(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Start time</span><input className="cand-input" type="time" value={time} onChange={event => setTime(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">End time</span><input className="cand-input" type="time" value={timeEnd} onChange={event => setTimeEnd(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Interview round</span><select className="cand-input" value={round} onChange={event => setRound(event.target.value)}><option value="">Select round</option><option value="L1">L1</option><option value="L2">L2</option><option value="HR">HR</option><option value="Final">Final</option><option value="Screening">Screening</option></select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Technology *</span><select className="cand-input" value={technology} onChange={event => setTechnology(event.target.value)} required><option value="">Select technology</option>{technology && !TECHNOLOGIES.includes(technology) && <option value={technology}>{technology}</option>}{TECHNOLOGIES.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Notes</span><input className="cand-input" value={notes} onChange={event => setNotes(event.target.value)} /></label>{(() => {
-            // Read-only recap of the attendance outcome. This is a different
-            // record from the editable slot Notes above: feedback and remark are
-            // written through the attendance endpoint, so they are shown here but
-            // never edited or saved by this slot form. Hidden entirely when the
-            // interview has no recorded outcome yet.
-            const attendanceFeedback = feedbackMeta(row.interview_feedback)
-            const attendanceRemark = (row.interview_attendance_remark || '').trim()
-            if (!attendanceFeedback && !attendanceRemark) return null
-            return (
-              <section className="cand-field cand-field--span2 ops-slot-attendance-note" aria-label="Attendance note and feedback">
-                <span className="cand-field-label">Attendance note / feedback</span>
-                <div className="ops-slot-attendance-note__body">
-                  {attendanceFeedback && (
-                    <span
-                      className={`ops-feedback-pill ops-feedback-pill--${attendanceFeedback.tone}`}
-                      data-feedback={attendanceFeedback.value}
-                      title={`Interview feedback: ${attendanceFeedback.label}`}
-                    >
-                      {attendanceFeedback.label}
-                    </span>
-                  )}
-                  {attendanceRemark && <p className="ops-slot-attendance-note__text">{attendanceRemark}</p>}
-                </div>
-                <small className="ops-slot-attendance-note__hint">Recorded from attendance. Read-only here.</small>
-              </section>
-            )
-          })()}</>}
+          </> : <><label className="cand-field"><span className="cand-field-label">Date</span><input className="cand-input" type="date" value={date} onChange={event => setDate(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Start time</span><input className="cand-input" type="time" value={time} onChange={event => setTime(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">End time</span><input className="cand-input" type="time" value={timeEnd} onChange={event => setTimeEnd(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Interview round</span><select className="cand-input" value={round} onChange={event => setRound(event.target.value)}><option value="">Select round</option><option value="L1">L1</option><option value="L2">L2</option><option value="HR">HR</option><option value="Final">Final</option><option value="Screening">Screening</option></select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Technology *</span><select className="cand-input" value={technology} onChange={event => setTechnology(event.target.value)} required><option value="">Select technology</option>{technology && !TECHNOLOGIES.includes(technology) && <option value={technology}>{technology}</option>}{TECHNOLOGIES.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Notes</span><input className="cand-input" value={notes} onChange={event => setNotes(event.target.value)} /></label></>}
           {error && <p className="admin-error cand-field--span2">{error}</p>}
         </div>
         <footer className="cand-modal-footer"><button type="button" className="cand-btn cand-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className={`cand-btn cand-btn--primary${attendeeWithStatus && (targetStatus === 'not_attended' || targetStatus === 'cancelled') ? ' cand-btn--danger' : ''}${!canSubmit ? ' cand-btn--disabled' : ''}`} disabled={busy || !canSubmit} aria-disabled={busy || !canSubmit}>{busy ? 'Saving…' : attendeeWithStatus ? targetLabel : 'Save changes'}</button></footer>
