@@ -2063,15 +2063,6 @@
 .ops-feedback-pill--caution{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.12);color:#fcd34d}
 .ops-feedback-pill--negative{border-color:rgba(248,113,113,.4);background:rgba(239,68,68,.12);color:#fca5a5}
 
-/* Read-only attendance recap inside the Edit interview slot modal. A different
-   record from the editable slot Notes above it: shown for context, never saved
-   by the slot form. Muted panel so it never looks like an editable field.
-   All-width (not phone-scoped): kept above the phone block below. */
-.ops-slot-attendance-note{gap:6px}
-.ops-slot-attendance-note__body{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border:1px solid rgba(148,163,184,.22);border-radius:8px;background:rgba(148,163,184,.07)}
-.ops-slot-attendance-note__text{margin:0;color:#cbd5e1;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
-.ops-slot-attendance-note__hint{color:#8c98a6;font-size:10.5px}
-
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
    the phone breakpoint: the desktop layout above 767px is untouched.
