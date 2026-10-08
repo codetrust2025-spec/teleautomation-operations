@@ -2063,6 +2063,55 @@
 .ops-feedback-pill--caution{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.12);color:#fcd34d}
 .ops-feedback-pill--negative{border-color:rgba(248,113,113,.4);background:rgba(239,68,68,.12);color:#fca5a5}
 
+/* ── Edit interview slot modal: readability + spacing polish ──────────────
+   Scoped to .ops-slot-modal so the shared candidate modal is untouched. This
+   changes presentation only; the data flow (NOTES = interview_attendance_remark,
+   feedback read-only, pending disabled, attendance-endpoint save) is unchanged.
+   All-width (kept above the phone block below). */
+/* (3) more breathing room between rows; (4) equal columns + consistent gap */
+.ops-slot-modal .cand-modal-body{
+  grid-template-columns:1fr 1fr;
+  column-gap:18px;
+  row-gap:18px;
+  padding:20px 22px;
+}
+.ops-slot-modal .cand-field{gap:7px;min-width:0}
+/* (2) labels: higher contrast, slightly larger, clearer tracking */
+.ops-slot-modal .cand-field-label{
+  font-size:12px;
+  color:#cbd5e1;
+  letter-spacing:0.6px;
+  font-weight:700;
+}
+/* (5) read-only feedback badge: roomier padding and height inside the modal */
+.ops-slot-modal .ops-feedback-pill{
+  height:auto;
+  line-height:1.4;
+  padding:4px 12px;
+  font-size:12px;
+  border-radius:8px;
+  white-space:normal;
+}
+/* (6) NOTES as the primary editable field — a clear focus ring, not a
+   browser select-all highlight (the caret is sent to the end in JS). */
+.ops-slot-modal .ops-slot-notes-input{
+  background:#0c1119;
+  border-color:rgba(148,163,184,.28);
+}
+.ops-slot-modal .ops-slot-notes-input:focus,
+.ops-slot-modal .ops-slot-notes-input:focus-visible{
+  outline:none;
+  border-color:rgba(96,165,250,.75);
+  box-shadow:0 0 0 3px rgba(96,165,250,.22);
+}
+.ops-slot-modal .ops-slot-notes-input::selection{
+  background:rgba(96,165,250,.28);
+}
+.ops-slot-modal .ops-slot-notes-input:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}
+
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
    the phone breakpoint: the desktop layout above 767px is untouched.
