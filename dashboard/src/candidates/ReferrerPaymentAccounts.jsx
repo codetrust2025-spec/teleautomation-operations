@@ -48,6 +48,9 @@ export default function ReferrerPaymentAccounts({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [effectiveMonth, setEffectiveMonth] = useState(
+    () => new Date().toISOString().slice(0, 7),
+  );
 
   const referrer = useMemo(() => {
     const key = referrerName.trim().toLowerCase();
@@ -139,6 +142,36 @@ export default function ReferrerPaymentAccounts({
     }
   }
 
+  async function setLifecycle(status) {
+    if (!referrer) return;
+    const body = { status };
+    if (status === "INACTIVE") {
+      if (!effectiveMonth) {
+        setError("Pick an effective month before marking inactive.");
+        return;
+      }
+      body.effective_month = effectiveMonth;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await fetchReferrerRegistryJson(
+        apiBase,
+        `/referrers/${encodeURIComponent(referrer.id)}/lifecycle`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      await loadReferrers();
+    } catch (err) {
+      setError(err.message || "Could not update referrer status");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function removeAccount(accountId) {
     setSaving(true);
     setError("");
@@ -172,6 +205,46 @@ export default function ReferrerPaymentAccounts({
         <p className="ref-pay-accounts__error">
           This name is not linked to the current referrer registry.
         </p>
+      )}
+
+      {referrer && (
+        <div className="ref-lifecycle" aria-label="Referrer lifecycle">
+          <span className={`ref-pay-status ref-pay-status--${referrer.is_active ? "verified" : "rejected"}`}>
+            {referrer.is_active ? "Active" : "Inactive"}
+          </span>
+          {!referrer.is_active && referrer.inactive_effective_month && (
+            <small>Inactive from {referrer.inactive_effective_month}</small>
+          )}
+          {referrer.is_active ? (
+            <>
+              <label htmlFor="ref-lifecycle-month">Effective month</label>
+              <input
+                id="ref-lifecycle-month"
+                type="month"
+                className="cand-input"
+                value={effectiveMonth}
+                onChange={(event) => setEffectiveMonth(event.target.value)}
+              />
+              <button
+                type="button"
+                className="cand-btn cand-btn--xs cand-btn--danger-ghost"
+                disabled={saving}
+                onClick={() => setLifecycle("INACTIVE")}
+              >
+                Mark inactive
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="cand-btn cand-btn--xs cand-btn--primary"
+              disabled={saving}
+              onClick={() => setLifecycle("ACTIVE")}
+            >
+              Reactivate
+            </button>
+          )}
+        </div>
       )}
 
       {accounts.length > 0 && (
