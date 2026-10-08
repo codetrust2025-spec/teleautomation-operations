@@ -51,6 +51,10 @@ export default function ReferrerPaymentAccounts({
   const [effectiveMonth, setEffectiveMonth] = useState(
     () => new Date().toISOString().slice(0, 7),
   );
+  // Active / Inactive / All filter for the referrer list shown when no single
+  // referrer is selected. "all" shows everyone so departed referrers remain
+  // visible and reactivatable.
+  const [statusFilter, setStatusFilter] = useState("active");
 
   const referrer = useMemo(() => {
     const key = referrerName.trim().toLowerCase();
@@ -60,10 +64,52 @@ export default function ReferrerPaymentAccounts({
     ) || null;
   }, [referrerName, referrers]);
 
+  // Load the full set: the /referrers endpoint already returns every referrer
+  // (its status filter defaults to "all"), so name resolution for a selected
+  // referrer works even when that referrer is inactive. The Active/Inactive/All
+  // control filters this set client-side, so switching needs no refetch.
   const loadReferrers = useCallback(async () => {
     const payload = await fetchReferrerRegistryJson(apiBase, "/referrers");
     setReferrers(payload.referrers || []);
   }, [apiBase]);
+
+  const listedReferrers = useMemo(() => {
+    const rows = [...referrers].sort((a, b) =>
+      String(a.name || "").toLowerCase().localeCompare(String(b.name || "").toLowerCase())
+    );
+    if (statusFilter === "active") return rows.filter((r) => r.is_active);
+    if (statusFilter === "inactive") return rows.filter((r) => !r.is_active);
+    return rows;
+  }, [referrers, statusFilter]);
+
+  async function setReferrerLifecycle(referrerId, status) {
+    const body = { status };
+    if (status === "INACTIVE") {
+      if (!effectiveMonth) {
+        setError("Pick an effective month before marking inactive.");
+        return;
+      }
+      body.effective_month = effectiveMonth;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await fetchReferrerRegistryJson(
+        apiBase,
+        `/referrers/${encodeURIComponent(referrerId)}/lifecycle`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      await loadReferrers();
+    } catch (err) {
+      setError(err.message || "Could not update referrer status");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const loadAccounts = useCallback(async (referrerId) => {
     if (!referrerId) {
@@ -144,32 +190,7 @@ export default function ReferrerPaymentAccounts({
 
   async function setLifecycle(status) {
     if (!referrer) return;
-    const body = { status };
-    if (status === "INACTIVE") {
-      if (!effectiveMonth) {
-        setError("Pick an effective month before marking inactive.");
-        return;
-      }
-      body.effective_month = effectiveMonth;
-    }
-    setSaving(true);
-    setError("");
-    try {
-      await fetchReferrerRegistryJson(
-        apiBase,
-        `/referrers/${encodeURIComponent(referrer.id)}/lifecycle`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
-      await loadReferrers();
-    } catch (err) {
-      setError(err.message || "Could not update referrer status");
-    } finally {
-      setSaving(false);
-    }
+    await setReferrerLifecycle(referrer.id, status);
   }
 
   async function removeAccount(accountId) {
@@ -189,7 +210,87 @@ export default function ReferrerPaymentAccounts({
     }
   }
 
-  if (!referrerName || referrerName === "all") return null;
+  // No single referrer selected: show the Active / Inactive / All referrer
+  // list so an admin can review every referrer's lifecycle state and
+  // reactivate a departed one (inactive referrers never appear in the
+  // referrer picker, so this list is the only place they are visible).
+  if (!referrerName || referrerName === "all") {
+    return (
+      <section className="ref-pay-accounts" aria-label="Referrer lifecycle">
+        <header className="ref-pay-accounts__head">
+          <div>
+            <strong>Referrers</strong>
+            <span>Mark a referrer inactive from a chosen month, or reactivate one. History is always preserved.</span>
+          </div>
+          {loading && <small>Loading…</small>}
+        </header>
+
+        <div className="ref-lifecycle-filter" role="group" aria-label="Filter referrers by status">
+          {["active", "inactive", "all"].map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={`cand-btn cand-btn--xs ${statusFilter === value ? "cand-btn--primary" : "cand-btn--ghost"}`}
+              aria-pressed={statusFilter === value}
+              onClick={() => setStatusFilter(value)}
+            >
+              {value === "active" ? "Active" : value === "inactive" ? "Inactive" : "All"}
+            </button>
+          ))}
+          <label htmlFor="ref-list-month" className="ref-lifecycle-filter__month-label">Effective month</label>
+          <input
+            id="ref-list-month"
+            type="month"
+            className="cand-input"
+            value={effectiveMonth}
+            onChange={(event) => setEffectiveMonth(event.target.value)}
+          />
+        </div>
+
+        {listedReferrers.length === 0 && !loading && (
+          <p className="ref-pay-accounts__empty">No {statusFilter === "all" ? "" : statusFilter} referrers.</p>
+        )}
+
+        <ul className="ref-lifecycle-list">
+          {listedReferrers.map((row) => (
+            <li className="ref-lifecycle-row" key={row.id}>
+              <div>
+                <strong>{row.name}</strong>
+                <span className={`ref-pay-status ref-pay-status--${row.is_active ? "verified" : "rejected"}`}>
+                  {row.is_active ? "Active" : "Inactive"}
+                </span>
+                {!row.is_active && row.inactive_effective_month && (
+                  <small>Inactive from {row.inactive_effective_month}</small>
+                )}
+              </div>
+              <div className="ref-lifecycle-row__actions">
+                {row.is_active ? (
+                  <button
+                    type="button"
+                    className="cand-btn cand-btn--xs cand-btn--danger-ghost"
+                    disabled={saving}
+                    onClick={() => setReferrerLifecycle(row.id, "INACTIVE")}
+                  >
+                    Mark inactive
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="cand-btn cand-btn--xs cand-btn--primary"
+                    disabled={saving}
+                    onClick={() => setReferrerLifecycle(row.id, "ACTIVE")}
+                  >
+                    Reactivate
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+        {error && <p className="ref-pay-accounts__error">{error}</p>}
+      </section>
+    );
+  }
 
   return (
     <section className="ref-pay-accounts" aria-label="Referrer payment accounts">
