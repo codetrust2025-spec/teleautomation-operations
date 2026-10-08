@@ -1443,26 +1443,56 @@ def reference_dropdown_names(rows: list[dict] | None = None) -> list[str]:
         name = _canonical_reference_name(ref_raw)
         key = _reference_key(name)
         by_key[key] = _prefer_reference_display(by_key.get(key, name), ref_raw)
+    index, current_month = _lifecycle_index()
     return sorted(
-        (name for name in by_key.values() if _reference_active_now(name)),
+        (
+            name for name in by_key.values()
+            if _reference_active_now(name, index=index, current_month=current_month)
+        ),
         key=lambda x: x.lower(),
     )
 
 
-def _reference_active_now(reference: str, month: str | None = None) -> bool:
-    """Whether a candidate ``reference`` name is active for a current/active view.
+def _lifecycle_index():
+    """Materialized referrer lifecycle index (normalized name -> fields).
 
-    Delegates to the referrer registry's month-granular lifecycle rule. Unknown
-    names (not in the registry) and any lookup failure default to active, so the
-    lifecycle filter can only ever hide referrers an admin has explicitly
-    retired — it never silently drops data.
+    Reads only persisted registry rows, so it never re-enters the referrer
+    registry's dynamic-name path (which calls back into
+    ``reference_dropdown_names``). Returns {} on any failure — meaning no
+    referrer is treated as inactive, so the filter can only ever hide referrers
+    an admin has explicitly retired.
     """
     try:
         from features import referrer_registry as _rr
 
-        return _rr.is_reference_active_for_month(reference, month)
+        return _rr.materialized_lifecycle_index(), _rr._current_month()
     except Exception:
+        return {}, ""
+
+
+def _reference_active_now(reference: str, month: str | None = None, *, index=None, current_month=None) -> bool:
+    """Whether a candidate ``reference`` name is active for a current/active view.
+
+    Month-granular: a referrer marked INACTIVE effective month M is active for
+    every month strictly before M and inactive from M onward. ``month`` None
+    means the current context (resolved to the current IST month). Unknown names
+    default to active. ``index``/``current_month`` may be supplied to avoid
+    re-reading the registry inside a loop.
+    """
+    key = " ".join(str(reference or "").strip().lower().split())
+    if not key or key == "unknown":
         return True
+    if index is None:
+        index, current_month = _lifecycle_index()
+    fields = index.get(key)
+    if not fields:
+        return True
+    if str(fields.get("lifecycle_status") or "ACTIVE").upper() != "INACTIVE":
+        return True
+    target = (month or current_month or "")[:7]
+    effective = str(fields.get("inactive_effective_month") or "0000-00")
+    # Active for months strictly before the effective inactive month.
+    return bool(target) and target < effective
 
 
 def _coerce_bool(value) -> bool:
@@ -2915,14 +2945,13 @@ def _drop_inactive_referrer_rows(rows: list[dict], month: str | None) -> list[di
     before a referrer's inactive-effective month are kept, so September and
     earlier history is never affected.
     """
-    try:
-        from features import referrer_registry as _rr
-    except Exception:
+    index, current_month = _lifecycle_index()
+    if not index:
         return rows
     kept: list[dict] = []
     for row in rows:
         ref = (row.get("reference") or "").strip()
-        if ref and ref.lower() != "unknown" and not _rr.is_reference_active_for_month(ref, month):
+        if ref and not _reference_active_now(ref, month, index=index, current_month=current_month):
             continue
         kept.append(row)
     return kept

@@ -109,6 +109,26 @@ def is_referrer_active_for_month(row: dict[str, Any], month: str | None = None) 
     return target < effective
 
 
+def materialized_lifecycle_index() -> dict[str, dict[str, str]]:
+    """Lifecycle state of every MATERIALIZED referrer, keyed by normalized name.
+
+    Reads only the persisted registry rows — never the dynamic candidate-derived
+    names — so it is safe to call from candidate_store without re-entering
+    ``list_referrers`` → ``_dynamic_reference_names`` → ``reference_dropdown_names``.
+    A referrer can only be inactive if an admin materialized a row for them
+    (``set_referrer_lifecycle`` always does), so a name absent from this index is
+    simply active. Each entry maps name/alias → the normalized lifecycle fields.
+    """
+    index: dict[str, dict[str, str]] = {}
+    for row in _materialized_referrers():
+        fields = _lifecycle_fields(row)
+        for label in [row.get("name"), *(row.get("aliases") or [])]:
+            key = normalize_name(label)
+            if key:
+                index[key] = fields
+    return index
+
+
 def _referrers_file() -> str:
     return os.environ.get(
         "REFERRER_REGISTRY_FILE",
