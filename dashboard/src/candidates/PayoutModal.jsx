@@ -655,7 +655,7 @@ export default function PayoutModal({
         <header className="payout-modal__header payout-modal__header--expense">
           <div className="payout-modal__heading">
             <h3 className="payout-modal__title" id="payout-modal-title">
-              {showPaymentAccounts ? "Manage payment accounts" : "Add Referrer Expense"}
+              {showPaymentAccounts ? "Manage referrers" : "Add Referrer Expense"}
             </h3>
             {!showPaymentAccounts && selectedName && (
               <div className="payout-modal__summary">
@@ -673,10 +673,11 @@ export default function PayoutModal({
             type="button"
             className="cand-btn cand-btn--ghost cand-btn--xs payout-modal__accounts-action"
             onClick={() => setShowPaymentAccounts((value) => !value)}
-            disabled={filterHandler === "all"}
-            title={filterHandler === "all" ? "Select a referrer first" : undefined}
+            title={filterHandler === "all"
+              ? "Review referrer status (Active / Inactive / All) and payment accounts"
+              : undefined}
           >
-            {showPaymentAccounts ? "Back to expense" : "Manage payment accounts"}
+            {showPaymentAccounts ? "Back to expense" : "Manage referrers"}
           </button>
           <button type="button" className="cand-modal-close" onClick={onClose} aria-label="Close">×</button>
         </header>
