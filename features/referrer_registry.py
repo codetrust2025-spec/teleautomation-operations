@@ -35,6 +35,100 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ── Lifecycle (Active / Inactive with a month-granular effective date) ───────
+#
+# A referrer's lifecycle is month-granular and "last-working-month authoritative":
+# marking someone Inactive effective ``YYYY-MM`` means they (and their active
+# candidate workflow) are excluded from that month ONWARD in current/active
+# views, while every month BEFORE it is preserved untouched. This is a
+# presentation/eligibility filter only — it never mutates historical records.
+LIFECYCLE_ACTIVE = "ACTIVE"
+LIFECYCLE_INACTIVE = "INACTIVE"
+
+
+def _current_month() -> str:
+    """Current calendar month (YYYY-MM) in India Standard Time.
+
+    The whole application buckets candidates and earnings by IST month, so the
+    "is this referrer active right now" question must use the same clock.
+    """
+    try:
+        from core.ist_time import ist_now
+
+        return ist_now().strftime("%Y-%m")
+    except Exception:
+        return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def _normalize_month(value: Any) -> str:
+    """Coerce a date-ish value to a ``YYYY-MM`` bucket, or '' if unusable."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    # Accept YYYY-MM and YYYY-MM-DD (and longer ISO strings); take the prefix.
+    if len(text) >= 7 and text[4] == "-" and text[:4].isdigit() and text[5:7].isdigit():
+        return text[:7]
+    return ""
+
+
+def _lifecycle_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """Return normalized lifecycle fields for a referrer row.
+
+    Backward compatible: a row with no lifecycle fields (and the legacy
+    ``is_active`` flag) is treated as ACTIVE with no departure. A legacy row
+    explicitly flagged ``is_active == False`` with no effective month is treated
+    as inactive from the beginning of time (effective month '0000-00'), so it
+    disappears from every active view but still cannot corrupt a past month it
+    never belonged to.
+    """
+    status = str(row.get("lifecycle_status") or "").strip().upper()
+    effective = _normalize_month(row.get("inactive_effective_month"))
+    if status not in {LIFECYCLE_ACTIVE, LIFECYCLE_INACTIVE}:
+        # Derive from the legacy boolean when the explicit field is absent.
+        status = LIFECYCLE_ACTIVE if bool(row.get("is_active", True)) else LIFECYCLE_INACTIVE
+    if status == LIFECYCLE_INACTIVE and not effective:
+        effective = "0000-00"
+    if status == LIFECYCLE_ACTIVE:
+        effective = ""
+    return {"lifecycle_status": status, "inactive_effective_month": effective}
+
+
+def is_referrer_active_for_month(row: dict[str, Any], month: str | None = None) -> bool:
+    """Whether a referrer counts as active for the given ``YYYY-MM`` month.
+
+    ``month`` None/''/'all' means "the current active context" and resolves to
+    the current IST month. A referrer marked INACTIVE effective month M is
+    active for every month strictly before M and inactive from M onward.
+    """
+    fields = _lifecycle_fields(row)
+    if fields["lifecycle_status"] == LIFECYCLE_ACTIVE:
+        return True
+    target = _normalize_month(month) or _current_month()
+    effective = fields["inactive_effective_month"] or "0000-00"
+    # Inactive from the effective month onward; still present for earlier months.
+    return target < effective
+
+
+def materialized_lifecycle_index() -> dict[str, dict[str, str]]:
+    """Lifecycle state of every MATERIALIZED referrer, keyed by normalized name.
+
+    Reads only the persisted registry rows — never the dynamic candidate-derived
+    names — so it is safe to call from candidate_store without re-entering
+    ``list_referrers`` → ``_dynamic_reference_names`` → ``reference_dropdown_names``.
+    A referrer can only be inactive if an admin materialized a row for them
+    (``set_referrer_lifecycle`` always does), so a name absent from this index is
+    simply active. Each entry maps name/alias → the normalized lifecycle fields.
+    """
+    index: dict[str, dict[str, str]] = {}
+    for row in _materialized_referrers():
+        fields = _lifecycle_fields(row)
+        for label in [row.get("name"), *(row.get("aliases") or [])]:
+            key = normalize_name(label)
+            if key:
+                index[key] = fields
+    return index
+
+
 def _referrers_file() -> str:
     return os.environ.get(
         "REFERRER_REGISTRY_FILE",
@@ -129,8 +223,28 @@ def _dynamic_reference_names() -> list[str]:
         return []
 
 
-def list_referrers(*, include_inactive: bool = False) -> list[dict[str, Any]]:
-    """Return current referrers with stable IDs and legacy-name compatibility."""
+def list_referrers(
+    *,
+    include_inactive: bool = False,
+    as_of_month: str | None = None,
+    status_filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return current referrers with stable IDs and legacy-name compatibility.
+
+    Each returned row carries normalized lifecycle fields (``lifecycle_status``,
+    ``inactive_effective_month``, ``lifecycle_history``) plus a derived
+    ``is_active`` boolean and an ``active_now`` flag (active for the current
+    month).
+
+    - ``include_inactive=False`` keeps only referrers active as of
+      ``as_of_month`` (or the current month when ``as_of_month`` is omitted).
+      ``include_inactive=True`` returns everyone, which is what the admin
+      management view uses so it can show inactive referrers too.
+    - ``status_filter`` (``ACTIVE`` / ``INACTIVE`` / ``ALL`` / None) filters by
+      the referrer's lifecycle status regardless of month; it is the control
+      behind the Active/Inactive/All toggle. It is applied on top of
+      ``include_inactive``.
+    """
     materialized = _materialized_referrers()
     by_name: dict[str, dict[str, Any]] = {}
     for row in materialized:
@@ -142,6 +256,7 @@ def list_referrers(*, include_inactive: bool = False) -> list[dict[str, Any]]:
         row.setdefault("is_active", True)
         row.setdefault("created_at", "")
         row.setdefault("updated_at", "")
+        row.setdefault("lifecycle_history", [])
         by_name[normalize_name(name)] = row
         for alias in row.get("aliases") or []:
             if normalize_name(alias):
@@ -159,15 +274,155 @@ def list_referrers(*, include_inactive: bool = False) -> list[dict[str, Any]]:
             "source": "candidate_reference",
             "created_at": "",
             "updated_at": "",
+            "lifecycle_history": [],
         }
         by_name[key] = row
 
     unique = {str(row["id"]): row for row in by_name.values()}
     rows = list(unique.values())
-    if not include_inactive:
-        rows = [row for row in rows if bool(row.get("is_active", True))]
+    # Stamp normalized lifecycle fields and derived flags on every row.
+    current_month = _current_month()
+    for row in rows:
+        fields = _lifecycle_fields(row)
+        row["lifecycle_status"] = fields["lifecycle_status"]
+        row["inactive_effective_month"] = fields["inactive_effective_month"]
+        row["is_active"] = fields["lifecycle_status"] == LIFECYCLE_ACTIVE
+        row["active_now"] = is_referrer_active_for_month(row, current_month)
+        row.setdefault("lifecycle_history", [])
+
+    status_key = str(status_filter or "").strip().upper()
+    if status_key in {LIFECYCLE_ACTIVE, LIFECYCLE_INACTIVE}:
+        rows = [row for row in rows if row["lifecycle_status"] == status_key]
+    elif not include_inactive:
+        # Month-scoped active filter (the default for every current/active view).
+        rows = [row for row in rows if is_referrer_active_for_month(row, as_of_month)]
+
     rows.sort(key=lambda row: normalize_name(row.get("name")))
     return rows
+
+
+def active_reference_names(as_of_month: str | None = None) -> set[str]:
+    """Normalized names (and aliases) of referrers active as of a month.
+
+    Used by candidate/earnings/dropdown views to decide which referrer rows to
+    show for a current/active context. ``as_of_month`` None → current month.
+    """
+    names: set[str] = set()
+    for row in list_referrers(include_inactive=True):
+        if not is_referrer_active_for_month(row, as_of_month):
+            continue
+        if row.get("name"):
+            names.add(normalize_name(row["name"]))
+        for alias in row.get("aliases") or []:
+            if normalize_name(alias):
+                names.add(normalize_name(alias))
+    return names
+
+
+def is_reference_active_for_month(reference: Any, month: str | None = None) -> bool:
+    """Whether a free-text candidate ``reference`` name is active for a month.
+
+    A reference that resolves to no registry row (an unknown handler) is treated
+    as active — the lifecycle feature only ever hides referrers an admin has
+    explicitly retired, never names it has never heard of.
+    """
+    row = resolve_referrer(reference)
+    if row is None:
+        return True
+    return is_referrer_active_for_month(row, month)
+
+
+def set_referrer_lifecycle(
+    referrer: str,
+    *,
+    status: str,
+    effective_month: str | None = None,
+    actor: str,
+    note: str = "",
+) -> dict[str, Any]:
+    """Mark a referrer Active or Inactive with a month-granular effective date.
+
+    Reversible: calling again with a new status/effective month records another
+    audit-trail entry and supersedes the prior state. A referrer that exists
+    only as a dynamic candidate reference (no materialized row yet) is
+    materialized first so the state can be persisted. Never touches candidate,
+    payment, expense, or earnings records — this only edits the referrer row.
+    """
+    status_key = str(status or "").strip().upper()
+    if status_key not in {LIFECYCLE_ACTIVE, LIFECYCLE_INACTIVE}:
+        raise ValueError("Lifecycle status must be ACTIVE or INACTIVE.")
+    effective = _normalize_month(effective_month)
+    if status_key == LIFECYCLE_INACTIVE and not effective:
+        raise ValueError("An effective month (YYYY-MM) is required to mark a referrer inactive.")
+    if status_key == LIFECYCLE_ACTIVE:
+        effective = ""
+
+    with _LOCK:
+        target = resolve_referrer(referrer)
+        if target is None:
+            raise ValueError("Referrer was not found in the existing referrer list.")
+        target_id = str(target.get("id") or "")
+
+        # Load the on-disk registry, or seed it from the current full list so a
+        # dynamic-only referrer gets a persistable materialized row.
+        payload = _read_json(_referrers_file(), None)
+        if isinstance(payload, dict) and isinstance(payload.get("referrers"), list):
+            rows = [dict(r) for r in payload["referrers"] if isinstance(r, dict)]
+        else:
+            rows = [dict(r) for r in list_referrers(include_inactive=True)]
+
+        now = _now()
+        index = next(
+            (i for i, r in enumerate(rows) if str(r.get("id") or "") == target_id),
+            None,
+        )
+        if index is None:
+            # Materialize a fresh row for a referrer that only existed dynamically.
+            seed = {
+                "id": target_id or referrer_id_for_name(str(target.get("name") or referrer)),
+                "name": str(target.get("name") or referrer).strip(),
+                "aliases": list(target.get("aliases") or []),
+                "source": str(target.get("source") or "candidate_reference"),
+                "created_at": now,
+                "created_by": actor,
+                "lifecycle_history": [],
+            }
+            rows.append(seed)
+            index = len(rows) - 1
+
+        row = rows[index]
+        prior = _lifecycle_fields(row)
+        row["lifecycle_status"] = status_key
+        row["inactive_effective_month"] = effective
+        row["is_active"] = status_key == LIFECYCLE_ACTIVE
+        row["updated_at"] = now
+        history = list(row.get("lifecycle_history") or [])
+        history.append(
+            {
+                "at": now,
+                "by": actor,
+                "from_status": prior["lifecycle_status"],
+                "to_status": status_key,
+                "effective_month": effective,
+                "note": str(note or "").strip(),
+            }
+        )
+        row["lifecycle_history"] = history
+        rows[index] = row
+
+        _atomic_write(_referrers_file(), {"version": 1, "referrers": rows})
+
+    # The candidate store caches an alias map built from the registry; drop it so
+    # the dropdown and name resolution pick up the new state on the next request.
+    try:
+        from features import candidate_store
+
+        candidate_store.reload_reference_aliases()
+    except Exception:
+        pass
+
+    refreshed = resolve_referrer(target_id)
+    return refreshed or row
 
 
 def resolve_referrer(value: Any) -> dict[str, Any] | None:

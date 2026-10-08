@@ -185,4 +185,13 @@ describe('operations backend routes are reachable from the UI', () => {
 // The other removed controls orphaned nothing. False detection, re-run, correct
 // and confirm all post to `/api/mail-monitoring/notifications/{id}/{action}`,
 // which the list still calls for read, unread and dismiss.
-const BASELINE_UNREFERENCED = 24
+//
+// Raised 24 → 25 on 2026-10-08 for the referrer lifecycle feature. The new
+// control `POST /referrers/{referrer_id}/lifecycle` IS referenced from
+// ReferrerPaymentAccounts.jsx and that un-prefixed variant is reachable; only
+// its `/api`-prefixed alias is unreferenced in source, because the client adds
+// the `/api` prefix at runtime (via fetchReferrerRegistryJson) rather than
+// writing it in the literal — exactly like the existing `/api/referrers/...`
+// payment-account aliases already folded into this baseline. One real route
+// family, one new entry; the feature is reachable.
+const BASELINE_UNREFERENCED = 25
