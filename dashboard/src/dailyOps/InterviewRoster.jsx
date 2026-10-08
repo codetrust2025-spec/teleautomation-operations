@@ -174,6 +174,26 @@ function SlotScreenshotModal({ row, onClose }) {
   )
 }
 
+// Making the whole row a trigger must never swallow a click meant for a control
+// inside it (the attendance select, the screenshot View button, a link, an
+// input, the kebab itself, the open menu, …). We decide by walking up from the
+// click target to the row with Element.closest() — robust and not coordinate
+// based — and bail if we pass through anything interactive first.
+const ROW_INTERACTIVE_SELECTOR = [
+  'button', 'a', 'select', 'input', 'textarea', 'label',
+  '[role="menu"]', '[role="menuitem"]', '[role="dialog"]',
+  '.ops-row-menu', '.ops-attendance-select', '.ops-slot-shot-thumb',
+].join(',')
+
+function rowEventHitsInteractive(event, rowEl) {
+  const target = event.target
+  if (!(target instanceof Element)) return false
+  const hit = target.closest(ROW_INTERACTIVE_SELECTOR)
+  // A match only counts when it is inside this row (closest can escape via the
+  // portalled menu, which lives on document.body — that is handled separately).
+  return !!hit && (!rowEl || rowEl.contains(hit))
+}
+
 function RowActions({ row, busy, open, onToggle, onClose, onEdit }) {
   const [position, setPosition] = useState(null)
   const triggerRef = useRef(null)
@@ -183,8 +203,16 @@ function RowActions({ row, busy, open, onToggle, onClose, onEdit }) {
   // keeps the outside-click / Escape close wired while this row is the open one.
   useEffect(() => {
     if (!open) return undefined
+    const ownRow = triggerRef.current?.closest('tr')
     function closeOnOutsideClick(event) {
-      if (!triggerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) onClose()
+      // The whole row is a trigger now, so a mousedown inside the open row is
+      // not "outside": leaving it to the row's own click toggles cleanly instead
+      // of this handler closing first and the click reopening. The trigger and
+      // the portalled menu stay excluded as before.
+      if (triggerRef.current?.contains(event.target)) return
+      if (menuRef.current?.contains(event.target)) return
+      if (ownRow?.contains(event.target)) return
+      onClose()
     }
     function closeOnEscape(event) { if (event.key === 'Escape') onClose() }
     document.addEventListener('mousedown', closeOnOutsideClick)
@@ -364,6 +392,27 @@ export function InterviewRoster({
   const [openMenuId, setOpenMenuId] = useState(null)
   const toggleMenu = useCallback(id => setOpenMenuId(prev => (prev === id ? null : id)), [])
   const closeMenu = useCallback(() => setOpenMenuId(null), [])
+  // Whole-row activation: a click anywhere on the row (not on a control inside
+  // it, and not while the user is selecting text) opens that row's menu. The
+  // kebab button and every interactive cell are excluded via closest() so they
+  // keep their own behaviour. Keyed by row id, so it rides the same single-open
+  // state as the kebab and a click elsewhere still only ever closes.
+  const activateRow = useCallback((rowId, event) => {
+    const rowEl = event.currentTarget
+    if (rowEventHitsInteractive(event, rowEl)) return
+    // Don't hijack a text selection the user is making inside the row.
+    const selection = typeof window !== 'undefined' && window.getSelection && window.getSelection()
+    if (selection && String(selection).length > 0) return
+    toggleMenu(rowId)
+  }, [toggleMenu])
+  // Enter / Space on a focused row open the menu; other keys (and keys aimed at
+  // a control inside the row) are left alone so typing/selection still works.
+  const activateRowByKey = useCallback((rowId, event) => {
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+    if (rowEventHitsInteractive(event, event.currentTarget)) return
+    event.preventDefault()
+    toggleMenu(rowId)
+  }, [toggleMenu])
   const [screenshotRow, setScreenshotRow] = useState(null)
   const [attendeeFilter, setAttendeeFilter] = useState('')
   const [candidateFilter, setCandidateFilter] = useState('')
@@ -792,7 +841,18 @@ export function InterviewRoster({
               const status = resolvedStatus(row)
               const bookingSource = bookingSourceMeta(row)
               return (
-                <tr key={row.id} className={`ops-interview-row ops-interview-row--${statusTone(status)}`}>
+                <tr
+                  key={row.id}
+                  className={`ops-interview-row ops-interview-row--${statusTone(status)}${canManage ? ' ops-interview-row--actionable' : ''}${canManage && openMenuId === row.id ? ' ops-interview-row--menu-open' : ''}`}
+                  {...(canManage ? {
+                    onClick: event => activateRow(row.id, event),
+                    onKeyDown: event => activateRowByKey(row.id, event),
+                    tabIndex: 0,
+                    'aria-haspopup': 'menu',
+                    'aria-expanded': openMenuId === row.id,
+                    'aria-label': `${row.name} — interview row, press Enter for actions`,
+                  } : {})}
+                >
                   <td data-label="Date" className="ops-interview-date">
                     {formatDayLabel(row.date)}
                   </td>

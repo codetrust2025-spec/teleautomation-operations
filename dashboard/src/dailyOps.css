@@ -587,6 +587,18 @@
 .ops-row-menu__trigger{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:#ffffff08;color:#cbd5e1;font-size:16px;line-height:1;cursor:pointer}
 .ops-row-menu__trigger:hover:not(:disabled){background:#ffffff14;color:#f8fafc}
 .ops-row-menu__trigger:disabled{opacity:.4;cursor:not-allowed}
+/* Whole-row actionability: a subtle hover tint + pointer cursor hint that the
+   row opens actions, without dressing it up as a button. Text stays selectable
+   and the status gradients/left border still show through. Keyboard focus gets
+   a clear ring; the open row is held slightly brighter. Interactive cells reset
+   the cursor so controls read as themselves. */
+.ops-interview-row--actionable{cursor:pointer}
+.ops-interview-row--actionable:hover{background-image:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.05))}
+.ops-interview-row--actionable.ops-interview-row--menu-open{background-image:linear-gradient(90deg,rgba(96,165,250,.1),rgba(96,165,250,.1))}
+.ops-interview-row--actionable:focus-visible{outline:2px solid rgba(96,165,250,.7);outline-offset:-2px}
+.ops-interview-row--actionable:focus:not(:focus-visible){outline:none}
+.ops-interview-row--actionable :is(button,a,select,input,textarea,label,.ops-attendance-select,.ops-slot-shot-thumb){cursor:auto}
+.ops-interview-row--actionable :is(button,a,.ops-slot-shot-thumb){cursor:pointer}
 .ops-row-menu__list{position:absolute;right:0;top:calc(100% + 4px);z-index:40;min-width:196px;margin:0;padding:4px;list-style:none;background:#141820;border:1px solid rgba(255,255,255,.12);border-radius:8px;box-shadow:0 10px 28px #0000008c}
 /* The slot actions menu holds a single "Edit" item now, so it stays compact and
    aligned to the kebab trigger instead of being sized for the old three items. */
