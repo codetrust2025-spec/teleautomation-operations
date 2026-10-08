@@ -216,12 +216,21 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
   const [date, setDate] = useState(row.date || '')
   const [time, setTime] = useState(row.time || '')
   const [timeEnd, setTimeEnd] = useState(row.time_end || '')
-  const [notes, setNotes] = useState(row.notes || '')
+  // The slot modal's NOTES field edits the interview's attendance remark —
+  // the exact text the roster NOTES column shows — not a separate slot note.
+  const [remarkNote, setRemarkNote] = useState(row.interview_attendance_remark || '')
   const [round, setRound] = useState(row.interview_round || '')
   const [technology, setTechnology] = useState((row.technology || '').trim())
   const [error, setError] = useState('')
   const attendeeOnly = mode === 'attendee'
   const attendeeWithStatus = mode === 'attendee-with-status'
+  // The remark is part of the attendance record, which only exists once an
+  // outcome is logged. With no outcome there is nothing to edit, so the field
+  // is shown disabled rather than letting a note be typed that cannot be saved.
+  const slotNoteStatus = resolvedStatus(row)
+  const canEditNote = ['attended', 'not_attended', 'cancelled'].includes(slotNoteStatus)
+  // Feedback is a separate, read-only value here; never merged into the remark.
+  const slotNoteFeedback = feedbackMeta(row.interview_feedback)
   // Feedback only makes sense once an interview actually happened.
   const wantsFeedback = attendeeWithStatus && targetStatus === 'attended'
   // Everything the "Mark as Attended" form needs before it can be saved. The
@@ -243,7 +252,13 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
         await onSave({ attendee, status: targetStatus, remark: remark.trim(), feedback: wantsFeedback ? feedback : '' })
       } else {
         if (!technology) { setError('Please select the interview technology.'); return }
-        await onSave({ date, time, time_end: timeEnd, notes, interview_round: round, technology })
+        await onSave({
+          date, time, time_end: timeEnd, interview_round: round, technology,
+          // The remark edit rides alongside the slot fields but saves through
+          // the attendance endpoint; only sent when it is editable and changed.
+          noteRemark: remarkNote,
+          noteChanged: canEditNote && remarkNote !== (row.interview_attendance_remark || ''),
+        })
       }
       onClose()
     } catch (err) {
@@ -279,7 +294,7 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
               />
             </div>}
             {attendeeWithStatus && <label className="cand-field cand-field--span2"><span className="cand-field-label">Note / remark <span className="cand-field-required-tag">Required</span></span><input className="cand-input" value={remark} onChange={event => setRemark(event.target.value)} placeholder="e.g. Interview went well, next round scheduled" required /></label>}
-          </> : <><label className="cand-field"><span className="cand-field-label">Date</span><input className="cand-input" type="date" value={date} onChange={event => setDate(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Start time</span><input className="cand-input" type="time" value={time} onChange={event => setTime(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">End time</span><input className="cand-input" type="time" value={timeEnd} onChange={event => setTimeEnd(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Interview round</span><select className="cand-input" value={round} onChange={event => setRound(event.target.value)}><option value="">Select round</option><option value="L1">L1</option><option value="L2">L2</option><option value="HR">HR</option><option value="Final">Final</option><option value="Screening">Screening</option></select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Technology *</span><select className="cand-input" value={technology} onChange={event => setTechnology(event.target.value)} required><option value="">Select technology</option>{technology && !TECHNOLOGIES.includes(technology) && <option value={technology}>{technology}</option>}{TECHNOLOGIES.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Notes</span><input className="cand-input" value={notes} onChange={event => setNotes(event.target.value)} /></label></>}
+          </> : <><label className="cand-field"><span className="cand-field-label">Date</span><input className="cand-input" type="date" value={date} onChange={event => setDate(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Start time</span><input className="cand-input" type="time" value={time} onChange={event => setTime(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">End time</span><input className="cand-input" type="time" value={timeEnd} onChange={event => setTimeEnd(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Interview round</span><select className="cand-input" value={round} onChange={event => setRound(event.target.value)}><option value="">Select round</option><option value="L1">L1</option><option value="L2">L2</option><option value="HR">HR</option><option value="Final">Final</option><option value="Screening">Screening</option></select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Technology *</span><select className="cand-input" value={technology} onChange={event => setTechnology(event.target.value)} required><option value="">Select technology</option>{technology && !TECHNOLOGIES.includes(technology) && <option value={technology}>{technology}</option>}{TECHNOLOGIES.map(name => <option key={name} value={name}>{name}</option>)}</select></label>{slotNoteFeedback && <div className="cand-field cand-field--span2"><span className="cand-field-label">Interview feedback</span><span className={`ops-feedback-pill ops-feedback-pill--${slotNoteFeedback.tone}`} data-feedback={slotNoteFeedback.value} title={`Interview feedback: ${slotNoteFeedback.label}`}>{slotNoteFeedback.label}</span></div>}<label className="cand-field cand-field--span2"><span className="cand-field-label">Notes</span><input className="cand-input" value={remarkNote} onChange={event => setRemarkNote(event.target.value)} disabled={!canEditNote} aria-label="Notes" placeholder={canEditNote ? '' : 'Available once attendance is recorded'} />{!canEditNote && <small className="cand-field-hint">Notes can be edited once the interview has an attendance outcome.</small>}</label></>}
           {error && <p className="admin-error cand-field--span2">{error}</p>}
         </div>
         <footer className="cand-modal-footer"><button type="button" className="cand-btn cand-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className={`cand-btn cand-btn--primary${attendeeWithStatus && (targetStatus === 'not_attended' || targetStatus === 'cancelled') ? ' cand-btn--danger' : ''}${!canSubmit ? ' cand-btn--disabled' : ''}`} disabled={busy || !canSubmit} aria-disabled={busy || !canSubmit}>{busy ? 'Saving…' : attendeeWithStatus ? targetLabel : 'Save changes'}</button></footer>
@@ -576,14 +591,30 @@ export function InterviewRoster({
     } finally { setBusyId(null) }
   }
 
-  async function saveSlot(row, values) {
+  // Edit interview slot: the slot fields (date/time/round/technology) save via
+  // the slot PATCH; the NOTES field is the attendance remark and saves through
+  // the attendance endpoint, re-sending the current status so only the remark
+  // changes — feedback and attendee are left untouched (not sent).
+  async function saveSlotAndNote(row, values) {
+    const { noteRemark, noteChanged, ...slotValues } = values
     setBusyId(row.id)
     try {
       const res = await fetch(`${API}/candidates/interviews/slots/${row.id}`, {
-        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values),
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slotValues),
       })
       const data = await res.json()
       if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Update failed')
+      if (noteChanged) {
+        const currentStatus = resolvedStatus(row)
+        const body = { status: currentStatus, remark: (noteRemark || '').trim() }
+        // feedback and attendee are intentionally omitted so the server
+        // preserves them; the remark is the only field this edit changes.
+        const ares = await fetch(`${API}/candidates/${row.id}/interview-attendance`, {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        })
+        const adata = await ares.json()
+        if (!ares.ok || adata.status !== 'ok') throw new Error(adata.message || 'Note update failed')
+      }
       setEditing(null)
       await load({ silent: true })
       notifyRosterChanged()
@@ -857,7 +888,7 @@ export function InterviewRoster({
           </div>
         </div>
       )}
-      {editing && <SlotEditModal row={editing.row} mode={editing.mode} targetStatus={editing.targetStatus} targetLabel={editing.targetLabel} busy={busyId === editing.row.id} onClose={() => setEditing(null)} onSave={values => editing.mode === 'attendee' ? saveAttendee(editing.row, values.attendee) : editing.mode === 'attendee-with-status' ? saveAttendance(editing.row, values.status, values.attendee, values.remark, values.feedback) : saveSlot(editing.row, values)} />}
+      {editing && <SlotEditModal row={editing.row} mode={editing.mode} targetStatus={editing.targetStatus} targetLabel={editing.targetLabel} busy={busyId === editing.row.id} onClose={() => setEditing(null)} onSave={values => editing.mode === 'attendee' ? saveAttendee(editing.row, values.attendee) : editing.mode === 'attendee-with-status' ? saveAttendance(editing.row, values.status, values.attendee, values.remark, values.feedback) : saveSlotAndNote(editing.row, values)} />}
       {screenshotRow && <SlotScreenshotModal row={screenshotRow} onClose={() => setScreenshotRow(null)} />}
     </section>
   )
