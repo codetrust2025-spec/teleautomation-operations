@@ -191,3 +191,23 @@ describe('saving an edited note', () => {
     expect(attendancePosts.length).toBe(0)
   })
 })
+
+describe('NOTES focus behavior (no auto select-all)', () => {
+  it('collapses the caret to the end on focus rather than selecting the whole value', async () => {
+    await renderPanel()
+    openEditSlot('Asha Rao')
+    const input = notesInput()
+    expect(input).toHaveValue(REMARK)
+
+    // Simulate the whole value being selected (what the browser did before the fix)...
+    input.setSelectionRange(0, REMARK.length)
+    // ...then focus should collapse the selection to the end (caret at end).
+    fireEvent.focus(input)
+
+    expect(input.selectionStart).toBe(REMARK.length)
+    expect(input.selectionEnd).toBe(REMARK.length)
+    // Nothing is selected, and the value is preserved exactly.
+    expect(input.selectionEnd - input.selectionStart).toBe(0)
+    expect(input).toHaveValue(REMARK)
+  })
+})
