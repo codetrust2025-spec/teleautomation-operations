@@ -102,7 +102,7 @@ async function renderPanel() {
 
 function openEditSlot(name) {
   fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }))
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Edit slot' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }))
 }
 
 function slotDialog() {

@@ -588,10 +588,18 @@
 .ops-row-menu__trigger:hover:not(:disabled){background:#ffffff14;color:#f8fafc}
 .ops-row-menu__trigger:disabled{opacity:.4;cursor:not-allowed}
 .ops-row-menu__list{position:absolute;right:0;top:calc(100% + 4px);z-index:40;min-width:196px;margin:0;padding:4px;list-style:none;background:#141820;border:1px solid rgba(255,255,255,.12);border-radius:8px;box-shadow:0 10px 28px #0000008c}
+/* The slot actions menu holds a single "Edit" item now, so it stays compact and
+   aligned to the kebab trigger instead of being sized for the old three items. */
+.ops-row-menu__list.ops-slot-actions{min-width:140px}
 .ops-row-menu__item{display:block;width:100%;text-align:left;padding:8px 10px;border:none;border-radius:6px;background:transparent;color:#e2e8f0;font-size:12px;cursor:pointer;white-space:nowrap}
 .ops-row-menu__item:hover:not(:disabled){background:#ffffff10}
 .ops-row-menu__item--danger{color:#f87171}
-.ops-row-menu__item--disabled,.ops-row-menu__item:disabled{opacity:.45;cursor:not-allowed}.ops-row-menu__list.ops-row-menu__list--portal,.ops-dash-attend-cell .ops-row-menu__list.ops-row-menu__list--portal{position:fixed;z-index:12000;bottom:auto}
+.ops-row-menu__item--disabled,.ops-row-menu__item:disabled{opacity:.45;cursor:not-allowed}
+/* Destructive "Remove slot" lives in the edit modal footer now; danger text on
+   the shared ghost button, pushed to the left so it reads apart from Save. */
+.ops-slot-modal__remove{margin-right:auto;color:#f87171}
+.ops-slot-modal__remove:hover:not(:disabled){color:#fca5a5}
+.ops-row-menu__list.ops-row-menu__list--portal,.ops-dash-attend-cell .ops-row-menu__list.ops-row-menu__list--portal{position:fixed;z-index:12000;bottom:auto}
 
 /* ─────────────────────────────────────────────────────────────────────────
    Daily Ops — responsive layout for small laptops, tablets, and phones
