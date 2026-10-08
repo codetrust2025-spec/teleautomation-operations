@@ -1,15 +1,15 @@
 /**
- * The "Edit interview slot" modal shows exactly ONE notes control: the editable
- * slot NOTES field, bound to `row.notes`. The earlier read-only "Attendance
- * note / feedback" recap was removed as duplicative of the roster's own Notes
- * column, so the modal must no longer render it.
- *
- * What this holds the modal to:
- *   - An existing slot note prefills the editable NOTES input, exactly.
- *   - There is no "Attendance note / feedback" recap section in the modal.
- *   - The attendance remark/feedback is NOT shown anywhere in the slot modal,
- *     and is never merged into the editable NOTES value.
- *   - Saving sends `notes` (possibly edited) and never the attendance fields.
+ * Edit interview slot — the single NOTES field is the interview's attendance
+ * remark (the exact text the roster NOTES column shows), not a separate slot
+ * note. What this holds the modal to:
+ *   - For a row with an attendance outcome, NOTES prefills with
+ *     `interview_attendance_remark` exactly, and is editable.
+ *   - Saving an edited note sends ONLY the remark through the attendance
+ *     endpoint, re-using the row's current status; it never sends feedback or
+ *     a slot `notes` field, so feedback/attendee are preserved server-side.
+ *   - `interview_feedback` is shown read-only and never merged into the remark.
+ *   - For a pending row (no outcome), the NOTES field is disabled.
+ *   - An empty stored remark prefills blank (never shows stale text).
  */
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -26,10 +26,10 @@ vi.mock('./PendingWorksStrip.jsx', () => ({ PendingWorksStrip: () => null }))
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
 
 const NOW = '2026-09-28T06:00:00Z'
-const SLOT_NOTE = 'Bring laptop charger; parking in Lot B'
 const REMARK = 'Candidate needs to read docs before L2'
 let calls
-let patched
+let slotPatches
+let attendancePosts
 let dailyRows
 
 function jsonResponse(body) {
@@ -38,23 +38,24 @@ function jsonResponse(body) {
 
 function mockFetch() {
   calls = []
-  patched = []
+  slotPatches = []
+  attendancePosts = []
   dailyRows = [
     {
       id: 'with-note', name: 'Asha Rao', phone: '9000000001', date: '2026-09-28',
       time: '10:00', time_end: '11:00', technology: 'Python', interview_round: 'L1',
-      interview_attendee: 'Bhavana', interview_attendance_status: 'attended',
-      // The slot's own editable note.
-      notes: SLOT_NOTE,
-      // Attendance outcome — a separate record that must NOT appear in the modal.
+      interview_attendee: 'Bhavana',
+      interview_attendance_status: 'attended',
+      interview_attendance_status_resolved: 'attended',
       interview_feedback: 'needs_improvement',
       interview_attendance_remark: REMARK,
     },
     {
       id: 'no-outcome', name: 'Vikram Nair', phone: '9000000002', date: '2026-09-28',
       time: '12:00', time_end: '13:00', technology: 'Java Backend', interview_round: 'L1',
-      interview_attendee: 'Bhavana', interview_attendance_status: '',
-      notes: 'Reschedule candidate from last week',
+      interview_attendee: 'Bhavana',
+      interview_attendance_status: '',
+      interview_attendance_status_resolved: '',
       interview_feedback: '',
       interview_attendance_remark: '',
     },
@@ -63,7 +64,11 @@ function mockFetch() {
     const url = new URL(String(input), 'http://localhost')
     calls.push(url)
     if (/\/candidates\/interviews\/slots\//.test(url.pathname) && init?.method === 'PATCH') {
-      patched.push(JSON.parse(init.body))
+      slotPatches.push(JSON.parse(init.body))
+      return jsonResponse({ status: 'ok' })
+    }
+    if (/\/candidates\/[^/]+\/interview-attendance$/.test(url.pathname) && init?.method === 'POST') {
+      attendancePosts.push(JSON.parse(init.body))
       return jsonResponse({ status: 'ok' })
     }
     if (url.pathname.endsWith('/interviews/global')) {
@@ -95,7 +100,6 @@ async function renderPanel() {
   await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 }
 
-/** Open the row's Actions menu and click "Edit slot" to open the slot modal. */
 function openEditSlot(name) {
   fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }))
   fireEvent.click(screen.getByRole('menuitem', { name: 'Edit slot' }))
@@ -106,9 +110,11 @@ function slotDialog() {
 }
 
 function notesInput() {
-  const dialog = slotDialog()
-  const label = within(dialog).getByText('Notes').closest('label')
-  return label.querySelector('input')
+  return within(slotDialog()).getByLabelText('Notes')
+}
+
+function saveButton() {
+  return within(slotDialog()).getByRole('button', { name: 'Save changes' })
 }
 
 beforeEach(() => {
@@ -123,80 +129,65 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('the editable slot NOTES field', () => {
-  it('prefills with the slot\'s existing saved note, exactly', async () => {
+describe('NOTES prefills from the attendance remark', () => {
+  it('shows the exact remark text for a row with an outcome', async () => {
     await renderPanel()
     openEditSlot('Asha Rao')
-
     expect(slotDialog()).toBeInTheDocument()
-    expect(notesInput()).toHaveValue(SLOT_NOTE)
+    expect(notesInput()).toHaveValue(REMARK)
+    expect(notesInput()).toBeEnabled()
   })
 
-  it('prefills the second row\'s own note, not the first row\'s', async () => {
-    await renderPanel()
-    openEditSlot('Vikram Nair')
-
-    expect(notesInput()).toHaveValue('Reschedule candidate from last week')
-  })
-})
-
-describe('only one notes control (no attendance recap)', () => {
-  it('does not render an Attendance note / feedback recap section', async () => {
+  it('is a single NOTES control (no duplicate slot-notes box)', async () => {
     await renderPanel()
     openEditSlot('Asha Rao')
-
-    expect(slotDialog()).toBeInTheDocument()
-    expect(slotDialog().querySelector('.ops-slot-attendance-note')).toBeNull()
-    expect(within(slotDialog()).queryByText('Attendance note / feedback')).toBeNull()
-    expect(within(slotDialog()).queryByText(/Recorded from attendance/)).toBeNull()
-  })
-
-  it('does not show the attendance remark or feedback anywhere in the modal', async () => {
-    await renderPanel()
-    openEditSlot('Asha Rao')
-
-    expect(within(slotDialog()).queryByText(REMARK)).toBeNull()
-    expect(within(slotDialog()).queryByText('Needs Improvement')).toBeNull()
-    // The editable NOTES input holds only the slot note, never the remark.
-    expect(notesInput()).toHaveValue(SLOT_NOTE)
-    expect(notesInput()).not.toHaveValue(REMARK)
-  })
-
-  it('has exactly one Notes label in the slot form', async () => {
-    await renderPanel()
-    openEditSlot('Asha Rao')
-
     expect(within(slotDialog()).getAllByText('Notes')).toHaveLength(1)
   })
+
+  it('shows feedback read-only and never inside the editable NOTES value', async () => {
+    await renderPanel()
+    openEditSlot('Asha Rao')
+    // Feedback label is present as a read-only pill, not an input.
+    expect(within(slotDialog()).getByText('Needs Improvement')).toBeInTheDocument()
+    expect(notesInput().tagName).toBe('INPUT')
+    expect(notesInput()).not.toHaveValue('needs_improvement')
+    expect(notesInput()).not.toHaveValue('Needs Improvement')
+  })
 })
 
-describe('saving the slot', () => {
-  it('round-trips an unchanged note under `notes` and sends no attendance fields', async () => {
+describe('pending row (no attendance outcome)', () => {
+  it('disables the NOTES field', async () => {
+    await renderPanel()
+    openEditSlot('Vikram Nair')
+    expect(notesInput()).toBeDisabled()
+    // No stale text — the empty remark prefills blank, not any slot note.
+    expect(notesInput()).toHaveValue('')
+  })
+})
+
+describe('saving an edited note', () => {
+  it('sends only the remark via the attendance endpoint, reusing current status, with no feedback', async () => {
     await renderPanel()
     openEditSlot('Asha Rao')
+    fireEvent.change(notesInput(), { target: { value: 'Cleared L2; strong on APIs' } })
+    await act(async () => { fireEvent.click(saveButton()) })
 
-    await act(async () => {
-      fireEvent.click(within(slotDialog()).getByRole('button', { name: 'Save changes' }))
-    })
-
-    await waitFor(() => expect(patched.length).toBe(1))
-    expect(patched[0].notes).toBe(SLOT_NOTE)
-    expect(patched[0]).not.toHaveProperty('interview_feedback')
-    expect(patched[0]).not.toHaveProperty('interview_attendance_remark')
-    expect(patched[0]).not.toHaveProperty('remark')
-    expect(patched[0]).not.toHaveProperty('feedback')
+    await waitFor(() => expect(attendancePosts.length).toBe(1))
+    expect(attendancePosts[0]).toMatchObject({ status: 'attended', remark: 'Cleared L2; strong on APIs' })
+    expect(attendancePosts[0]).not.toHaveProperty('feedback')
+    expect(attendancePosts[0]).not.toHaveProperty('attendee')
+    // The slot PATCH carries slot fields only — never a `notes` field.
+    const lastPatch = slotPatches[slotPatches.length - 1]
+    expect(lastPatch).not.toHaveProperty('notes')
+    expect(lastPatch).not.toHaveProperty('noteRemark')
   })
 
-  it('saves an edited note under `notes`', async () => {
+  it('does not call the attendance endpoint when the note is unchanged', async () => {
     await renderPanel()
     openEditSlot('Asha Rao')
-
-    fireEvent.change(notesInput(), { target: { value: 'Updated slot note' } })
-    await act(async () => {
-      fireEvent.click(within(slotDialog()).getByRole('button', { name: 'Save changes' }))
-    })
-
-    await waitFor(() => expect(patched.length).toBe(1))
-    expect(patched[0].notes).toBe('Updated slot note')
+    await act(async () => { fireEvent.click(saveButton()) })
+    // Slot PATCH still happens (date/time/round/tech), but no remark write.
+    await waitFor(() => expect(slotPatches.length).toBeGreaterThan(0))
+    expect(attendancePosts.length).toBe(0)
   })
 })
