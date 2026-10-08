@@ -391,3 +391,167 @@ class TestAmountExtractionAndDedup:
             result2.get("verification_state") == "DUPLICATE_PAYMENT"
             or not result2.get("deterministic_verified")
         )
+
+
+# ── Banking name differs from referrer name: a configured alias must verify ──
+
+
+# The real-world "CHIMALADARI VENU GOPAL" case, with synthetic values: the
+# screenshot's receiver/banking name is nothing like the referrer's display
+# name, but an administrator has mapped it as an alias of the referrer. The
+# receiver-record alias merge must carry that alias into name matching so the
+# operator-selected-referrer fallback recognises the payee.
+ALIAS_REFERRER_NAME = "Testpayee One"
+ALIAS_REFERRER_ID = "referrer-testpayee-one"
+# A banking name that does NOT contain the referrer's display name — proves the
+# match comes from the configured alias, not an incidental substring.
+MAPPED_BANKING_NAME = "Testbank Example Receiver"
+
+
+class TestBankingNameAliasMapping:
+    """A referrer whose screenshots show a different banking name verifies once
+    that banking name is configured as a referrer alias — even with no
+    registered payment account. Candidate payments stay strict."""
+
+    @pytest.fixture(autouse=True)
+    def _alias_registry(self, monkeypatch, tmp_path):
+        # Referrer has the mapped banking name as a configured alias but NO
+        # registered payment account at all.
+        accounts = tmp_path / "payment_receiver_accounts.json"
+        accounts.write_text(json.dumps({"accounts": []}), encoding="utf-8")
+        referrers = tmp_path / "referrers.json"
+        referrers.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "referrers": [
+                        {
+                            "id": ALIAS_REFERRER_ID,
+                            "name": ALIAS_REFERRER_NAME,
+                            "aliases": [MAPPED_BANKING_NAME],
+                            "is_active": True,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("PAYMENT_RECEIVER_REGISTRY_FILE", str(accounts))
+        monkeypatch.setenv("REFERRER_REGISTRY_FILE", str(referrers))
+
+    def _alias_extraction(self, **patch):
+        row = _extraction(
+            receiver_name=MAPPED_BANKING_NAME,
+            receiver_upi_id="",
+            receiver_phone_number="",
+            receiver_account="",
+        )
+        row.update(patch)
+        return row
+
+    def test_mapped_banking_name_verifies_without_account(self, monkeypatch):
+        """Banking name matches a configured referrer alias, no registered
+        account → the referrer-expense verifies."""
+        _install_extractor(monkeypatch, self._alias_extraction())
+        result = engine.verify_payment_screenshot(
+            b"fake-image",
+            source_module="handler_expense_create",
+            expected_amount=7500,
+            entity_name=ALIAS_REFERRER_NAME,
+            referrer_hint=ALIAS_REFERRER_NAME,
+            referrer_id=ALIAS_REFERRER_ID,
+            purpose="handler_payout",
+        )
+        assert result["deterministic_verified"] is True
+        assert result["verification_state"] == "VERIFIED_REFERRER_PAYMENT"
+        assert result["receiver_type"] == "referrer"
+        assert result.get("matched_referrer_id") == ALIAS_REFERRER_ID
+
+    def test_mapped_banking_name_candidate_payment_stays_strict(self, monkeypatch):
+        """The SAME alias-only match must NOT verify a candidate payment — the
+        strict candidate path requires a verified account identifier."""
+        _install_extractor(monkeypatch, self._alias_extraction())
+        result = engine.verify_payment_screenshot(
+            b"fake-image",
+            source_module="candidate_payment_proof",
+            expected_amount=7500,
+            entity_name="Some Candidate",
+            referrer_hint=ALIAS_REFERRER_NAME,
+            referrer_id=ALIAS_REFERRER_ID,
+            purpose="candidate_payment",
+        )
+        assert result["deterministic_verified"] is False
+
+    def test_unmapped_banking_name_still_fails(self, monkeypatch):
+        """A banking name that is NOT a configured alias (and not the referrer
+        name) must still be refused — the mapping is what authorises it."""
+        _install_extractor(
+            monkeypatch,
+            self._alias_extraction(receiver_name="Completely Different Payee"),
+        )
+        result = engine.verify_payment_screenshot(
+            b"fake-image",
+            source_module="handler_expense_create",
+            expected_amount=7500,
+            entity_name=ALIAS_REFERRER_NAME,
+            referrer_hint=ALIAS_REFERRER_NAME,
+            referrer_id=ALIAS_REFERRER_ID,
+            purpose="handler_payout",
+        )
+        assert result["deterministic_verified"] is False
+        assert result["receiver_type"] == "unknown"
+
+    def test_mapped_banking_name_tolerates_extra_whitespace(self, monkeypatch):
+        """Double spaces in the extracted banking name (as PhonePe renders
+        them) still match the configured alias via normalization."""
+        _install_extractor(
+            monkeypatch,
+            self._alias_extraction(receiver_name="Testbank   Example   Receiver"),
+        )
+        result = engine.verify_payment_screenshot(
+            b"fake-image",
+            source_module="handler_expense_create",
+            expected_amount=7500,
+            entity_name=ALIAS_REFERRER_NAME,
+            referrer_hint=ALIAS_REFERRER_NAME,
+            referrer_id=ALIAS_REFERRER_ID,
+            purpose="handler_payout",
+        )
+        assert result["deterministic_verified"] is True
+
+    def test_account_holder_differs_but_alias_on_referrer_verifies(self, monkeypatch):
+        """Referrer HAS a registered account whose holder name is yet another
+        string; the screenshot shows the mapped banking name. The alias merged
+        from the referrer registry (not the account holder) still matches."""
+        accounts = tmp_path = None
+        import os as _os
+        acct_path = _os.environ["PAYMENT_RECEIVER_REGISTRY_FILE"]
+        with open(acct_path, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "accounts": [
+                        {
+                            "id": "receiver-testpayee-one",
+                            "owner_type": "REFERRER",
+                            "referrer_id": ALIAS_REFERRER_ID,
+                            "account_holder_name": "Yet Another Holder",
+                            "upi_id": "testpayee1@examplebank",
+                            "verification_status": "UNVERIFIED",
+                            "is_active": True,
+                        }
+                    ]
+                },
+                handle,
+            )
+        _install_extractor(monkeypatch, self._alias_extraction())
+        result = engine.verify_payment_screenshot(
+            b"fake-image",
+            source_module="handler_expense_create",
+            expected_amount=7500,
+            entity_name=ALIAS_REFERRER_NAME,
+            referrer_hint=ALIAS_REFERRER_NAME,
+            referrer_id=ALIAS_REFERRER_ID,
+            purpose="handler_payout",
+        )
+        assert result["deterministic_verified"] is True
+        assert result["receiver_type"] == "referrer"

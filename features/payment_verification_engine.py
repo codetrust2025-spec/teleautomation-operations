@@ -467,7 +467,17 @@ def receiver_registry(*, referrer_hint: str = "") -> list[dict[str, Any]]:
                 upi_ids=list(item.get("upi_ids") or ([item.get("upi_id")] if item.get("upi_id") else [])),
                 phones=list(item.get("phones") or ([item.get("payment_phone_number")] if item.get("payment_phone_number") else [])),
                 accounts=list(item.get("accounts") or ([item.get("bank_account_identifier")] if item.get("bank_account_identifier") else [])),
-                aliases=list(item.get("aliases") or []),
+                # The owning referrer's registry name + aliases are receiver
+                # names too: an admin maps a bank/banking name the screenshots
+                # actually show (e.g. "Chimaladari Venu Gopal") as an alias of
+                # the referrer ("Venugopal"), and that alias must reach the
+                # receiver record so the operator-selected-referrer name
+                # fallback can recognise it. Without this the referrer's
+                # configured aliases never influenced receiver matching, so the
+                # advertised "map this receiver to the referrer" had no effect.
+                aliases=list(item.get("aliases") or [])
+                + ([resolved_referrer["name"]] if resolved_referrer and resolved_referrer.get("name") else [])
+                + list((resolved_referrer or {}).get("aliases") or []),
                 active=bool(item.get("is_active", item.get("active", True))),
                 verification_status=verification_status,
                 valid_from=str(item.get("valid_from") or ""),
@@ -540,6 +550,14 @@ def receiver_registry(*, referrer_hint: str = "") -> list[dict[str, Any]]:
         _norm_text(str(row.get("name") or "")): str(row.get("id") or "")
         for row in known_referrers
     }
+    # The configured aliases of each known referrer, keyed by normalized name,
+    # so a referrer with no registered payment account can still be matched by
+    # a mapped receiver/banking name (e.g. "Chimaladari Venu Gopal" → referrer
+    # "Venugopal"). Mirrors the alias merge on the account-backed path above.
+    referrer_aliases = {
+        _norm_text(str(row.get("name") or "")): list(row.get("aliases") or [])
+        for row in known_referrers
+    }
     existing_aliases = {alias for row in records for alias in row["aliases"]}
     for name in sorted(known_names):
         if _norm_text(name) and _norm_text(name) not in existing_aliases:
@@ -548,6 +566,7 @@ def receiver_registry(*, referrer_hint: str = "") -> list[dict[str, Any]]:
                     f"referrer:{_norm_text(name).replace(' ', '-')}",
                     "referrer",
                     name,
+                    aliases=referrer_aliases.get(_norm_text(name), []),
                     referrer_id=referrer_ids.get(_norm_text(name), ""),
                     verification_status="UNVERIFIED",
                     created_by="candidate_reference_backfill",
@@ -1881,20 +1900,37 @@ def verify_payment_screenshot(
         }
         and int(result.get("receiver_match_score") or 0) >= 100
     )
-    # An operator-selected referrer (referrer_selected) is a stable match for
-    # handler payouts and expense reimbursements: the operator picked the
-    # referrer explicitly before uploading the screenshot, so the association is
-    # authoritative even though no identifier was matched against the registry.
-    # Candidate payments are unaffected.
+    # An operator-selected referrer is a stable match for handler payouts and
+    # expense reimbursements: the operator picked the referrer explicitly before
+    # uploading the screenshot, so the association is authoritative even though
+    # no identifier was matched against the registry. Two shapes count:
+    #   - "referrer_selected": the no-identifier fallback resolved the payee by
+    #     the selected referrer's name/alias;
+    #   - "name": the receiver name (e.g. a banking name mapped as a referrer
+    #     alias, like "Chimaladari Venu Gopal" → "Venugopal") matched a record
+    #     owned by the selected referrer in the main loop.
+    # Both are only elevated when the matched record belongs to the referrer the
+    # operator actually selected, so a name that happens to match some *other*
+    # referrer's record is never silently credited here. Candidate payments are
+    # unaffected — this elevation is gated to handler/expense purposes.
+    selected_referrer_id = str(referrer_id or "").strip()
+    matched_referrer_id = str(result.get("matched_referrer_id") or "").strip()
     if (
         not has_stable_receiver_match
         and result.get("receiver_type") == "referrer"
-        and result.get("receiver_match") == "referrer_selected"
         and purpose in {
             "handler_payout",
             "expense_reimbursement",
             "approved_expense_reimbursement",
         }
+        and (
+            result.get("receiver_match") == "referrer_selected"
+            or (
+                result.get("receiver_match") == "name"
+                and selected_referrer_id
+                and matched_referrer_id == selected_referrer_id
+            )
+        )
     ):
         has_stable_receiver_match = True
     if (
