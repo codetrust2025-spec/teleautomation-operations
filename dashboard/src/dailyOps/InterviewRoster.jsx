@@ -174,42 +174,49 @@ function SlotScreenshotModal({ row, onClose }) {
   )
 }
 
-function RowActions({ row, busy, canEditAttendee, onEditAttendee, onEditSlot, onRemove }) {
-  const [open, setOpen] = useState(false)
+function RowActions({ row, busy, open, onToggle, onClose, onEdit }) {
   const [position, setPosition] = useState(null)
   const triggerRef = useRef(null)
   const menuRef = useRef(null)
+  // The open-state lives in the parent (keyed by row id) so only one row's menu
+  // is ever open and a stray click elsewhere can only ever close it. This effect
+  // keeps the outside-click / Escape close wired while this row is the open one.
   useEffect(() => {
     if (!open) return undefined
     function closeOnOutsideClick(event) {
-      if (!triggerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false)
+      if (!triggerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) onClose()
     }
-    function closeOnEscape(event) { if (event.key === 'Escape') setOpen(false) }
+    function closeOnEscape(event) { if (event.key === 'Escape') onClose() }
     document.addEventListener('mousedown', closeOnOutsideClick)
     document.addEventListener('keydown', closeOnEscape)
     return () => { document.removeEventListener('mousedown', closeOnOutsideClick); document.removeEventListener('keydown', closeOnEscape) }
-  }, [open])
-  function toggleMenu() {
-    if (open) { setOpen(false); return }
+  }, [open, onClose])
+  // Recompute the fixed position each time this row becomes the open one, so a
+  // reopen never flashes at a stale coordinate; clear it on close.
+  useEffect(() => {
+    if (!open) { setPosition(null); return }
     const rect = triggerRef.current?.getBoundingClientRect()
-    if (rect) setPosition({ top: rect.bottom + 4, left: Math.max(8, rect.right - 196) })
-    setOpen(true)
+    if (rect) setPosition({ top: rect.bottom + 4, left: Math.max(8, rect.right - 160) })
+  }, [open])
+  function handleTriggerClick(event) {
+    // Stop the click bubbling through the row so no ancestor handler can re-fire
+    // and reopen the menu after it toggles closed.
+    event.stopPropagation()
+    onToggle(row.id)
   }
   const menu = open && position && createPortal(
-    <ul ref={menuRef} className="ops-row-menu__list ops-row-menu__list--portal" style={{ top: position.top, left: position.left }} role="menu">
-      {canEditAttendee && <li role="none"><button type="button" role="menuitem" className="ops-row-menu__item" onClick={() => { setOpen(false); onEditAttendee(row) }}>Edit attendee</button></li>}
-      <li role="none"><button type="button" role="menuitem" className="ops-row-menu__item" onClick={() => { setOpen(false); onEditSlot(row) }}>Edit slot</button></li>
-      <li role="none"><button type="button" role="menuitem" className="ops-row-menu__item ops-row-menu__item--danger" onClick={() => { setOpen(false); onRemove(row) }}>Remove slot</button></li>
+    <ul ref={menuRef} className="ops-row-menu__list ops-row-menu__list--portal ops-slot-actions" style={{ top: position.top, left: position.left }} role="menu">
+      <li role="none"><button type="button" role="menuitem" className="ops-row-menu__item" onClick={() => { onClose(); onEdit(row) }}>Edit</button></li>
     </ul>, document.body)
   return (
     <div className="ops-row-menu">
-      <button ref={triggerRef} type="button" className="ops-row-menu__trigger" aria-label={`Actions for ${row.name}`} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={toggleMenu}><Icon name="more-vertical" size={16} strokeWidth={2.4} /></button>
+      <button ref={triggerRef} type="button" className="ops-row-menu__trigger" aria-label={`Actions for ${row.name}`} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={handleTriggerClick}><Icon name="more-vertical" size={16} strokeWidth={2.4} /></button>
       {menu}
     </div>
   )
 }
 
-function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, onSave }) {
+function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, onSave, onRemove }) {
   const [attendee, setAttendee] = useState(row.interview_attendee_resolved || row.interview_attendee || 'Bhavana')
   const [remark, setRemark] = useState(row.interview_attendance_remark || '')
   const [feedback, setFeedback] = useState(row.interview_feedback || '')
@@ -297,7 +304,7 @@ function SlotEditModal({ row, mode, targetStatus, targetLabel, busy, onClose, on
           </> : <><label className="cand-field"><span className="cand-field-label">Date</span><input className="cand-input" type="date" value={date} onChange={event => setDate(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Start time</span><input className="cand-input" type="time" value={time} onChange={event => setTime(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">End time</span><input className="cand-input" type="time" value={timeEnd} onChange={event => setTimeEnd(event.target.value)} required /></label><label className="cand-field"><span className="cand-field-label">Interview round</span><select className="cand-input" value={round} onChange={event => setRound(event.target.value)}><option value="">Select round</option><option value="L1">L1</option><option value="L2">L2</option><option value="HR">HR</option><option value="Final">Final</option><option value="Screening">Screening</option></select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Technology *</span><select className="cand-input" value={technology} onChange={event => setTechnology(event.target.value)} required><option value="">Select technology</option>{technology && !TECHNOLOGIES.includes(technology) && <option value={technology}>{technology}</option>}{TECHNOLOGIES.map(name => <option key={name} value={name}>{name}</option>)}</select></label>{slotNoteFeedback && <div className="cand-field cand-field--span2"><span className="cand-field-label">Interview feedback</span><span className={`ops-feedback-pill ops-feedback-pill--${slotNoteFeedback.tone}`} data-feedback={slotNoteFeedback.value} title={`Interview feedback: ${slotNoteFeedback.label}`}>{slotNoteFeedback.label}</span></div>}<label className="cand-field cand-field--span2"><span className="cand-field-label">Notes</span><input className="cand-input ops-slot-notes-input" value={remarkNote} onChange={event => setRemarkNote(event.target.value)} disabled={!canEditNote} aria-label="Notes" placeholder={canEditNote ? '' : 'Available once attendance is recorded'} onFocus={event => { const el = event.target; const end = el.value.length; try { el.setSelectionRange(end, end) } catch { /* non-text inputs */ } }} />{!canEditNote && <small className="cand-field-hint">Notes can be edited once the interview has an attendance outcome.</small>}</label></>}
           {error && <p className="admin-error cand-field--span2">{error}</p>}
         </div>
-        <footer className="cand-modal-footer"><button type="button" className="cand-btn cand-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className={`cand-btn cand-btn--primary${attendeeWithStatus && (targetStatus === 'not_attended' || targetStatus === 'cancelled') ? ' cand-btn--danger' : ''}${!canSubmit ? ' cand-btn--disabled' : ''}`} disabled={busy || !canSubmit} aria-disabled={busy || !canSubmit}>{busy ? 'Saving…' : attendeeWithStatus ? targetLabel : 'Save changes'}</button></footer>
+        <footer className="cand-modal-footer">{!attendeeOnly && !attendeeWithStatus && onRemove && <button type="button" className="cand-btn cand-btn--ghost ops-slot-modal__remove" onClick={() => onRemove(row)} disabled={busy}>Remove slot</button>}<button type="button" className="cand-btn cand-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className={`cand-btn cand-btn--primary${attendeeWithStatus && (targetStatus === 'not_attended' || targetStatus === 'cancelled') ? ' cand-btn--danger' : ''}${!canSubmit ? ' cand-btn--disabled' : ''}`} disabled={busy || !canSubmit} aria-disabled={busy || !canSubmit}>{busy ? 'Saving…' : attendeeWithStatus ? targetLabel : 'Save changes'}</button></footer>
       </form>
     </div>
   )
@@ -352,6 +359,11 @@ export function InterviewRoster({
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState(null)
   const [editing, setEditing] = useState(null)
+  // The kebab's open-state lives here, keyed by row id, so only one row's menu
+  // can be open and a click anywhere else can only close it (never open one).
+  const [openMenuId, setOpenMenuId] = useState(null)
+  const toggleMenu = useCallback(id => setOpenMenuId(prev => (prev === id ? null : id)), [])
+  const closeMenu = useCallback(() => setOpenMenuId(null), [])
   const [screenshotRow, setScreenshotRow] = useState(null)
   const [attendeeFilter, setAttendeeFilter] = useState('')
   const [candidateFilter, setCandidateFilter] = useState('')
@@ -879,7 +891,7 @@ export function InterviewRoster({
                           ? <span className="ops-interview-notes-text" title={row.interview_attendance_remark}>{row.interview_attendance_remark}</span>
                           : (row.interview_feedback ? null : '—')}
                       </td>
-                      {canManage && <td data-label="Actions" className="ops-dash-attend-cell"><RowActions row={row} busy={busyId === row.id} canEditAttendee={canEditAttendee} onEditAttendee={() => setEditing({ row, mode: 'attendee' })} onEditSlot={() => setEditing({ row, mode: 'slot' })} onRemove={removeSlot} /></td>}
+                      {canManage && <td data-label="Actions" className="ops-dash-attend-cell"><RowActions row={row} busy={busyId === row.id} open={openMenuId === row.id} onToggle={toggleMenu} onClose={closeMenu} onEdit={() => { closeMenu(); setEditing({ row, mode: 'slot' }) }} /></td>}
                     </tr>
                   )
                 })}
@@ -888,7 +900,7 @@ export function InterviewRoster({
           </div>
         </div>
       )}
-      {editing && <SlotEditModal row={editing.row} mode={editing.mode} targetStatus={editing.targetStatus} targetLabel={editing.targetLabel} busy={busyId === editing.row.id} onClose={() => setEditing(null)} onSave={values => editing.mode === 'attendee' ? saveAttendee(editing.row, values.attendee) : editing.mode === 'attendee-with-status' ? saveAttendance(editing.row, values.status, values.attendee, values.remark, values.feedback) : saveSlotAndNote(editing.row, values)} />}
+      {editing && <SlotEditModal row={editing.row} mode={editing.mode} targetStatus={editing.targetStatus} targetLabel={editing.targetLabel} busy={busyId === editing.row.id} onClose={() => setEditing(null)} onRemove={async row => { await removeSlot(row); setEditing(null) }} onSave={values => editing.mode === 'attendee' ? saveAttendee(editing.row, values.attendee) : editing.mode === 'attendee-with-status' ? saveAttendance(editing.row, values.status, values.attendee, values.remark, values.feedback) : saveSlotAndNote(editing.row, values)} />}
       {screenshotRow && <SlotScreenshotModal row={screenshotRow} onClose={() => setScreenshotRow(null)} />}
     </section>
   )
