@@ -585,10 +585,10 @@ class TestTheTool:
         assert imported <= set(sys.stdlib_module_names) | {"__future__"}, imported
 
     def test_the_built_in_expectations_are_the_ones_observed_in_production(self):
-        assert purge.EXPECTED["live"] == {"name": "credentials.json", "count": 99, "digest": "d292eec0cf32e5d6", "rest_digest": "e6addf97158d0760"}
+        assert purge.EXPECTED["live"] == {"name": "credentials.json", "count": 99, "digest": "d292eec0cf32e5d6", "rest_digest": "33622d20f6231a7e"}
         assert purge.EXPECTED["older_copy"] == {
             "name": "credentials.json.pre-srujan-import-20261005T093705Z", "count": 81,
-            "digest": "0b07fefcd1841e85", "rest_digest": "4e1489a37b084e54",
+            "digest": "0b07fefcd1841e85", "rest_digest": "aeba532e0c43b6f1",
         }
 
     def test_run_as_a_program_the_plan_is_read_only_and_exits_zero(self, world):

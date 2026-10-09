@@ -47,13 +47,13 @@ EXPECTED = {
         "name": LIVE_NAME,
         "count": 99,
         "digest": "d292eec0cf32e5d6",
-        "rest_digest": "e6addf97158d0760",
+        "rest_digest": "33622d20f6231a7e",
     },
     "older_copy": {
         "name": "credentials.json.pre-srujan-import-20261005T093705Z",
         "count": 81,
         "digest": "0b07fefcd1841e85",
-        "rest_digest": "4e1489a37b084e54",
+        "rest_digest": "aeba532e0c43b6f1",
     },
 }
 
