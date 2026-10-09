@@ -216,6 +216,18 @@ ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'echo "operations-a
 
 Expected now: `operations-api: running healthy` and `listeners on 8210: 1`.
 
+0.5 Quiet check (read-only): is anyone changing data right now? Expect `VERDICT: GO`. Anything else: wait and run it again, do not stop the application.
+
+```bash
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'bash -s' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/interview_purge_quiet_check.sh"
+```
+
+Expected: `last 30 minutes: N external requests, 0 write requests` (or only login/logout lines) and `VERDICT: GO. No data-changing request in the last 30 minutes.`
+A `NO GO` lists what was written (for example a booking confirmation or an expense save): someone is working.
+
+**Phase 0 is only valid for 30 minutes.** If more than 30 minutes pass between 0.1 to 0.5 and the Phase 1 command, run Phase 0 again.
+The rollback commands (R1 to R4) must be open and ready before you stop the application.
+
 ### Phase 1. PAUSE the writer (this takes the dashboard and public booking pages down)
 
 1.1 Stop the application (graceful, up to 30 s) and confirm it is down:

@@ -57,37 +57,49 @@ domains) return 502 and submissions fail; the static landing page stays up. The 
 resume. The host monitor runs every 5 minutes and only alerts after a check has failed for 5 minutes, so a short pause
 normally raises nothing (a longer one may open a GitHub alert issue that closes itself on recovery).
 
-**Evidence for when it is quietest** (nginx access logs, 8 Oct 02:03 to 9 Oct 19:54 UTC, about 1.7 days; external requests,
-counts only; IST = UTC + 5:30; "writes" are POST/PATCH/DELETE):
+**Evidence** (nginx access logs, 25 Sep to 9 Oct 2026: **15 days**, external requests, counts only; IST = UTC + 5:30; "writes" are
+POST/PATCH/DELETE, the requests that fail if the application is down and have to be retried):
 
-| UTC | IST | requests/hour | writes/hour |
-|---|---|---|---|
-| 21:00-04:59 | 02:30-10:29 | 18-70 | 0-7 |
-| 05:00-06:59 | 10:30-12:29 | 367-718 | 0-11 |
-| 07:00-19:59 | 12:30-01:29 | 1,300-3,600 | 0-26 |
-| 20:00 | 01:30 | 561 | 7 |
+| Over the 15 days | Window A: 21:15-23:30 UTC (02:45-05:00 IST) | Window B: 12:00-14:00 UTC (17:30-19:30 IST) |
+|---|---|---|
+| Requests in the window | 32,097 (1,300-4,000 on most nights; 42 on 8 Oct) | 35,382 (1,400-4,800 most days) |
+| Distinct clients | 55 | 118 |
+| Bot-like user agents / 4xx-5xx | 1% / 0% | 1% / 0% |
+| **Writes in the window** | **8** (busiest single day: 2) | **64** (busiest single day: 30) |
+| What the writes were | logins and one scanner probe among them; no booking, expense or edit in the top kinds | logins, 10 booking confirmations, 10 slot-invite parses, candidate edits and deletes, handler-expense saves |
 
-Four hours are write-free in the sample but busy with reads (dashboard viewing): 09:00, 12:00, 13:00 and 16:00 UTC.
-The sample is short, so treat the numbers as indicative.
+How to read it: in **both** windows most requests are reads from dashboards that stay open and poll in the background (a
+tab left open overnight just shows a 502 for the pause and recovers). What differs is writes. A write that lands during the
+pause fails and has to be retried: about one every two days in window A, about four a day in window B, with a worst day of 30.
+Window A is therefore the lower-impact choice **because of writes, not because traffic is low** (an earlier draft of this page,
+`d5999dd`, said "about 20 requests per hour" for window A; that came from the last 1.7 days only and the 15-day data
+corrects it).
+
+**Honest limit.** Fifteen days is still a short history. It covers both weekdays and weekends and window A never exceeded 2 writes
+in a day, but a change in how the business works (an interview batch, month-end payouts) could shift it. So the window is a
+starting point and **the live quiet check decides** (section 6, item "quiet check"): the application is only stopped if nobody
+changed any data in the previous 30 minutes, whichever window is chosen.
 
 **Never** between **20:25 and 20:45 UTC** (01:55-02:15 IST): the nightly backup runs at 20:30. Also never while a deploy or
 merge to `main` is in progress (a deploy replaces the container).
 
 **Options (decision 1 in section 10)**
 
-- **A. Quietest: 21:15-23:30 UTC (02:45-05:00 IST).** About 20 requests per hour, essentially no writes. Starts after the
-  backup has finished. Inconvenient hour for the person running it.
-- **B. Daytime lull: 12:00-14:00 UTC (17:30-19:30 IST).** About 1,500 requests per hour, no writes in the sample. Dashboard
-  users would see 502 for a few minutes; booking submissions were absent in these hours. Easier to run, more visible.
+- **A. Fewest writes: 21:15-23:30 UTC (02:45-05:00 IST).** 8 writes in 15 days (busiest day 2: logins and a scanner probe among
+  them), though background read traffic from open dashboards continues (a 502 for a few minutes, then it recovers). Starts after
+  the backup has finished. An inconvenient hour for the person running it.
+- **B. Daytime: 12:00-14:00 UTC (17:30-19:30 IST).** 64 writes in 15 days (busiest day 30; bookings, expense saves and candidate
+  edits among them), so a write failing during the pause is likely on a busy day. Easier to run and more visible: people would need
+  to be told in advance (decision 4), and the quiet check may well say NO GO.
 
-Recommendation: **A**, unless people can be told in advance, in which case B is acceptable. One small check either way:
-no interview scheduled to be reminded in the window (Daily Ops).
+Recommendation: **A**, unless people can be told in advance and the quiet check passes, in which case B is acceptable. One small check either way:
+no interview scheduled to be reminded in the window (Daily Ops), and the live quiet check passes.
 
 ## 5. Sequence and time budget (T = the moment the application is stopped)
 
 | When | Phase | Planned time | Who | Go / stop rule |
 |---|---|---|---|---|
-| T minus 30 min | **Phase 0** read-only checks (0.1 to 0.4) and the go/no-go list in section 6 | 5 min | owner, Claude reads | Any item not green: do not start |
+| T minus 30 min | **Phase 0** read-only checks (0.1 to 0.5) and the go/no-go list in section 6 | 5 min | owner, Claude reads | Any item not green: do not start |
 | T | **1.1** `docker stop` the application | up to 30 s | owner | Must show 0 containers and 0 listeners; otherwise stop here, nothing changed |
 | T + 1 min | **2.1** dry run with `--check-writer` | seconds (measured 0.4 s on production) | owner | Must end `all gates pass`; a "last written ... ago" under 120 s means wait |
 | T + 2 min | **2.2** the deletion | about 15 s (a 10 s watch after writing) | owner | `RESULT: done.` and exit 0 only; anything else: section 8 |
@@ -102,14 +114,23 @@ That can extend the downtime beyond 5 minutes, deliberately: a running applicati
 
 ## 6. Go / no-go checklist (before stopping anything)
 
+**Revalidation rule.** Nothing measured earlier counts at execution time: not the timings, not the backup state, not the traffic
+pattern in section 4. Only Phase 0 outputs from the **last 30 minutes** are valid. If more than 30 minutes pass between Phase 0 and
+Phase 1.1 (or anything unexpected happens), repeat Phase 0 from the top. Every box below is ticked from fresh output.
+
+**Rollback must be ready before the service is stopped.** The recovery point is re-verified in 0.2 (`IDENTICAL` for both files,
+within the 30 minutes), the rollback commands R1 to R4 are open and ready in a second window, `/root/purge-rollback` does not
+already exist, and the host has free disk (the 0.2 output ends with the free space of the backup volume).
+
 - [ ] Phase 0.1: 383 lines; identical to the previous baseline if one was kept.
-- [ ] Phase 0.2: `IDENTICAL` for both files; `last_result: ok`; backup lock not held.
+- [ ] Phase 0.2: `IDENTICAL` for both files; `last_result: ok`; backup lock not held; free disk shown.
 - [ ] Phase 0.3: `RESULT: all gates pass. Nothing was written.`, exit 0, numbers as in the runbook.
 - [ ] Phase 0.4: `operations-api: running healthy`, one listener on 8210 (confirms nothing was stopped early).
+- [ ] Phase 0.5, **quiet check**: `VERDICT: GO` (no data-changing request in the last 30 minutes; logins do not block).
 - [ ] No deploy run in progress and no merge to `main` planned during the window (`gh run list --workflow deploy.yml`).
 - [ ] The time is outside 20:25-20:45 UTC and inside the approved window.
-- [ ] The runbook and tool in use are commit `c719cb9` or a later approved one (draft PR #322, CI green).
-- [ ] The person running it has the rollback commands (R1 to R4) open, and Claude is available to read outputs.
+- [ ] The runbook and tool in use are the approved commit (draft PR #322, CI green), not a different one.
+- [ ] Rollback is ready, as described above, and Claude is available to read outputs.
 
 ## 7. Verification (what proves it worked)
 
