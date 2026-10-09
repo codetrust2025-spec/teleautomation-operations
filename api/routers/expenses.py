@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from core import ai_activity
-from features import transaction_identity
+from features import receipt_amount, transaction_identity
 from core.operations_api_helpers import require_admin as _require_fleet_admin
 from core.operations_api_helpers import require_payroll_admin as _require_payroll_admin
 
@@ -55,7 +55,7 @@ async def handler_expenses_list(
 @router.post("/handler-expenses", dependencies=[Depends(_require_fleet_admin)])
 async def handler_expenses_create(
     reference: str = Form(...),
-    amount: str = Form(...),
+    amount: str = Form(default=""),
     category: str = Form(default="commission"),
     note: str = Form(default=""),
     date: str = Form(default=""),
@@ -63,7 +63,9 @@ async def handler_expenses_create(
     analysis_id: str = Form(default=""),
 ):
     # The screenshot is verified by an AI node before the expense exists;
-    # `analysis_id` lets the dashboard follow which one.
+    # `analysis_id` lets the dashboard follow which one. The amount saved is the
+    # one read off the screenshot: `amount`, when sent, is the figure the
+    # operator confirmed and must equal it.
     with ai_activity.analysis(analysis_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
         response = await _create_expense(reference, amount, category, note, date, file)
     return ai_activity.with_analysis(response, analysis)
@@ -95,6 +97,129 @@ def _duplicate_response(exc: transaction_identity.DuplicateTransactionError) -> 
     }
 
 
+async def _receipt_upload(file: UploadFile):
+    """The uploaded receipt's bytes and type, or the refusal to return."""
+    from features import handler_expenses
+
+    raw = await file.read()
+    if not raw:
+        return None, "", {"status": "error", "message": "Payment screenshot is required"}
+    if len(raw) > handler_expenses.MAX_PROOF_BYTES:
+        return None, "", {"status": "error", "message": f"File too large (max {handler_expenses.MAX_PROOF_BYTES // (1024*1024)} MB)"}
+    mime = (file.content_type or "").lower().split(";")[0].strip()
+    if not handler_expenses._ext_from_mime(mime, file.filename or ""):
+        return None, "", {"status": "error", "message": "Only image files (jpg / png / webp / gif / heic) are allowed"}
+    return raw, mime, None
+
+
+async def _read_receipt(raw: bytes, mime: str, *, referrer: dict, category: str, create_ledger: bool, cache: str):
+    """Verify the screenshot as a payout to this referrer, with the amount left for the screenshot to decide."""
+    from features.payment_verification_engine import verify_payment_screenshot
+
+    name = str(referrer.get("name") or "").strip()
+    return await asyncio.to_thread(
+        verify_payment_screenshot,
+        raw,
+        mime or "image/jpeg",
+        source_module="handler_expense_create",
+        expected_amount=0,
+        entity_name=name,
+        referrer_hint=name,
+        referrer_id=str(referrer.get("id") or ""),
+        purpose=(
+            "handler_payout"
+            if category.strip().lower() == "commission"
+            else "expense_reimbursement"
+        ),
+        create_ledger=create_ledger,
+        extraction_cache=cache,
+    )
+
+
+def _entered_amount(value: str):
+    """The amount a client sent, or None when it sent none."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return int(float(text))
+
+
+def _incoming_expense(reference: str, amount: int, category: str, note: str, date: str, raw: bytes, verification: dict) -> dict:
+    """The expense a receipt describes, as the duplicate check compares it."""
+    return {
+        "reference": reference,
+        "amount": amount,
+        "category": category,
+        "note": note.strip(),
+        "date": date,
+        # What the verifier read off this receipt: the transaction reference, the
+        # payer, the payment the engine matched it to, and the image's own hash.
+        "external_transaction_id": _receipt_reference(verification),
+        "payment_id": str(verification.get("payment_id") or ""),
+        "screenshot_hash": transaction_identity.screenshot_hash(raw),
+        "payer": verification.get("sender_name") or verification.get("sender_upi_id") or "",
+    }
+
+
+@router.post("/handler-expenses/extract", dependencies=[Depends(_require_fleet_admin)])
+async def handler_expenses_extract(
+    reference: str = Form(...),
+    file: UploadFile = File(...),
+    category: str = Form(default="commission"),
+    date: str = Form(default=""),
+    fresh: str = Form(default=""),
+    analysis_id: str = Form(default=""),
+):
+    """Read the amount off a payment screenshot. Saves nothing.
+
+    The dashboard calls this when a screenshot is attached, fills Expense Amount
+    from the answer and shows it for confirmation. `fresh` makes a newly attached
+    screenshot be read again; without it a reading the server still remembers is
+    reused, so changing the referrer does not wait on the AI node a second time.
+    """
+    with ai_activity.analysis(analysis_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
+        response = await _extract_expense_amount(reference, category, date, file, fresh=str(fresh).strip().lower() in {"1", "true", "yes"})
+    return ai_activity.with_analysis(response, analysis)
+
+
+async def _extract_expense_amount(reference: str, category: str, date: str, file: UploadFile, *, fresh: bool):
+    from features import handler_expenses
+    from features.referrer_registry import resolve_referrer
+
+    selected_referrer = resolve_referrer(reference)
+    if selected_referrer is None:
+        return {"status": "error", "message": "Select one registered referrer before attaching the screenshot."}
+    canonical_reference = str(selected_referrer.get("name") or "").strip()
+    raw, mime, refusal = await _receipt_upload(file)
+    if refusal:
+        return refusal
+    try:
+        verification = await _read_receipt(
+            raw, mime, referrer=selected_referrer, category=category, create_ledger=False,
+            cache="fresh" if fresh else "reuse",
+        )
+    except Exception as exc:
+        logger.exception("Reading the amount off a handler expense screenshot failed")
+        return {"status": "error", "message": f"Payment screenshot could not be read: {exc}"}
+    read = receipt_amount.read_amount(verification)
+    if not read.ok:
+        return {"status": "error", "message": read.problem}
+    # A receipt that is already recorded is refused now, not after the operator
+    # has confirmed an amount for it.
+    try:
+        handler_expenses.check_new_expense(
+            _incoming_expense(canonical_reference, read.amount, category, "", date, raw, verification)
+        )
+    except transaction_identity.DuplicateTransactionError as exc:
+        return _duplicate_response(exc)
+    return {
+        "status": "ok",
+        "amount": read.amount,
+        "corroborated": bool(verification.get("amount_corroborated")),
+        "amount_source": str(verification.get("amount_source") or ""),
+    }
+
+
 async def _create_expense(reference: str, amount: str, category: str, note: str, date: str, file: UploadFile):
     from features import handler_expenses
     from features.referrer_registry import resolve_referrer
@@ -106,66 +231,38 @@ async def _create_expense(reference: str, amount: str, category: str, note: str,
             "message": "Select one registered referrer before logging a payout.",
         }
     canonical_reference = str(selected_referrer.get("name") or "").strip()
-    if int(float(amount or 0)) <= 0:
-        return {"status": "error", "message": "Amount must be greater than zero"}
-
-    # Validate the screenshot
-    raw = await file.read()
-    if not raw:
-        return {"status": "error", "message": "Payment screenshot is required"}
-    if len(raw) > handler_expenses.MAX_PROOF_BYTES:
-        return {"status": "error", "message": f"File too large (max {handler_expenses.MAX_PROOF_BYTES // (1024*1024)} MB)"}
-    mime = (file.content_type or "").lower().split(";")[0].strip()
-    if not handler_expenses._ext_from_mime(mime, file.filename or ""):
-        return {"status": "error", "message": "Only image files (jpg / png / webp / gif / heic) are allowed"}
-
-    body = {
-        "reference": canonical_reference,
-        "amount": int(float(amount)),
-        "category": category,
-        "note": note.strip(),
-        "date": date,
-    }
     try:
-        from features.payment_verification_engine import verify_payment_screenshot
-        verification = await asyncio.to_thread(
-            verify_payment_screenshot,
-            raw,
-            mime or "image/jpeg",
-            source_module="handler_expense_create",
-            expected_amount=int(float(amount)),
-            entity_name=canonical_reference,
-            referrer_hint=canonical_reference,
-            referrer_id=str(selected_referrer.get("id") or ""),
-            purpose=(
-                "handler_payout"
-                if category.strip().lower() == "commission"
-                else "expense_reimbursement"
-            ),
+        entered = _entered_amount(amount)
+    except ValueError:
+        return {"status": "error", "message": "The amount must be a number."}
+
+    raw, mime, refusal = await _receipt_upload(file)
+    if refusal:
+        return refusal
+
+    try:
+        verification = await _read_receipt(
+            raw, mime, referrer=selected_referrer, category=category, create_ledger=True, cache="reuse",
         )
-        if not verification.get("deterministic_verified"):
-            return {
-                "status": "error",
-                "message": " ".join(verification.get("deterministic_reasons") or [])
-                or "Payment screenshot could not be verified.",
-                "ai_extraction": verification,
-            }
     except Exception as exc:
         logger.exception("Central payment verification failed for handler expense")
         return {"status": "error", "message": f"Payment screenshot could not be verified: {exc}"}
 
-    # The verifier has just read the transaction reference and the payer off
-    # this screenshot. Storing them is what lets the same money be recognised
-    # if it was already recorded as a recovery or a payout somewhere else.
-    body["external_transaction_id"] = _receipt_reference(verification)
-    # What the verifier established about this receipt, for the duplicate
-    # check: the payment the engine matched it to (the same one when the same
-    # receipt is filed again) and the image's own hash.
-    body["payment_id"] = str(verification.get("payment_id") or "")
-    body["screenshot_hash"] = transaction_identity.screenshot_hash(raw)
-    body["payer"] = (
-        verification.get("sender_name") or verification.get("sender_upi_id") or ""
-    )
+    # The amount saved is the one the screenshot establishes -- never one typed
+    # in, and never one the screenshot leaves in doubt.
+    read = receipt_amount.read_amount(verification)
+    if not read.ok:
+        return {"status": "error", "message": read.problem, "ai_extraction": verification}
+    if entered is not None and entered != read.amount:
+        return {
+            "status": "error",
+            "message": (
+                f"The amount confirmed (₹{entered:,}) is not the amount on the screenshot "
+                f"(₹{read.amount:,}). Nothing was saved. Attach the screenshot again to read it afresh."
+            ),
+        }
+
+    body = _incoming_expense(canonical_reference, read.amount, category, note, date, raw, verification)
     try:
         row = handler_expenses.create_expense(body)
     except transaction_identity.DuplicateTransactionError as exc:

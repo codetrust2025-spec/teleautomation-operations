@@ -250,6 +250,9 @@ describe("referrer payment accounts", () => {
           },
         });
       }
+      if (value.endsWith("/handler-expenses/extract") && options.method === "POST") {
+        return response({ status: "ok", amount: 1000 });
+      }
       if (value.endsWith("/handler-expenses") && options.method === "POST") {
         submittedBody = options.body;
         return response({ status: "ok" });
@@ -278,9 +281,6 @@ describe("referrer payment accounts", () => {
       target: { value: "referrer-pavan-kalyan" },
     });
     await waitFor(() => expect(screen.getByText("₹4500")).toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText("Expense amount (₹) *"), {
-      target: { value: "1000" },
-    });
     fireEvent.change(screen.getByLabelText("Note / reason"), {
       target: { value: "Interview expense" },
     });
@@ -288,6 +288,9 @@ describe("referrer payment accounts", () => {
     fireEvent.change(document.querySelector('input[type="file"]'), {
       target: { files: [proof] },
     });
+    // The amount is read off the screenshot, not typed in.
+    await waitFor(() => expect(screen.getByLabelText("Expense amount (₹) *")).toHaveValue(1000));
+    expect(screen.getByLabelText("Expense amount (₹) *")).toHaveAttribute("readonly");
     // The attachment is described, never named -- not in the label, not in the
     // hover title, not in any accessible name.
     expect(screen.getByText("Screenshot attached")).toBeInTheDocument();
@@ -298,7 +301,7 @@ describe("referrer payment accounts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
 
     await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
-      message: "₹1000 will be deducted from Sample Referrer’s outstanding amount. Continue?",
+      message: "₹1000 (read from the screenshot) will be deducted from Sample Referrer’s outstanding amount. Continue?",
     })));
     await waitFor(() => expect(submittedBody).toBeInstanceOf(FormData));
     expect(submittedBody.get("reference")).toBe("Sample Referrer");

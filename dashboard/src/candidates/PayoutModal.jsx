@@ -125,6 +125,11 @@ export default function PayoutModal({
     reset: resetProofAnalysis,
   } = useAiAnalysis(ve);
   const [proofFile, setProofFile] = useState(null);
+  // What reading the attached screenshot established for a new expense. The amount
+  // saved is the one read off it, never one typed in: null until a screenshot is
+  // attached, then reading / ok (with the amount) / failed (with why).
+  const [reading, setReading] = useState(null);
+  const readSeqRef = useRef(0);
   const proofInputRef = useRef(null);
   const [previewProof, setPreviewProof] = useState(null);
   const [page, setPage] = useState(0);
@@ -321,6 +326,8 @@ export default function PayoutModal({
   function resetForm() {
     setEditId(null);
     setProofFile(null);
+    readSeqRef.current += 1;
+    setReading(null);
     if (proofInputRef.current) proofInputRef.current.value = "";
     setForm({
       reference: filterHandler !== "all" ? filterHandler : "",
@@ -360,6 +367,8 @@ export default function PayoutModal({
     setFilterHandler(nextName);
     setEditId(null);
     setProofFile(null);
+    readSeqRef.current += 1;
+    setReading(null);
     resetProofAnalysis();
     if (proofInputRef.current) proofInputRef.current.value = "";
     setForm({
@@ -375,6 +384,8 @@ export default function PayoutModal({
 
   function startEdit(row) {
     resetProofAnalysis();
+    readSeqRef.current += 1;
+    setReading(null);
     setEditId(row.id);
     setFilterHandler(row.reference || "all");
     setForm({
@@ -402,10 +413,18 @@ export default function PayoutModal({
       return;
     }
     const handlerRef = selectedReferrer.name;
-    const amt = Number(form.amount);
+    // A new expense is saved at the amount read off its screenshot; only an edit
+    // has an amount typed in.
+    const amt = editId ? Number(form.amount) : (reading?.state === "ok" ? reading.amount : 0);
     const previousAmount = editId
       ? Number(entries.find((row) => row.id === editId)?.amount) || 0
       : 0;
+    if (!editId && !proofFile) { setError("Payment screenshot is required"); return; }
+    if (!editId && reading?.state === "reading") { setError("Wait for the amount to be read from the screenshot."); return; }
+    if (!editId && reading?.state !== "ok") {
+      setError(reading?.message || "The amount has not been read from the screenshot. Attach it again.");
+      return;
+    }
     if (!Number.isFinite(amt) || amt <= 0) { setError("Amount must be greater than zero"); return; }
     const editableLimit = Math.max(0, balance) + (
       editId ? Number(entries.find((row) => row.id === editId)?.amount) || 0 : 0
@@ -414,8 +433,7 @@ export default function PayoutModal({
       setError(`Expense amount cannot exceed the current outstanding amount of ${Jc(editableLimit)}.`);
       return;
     }
-    if (!editId && !proofFile) { setError("Payment screenshot is required"); return; }
-    const confirmationMessage = `${Jc(amt)} will be deducted from ${handlerRef}’s outstanding amount. Continue?`;
+    const confirmationMessage = `${Jc(amt)}${editId ? "" : " (read from the screenshot)"} will be deducted from ${handlerRef}’s outstanding amount. Continue?`;
     const confirmationApi = window.__TA_CONFIRM_VALUE__?.confirm;
     const confirmed = confirmationApi
       ? await confirmationApi({
@@ -458,10 +476,10 @@ export default function PayoutModal({
         fd.append("note", form.note.trim());
         fd.append("date", form.date);
         fd.append("file", proofFile);
-        run = beginProofAnalysis();
-        fd.append("analysis_id", run.id);
+        // The screenshot was read when it was attached and the server reuses that
+        // reading; the amount sent is the figure the operator confirmed, which the
+        // server saves only if it is still the one on the screenshot.
         res = await saveNewExpense(fd, { reference: handlerRef, amount: amt, date: form.date });
-        run.finish(res.analysis ?? null, { ok: res.status === "ok", failureLabel: "Not verified" });
       }
       if (res.status !== "ok") { setError(res.message || "Save failed"); return; }
       // What the server stored is what is reported -- never the form's value
@@ -502,7 +520,7 @@ export default function PayoutModal({
           : `Expense updated. Now ${Jc(confirmedAmount)} (was ${Jc(previousAmount)}).`;
       } else {
         notice = `Expense added successfully. ${Jc(confirmedAmount)} was deducted from the amount owed.`;
-        if (confirmedAmount !== amt) notice += ` Saved as ${Jc(confirmedAmount)}, not the ${Jc(amt)} entered.`;
+        if (confirmedAmount !== amt) notice += ` Saved as ${Jc(confirmedAmount)}, not the ${Jc(amt)} ${editId ? "entered" : "confirmed"}.`;
         if (res.recovered) notice += " The server was slow to answer, but the expense was saved once.";
       }
       if (movesPeriod) {
@@ -516,6 +534,44 @@ export default function PayoutModal({
       run?.finish(null, { ok: false, failureLabel: "Not saved" });
     }
     finally { setSaving(false); }
+  }
+
+  /**
+   * Read the amount off a newly attached screenshot. The server saves nothing:
+   * it answers with the one amount the screenshot establishes, or why it
+   * establishes none (unreadable, ambiguous, not a payment to this referrer,
+   * already recorded). Until it answers there is no amount, and a screenshot
+   * attached in the meantime supersedes this one.
+   */
+  async function readScreenshot(file, referrerName) {
+    const seq = readSeqRef.current + 1;
+    readSeqRef.current = seq;
+    setReading({ state: "reading" });
+    setForm((current) => ({ ...current, amount: "" }));
+    const run = beginProofAnalysis();
+    let res;
+    try {
+      const fd = new FormData();
+      fd.append("reference", referrerName);
+      fd.append("file", file);
+      fd.append("category", form.category);
+      fd.append("date", form.date);
+      // A newly attached screenshot is read afresh, never from an earlier reading.
+      fd.append("fresh", "1");
+      fd.append("analysis_id", run.id);
+      res = await (await fetch(`${ve}/handler-expenses/extract`, { method: "POST", body: fd })).json();
+    } catch {
+      res = { status: "error", message: "The server did not answer, so the amount could not be read. Attach the screenshot again." };
+    }
+    if (seq !== readSeqRef.current || !aliveRef.current) return;
+    run.finish(res.analysis ?? null, { ok: res.status === "ok", failureLabel: "Not read" });
+    const amount = Number(res.amount);
+    if (res.status === "ok" && Number.isFinite(amount) && amount > 0) {
+      setReading({ state: "ok", amount, corroborated: Boolean(res.corroborated) });
+      setForm((current) => ({ ...current, amount: String(amount) }));
+    } else {
+      setReading({ state: "failed", message: res.message || "The amount could not be read from this screenshot." });
+    }
   }
 
   /** One referrer's expenses as the server holds them, or null if unreadable. */
@@ -664,6 +720,8 @@ export default function PayoutModal({
                 </label>
                 <label className="payout-modal__field">
                   <span className="cand-field-label">Expense amount (₹) *</span>
+                  {/* A new expense's amount is read off its screenshot, so the field
+                      only shows it; an edit keeps a typed amount. */}
                   <input
                     className="cand-input payout-modal__input"
                     type="number"
@@ -674,7 +732,8 @@ export default function PayoutModal({
                       : currentOutstanding || undefined}
                     value={form.amount}
                     onChange={ev => setForm(current => ({ ...current, amount: ev.target.value }))}
-                    placeholder="5000"
+                    placeholder={editId ? "5000" : "Read from the screenshot"}
+                    readOnly={!editId}
                     disabled={filterHandler === "all"}
                     required
                   />
@@ -747,6 +806,9 @@ export default function PayoutModal({
                       // A new screenshot has not been read by any node yet.
                       resetProofAnalysis();
                       setError("");
+                      if (!editId) readScreenshot(file, filterHandler);
+                      // Choosing the same file again must read it again.
+                      ev.target.value = "";
                     }}
                     hidden
                   />
@@ -761,7 +823,7 @@ export default function PayoutModal({
                 <button
                   type="submit"
                   className="cand-btn cand-btn--primary payout-modal__save"
-                  disabled={saving || handlerStatsLoading || filterHandler === "all" || (!editId && !proofFile)}
+                  disabled={saving || handlerStatsLoading || filterHandler === "all" || (!editId && (!proofFile || reading?.state !== "ok"))}
                 >
                   {checking ? "Checking…" : saving ? "Saving…" : editId ? "Save changes" : "Save expense"}
                 </button>
@@ -773,6 +835,20 @@ export default function PayoutModal({
                 )}
               </div>
 
+              {!editId && reading?.state === "reading" && (
+                <div className="payout-modal__reading" role="status">Reading the amount from the screenshot…</div>
+              )}
+              {!editId && reading?.state === "ok" && (
+                <div className="payout-modal__reading payout-modal__reading--ok" role="status">
+                  Read from the screenshot: <strong>{Jc(reading.amount)}</strong>. Check that it matches the payment before saving.
+                  {reading.corroborated ? " The same amount appears more than once on it." : ""}
+                </div>
+              )}
+              {!editId && reading?.state === "failed" && (
+                <div className="payout-modal__reading payout-modal__reading--failed" role="alert">
+                  {reading.message} <strong>Nothing can be saved until the amount is read.</strong>
+                </div>
+              )}
               {checking && <div className="payout-modal__checking" role="status">{checking}</div>}
               {error && <div className="cand-modal-error payout-modal__error" role="alert">{error}</div>}
               {/* The owed figure is the header's own, read live: this message

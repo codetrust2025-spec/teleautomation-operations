@@ -34,6 +34,9 @@ const gatewayTimeout = () => Promise.resolve({
   json: () => Promise.reject(new SyntaxError("Unexpected token '<', \"<html>\" is not valid JSON")),
 });
 
+// What the next screenshot shows: the amount is read off it, never typed in.
+const receipt = { amount: 0 };
+
 // Earned before any payout. September's two payouts leave ₹42,500 owed.
 const GROSS = 57500;
 const SEPT = [
@@ -67,6 +70,9 @@ function stubServer({ outcome = "saved", lateAfter = 3, preloaded = [], refusal 
     }
     if (value.includes("/candidates/stats?")) {
       return json({ status: "ok", stats: { top_performers: [{ name: "Thrilok", net_payable: closing(month) }] } });
+    }
+    if (options.method === "POST" && value.endsWith("/handler-expenses/extract")) {
+      return json({ status: "ok", amount: receipt.amount });
     }
     if (options.method === "POST") {
       const form = options.body;
@@ -129,12 +135,14 @@ const history = () => ({
 const banner = () => document.querySelector(".payout-modal__success")?.textContent;
 const failure = () => document.querySelector(".payout-modal__error")?.textContent;
 
-function fileExpense({ amount, date }) {
-  fireEvent.change(screen.getByLabelText("Expense amount (₹) *"), { target: { value: String(amount) } });
-  fireEvent.change(screen.getByLabelText("Expense date *"), { target: { value: date } });
+async function fileExpense({ amount, date }) {
+  receipt.amount = amount;
+  if (date) fireEvent.change(screen.getByLabelText("Expense date *"), { target: { value: date } });
   fireEvent.change(document.querySelector('input[type="file"]'), {
     target: { files: [new File(["receipt"], "receipt.png", { type: "image/png" })] },
   });
+  // The amount is read off the screenshot; saving waits for it.
+  await waitFor(() => expect(screen.getByLabelText("Expense amount (₹) *").value).toBe(String(amount)));
   fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
 }
 
@@ -162,7 +170,7 @@ describe("the proxy gives up, but the server saves the payment", () => {
   it("reports it as saved once, with one row in October's history and nothing owed", async () => {
     const server = stubServer({ outcome: "gateway" });
     await openModal();
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(banner()).toBeTruthy());
     expect(banner()).toContain(`${inr(42500)} was deducted from the amount owed`);
     expect(banner()).toContain("slow to answer, but the expense was saved once");
@@ -177,7 +185,7 @@ describe("the proxy gives up, but the server saves the payment", () => {
   it("tells the operator not to save it again while it checks", async () => {
     stubServer({ outcome: "late", lateAfter: 3 });
     await openModal();
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     expect(await screen.findByText(/Do not save it again/)).toBeInTheDocument();
     await waitFor(() => expect(banner()).toBeTruthy());
     expect(screen.queryByText(/Do not save it again/)).toBeNull();
@@ -186,7 +194,7 @@ describe("the proxy gives up, but the server saves the payment", () => {
   it("finds a save that lands several look-ups after the timeout", async () => {
     const server = stubServer({ outcome: "late", lateAfter: 6 });
     await openModal();
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(banner()).toContain("was deducted from the amount owed"));
     expect(server.posts).toHaveLength(1);
     expect(server.store.filter((row) => row.amount === 42500)).toHaveLength(1);
@@ -196,7 +204,7 @@ describe("the proxy gives up, but the server saves the payment", () => {
   it("treats a dropped connection the same way", async () => {
     const server = stubServer({ outcome: "dropped" });
     await openModal();
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(banner()).toContain("slow to answer, but the expense was saved once"));
     expect(server.posts).toHaveLength(1);
     expect(failure()).toBeUndefined();
@@ -205,7 +213,7 @@ describe("the proxy gives up, but the server saves the payment", () => {
   it("never files it a second time on its own", async () => {
     const server = stubServer({ outcome: "gateway" });
     await openModal();
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(banner()).toBeTruthy());
     expect(server.posts).toHaveLength(1);
     expect(server.store.filter((row) => row.amount === 42500)).toHaveLength(1);
@@ -217,7 +225,7 @@ describe("the proxy gives up, but the server saves the payment", () => {
     const earlier = { id: "e-earlier", reference: "Thrilok", amount: 42500, category: "commission", note: "", date: "2026-10-06", proofs: [] };
     const server = stubServer({ outcome: "lost", preloaded: [earlier], gross: GROSS + 42500 });
     await openModal("2026-10", 42500);
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(failure()).toContain("did not confirm"));
     expect(banner()).toBeUndefined();
     expect(server.posts).toHaveLength(1);
@@ -228,7 +236,7 @@ describe("the payment really was not saved", () => {
   it("says it could not confirm the save and does not claim success", async () => {
     const server = stubServer({ outcome: "lost" });
     await openModal();
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(failure()).toContain("did not confirm"));
     expect(failure()).toContain("check the history before saving it again");
     expect(failure()).toContain("same receipt cannot be saved twice");
@@ -240,7 +248,7 @@ describe("the payment really was not saved", () => {
   it("leaves the form as it was and lets the operator try again", async () => {
     stubServer({ outcome: "lost" });
     await openModal();
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(failure()).toBeTruthy());
     expect(screen.getByLabelText("Expense amount (₹) *").value).toBe("42500");
     expect(screen.getByRole("button", { name: "Save expense" })).toBeEnabled();
@@ -255,7 +263,7 @@ describe("a refusal from the server is shown straight away", () => {
     });
     await openModal();
     const lookupsBefore = server.lookups;
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(failure()).toContain("already recorded (same bank reference)"));
     // One look-up before the save, to know what was already there; none after.
     expect(server.lookups - lookupsBefore).toBe(1);
@@ -305,7 +313,7 @@ describe("what the balance is called", () => {
     stubServer({ outcome: "saved" });
     await openModal("2026-09");
     expect(ownedLabel()).toBe("Owed at end of Sept 2026");
-    fileExpense(THE_PAYMENT);
+    await fileExpense(THE_PAYMENT);
     await waitFor(() => expect(ownedLabel()).toBe("Currently owed"));
     await waitFor(() => expect(owed()).toBe(inr(0)));
     expect(banner()).toContain("Currently owed: ₹0");

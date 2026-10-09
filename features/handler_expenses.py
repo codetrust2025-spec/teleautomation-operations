@@ -316,6 +316,23 @@ def create_expense(record: dict) -> dict:
     return row
 
 
+def check_new_expense(record: dict) -> None:
+    """Raise DuplicateTransactionError if saving `record` now would double-count
+    money already recorded. Saves nothing: it is the check create_expense makes,
+    available earlier so a receipt that is already recorded is refused when it is
+    attached, not after the operator has confirmed it.
+    """
+    row = _normalise(record)
+    refuse_duplicate(
+        _transaction_of(
+            row,
+            payment_id=_clean_str(record.get("payment_id")),
+            screenshot_hash=_clean_str(record.get("screenshot_hash")),
+        ),
+        row["id"],
+    )
+
+
 def _transaction_of(
     row: dict, *, payment_id: str = "", screenshot_hash: str = "", reference: str = ""
 ) -> dict:

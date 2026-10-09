@@ -29,6 +29,9 @@ class FakeEventSource {
 const inr = (value) => `₹${Number(value).toLocaleString("en-IN")}`;
 const json = (body) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
 
+// What the next screenshot shows: the amount is read off it, never typed in.
+const receipt = { amount: 0 };
+
 // Earned before any payout. September's two payouts leave ₹42,500 owed.
 const GROSS = 57500;
 const SEPT = [
@@ -51,6 +54,9 @@ function stubServer({ savedAmount } = {}) {
     }
     if (value.includes("/candidates/stats?")) {
       return json({ status: "ok", stats: { top_performers: [{ name: "Thrilok", net_payable: closing(month) }] } });
+    }
+    if (options.method === "POST" && value.endsWith("/handler-expenses/extract")) {
+      return json({ status: "ok", amount: receipt.amount });
     }
     if (options.method === "POST") {
       const form = options.body;
@@ -104,12 +110,14 @@ const history = () => ({
 });
 const banner = () => document.querySelector(".payout-modal__success")?.textContent;
 
-function fileExpense({ amount, date }) {
-  fireEvent.change(screen.getByLabelText("Expense amount (₹) *"), { target: { value: String(amount) } });
+async function fileExpense({ amount, date }) {
+  receipt.amount = amount;
   if (date) fireEvent.change(screen.getByLabelText("Expense date *"), { target: { value: date } });
   fireEvent.change(document.querySelector('input[type="file"]'), {
     target: { files: [new File(["receipt"], "receipt.png", { type: "image/png" })] },
   });
+  // The amount is read off the screenshot; saving waits for it.
+  await waitFor(() => expect(screen.getByLabelText("Expense amount (₹) *").value).toBe(String(amount)));
   fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
 }
 
@@ -143,7 +151,7 @@ describe("₹42,500 owed, a ₹5,000 expense in the same month", () => {
   it("says ₹5,000 was deducted -- never ₹42,500", async () => {
     stubServer();
     await openModal();
-    fileExpense({ amount: 5000, date: "2026-09-20" });
+    await fileExpense({ amount: 5000, date: "2026-09-20" });
     await waitFor(() => expect(banner()).toBeTruthy());
     expect(banner()).toContain(`${inr(5000)} was deducted from the amount owed`);
     expect(banner()).not.toContain("42,500");
@@ -152,7 +160,7 @@ describe("₹42,500 owed, a ₹5,000 expense in the same month", () => {
   it("shows ₹37,500 owed, in the header and in the message", async () => {
     stubServer();
     await openModal();
-    fileExpense({ amount: 5000, date: "2026-09-20" });
+    await fileExpense({ amount: 5000, date: "2026-09-20" });
     await waitFor(() => expect(owed()).toBe("₹37,500"));
     await waitFor(() => expect(banner()).toContain("Currently owed: ₹37,500"));
   });
@@ -160,7 +168,7 @@ describe("₹42,500 owed, a ₹5,000 expense in the same month", () => {
   it("shows the new expense, with its count and total, straight away", async () => {
     stubServer();
     await openModal();
-    fileExpense({ amount: 5000, date: "2026-09-20" });
+    await fileExpense({ amount: 5000, date: "2026-09-20" });
     await waitFor(() => expect(history().count).toBe("3 entries"));
     expect(history().total).toBe("Total expenses: ₹20,000");
     expect(history().amounts).toHaveLength(3);
@@ -172,7 +180,7 @@ describe("a ₹5,000 expense dated in another month than the one the modal opene
   it("moves to that month, so the owed figure and history show the save", async () => {
     const server = stubServer();
     await openModal("2026-09");
-    fileExpense({ amount: 5000, date: "2026-10-06" });
+    await fileExpense({ amount: 5000, date: "2026-10-06" });
     await waitFor(() => expect(server.posts).toHaveLength(1));
     // October's balance: ₹57,500 earned less every payout to date, ₹20,000.
     await waitFor(() => expect(owed()).toBe("₹37,500"));
@@ -185,7 +193,7 @@ describe("a ₹5,000 expense dated in another month than the one the modal opene
   it("says so, and still says ₹5,000 -- not the balance", async () => {
     stubServer();
     await openModal("2026-09");
-    fileExpense({ amount: 5000, date: "2026-10-06" });
+    await fileExpense({ amount: 5000, date: "2026-10-06" });
     await waitFor(() => expect(banner()).toContain("Currently owed: ₹37,500"));
     expect(banner()).toContain(`${inr(5000)} was deducted from the amount owed`);
     expect(banner()).toContain("Oct 2026");
@@ -195,7 +203,7 @@ describe("a ₹5,000 expense dated in another month than the one the modal opene
   it("does not move when the expense is in the month already shown", async () => {
     stubServer();
     await openModal("2026-09");
-    fileExpense({ amount: 5000, date: "2026-09-20" });
+    await fileExpense({ amount: 5000, date: "2026-09-20" });
     await waitFor(() => expect(banner()).toBeTruthy());
     expect(banner()).not.toMatch(/now show/);
     expect(screen.getByRole("combobox", { name: "Filter expense history by month" }).value).toBe("2026-09");
@@ -203,25 +211,26 @@ describe("a ₹5,000 expense dated in another month than the one the modal opene
 });
 
 describe("what was saved is what is reported", () => {
-  it("takes the amount from the server's answer, and says if it differs from what was entered", async () => {
+  it("takes the amount from the server's answer, and says if it differs from what was confirmed", async () => {
     stubServer({ savedAmount: 4000 });
     await openModal();
-    fileExpense({ amount: 5000, date: "2026-09-20" });
+    await fileExpense({ amount: 5000, date: "2026-09-20" });
     await waitFor(() => expect(banner()).toBeTruthy());
     expect(banner()).toContain(`${inr(4000)} was deducted from the amount owed`);
-    expect(banner()).toContain(`Saved as ${inr(4000)}, not the ${inr(5000)} entered`);
+    expect(banner()).toContain(`Saved as ${inr(4000)}, not the ${inr(5000)} confirmed`);
   });
 
   it("checks the next expense against the balance as it now stands", async () => {
     stubServer();
     await openModal();
-    fileExpense({ amount: 5000, date: "2026-09-20" });
+    await fileExpense({ amount: 5000, date: "2026-09-20" });
     await waitFor(() => expect(owed()).toBe("₹37,500"));
     await waitFor(() => expect(screen.getByRole("button", { name: "Save expense" })).toBeDisabled());
-    fireEvent.change(screen.getByLabelText("Expense amount (₹) *"), { target: { value: "40000" } });
+    receipt.amount = 40000;
     fireEvent.change(document.querySelector('input[type="file"]'), {
       target: { files: [new File(["receipt"], "receipt.png", { type: "image/png" })] },
     });
+    await waitFor(() => expect(screen.getByLabelText("Expense amount (₹) *").value).toBe("40000"));
     fireEvent.submit(document.querySelector("form.payout-modal__form-section"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       `Expense amount cannot exceed the current outstanding amount of ${inr(37500)}.`,

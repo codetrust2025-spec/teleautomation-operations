@@ -1,11 +1,12 @@
 /**
- * Add / Edit Referrer Expense names the AI node verifying the screenshot.
+ * Add / Edit Referrer Expense names the AI node reading the screenshot.
  *
  * It used to show "Verifying screenshot" with rotating generic copy and no
  * node, and a refused screenshot left it spinning -- the timer still counting
  * beside the refusal -- because the refusal returned before the status was
  * ever told. Every path that sends the screenshot now finishes the shared node
- * status with the server's answer.
+ * status with the server's answer. A new expense's screenshot is read when it
+ * is attached (that is the slow step); saving then reuses that reading.
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -40,7 +41,7 @@ const json = (body) => Promise.resolve({ ok: true, json: () => Promise.resolve(b
 
 /** The modal's API; `proof` is the pending answer for the screenshot request. */
 function stubServer() {
-  const server = { proofRequests: [], patches: [] };
+  const server = { proofRequests: [], patches: [], saves: [] };
   let answerProof;
   server.proof = new Promise((resolve) => { answerProof = resolve; });
   vi.stubGlobal("fetch", vi.fn((url, options = {}) => {
@@ -54,6 +55,10 @@ function stubServer() {
     if (options.method === "PATCH") {
       server.patches.push(value);
       return json({ status: "ok" });
+    }
+    if (options.method === "POST" && value.endsWith("/handler-expenses")) {
+      server.saves.push(options.body);
+      return json({ status: "ok", expense: { id: "exp-8" } });
     }
     if (options.method === "POST") {
       server.proofRequests.push({ url: value, body: options.body });
@@ -108,16 +113,14 @@ afterEach(() => {
 });
 
 describe("add referrer expense", () => {
-  it("follows the node verifying the screenshot, then says who verified it", async () => {
+  it("follows the node reading the screenshot, then says who read it", async () => {
     const server = stubServer();
     await openModal();
-    fireEvent.change(screen.getByLabelText("Expense amount (₹) *"), { target: { value: "5000" } });
     attachScreenshot();
-    fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
 
     await waitFor(() => expect(server.proofRequests).toHaveLength(1));
     const { url, body } = server.proofRequests[0];
-    expect(url).toBe("/handler-expenses");
+    expect(url).toBe("/handler-expenses/extract");
     expect(stream().url).toBe(`/public/slots/analysis/${body.get("analysis_id")}/events`);
     expect(screen.getByText("Waiting for AI node…")).toBeInTheDocument();
     expect(screen.queryByText(/verifying details|understanding your data/i)).toBeNull();
@@ -125,17 +128,20 @@ describe("add referrer expense", () => {
     push({ state: "running", node: "RTX 4060" });
     expect(document.querySelector(".payout-modal__ai-status").textContent).toContain("● RTX 4060 · Analysing…");
 
-    await server.answer({ status: "ok", expense: { id: "exp-8" }, analysis: RTX });
+    await server.answer({ status: "ok", amount: 5000, analysis: RTX });
     expect(await screen.findByText(/^✓ Analysed by RTX 4060 in \d+\.\ds$/)).toBeInTheDocument();
-    expect(screen.getByText("Expense added successfully. ₹5000 was deducted from the amount owed.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Expense amount (₹) *")).toHaveValue(5000);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
+    await waitFor(() => expect(server.saves).toHaveLength(1));
+    expect(server.saves[0].get("amount")).toBe("5000");
+    expect(await screen.findByText("Expense added successfully. ₹5000 was deducted from the amount owed.")).toBeInTheDocument();
   });
 
-  it("stops at a refusal: says it was not verified, by which node, and stops counting", async () => {
+  it("stops at a refusal: says it was not read, by which node, and stops counting", async () => {
     const server = stubServer();
     await openModal();
-    fireEvent.change(screen.getByLabelText("Expense amount (₹) *"), { target: { value: "5000" } });
     attachScreenshot();
-    fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
     await waitFor(() => expect(server.proofRequests).toHaveLength(1));
     push({ state: "running", node: "Jagadeesh" });
 
@@ -146,9 +152,11 @@ describe("add referrer expense", () => {
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("not present in the configured receiver registry");
-    expect(screen.getByText(/^✕ Not verified · Analysed by Jagadeesh in \d+\.\ds$/)).toBeInTheDocument();
+    expect(screen.getByText(/^✕ Not read · Analysed by Jagadeesh in \d+\.\ds$/)).toBeInTheDocument();
     expect(document.querySelector(".ai-node-progress__timer")).toBeNull();
     expect(document.querySelector(".ai-node-progress--active")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save expense" })).toBeDisabled();
+    expect(server.saves).toHaveLength(0);
   });
 });
 

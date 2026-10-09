@@ -505,6 +505,32 @@
   color: #6ee7b7;
   font-size: 12px;
 }
+.payout-modal__reading {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, .35);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, .08);
+  color: var(--text-muted, #a8b4c4);
+  font-size: 12px;
+}
+.payout-modal__reading--ok {
+  border-color: rgba(52, 211, 153, .4);
+  background: rgba(16, 185, 129, .1);
+  color: #6ee7b7;
+}
+.payout-modal__reading--ok strong {
+  color: #a7f3d0;
+  font-size: 14px;
+}
+.payout-modal__reading--failed {
+  border-color: rgba(248, 113, 113, .45);
+  background: rgba(239, 68, 68, .1);
+  color: #fca5a5;
+}
+.payout-modal__input[readonly] {
+  cursor: default;
+}
 .payout-modal__checking {
   margin-top: 8px;
   padding: 8px 10px;

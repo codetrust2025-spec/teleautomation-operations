@@ -6,11 +6,14 @@ retained elsewhere for a future flag, but is deliberately disabled here.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
 import re
+import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from threading import RLock
@@ -112,6 +115,37 @@ ALLOWED_PAYMENT_MIME_TYPES = {
     "image/heif",
 }
 _lock = RLock()
+
+# A screenshot the model has already read. Reading is the slow step -- up to a
+# minute on the AI node -- so a screenshot read to fill in an expense's amount is
+# not read a second time when that same screenshot is saved moments later. Only a
+# usable reading is kept, so a failed one is always tried again.
+_EXTRACTION_TTL_SECONDS = 30 * 60
+_EXTRACTION_LIMIT = 32
+_extraction_lock = RLock()
+_extractions: "OrderedDict[tuple, tuple[float, dict]]" = OrderedDict()
+
+
+def _remembered_extraction(key: tuple) -> dict | None:
+    now = time.monotonic()
+    with _extraction_lock:
+        for stale in [k for k, (kept_at, _) in _extractions.items() if now - kept_at > _EXTRACTION_TTL_SECONDS]:
+            del _extractions[stale]
+        hit = _extractions.get(key)
+        return copy.deepcopy(hit[1]) if hit else None
+
+
+def _remember_extraction(key: tuple, extraction: dict) -> None:
+    with _extraction_lock:
+        _extractions[key] = (time.monotonic(), copy.deepcopy(extraction))
+        _extractions.move_to_end(key)
+        while len(_extractions) > _EXTRACTION_LIMIT:
+            _extractions.popitem(last=False)
+
+
+def forget_remembered_extractions() -> None:
+    with _extraction_lock:
+        _extractions.clear()
 
 
 def _now() -> str:
@@ -1699,8 +1733,16 @@ def verify_payment_screenshot(
     referrer_id: str = "",
     payment_scope: str = "OTHER",
     create_ledger: bool = True,
+    extraction_cache: str = "",
 ) -> dict[str, Any]:
-    """Run Ollama extraction, deterministic authorization, and atomic accounting."""
+    """Run Ollama extraction, deterministic authorization, and atomic accounting.
+
+    `extraction_cache` lets a screenshot that has just been read be used again
+    instead of being read again: "fresh" reads it and remembers a usable reading,
+    "reuse" uses a remembered reading when there is one (and remembers a new
+    one). Empty, the default, neither uses nor keeps one, so other callers are
+    unaffected.
+    """
     if not image_data:
         raise ValueError("Empty payment screenshot")
     max_bytes = int(os.environ.get("PAYMENT_EVIDENCE_MAX_BYTES", str(10 * 1024 * 1024)))
@@ -1718,13 +1760,20 @@ def verify_payment_screenshot(
     use_ocr = payment_ocr_enabled()
     if payment_extraction_provider() != "OLLAMA" and not use_ocr:
         raise ValueError("Configured payment extraction provider is not enabled")
-    extraction = extract_payment_with_ollama(
-        image_data,
-        normalized_mime,
-        allow_slow_ai=True,
-        use_ocr=use_ocr,
-        crosscheck_ocr=True,
-    )
+    extraction_key = (hashlib.sha256(image_data).hexdigest(), normalized_mime, bool(use_ocr))
+    extraction = _remembered_extraction(extraction_key) if extraction_cache == "reuse" else None
+    if extraction is None:
+        extraction = extract_payment_with_ollama(
+            image_data,
+            normalized_mime,
+            allow_slow_ai=True,
+            use_ocr=use_ocr,
+            crosscheck_ocr=True,
+        )
+        if extraction_cache in {"fresh", "reuse"}:
+            reading = _normalize_directional_extraction(extraction or {})
+            if reading.get("is_payment_screenshot") and int(reading.get("amount") or 0) > 0:
+                _remember_extraction(extraction_key, extraction)
     normalized_extraction = _normalize_directional_extraction(extraction or {})
     # Strip the payer's own identifiers out of the receiver fields HERE, where
     # every extraction path converges.

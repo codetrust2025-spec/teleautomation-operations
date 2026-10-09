@@ -284,10 +284,15 @@ def client(world, monkeypatch):
     monkeypatch.setattr("features.referrer_registry.resolve_referrer",
                         lambda name: {"id": "referrer-thrilok", "name": "Thrilok"})
 
+    # What the receipt in the next request shows. The amount saved is the one
+    # read off the screenshot, so a test says what its screenshot shows.
+    shown = {"amount": 42500}
+
     def read_receipt(image_data, mime_type="image/jpeg", **kwargs):
         # The engine gives one receipt one payment, and remembers it.
         payment = engine.setdefault(digest(image_data), "pay_1" if digest(image_data) == digest(IMAGE) else "pay_other")
         return {"deterministic_verified": True, "deterministic_reasons": [], "payment_id": payment,
+                "amount": shown["amount"],
                 "utr_number": UTR if image_data == IMAGE else "900000000007",
                 "sender_name": "B Thriloknath"}
 
@@ -295,10 +300,13 @@ def client(world, monkeypatch):
     app = FastAPI()
     app.include_router(routes.router)
     app.dependency_overrides[routes._require_fleet_admin] = lambda: None
-    return TestClient(app)
+    test_client = TestClient(app)
+    test_client.shown = shown
+    return test_client
 
 
 def post_expense(client, image=IMAGE, amount="42500", date="2026-10-06"):
+    client.shown["amount"] = int(amount)
     return client.post(
         "/handler-expenses",
         data={"reference": "Thrilok", "amount": amount, "category": "commission", "date": date},
