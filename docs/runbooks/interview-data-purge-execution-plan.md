@@ -126,7 +126,9 @@ already exist, and the host has free disk (the 0.2 output ends with the free spa
 - [ ] Phase 0.2: `IDENTICAL` for both files; `last_result: ok`; backup lock not held; free disk shown.
 - [ ] Phase 0.3: `RESULT: all gates pass. Nothing was written.`, exit 0, numbers as in the runbook.
 - [ ] Phase 0.4: `operations-api: running healthy`, one listener on 8210 (confirms nothing was stopped early).
-- [ ] Phase 0.5, **quiet check**: `VERDICT: GO` (no data-changing request in the last 30 minutes; logins do not block).
+- [ ] Phase 0.5, **quiet check**: `VERDICT: GO` (no data-changing request in the last 30 minutes in either log; login, logout and the
+      admin re-check do not block; password changes and resets do, because they write the credentials file). It is advice about
+      people. The safeguard is the stop and the tool's checks (section 8A).
 - [ ] No deploy run in progress and no merge to `main` planned during the window (`gh run list --workflow deploy.yml`).
 - [ ] The time is outside 20:25-20:45 UTC and inside the approved window.
 - [ ] The runbook and tool in use are the approved commit (draft PR #322, CI green), not a different one.
@@ -164,6 +166,72 @@ Rollback time: the commands themselves take seconds (reading both files out of t
 read-only); allow a few minutes for the human steps. Rollback was rehearsed end to end on the host (real restic, fixture data):
 the files return byte-identical, with modes and owners kept.
 
+## 8A. Can a write still happen after the quiet check? What prevents it
+
+No: the quiet check is **not** what prevents writes, and it cannot be: it only says nobody is working right now. What prevents them is
+that **the only writer is stopped, and the tool refuses to proceed unless that is demonstrably true**, repeatedly.
+
+**Who can write these two files** (audited against the code deployed on production, `4a7c61c`, read-only):
+
+- Only the Data Room routes (POST/PATCH/DELETE under `/data-room/credentials/...`, service-account images, offer-letter uploads) and the
+  password routes (`/auth/change-password`, `/auth/reset-password`, which write the credentials file). Every one needs a logged-in
+  session, so it comes through nginx and shows in the log the quiet check reads.
+- A one-time plaintext-password migration, and a one-time offer-letter migration on a read; both are already done in production and
+  would only ever change the file (so they trip the tool's "everything else is as expected" gate).
+- **No background loop or worker touches the store** (none of `services/` or `workers/` imports it).
+- **Other containers cannot reach a writer.** The marketing container does hold an internal URL and token for the operations API, but
+  the service token only authorizes `/internal/...`, `/ai/smart-reply/...` and `POST /inbox/*/sync/*`; everything else needs a user
+  session. Only the operations container mounts the data volume.
+- Host-level jobs: the nightly backup only reads the volume; nothing else on the host writes it (cron and timers checked).
+
+**The layers, in the order they act**
+
+| Layer | What it does | Catches |
+|---|---|---|
+| Quiet check (0.5) | Reads nginx **and** the application's own request log for the last 30 minutes | A person working: do not interrupt them |
+| `docker stop` (1.1), graceful up to 30 s | Removes the only writer; in-flight requests finish first | The stale in-flight write that this whole procedure exists to prevent |
+| Gates in the tool (2.1/2.2) | Container stopped, port 8210 confirmed as its port and refusing connections, no process holding the files open, files quiet for 120 s, everything else in the files as expected | A forgotten stop, a restart, a just-finished write |
+| **Re-check before each replacement** | The container, port and open-file checks are repeated immediately before each of the two files is replaced | A writer that appears after the gates and before a write (the file is not touched; if it is the second file, exit 1 and a partial-state report) |
+| Replace guard | The file is re-read and compared (hash, size, mtime) immediately before it is replaced; temp file + atomic rename | A write between the last read and the replace |
+| Watch after writing (10 s) | The files must stay exactly as written | A late or stale writer that gets in anyway |
+| Verify with `--watch` after the restart (4.1) | 60 s of looking for the key coming back | A writer that wakes up after the restart |
+
+**What this does not do:** it does not physically lock the files (the application takes no lock the tool could respect), and it cannot
+stop someone who deliberately starts the container or runs a deploy during the window. The go/no-go list has "no deploy or merge in
+progress"; the re-check before each write catches a container started in the middle of the run; and the restart policy
+(`unless-stopped`) means a stopped container stays stopped until someone starts it (nothing on the host does).
+
+## 8B. The recovery point, verified independently (10 Oct 2026)
+
+Not taken from a report: done against the real backup, then cleaned up.
+
+- **A real restore** of both files from snapshot `da4a7033` (taken 8 Oct 20:33 UTC), using the same restic command as R1 with the target in
+  RAM (`/dev/shm`, root-only), so no second copy of the records touched disk. It restored **exactly the two target files** (nothing
+  extra), in 0 s.
+- **Hashes identical to the recorded pre-purge values**: live `8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91`,
+  older copy `78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d`; modes `644 root:root`, as in production.
+- **The tool's own rollback** was run against production with those restored files. Its gates for the right file, the right hash, the
+  right record count and digest (99 / `d292eec0cf32e5d6`, 81 / `0b07fefcd1841e85`) and "nothing else has changed" all **passed**; it
+  refused only on "the purge is still in effect" (correct: nothing has been purged), exit status 2, nothing written.
+- **Cleaned up**: the RAM copy was removed and nothing under `/dev/shm` mentions the key.
+- Not exercised against production data, by design: the final write of a restored file over a purged one. That step was rehearsed
+  end to end on the host with the real restic binary on a fixture (byte-identical result, modes and owners kept), and the tool's
+  refusal-before-write behaviour was just shown on the real files.
+
+### The pre-purge record (taken 10 Oct, read-only; re-take at execution time)
+
+| Item | Value |
+|---|---|
+| Live file `credentials.json` | size 104,979; mtime 2026-10-05 09:37:06 UTC; sha256 `8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91`; 99 records, digest `d292eec0cf32e5d6`; rest-of-file digest `33622d20f6231a7e` |
+| Older copy | size 82,698; mtime 2026-10-05 08:54:15 UTC; sha256 `78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d`; 81 records, digest `0b07fefcd1841e85`; rest-of-file digest `aeba532e0c43b6f1` |
+| Recovery point | restic snapshot `da4a7033`, 2026-10-08 20:33:10 UTC, tag `nightly` |
+| Expected after the purge | live 17,948 bytes, sha256 `d00ee10b7ecda4e0d9b4a49255b58116e2f9b00c5b9b2830998f7c238e20d01b`; older 16,137 bytes, sha256 `1b12a5fff9df565c7df01b53829cdc0aeca6cf34ba7c5d6327e67934ff96e7c0` |
+| Data volume baseline | 383 files; sha256 of the sorted list `81a954b0bb3513c1a90c3de0b08ede295f07bec1c2687260a75ac91d5ce69acd`; expense store `handler_expenses.json` sha256 `c7ef95600bfe85c3f0126f1930c5a07e2eeaa76101e7423477518047679c6ca6` |
+| Application | release `4a7c61c`, `operations-api` running and healthy |
+
+At execution time the operator keeps the Phase 0.1 file (`purge-before.txt`) with the approval record and writes down
+`sha256sum purge-before.txt` next to the table above. That is the working baseline for the diff in 2.4 and 4.2.
+
 ## 9. Residual risks, honestly
 
 - **Backups keep the records** until retention expires them (up to about 6 months). By design; section 2.
@@ -171,7 +239,8 @@ the files return byte-identical, with modes and owners kept.
   happens in that minute, it fails and has to be retried.
 - **An in-flight request at the moment of the stop** is the only thing that could rewrite the file. The graceful stop
   (up to 30 s) lets it finish before the purge; the tool then refuses unless the container is stopped, the port is closed and
-  no process holds the files, and it watches the files for 10 s after writing.
+  no process holds the files, repeats those checks immediately before each file is replaced, and watches the files for 10 s
+  after writing (section 8A).
 - **The tool is new.** It is stdlib-only, was rehearsed on the production host on fixtures, mutation-tested, and its guarantees
   (exit 2 means nothing changed) are enforced in code and tested. It has not run against production data, only dry runs.
 - **Another person or agent deploying during the window** would restart the application. Mitigation: the go/no-go list.

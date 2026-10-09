@@ -50,6 +50,7 @@ or hurried command could switch the writer checks off. Those options no longer e
 | No process has the files open | both target files | `/proc` scan |
 | The files have been quiet | 120 s | the file's last-written time |
 | The files are watched after writing | 10 s | the key must not come back and the files must not be rewritten |
+| The writer is re-checked before each replacement | container, port and open files | repeated immediately before each of the two files is replaced, so a writer that appears after the gates is caught before that file is touched |
 | `--writers-stopped` | required | your confirmation only; it is checked by the lines above, not trusted |
 
 `--expectations` (a file that replaces the expected values and these settings) exists only so fixtures can be tested;
@@ -216,14 +217,17 @@ ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'echo "operations-a
 
 Expected now: `operations-api: running healthy` and `listeners on 8210: 1`.
 
-0.5 Quiet check (read-only): is anyone changing data right now? Expect `VERDICT: GO`. Anything else: wait and run it again, do not stop the application.
+0.5 Quiet check (read-only): is anyone changing data right now? It reads the nginx logs **and** the application's own request log. Expect `VERDICT: GO`. Anything else: wait and run it again, do not stop the application.
+It is advice about people; the safeguard is the stop and the tool's checks.
 
 ```bash
 ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'bash -s' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/interview_purge_quiet_check.sh"
 ```
 
-Expected: `last 30 minutes: N external requests, 0 write requests` (or only login/logout lines) and `VERDICT: GO. No data-changing request in the last 30 minutes.`
-A `NO GO` lists what was written (for example a booking confirmation or an expense save): someone is working.
+Expected: `last 30 minutes: N external requests in nginx; M requests in the application's own log` (and at most login/logout lines) and
+`VERDICT: GO. No data-changing request in the last 30 minutes.` A `NO GO` lists what was written (for example a booking confirmation,
+an expense save, or a password change or reset, which write the credentials file): someone is working. Login, logout and the admin
+re-check do not block.
 
 **Phase 0 is only valid for 30 minutes.** If more than 30 minutes pass between 0.1 to 0.5 and the Phase 1 command, run Phase 0 again.
 The rollback commands (R1 to R4) must be open and ready before you stop the application.
@@ -327,7 +331,9 @@ Use it only if something is wrong after 2.2 (exit status 1 with a PARTIAL STATE 
 changed since the purge, and it needs the exact pre-purge bytes, which snapshot `da4a7033` holds. **Roll back with the
 application stopped** (if it was already started, stop it first with command 1.1).
 
-R1. Restore both files from the snapshot into a root-only scratch directory (writes a copy of the records there):
+R1. Restore both files from the snapshot into a root-only scratch directory (writes a copy of the records there). This exact
+command was verified on 10 Oct against the real snapshot (restored into RAM instead of `/root`): it restores exactly the two files, with
+hashes identical to the pre-purge values:
 
 ```bash
 ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'umask 077 && mkdir -p /root/purge-rollback && RESTIC_REPOSITORY=/var/backups/teleautomation/restic RESTIC_PASSWORD_FILE=/etc/teleautomation/restic.password restic restore da4a7033 --target /root/purge-rollback --include /var/backups/teleautomation/stage/operations-data/data_room/credentials.json --include /var/backups/teleautomation/stage/operations-data/data_room/credentials.json.pre-srujan-import-20261005T093705Z && sha256sum /root/purge-rollback/var/backups/teleautomation/stage/operations-data/data_room/credentials.json*'

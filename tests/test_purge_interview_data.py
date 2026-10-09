@@ -740,6 +740,71 @@ class TestTheSafeguardsCannotBeWeakened:
         assert code == 2 and "[PASS] --writers-stopped" in out.getvalue() and "[FAIL] something IS listening on 127.0.0.1:8210" in out.getvalue()
 
 
+class TestTheWriterIsRecheckedBeforeEveryReplacement:
+    """A clean gate check is a moment in time, and the write happens a moment later. The writer checks are repeated immediately
+    before each file is replaced, so a writer that appears in between is caught before that file is touched. (Review point:
+    "a clean window does not guarantee that a write cannot occur after the check".)"""
+
+    def writer_appears_at(self, monkeypatch, name, *, call, up, down):
+        """Patch `name` so the call numbered `call` (1 = the gate check, 2 = before the first file, 3 = before the second) sees `up`."""
+        calls = {"n": 0}
+
+        def check(*args, **kwargs):
+            calls["n"] += 1
+            return up if calls["n"] >= call else down
+
+        monkeypatch.setattr(purge, name, check)
+        return calls
+
+    def test_a_listener_before_the_first_replacement_means_nothing_is_touched(self, world, monkeypatch):
+        set_writer(world, ports=["127.0.0.1:8210"])
+        self.writer_appears_at(monkeypatch, "port_state", call=2, up="open", down="closed")
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 2 and "Nothing was written." in out and "PARTIAL" not in out
+        assert "something is listening on 127.0.0.1:8210 again" in out and "was NOT replaced (checked immediately before writing it)" in out
+        assert snapshot(world["dir"]) == before
+
+    def test_a_listener_between_the_two_replacements_is_a_partial_state_not_a_refusal(self, world, monkeypatch):
+        set_writer(world, ports=["127.0.0.1:8210"])
+        self.writer_appears_at(monkeypatch, "port_state", call=3, up="open", down="closed")
+        live_before = (world["room"] / "credentials.json").read_bytes()
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 1 and "PARTIAL STATE" in out and "credentials.json was NOT replaced" in out
+        assert re.search(r"purged and verified \(the key is gone\):\s+" + re.escape(OLDER), out)
+        assert re.search(r"not touched \(still hold their records\):\s+credentials\.json\b", out)
+        assert (world["room"] / "credentials.json").read_bytes() == live_before
+        assert "interview_data" not in (world["room"] / OLDER).read_text(encoding="utf-8")
+
+    def test_a_container_started_after_the_gates_stops_the_write(self, world, monkeypatch):
+        set_writer(world, container="app-container", ports=[])
+        self.writer_appears_at(monkeypatch, "container_state", call=2, up="running", down="stopped")
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 2 and "the application container app-container is not stopped any more" in out
+        assert snapshot(world["dir"]) == before
+
+    def test_a_container_started_between_the_two_writes_is_a_partial_state(self, world, monkeypatch):
+        set_writer(world, container="app-container", ports=[])
+        self.writer_appears_at(monkeypatch, "container_state", call=3, up="running", down="stopped")
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 1 and "PARTIAL STATE" in out and "is not stopped any more" in out
+
+    def test_a_process_that_opens_the_file_after_the_gates_stops_the_write(self, world, monkeypatch):
+        self.writer_appears_at(monkeypatch, "processes_with_open", call=2, up=[(4242, "a-writer")], down=[])
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 2 and "the file is open in a-writer (pid 4242)" in out
+        assert snapshot(world["dir"]) == before
+
+    def test_the_check_is_made_once_per_file_and_a_quiet_run_is_unaffected(self, world, monkeypatch):
+        set_writer(world, ports=["127.0.0.1:8210"])
+        calls = self.writer_appears_at(monkeypatch, "port_state", call=99, up="open", down="closed")
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 0 and "RESULT: done." in out
+        assert calls["n"] == 3, "one gate check, then one immediately before each of the two files"
+
+
 # -- the delayed concurrent write --------------------------------------------------------------------------
 
 @pytest.fixture()

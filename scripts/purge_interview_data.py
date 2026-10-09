@@ -23,7 +23,8 @@ So `apply` refuses unless the writer is demonstrably down, and those checks cann
 in this file and there is no option that relaxes them. The application's container must not be running; its port
 (127.0.0.1:8210, cross-checked against Docker's own record of the port the container publishes) must refuse
 connections; no process may have the files open; and the files must have been quiet for 120 seconds. Afterwards the
-files are watched for 10 seconds. `--writers-stopped` is only your confirmation: it is checked, not trusted. On the
+files are watched for 10 seconds. The writer checks are repeated immediately before each file is replaced, not only once
+at the start. `--writers-stopped` is only your confirmation: it is checked, not trusted. On the
 production data directory even the built-in expectations cannot be replaced (`--expectations` is for fixtures and is
 refused there).
 
@@ -425,6 +426,21 @@ def writer_gates(config: dict, targets, gates: Gates, *, confirmed=None) -> None
                     else "these files are open in: " + ", ".join(f"{name} (pid {pid})" for pid, name in holders))
 
 
+def writer_came_back(config: dict, path: str):
+    """None while the writer is still down, else why not. Called immediately before EACH replacement, not only at gate time:
+    a writer that appears between the gates and a write is caught before that file is touched."""
+    name = config.get("container")
+    if name and container_state(name) != "stopped":
+        return f"the application container {name} is not stopped any more"
+    for spec in config.get("ports") or []:
+        if port_state(spec) != "closed":
+            return f"something is listening on {spec} again"
+    holders = processes_with_open([path])
+    if holders:
+        return "the file is open in " + ", ".join(f"{name} (pid {pid})" for pid, name in holders)
+    return None
+
+
 def settle(written: dict[str, str], seconds: float) -> list[str]:
     """Watch the files just written. Returns what went wrong (empty when they stayed as written)."""
     if _DURING_SETTLE is not None:
@@ -632,6 +648,9 @@ def cmd_apply(args, out=sys.stdout) -> int:
     try:
         for loaded, _ in ordered:
             payload, preserved = payloads[loaded.path]
+            why = writer_came_back(expected["writer"], loaded.path)
+            if why:
+                raise Refusal(f"{why}, so {loaded.name} was NOT replaced (checked immediately before writing it)")
             atomic_replace(loaded.path, payload, like=loaded, unchanged_since=loaded)
             after = Loaded(loaded.path)
             problems = []
