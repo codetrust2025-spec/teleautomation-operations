@@ -19,18 +19,21 @@ to do anything if the data is not what it was written for.
 THE APPLICATION MUST BE STOPPED FIRST. The application rewrites the whole credentials file (load, change,
 save), so a request that loaded the file before the purge can write the records back after it, and no
 check made by this tool can prevent that: the application does not take any lock this tool could respect.
-So `apply` refuses unless the writer is demonstrably down -- it is told so (--writers-stopped), nothing
-is listening on the application's port (--require-port-closed), no process has the files open, and the
-files have been idle (--min-idle-seconds) -- and afterwards it watches the files (--settle-seconds).
+So `apply` refuses unless the writer is demonstrably down, and those checks cannot be weakened: they are pinned
+in this file and there is no option that relaxes them. The application's container must not be running; its port
+(127.0.0.1:8210, cross-checked against Docker's own record of the port the container publishes) must refuse
+connections; no process may have the files open; and the files must have been quiet for 120 seconds. Afterwards the
+files are watched for 10 seconds. `--writers-stopped` is only your confirmation: it is checked, not trusted. On the
+production data directory even the built-in expectations cannot be replaced (`--expectations` is for fixtures and is
+refused there).
 
 It imports nothing from the application, so it runs the same on the host, in the container or on a
 fixture, and cannot be changed by a deploy. Standard library only.
 
-    python3 purge_interview_data.py plan  --data-dir DIR [--also NAME] [--manifest]
+    python3 purge_interview_data.py plan  --data-dir DIR [--also NAME] [--manifest] [--check-writer]
     python3 purge_interview_data.py apply --data-dir DIR [--also NAME] --confirm-count 99 \\
                                           --expect-file-sha256 SHA [--also-expect-file-sha256 NAME=SHA] \\
-                                          --writers-stopped --require-port-closed HOST:PORT \\
-                                          [--min-idle-seconds 120] [--settle-seconds 5]
+                                          --writers-stopped
     python3 purge_interview_data.py verify   --data-dir DIR [--also NAME] [--after-restart] [--watch SECONDS]
     python3 purge_interview_data.py rollback --data-dir DIR --file NAME --from COPY --expect-source-sha256 SHA
 
@@ -43,6 +46,7 @@ import hashlib
 import json
 import os
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -55,6 +59,22 @@ ROOM = "data_room"
 # What this purge was written for, observed read-only in production on 9 Oct 2026. `digest` is over the
 # records, `rest_digest` over everything else in the same file, so "the unrelated data is untouched" is
 # checked against a number, not a feeling. Any difference stops the tool.
+# Where production keeps the data. On this directory the expectations and the writer safeguards below are the ones
+# in this file, whatever the command line says.
+PRODUCTION_DATA_DIR = "/var/lib/docker/volumes/teleautomation-production_operations_data/_data"
+
+# The writer safeguards, pinned. There is deliberately no option to loosen them. Observed in production on 9-10 Oct
+# 2026: one container mounts the volume, it publishes 127.0.0.1:8210, and the data files had been idle since 5 Oct.
+WRITER = {
+    "container": "teleautomation-production-operations-api-1",
+    "ports": ["127.0.0.1:8210"],
+    "min_idle_seconds": 120,
+    "settle_seconds": 10,
+}
+
+# What a fixture gets when its expectations file names no writer: nothing to check (there is no application).
+FIXTURE_WRITER = {"container": None, "ports": [], "min_idle_seconds": 0, "settle_seconds": 0}
+
 EXPECTED = {
     "live": {
         "name": LIVE_NAME,
@@ -68,6 +88,7 @@ EXPECTED = {
         "digest": "0b07fefcd1841e85",
         "rest_digest": "aeba532e0c43b6f1",
     },
+    "writer": WRITER,
 }
 
 # Files bigger than this are not searched for the key (the data directory holds proof images).
@@ -157,11 +178,23 @@ class Loaded:
         return (json.dumps(self.rest, ensure_ascii=False, indent=2)).encode("utf-8"), False
 
 
-def load_expected(path: str | None) -> dict:
+def is_production_dir(data_dir: str) -> bool:
+    return os.path.realpath(data_dir) == os.path.realpath(PRODUCTION_DATA_DIR)
+
+
+def load_expected(path: str | None, data_dir: str) -> dict:
+    """The expectations and writer safeguards in force. On the production directory they are the pinned ones."""
+    if is_production_dir(data_dir):
+        if path:
+            raise Refusal("--expectations is for fixtures and cannot be used on the production data directory: "
+                          "its expected values and its safeguards are pinned in this tool")
+        return EXPECTED
     if not path:
         return EXPECTED
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        expected = json.load(f)
+    expected.setdefault("writer", dict(FIXTURE_WRITER))
+    return expected
 
 
 def room_dir(data_dir: str) -> str:
@@ -314,26 +347,63 @@ def processes_with_open(paths: list[str]):
     return found
 
 
-def writer_gates(args, targets, gates: Gates, *, required: bool) -> None:
+def docker_inspect(name: str, template: str):
+    """The output of `docker inspect -f TEMPLATE NAME`, or None when it cannot be had."""
+    try:
+        done = subprocess.run(["docker", "inspect", "-f", template, name], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def container_state(name: str) -> str:
+    """'running', 'stopped', or 'unknown' (Docker missing, or no such container)."""
+    return {"true": "running", "false": "stopped"}.get(docker_inspect(name, "{{.State.Running}}"), "unknown")
+
+
+def container_host_ports(name: str):
+    """The host ip:port pairs Docker says the container publishes, or None when they cannot be read."""
+    raw = docker_inspect(name, "{{json .HostConfig.PortBindings}}")
+    if raw is None:
+        return None
+    try:
+        bindings = json.loads(raw) or {}
+    except json.JSONDecodeError:
+        return None
+    return {f"{b.get('HostIp') or '0.0.0.0'}:{b.get('HostPort')}" for rows in bindings.values() for b in (rows or [])}
+
+
+def writer_gates(config: dict, targets, gates: Gates, *, confirmed=None) -> None:
     """Checks that the application, the only writer of these files, is not running.
 
-    They cannot prove it, but each failure mode they catch is a real one: the operator forgot to stop it,
-    something restarted it, a request is mid-flight, or someone was just editing the Data Room.
+    `config` is the pinned WRITER (or a fixture's own). They cannot prove it, but each failure mode they catch is
+    real: the operator forgot to stop it, something restarted it, the wrong port was named, a request is mid-flight,
+    or someone was just editing the Data Room. `confirmed` is the operator's --writers-stopped (None: not asked).
     """
-    ports = list(getattr(args, "require_port_closed", None) or [])
-    idle = getattr(args, "min_idle_seconds", None)
-    if required:
-        gates.check(bool(getattr(args, "writers_stopped", False)), "--writers-stopped: the application has been stopped before this run")
-        gates.check(bool(ports), "--require-port-closed names the application's port, so a running application is detected")
-    if not (required or ports or idle is not None):
-        return
+    if confirmed is not None:
+        gates.check(bool(confirmed), "--writers-stopped: you confirm the application is stopped (checked below, not trusted)")
+    name = config.get("container")
+    ports = list(config.get("ports") or [])
+    if name:
+        state = container_state(name)
+        gates.check(state == "stopped",
+                    f"the application container {name} is stopped" if state == "stopped"
+                    else (f"the application container {name} is still RUNNING" if state == "running"
+                          else f"could not confirm that the application container {name} is stopped (Docker unavailable, or no such container)"))
+        published = container_host_ports(name)
+        for spec in ports:
+            ok = published is not None and spec in published
+            gates.check(ok, f"{spec} is the application's published port (Docker's own record)" if ok
+                        else f"{spec} is NOT confirmed as a port the application publishes (Docker says: "
+                             + (", ".join(sorted(published)) if published else "unreadable") + ")")
     for spec in ports:
         state = port_state(spec)
         gates.check(state == "closed",
                     f"nothing is listening on {spec}" if state == "closed"
                     else (f"something IS listening on {spec}: the application is still running" if state == "open"
                           else f"could not confirm that {spec} is closed"))
-    if idle is not None:
+    idle = int(config.get("min_idle_seconds") or 0)
+    if idle > 0:
         for loaded, _ in targets:
             age = time.time() - loaded.mtime_ns / 1e9
             gates.check(age >= idle, f"{loaded.name}: last written {int(age)}s ago (needs at least {idle}s of quiet)")
@@ -437,7 +507,7 @@ def describe(loaded: Loaded, out, *, manifest: bool) -> None:
 
 
 def cmd_plan(args, out=sys.stdout) -> int:
-    expected = load_expected(args.expectations)
+    expected = load_expected(args.expectations, args.data_dir)
     print("MODE: PLAN (read-only; nothing is written)", file=out)
     targets, gates, scan = build_plan(args, expected)
     for loaded, _ in targets:
@@ -445,7 +515,10 @@ def cmd_plan(args, out=sys.stdout) -> int:
         payload, preserved = loaded.serialized_without_key()
         print(f"  if applied: the file would become {len(payload)} bytes, sha256 {sha256_bytes(payload)}; formatting kept: {'yes' if preserved else 'no (re-indented)'}", file=out)
     bound_file_gates(args, targets, gates, required=False)
-    writer_gates(args, targets, gates, required=False)
+    if args.check_writer:
+        writer_gates(expected["writer"], targets, gates)
+    else:
+        print("writer safeguards: not checked in this run (apply always checks them; add --check-writer to see them)", file=out)
     print("files under the data directory that mention the key: " + (", ".join(scan) if scan else "none"), file=out)
     print("GATES:", file=out)
     gates.print(out)
@@ -458,11 +531,11 @@ def cmd_plan(args, out=sys.stdout) -> int:
 
 
 def cmd_apply(args, out=sys.stdout) -> int:
-    expected = load_expected(args.expectations)
+    expected = load_expected(args.expectations, args.data_dir)
     print("MODE: APPLY", file=out)
     targets, gates, scan = build_plan(args, expected)
     bound_file_gates(args, targets, gates, required=True)
-    writer_gates(args, targets, gates, required=True)
+    writer_gates(expected["writer"], targets, gates, confirmed=args.writers_stopped)
     live_expect = expected["live"]
     gates.check(args.confirm_count == live_expect["count"],
                 f"--confirm-count {args.confirm_count} matches the {live_expect['count']} records to be deleted")
@@ -506,14 +579,15 @@ def cmd_apply(args, out=sys.stdout) -> int:
         print(f"purged {loaded.name}: {loaded.count} records removed; {loaded.size} -> {after.size} bytes; "
               f"sha256 {after.sha256}; the rest of the file is unchanged ({after.rest_digest}); mode and owner kept", file=out)
     written = {loaded.path: sha256_bytes(payloads[loaded.path][0]) for loaded, _ in ordered}
-    problems = settle(written, args.settle_seconds)
+    settle_seconds = float(expected["writer"].get("settle_seconds") or 0)
+    problems = settle(written, settle_seconds)
     if problems:
         for problem in problems:
             print(f"ERROR: {problem} while watching the files after the purge.", file=out)
         print("A writer is still running. Stop it, run verify, and if the records are back run apply again with the application stopped. "
               "Do NOT start the application.", file=out)
         return 1
-    print(f"watched the files for {args.settle_seconds:g}s after writing: unchanged", file=out)
+    print(f"watched the files for {settle_seconds:g}s after writing: unchanged", file=out)
     remaining = scan_for_key(args.data_dir)
     print("files under the data directory that still mention the key: " + (", ".join(remaining) if remaining else "none"), file=out)
     print("RESULT: done. " + ", ".join(done), file=out)
@@ -521,7 +595,7 @@ def cmd_apply(args, out=sys.stdout) -> int:
 
 
 def cmd_verify(args, out=sys.stdout) -> int:
-    expected = load_expected(args.expectations)
+    expected = load_expected(args.expectations, args.data_dir)
     print("MODE: VERIFY (read-only)" + (", after the application was restarted" if args.after_restart else ""), file=out)
     gates = Gates()
     names = [expected["live"]["name"]] + list(args.also or [])
@@ -563,7 +637,7 @@ def cmd_verify(args, out=sys.stdout) -> int:
 
 
 def cmd_rollback(args, out=sys.stdout) -> int:
-    expected = load_expected(args.expectations)
+    expected = load_expected(args.expectations, args.data_dir)
     print("MODE: ROLLBACK", file=out)
     info = None
     for entry in expected.values():
@@ -615,8 +689,7 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--manifest", action="store_true", help="list every record as tag:tag (no ids, no contents)")
     sp.add_argument("--expect-file-sha256", help="check the live file's sha256 (the one verified against the backup)")
     sp.add_argument("--also-expect-file-sha256", action="append", metavar="NAME=SHA")
-    sp.add_argument("--require-port-closed", action="append", metavar="HOST:PORT", help="check that the application is not listening here")
-    sp.add_argument("--min-idle-seconds", type=int, help="check that the files have been quiet this long")
+    sp.add_argument("--check-writer", action="store_true", help="also check the pinned writer safeguards (the application must be stopped for them to pass)")
     sp.set_defaults(run=cmd_plan)
 
     sp = sub.add_parser("apply", help="remove the key")
@@ -624,10 +697,7 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--confirm-count", type=int, required=True, help="the number of records that will be deleted")
     sp.add_argument("--expect-file-sha256", required=True, help="the live file's sha256 as verified against the backup")
     sp.add_argument("--also-expect-file-sha256", action="append", metavar="NAME=SHA")
-    sp.add_argument("--writers-stopped", action="store_true", help="the application has been stopped (required)")
-    sp.add_argument("--require-port-closed", action="append", metavar="HOST:PORT", help="the application's port; must refuse connections (required)")
-    sp.add_argument("--min-idle-seconds", type=int, default=120, help="the files must have been quiet this long (default 120)")
-    sp.add_argument("--settle-seconds", type=float, default=5.0, help="watch the files this long after writing (default 5)")
+    sp.add_argument("--writers-stopped", action="store_true", help="you confirm the application is stopped (required; it is also checked)")
     sp.set_defaults(run=cmd_apply)
 
     sp = sub.add_parser("verify", help="read-only post-check")

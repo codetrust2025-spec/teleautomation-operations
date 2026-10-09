@@ -115,6 +115,8 @@ def world(tmp_path):
                  "rest_digest": purge.digest({k: v for k, v in live.items() if k != "interview_data"})},
         "older_copy": {"name": OLDER, "count": 81, "digest": purge.digest(older["interview_data"]),
                        "rest_digest": purge.digest({k: v for k, v in older.items() if k != "interview_data"})},
+        # A fixture has no application: nothing to stop except what a test sets up. The quiet period is kept.
+        "writer": {"container": None, "ports": [], "min_idle_seconds": 120, "settle_seconds": 0},
     }
     expectations_path = tmp_path / "expectations.json"
     expectations_path.write_text(json.dumps(expectations), encoding="utf-8")
@@ -138,13 +140,19 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-def apply_args(world, *, also=True, count=99, stopped=True, port=None, settle="0"):
+def set_writer(world, **changes):
+    """Change the fixture's writer safeguards. Only a fixture can: on production they are pinned in the tool."""
+    path = world["expect"]
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["writer"].update(changes)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def apply_args(world, *, also=True, count=99, stopped=True):
     live_sha = sha(world["room"] / "credentials.json")
-    args = ["--confirm-count", str(count), "--expect-file-sha256", live_sha, "--settle-seconds", settle]
+    args = ["--confirm-count", str(count), "--expect-file-sha256", live_sha]
     if stopped:
         args += ["--writers-stopped"]
-    if port != "none":
-        args += ["--require-port-closed", f"127.0.0.1:{port or free_port()}"]
     if also:
         args += ["--also", OLDER, "--also-expect-file-sha256", f"{OLDER}={sha(world['room'] / OLDER)}"]
     return args
@@ -162,7 +170,7 @@ def snapshot(directory: Path) -> dict:
 REAL_PORT_TESTS = {
     "test_a_listener_on_the_application_port_stops_it_and_nothing_is_written",
     "test_once_the_application_is_down_the_same_command_goes_through",
-    "test_plan_shows_the_same_checks_without_requiring_them",
+    "test_plan_checks_the_writer_only_when_asked",
     "test_the_real_port_check_tells_open_from_closed",
 }
 
@@ -406,7 +414,7 @@ class TestApply:
         assert f"purged {OLDER}: 81 records removed" in text
         assert "files under the data directory that still mention the key: none" in text
         assert "watched the files for 0s after writing: unchanged" in text
-        assert "[PASS] --writers-stopped" in text and "[PASS] nothing is listening on 127.0.0.1:" in text
+        assert "[PASS] --writers-stopped: you confirm the application is stopped" in text
         assert "RESULT: done." in text
 
     def test_the_live_file_alone_is_refused_while_the_older_copy_still_holds_the_records(self, world):
@@ -503,7 +511,7 @@ class TestAChangeWhileItRuns:
         assert code == 2 and f"Already purged before this: {OLDER}" in text
 
 
-# ── the application is the only writer: it must be down ───────────────────────
+# -- the application is the only writer: it must be down ------------------------------------------------------
 
 class TestTheWriterMustBeDown:
     """The application rewrites the whole credentials file (load, change, save). A request that loaded the file
@@ -522,23 +530,27 @@ class TestTheWriterMustBeDown:
     def test_it_must_be_told_the_application_is_stopped(self, world):
         self.refused(world, *apply_args(world, stopped=False), text="[FAIL] --writers-stopped")
 
-    def test_it_must_be_told_which_port_the_application_listens_on(self, world):
-        self.refused(world, *apply_args(world, port="none"), text="[FAIL] --require-port-closed names the application's port")
-
     def test_a_listener_on_the_application_port_stops_it_and_nothing_is_written(self, world):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             listener.listen(1)
             port = listener.getsockname()[1]
-            self.refused(world, *apply_args(world, port=str(port)), text=f"[FAIL] something IS listening on 127.0.0.1:{port}: the application is still running")
+            set_writer(world, ports=[f"127.0.0.1:{port}"])
+            self.refused(world, *apply_args(world), text=f"[FAIL] something IS listening on 127.0.0.1:{port}: the application is still running")
 
     def test_once_the_application_is_down_the_same_command_goes_through(self, world):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             listener.listen(1)
             port = listener.getsockname()[1]
-            assert run(world, "apply", *apply_args(world, port=str(port)))[0] == 2
-        assert run(world, "apply", *apply_args(world, port=str(port)))[0] == 0
+            set_writer(world, ports=[f"127.0.0.1:{port}"])
+            assert run(world, "apply", *apply_args(world))[0] == 2
+        assert run(world, "apply", *apply_args(world))[0] == 0
+
+    def test_an_unreachable_answer_is_not_taken_as_closed(self, world, monkeypatch):
+        set_writer(world, ports=["127.0.0.1:8210"])
+        monkeypatch.setattr(purge, "port_state", lambda spec: "unknown")
+        self.refused(world, *apply_args(world), text="could not confirm that 127.0.0.1:8210 is closed")
 
     def test_the_real_port_check_tells_open_from_closed(self):
         with socket.socket() as listener:
@@ -548,29 +560,22 @@ class TestTheWriterMustBeDown:
         assert purge.port_state(f"127.0.0.1:{free_port()}") == "closed"
         assert purge.port_state("127.0.0.1:not-a-port") == "unknown"
 
-    def test_an_unreachable_answer_is_not_taken_as_closed(self, world, monkeypatch):
-        monkeypatch.setattr(purge, "port_state", lambda spec: "unknown")
-        self.refused(world, *apply_args(world), text="could not confirm that 127.0.0.1:")
-
     def test_a_file_written_a_moment_ago_means_someone_is_working_in_the_data_room(self, world):
         now = time.time()
         os.utime(world["room"] / "credentials.json", (now, now))
         out = self.refused(world, *apply_args(world))
         assert re.search(r"\[FAIL\] credentials\.json: last written \d+s ago \(needs at least 120s of quiet\)", out)
 
-    def test_the_quiet_period_can_be_shortened_on_purpose(self, world):
-        now = time.time()
-        os.utime(world["room"] / "credentials.json", (now, now))
-        assert run(world, "apply", *apply_args(world), "--min-idle-seconds", "0")[0] == 0
-
-    def test_plan_shows_the_same_checks_without_requiring_them(self, world):
+    def test_plan_checks_the_writer_only_when_asked(self, world):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             listener.listen(1)
-            code, out = run(world, "plan", "--also", OLDER, "--require-port-closed", f"127.0.0.1:{listener.getsockname()[1]}")
-        assert code == 2 and "[FAIL] something IS listening on" in out
-        _, plain = run(world, "plan", "--also", OLDER)
-        assert "listening" not in plain and "last written" not in plain
+            port = listener.getsockname()[1]
+            set_writer(world, ports=[f"127.0.0.1:{port}"])
+            asked, out = run(world, "plan", "--also", OLDER, "--check-writer")
+            plain_code, plain = run(world, "plan", "--also", OLDER)
+        assert asked == 2 and f"[FAIL] something IS listening on 127.0.0.1:{port}" in out
+        assert plain_code == 0 and "writer safeguards: not checked in this run" in plain and "listening" not in plain
 
     @posix_only
     def test_a_process_with_the_file_open_blocks_it(self, world):
@@ -589,7 +594,146 @@ class TestTheWriterMustBeDown:
         assert code == 0 and "[INFO] open files: not checked here (no /proc)" in out
 
 
-# ── the delayed concurrent write ──────────────────────────────────────────────
+class TestTheContainerCheck:
+    """The application's container must not be running, and the port the tool checks must be one Docker says that
+    container publishes: naming the wrong port cannot pass."""
+
+    PORT = "127.0.0.1:8210"
+
+    @pytest.fixture(autouse=True)
+    def configured(self, world):
+        set_writer(world, container="app-container", ports=[self.PORT])
+
+    def docker(self, monkeypatch, *, state="stopped", published=("127.0.0.1:8210",)):
+        monkeypatch.setattr(purge, "container_state", lambda name: state)
+        monkeypatch.setattr(purge, "container_host_ports", lambda name: None if published is None else set(published))
+
+    def refused(self, world, text):
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 2 and text in out and snapshot(world["dir"]) == before, out
+
+    def test_a_running_container_stops_it(self, world, monkeypatch):
+        self.docker(monkeypatch, state="running")
+        self.refused(world, "[FAIL] the application container app-container is still RUNNING")
+
+    def test_a_container_that_cannot_be_inspected_is_not_taken_as_stopped(self, world, monkeypatch):
+        self.docker(monkeypatch, state="unknown", published=None)
+        self.refused(world, "[FAIL] could not confirm that the application container app-container is stopped")
+
+    def test_a_stopped_container_that_publishes_the_pinned_port_goes_through(self, world, monkeypatch):
+        self.docker(monkeypatch)
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 0, out
+        assert "[PASS] the application container app-container is stopped" in out
+        assert "[PASS] 127.0.0.1:8210 is the application's published port (Docker's own record)" in out
+
+    def test_naming_a_port_the_application_does_not_publish_is_caught(self, world, monkeypatch):
+        self.docker(monkeypatch, published=("127.0.0.1:9999",))
+        self.refused(world, "[FAIL] 127.0.0.1:8210 is NOT confirmed as a port the application publishes (Docker says: 127.0.0.1:9999)")
+
+    def test_a_port_record_that_cannot_be_read_is_not_taken_as_a_match(self, world, monkeypatch):
+        self.docker(monkeypatch, published=None)
+        self.refused(world, "(Docker says: unreadable)")
+
+    def test_docker_s_answers_are_read_as_documented(self, monkeypatch):
+        answers = {"{{.State.Running}}": "true", "{{json .HostConfig.PortBindings}}": '{"8000/tcp":[{"HostIp":"127.0.0.1","HostPort":"8210"}]}'}
+        monkeypatch.setattr(purge, "docker_inspect", lambda name, template: answers.get(template))
+        assert purge.container_state("x") == "running"
+        assert purge.container_host_ports("x") == {"127.0.0.1:8210"}
+        answers["{{.State.Running}}"] = "false"
+        assert purge.container_state("x") == "stopped"
+        answers["{{.State.Running}}"] = None
+        assert purge.container_state("x") == "unknown"
+        answers["{{json .HostConfig.PortBindings}}"] = "not json"
+        assert purge.container_host_ports("x") is None
+
+    def test_without_docker_the_answer_is_unknown_not_stopped(self, monkeypatch):
+        def no_docker(*args, **kwargs):
+            raise FileNotFoundError("docker")
+
+        monkeypatch.setattr(purge.subprocess, "run", no_docker)
+        assert purge.docker_inspect("x", "{{.State.Running}}") is None
+        assert purge.container_state("x") == "unknown"
+
+
+class TestTheSafeguardsCannotBeWeakened:
+    """Review point: --min-idle-seconds 0 or the wrong --require-port-closed used to pass. The safeguards are now pinned
+    in the tool: no option loosens them, and on the production directory the expectations cannot be replaced."""
+
+    @pytest.mark.parametrize("command, option", [
+        ("apply", ["--min-idle-seconds", "0"]),
+        ("apply", ["--require-port-closed", "127.0.0.1:1"]),
+        ("apply", ["--settle-seconds", "0"]),
+        ("plan", ["--min-idle-seconds", "0"]),
+        ("plan", ["--require-port-closed", "127.0.0.1:1"]),
+    ])
+    def test_the_options_that_used_to_weaken_them_do_not_exist(self, world, command, option):
+        before = snapshot(world["dir"])
+        extra = apply_args(world) if command == "apply" else []
+        with pytest.raises(SystemExit) as caught:
+            purge.main([command, "--data-dir", str(world["dir"]), "--expectations", str(world["expect"]), *extra, *option], out=io.StringIO())
+        assert caught.value.code == 2
+        assert snapshot(world["dir"]) == before
+
+    def test_on_the_production_directory_an_expectations_file_is_refused(self, world, monkeypatch):
+        monkeypatch.setattr(purge, "PRODUCTION_DATA_DIR", str(world["dir"]))
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 2 and "cannot be used on the production data directory" in out and "Nothing was written." in out
+        assert snapshot(world["dir"]) == before
+
+    def test_that_refusal_applies_to_every_command(self, world, monkeypatch):
+        monkeypatch.setattr(purge, "PRODUCTION_DATA_DIR", str(world["dir"]))
+        for command, extra in (("plan", []), ("verify", []), ("rollback", ["--file", "credentials.json", "--from", str(world["expect"]), "--expect-source-sha256", "0" * 64])):
+            code, out = run(world, command, *extra)
+            assert code == 2 and "cannot be used on the production data directory" in out, command
+
+    def test_on_the_production_directory_the_pinned_writer_checks_apply_whatever_the_flags_say(self, world, monkeypatch):
+        monkeypatch.setattr(purge, "PRODUCTION_DATA_DIR", str(world["dir"]))
+        monkeypatch.setattr(purge, "container_state", lambda name: "running")
+        monkeypatch.setattr(purge, "container_host_ports", lambda name: {"127.0.0.1:8210"})
+        monkeypatch.setattr(purge, "port_state", lambda spec: "open")
+        before = snapshot(world["dir"])
+        out = io.StringIO()
+        code = purge.main(["apply", "--data-dir", str(world["dir"]), "--confirm-count", "99", "--expect-file-sha256", sha(world["room"] / "credentials.json"),
+                           "--writers-stopped"], out=out)
+        text = out.getvalue()
+        assert code == 2 and snapshot(world["dir"]) == before
+        assert "[FAIL] the application container teleautomation-production-operations-api-1 is still RUNNING" in text
+        assert "[FAIL] something IS listening on 127.0.0.1:8210: the application is still running" in text
+
+    def test_the_pinned_settings_are_the_observed_production_ones(self):
+        assert purge.WRITER == {"container": "teleautomation-production-operations-api-1", "ports": ["127.0.0.1:8210"],
+                                "min_idle_seconds": 120, "settle_seconds": 10}
+        assert purge.EXPECTED["writer"] is purge.WRITER
+        assert purge.PRODUCTION_DATA_DIR == "/var/lib/docker/volumes/teleautomation-production_operations_data/_data"
+
+    def test_production_gets_the_pinned_settings_and_a_fixture_gets_its_own(self, world, monkeypatch):
+        monkeypatch.setattr(purge, "PRODUCTION_DATA_DIR", str(world["dir"]))
+        assert purge.load_expected(None, str(world["dir"]))["writer"]["settle_seconds"] == 10
+        monkeypatch.setattr(purge, "PRODUCTION_DATA_DIR", "/somewhere/else")
+        assert purge.load_expected(str(world["expect"]), str(world["dir"]))["writer"]["settle_seconds"] == 0
+
+    def test_a_fixture_expectations_file_without_a_writer_section_gets_no_writer_checks(self, world, monkeypatch, tmp_path):
+        data = json.loads(world["expect"].read_text(encoding="utf-8"))
+        del data["writer"]
+        bare = tmp_path / "bare.json"
+        bare.write_text(json.dumps(data), encoding="utf-8")
+        assert purge.load_expected(str(bare), str(world["dir"]))["writer"] == purge.FIXTURE_WRITER
+
+    def test_the_confirmation_flag_alone_is_never_enough_on_production(self, world, monkeypatch):
+        # --writers-stopped is only the operator's word: the container and the port are checked independently.
+        monkeypatch.setattr(purge, "PRODUCTION_DATA_DIR", str(world["dir"]))
+        monkeypatch.setattr(purge, "container_state", lambda name: "stopped")
+        monkeypatch.setattr(purge, "container_host_ports", lambda name: {"127.0.0.1:8210"})
+        monkeypatch.setattr(purge, "port_state", lambda spec: "open")
+        out = io.StringIO()
+        code = purge.main(["apply", "--data-dir", str(world["dir"]), "--confirm-count", "99", "--expect-file-sha256", "0" * 64, "--writers-stopped"], out=out)
+        assert code == 2 and "[PASS] --writers-stopped" in out.getvalue() and "[FAIL] something IS listening on 127.0.0.1:8210" in out.getvalue()
+
+
+# -- the delayed concurrent write --------------------------------------------------------------------------
 
 @pytest.fixture()
 def application(world, monkeypatch):
@@ -616,6 +760,7 @@ class TestADelayedConcurrentWrite:
         assert code == 2 and "[FAIL] credentials.json: the interview_data key is gone" in out
 
     def test_the_watch_after_writing_catches_a_writer_that_wakes_up_late(self, world, application):
+        set_writer(world, settle_seconds=3)
         stale = application._load()
         timer = []
 
@@ -625,7 +770,7 @@ class TestADelayedConcurrentWrite:
             timer.append(thread)
 
         purge._DURING_SETTLE = late_writer
-        code, out = run(world, "apply", *apply_args(world, settle="3"))
+        code, out = run(world, "apply", *apply_args(world))
         timer[0].join()
         assert code == 1
         assert "ERROR: credentials.json: the interview_data key came back while watching the files after the purge." in out
@@ -633,6 +778,8 @@ class TestADelayedConcurrentWrite:
         assert "RESULT: done." not in out
 
     def test_a_late_write_of_other_data_is_reported_as_well(self, world, application):
+        set_writer(world, settle_seconds=2)
+
         def late_writer():
             def write():
                 data = application._load()
@@ -641,12 +788,13 @@ class TestADelayedConcurrentWrite:
             threading.Timer(0.3, write).start()
 
         purge._DURING_SETTLE = late_writer
-        code, out = run(world, "apply", *apply_args(world, settle="2"))
+        code, out = run(world, "apply", *apply_args(world))
         time.sleep(0.2)
         assert code == 1 and "credentials.json: rewritten by something else" in out
 
     def test_a_quiet_watch_reports_unchanged_and_succeeds(self, world):
-        code, out = run(world, "apply", *apply_args(world, settle="1"))
+        set_writer(world, settle_seconds=1)
+        code, out = run(world, "apply", *apply_args(world))
         assert code == 0 and "watched the files for 1s after writing: unchanged" in out
 
     def test_verify_can_keep_watching_after_the_restart_and_catches_a_late_writer(self, world, application):

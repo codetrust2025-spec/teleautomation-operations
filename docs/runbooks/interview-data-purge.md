@@ -1,7 +1,10 @@
 # Removing the legacy Interview Data records (runbook)
 
-Prepared 9 Oct 2026, revised 10 Oct 2026 (the application is now **stopped** for the purge). **Nothing here has
-been run against production except read-only checks.** The deletion is run by the owner.
+Prepared 9 Oct 2026, revised 10 Oct 2026.
+
+> **Current state: production is RUNNING and untouched.** Nothing has been stopped, and nothing here has been run
+> against production except read-only checks. The procedure below stops the application at Phase 1 and starts it
+> again at Phase 3. The deletion is run by the owner, never by Claude.
 
 ## What is being removed
 
@@ -13,7 +16,7 @@ been run against production except read-only checks.** The deletion is run by th
 Only the top-level key `interview_data` is removed, from only those two files. No other file under the data
 directory mentions the key (checked). The code and schema were removed on 6 Oct 2026 (`da09f6e`, `6770713`).
 
-## Why the application is stopped first
+## Why the application must be stopped (Phase 1)
 
 The application is the only writer of `credentials.json` (one uvicorn worker; only the `operations-api` container
 mounts that volume). Its store does **load the whole file, change something, save the whole dict back**: Data Room
@@ -25,29 +28,51 @@ This was reproduced in rehearsal on the production host (stand-in application, f
 that loaded the file before the purge restored all 99 records afterwards, and the tool's watch caught it. So:
 
 1. **Stop the application** (the only writer) before the purge, and keep it stopped until the purge is verified.
-2. The tool **refuses to apply** unless the writer is demonstrably down: it must be told (`--writers-stopped`), nothing
-   may be listening on the application's port (`--require-port-closed`; checked, not trusted), no process may have the
-   files open, and the files must have been quiet for 120 s (`--min-idle-seconds`). It re-reads the files before
-   replacing them, and **watches them for `--settle-seconds` after writing**.
+2. The tool **refuses to apply** unless the writer is demonstrably down, using safeguards that are **pinned in the
+   tool and cannot be weakened** (next section), and it **watches the files for 10 s after writing**.
 3. Verify with the application **stopped**, **restart** it, and verify **again** with it running (`--after-restart
    --watch 60`), then once more later.
 
-Proven against production today: with the application running, both `plan` and `apply` refuse (exit 2, nothing written),
-even when given `--writers-stopped`, because port 8210 is open.
+Proven against production today (read-only): with the application running, `apply` refuses (exit 2, nothing written)
+even when given `--writers-stopped`: the container is running and port 8210 is open.
+
+## Safeguards that cannot be weakened
+
+An earlier version accepted `--min-idle-seconds 0` and any port named with `--require-port-closed`, so a mistaken
+or hurried command could switch the writer checks off. Those options no longer exist (the tool answers
+`unrecognized arguments`). The checks are pinned in the tool and run on every `apply`:
+
+| Check | Pinned value | How it is checked |
+|---|---|---|
+| The application container is not running | `teleautomation-production-operations-api-1` | `docker inspect`; "cannot confirm" (no Docker, no such container) is a refusal, not a pass |
+| The port that is checked is the application's | `127.0.0.1:8210` | must be a port Docker's own record says the container publishes, so naming the wrong port fails |
+| Nothing is listening on that port | `127.0.0.1:8210` | a real connection attempt must be refused |
+| No process has the files open | both target files | `/proc` scan |
+| The files have been quiet | 120 s | the file's last-written time |
+| The files are watched after writing | 10 s | the key must not come back and the files must not be rewritten |
+| `--writers-stopped` | required | your confirmation only; it is checked by the lines above, not trusted |
+
+`--expectations` (a file that replaces the expected values and these settings) exists only so fixtures can be tested;
+**on the production data directory the tool refuses it**, so the pinned values are the ones in force.
+`plan --check-writer` shows these checks without applying anything.
 
 ## What has been verified (9-10 Oct 2026)
 
-- **The tool** (`scripts/purge_interview_data.py`, stdlib only, pure ASCII): 91 tests against a fixture shaped like
-  production (88 run on Windows; the 3 POSIX-only ones, for file modes and the open-file check, were skipped there and
-  their behaviour was exercised in the Linux rehearsals below), each safety property mutation-checked. They include
+- **The tool** (`scripts/purge_interview_data.py`, stdlib only, pure ASCII): 108 tests against a fixture shaped like
+  production (105 run on Windows; the 3 POSIX-only ones, for file modes and the open-file check, were skipped there and
+  their behaviour was exercised in the Linux rehearsals below), each safety property mutation-checked, including every
+  pinned value and the refusal of `--expectations` on the production directory. They include
   the **delayed concurrent write**: a stale writer that saves after the purge restores the records and `verify` catches
   it; the post-write watch catches a writer that wakes up late (records back, or other data rewritten); a stopped and
   restarted application cannot bring them back; `verify --watch` catches a late writer.
 - **Rehearsals on the production host with real processes, ports and restic, on throwaway fixtures under `/tmp`**
   (all removed afterwards): (1) backup, byte-identity check, plan, refusals, apply, verify, restore, rollback, with
-  modes/owners kept; (2) a stand-in application with a stale read-modify-write loop: unpaused apply refused; the
-  hazard reproduced and caught by the watch; the full stop, purge, restart, verify cycle clean, including 14 s after the
-  moment the dead process would have saved its old copy; a process holding a file open blocks apply.
+  modes/owners kept; (2) with the **final, pinned tool**: the weakening options are rejected; an unpaused apply is
+  refused; a request that loaded the file before the purge is caught by the watch (and the hazard is reproduced); the
+  full stop, purge, restart, verify cycle is clean, including 14 s after the moment the dead process would have saved
+  its old copy; a process holding a file open blocks apply; the **wrong port** is caught against Docker's real record
+  of the real production container (read-only `docker inspect`); and on the production data path an expectations
+  override is refused before any data is read.
 - **The real backup**: nightly restic job healthy (last run 8 Oct 20:34 UTC; restore test and `check --read-data`
   passed; 0 consecutive failures). Snapshot `da4a7033` holds **byte-identical** copies of both target files.
 - **The production dry run**: all 12 data gates pass, exit status 0, nothing written.
@@ -62,7 +87,7 @@ The tool refuses (exit status 2, **nothing written**) unless all hold:
 4. no other file under the data directory mentions `interview_data`;
 5. each file's sha256 equals the value verified against the backup;
 6. `--confirm-count 99` matches;
-7. the writer is down: `--writers-stopped` given, nothing listening on `127.0.0.1:8210`, no process has the files open, both files idle for 120 s.
+7. the writer is down, by the pinned checks above: `--writers-stopped` given, the container stopped, port 8210 confirmed as its port and refusing connections, no process has the files open, both files idle for 120 s. A line saying the tool "could not confirm" something (for example Docker unavailable) is a refusal: stop.
 
 It also refuses if a file changes while it runs. After writing it re-reads each file, then watches for 10 s.
 Stop yourself if: the backup check does not say `IDENTICAL` twice; the dry run does not end `all gates pass`; the dry
@@ -113,6 +138,14 @@ Live sha256 values must be `8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775
 ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - plan --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --also-expect-file-sha256 credentials.json.pre-srujan-import-20261005T093705Z=78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
 ```
 
+0.4 Confirm where things stand right now (read-only). Expect the application **running**, because nothing has been stopped yet:
+
+```bash
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'echo "operations-api: $(docker inspect -f "{{.State.Status}} {{.State.Health.Status}}" teleautomation-production-operations-api-1)"; echo "listeners on 8210: $(ss -tln | grep -c ":8210 ")"'
+```
+
+Expected now: `operations-api: running healthy` and `listeners on 8210: 1`.
+
 ### Phase 1. PAUSE the writer (this takes the dashboard and public booking pages down)
 
 1.1 Stop the application (graceful, up to 30 s) and confirm it is down:
@@ -126,10 +159,10 @@ If either is not `0`, do not continue.
 
 ### Phase 2. Purge while it is stopped
 
-2.1 Dry run again, now also checking that the writer is down (expect all gates pass, including the three writer lines):
+2.1 Dry run again, now also checking the pinned writer safeguards (expect all gates pass, including the six writer lines):
 
 ```bash
-ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - plan --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --also-expect-file-sha256 credentials.json.pre-srujan-import-20261005T093705Z=78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d --require-port-closed 127.0.0.1:8210 --min-idle-seconds 120' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - plan --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --also-expect-file-sha256 credentials.json.pre-srujan-import-20261005T093705Z=78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d --check-writer' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
 ```
 
 If it says a file was "last written ... ago" under 120 s, someone wrote to the Data Room just before the stop: wait and repeat.
@@ -137,7 +170,7 @@ If it says a file was "last written ... ago" under 120 s, someone wrote to the D
 2.2 **THE DELETION** (only when 0.2, 0.3 and 2.1 are exactly as expected and the application is stopped):
 
 ```bash
-ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - apply --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --confirm-count 99 --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --also-expect-file-sha256 credentials.json.pre-srujan-import-20261005T093705Z=78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d --writers-stopped --require-port-closed 127.0.0.1:8210 --min-idle-seconds 120 --settle-seconds 10' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - apply --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --confirm-count 99 --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --also-expect-file-sha256 credentials.json.pre-srujan-import-20261005T093705Z=78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d --writers-stopped' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
 ```
 
 2.3 Verify while still stopped (expect `RESULT: clean.`):
@@ -281,10 +314,12 @@ Any `[FAIL]` line means stop.
 
 ## Expected output: writer-down dry run (2.1, application stopped)
 
-The same as above, with these three extra gate lines after the backup-binding lines (the "ago" numbers keep growing;
-anything over 120 is right):
+The same as the dry run above, with these six extra gate lines after the backup-binding lines (the "ago" numbers keep
+growing; anything over 120 is right):
 
 ```
+  [PASS] the application container teleautomation-production-operations-api-1 is stopped
+  [PASS] 127.0.0.1:8210 is the application's published port (Docker's own record)
   [PASS] nothing is listening on 127.0.0.1:8210
   [PASS] credentials.json: last written 385000s ago (needs at least 120s of quiet)
   [PASS] credentials.json.pre-srujan-import-20261005T093705Z: last written 387500s ago (needs at least 120s of quiet)
@@ -292,17 +327,23 @@ anything over 120 is right):
 RESULT: all gates pass. Nothing was written.
 ```
 
-With the application still running, the real production output of this command today was exactly the above with
-`[FAIL] something IS listening on 127.0.0.1:8210: the application is still running` in place of the first line, and
-`RESULT: STOP. 1 gate(s) failed. Nothing was written.`
+**With the application running, which is today's real state**, the same command prints these instead of the first
+and third lines (real output from production, read-only, 10 Oct 2026), and ends `RESULT: STOP. 2 gate(s) failed. Nothing was written.`:
+
+```
+  [FAIL] the application container teleautomation-production-operations-api-1 is still RUNNING
+  [PASS] 127.0.0.1:8210 is the application's published port (Docker's own record)
+  [FAIL] something IS listening on 127.0.0.1:8210: the application is still running
+```
 
 ## Expected output: the deletion (2.2)
 
 The file descriptions and the same gate list as the dry run, then these extra lines, then the result:
 
 ```
-  [PASS] --writers-stopped: the application has been stopped before this run
-  [PASS] --require-port-closed names the application's port, so a running application is detected
+  [PASS] --writers-stopped: you confirm the application is stopped (checked below, not trusted)
+  [PASS] the application container teleautomation-production-operations-api-1 is stopped
+  [PASS] 127.0.0.1:8210 is the application's published port (Docker's own record)
   [PASS] nothing is listening on 127.0.0.1:8210
   [PASS] credentials.json: last written 385000s ago (needs at least 120s of quiet)
   [PASS] credentials.json.pre-srujan-import-20261005T093705Z: last written 387500s ago (needs at least 120s of quiet)
