@@ -37,7 +37,13 @@ fixture, and cannot be changed by a deploy. Standard library only.
     python3 purge_interview_data.py verify   --data-dir DIR [--also NAME] [--after-restart] [--watch SECONDS]
     python3 purge_interview_data.py rollback --data-dir DIR --file NAME --from COPY --expect-source-sha256 SHA
 
-Exit status: 0 done / all gates pass, 2 refused (a gate failed: NOTHING was written), 1 error.
+Exit status -- read it exactly:
+    0  done (apply), or every gate passes (plan / verify / rollback).
+    2  refused, and NOTHING WAS CHANGED. The tool returns 2 only when it has replaced no file; a backstop enforces
+       it, so a 2 can be trusted to mean "the data is exactly as it was".
+    1  an error, or a purge that did not complete. A file MAY have been changed: if so the output starts a
+       "PARTIAL STATE" block that lists, per file, what was purged, what was not, and what changed by itself.
+       Do not start the application after a 1.
 """
 from __future__ import annotations
 
@@ -94,6 +100,10 @@ EXPECTED = {
 # Files bigger than this are not searched for the key (the data directory holds proof images).
 SCAN_LIMIT_BYTES = 50_000_000
 SCAN_SKIP_DIRS = {"__pycache__"}
+
+# Every file this process has replaced, in order. Exit status 2 ("nothing was changed") is only ever returned while
+# this is empty; main() enforces it whatever path got there.
+_WRITES: list[str] = []
 
 # Test seams. `_BEFORE_REPLACE` is called after the final unchanged-check and before the atomic
 # replace; `_DURING_SETTLE` once at the start of the watch that follows the writes.
@@ -476,13 +486,80 @@ def atomic_replace(path: str, payload: bytes, *, like: Loaded, unchanged_since: 
         with open(path, "rb") as f:
             current = f.read()
         if sha256_bytes(current) != unchanged_since.sha256 or now.st_mtime_ns != unchanged_since.mtime_ns or len(current) != unchanged_since.size:
-            raise Refusal(f"{os.path.basename(path)} changed while the purge was running; it was NOT replaced. Nothing was written to it")
+            raise Refusal(f"{os.path.basename(path)} changed while the purge was running, so it was left exactly as it was (not replaced)")
         os.replace(tmp, path)
+        _WRITES.append(path)
         tmp = None
         _fsync_dir(directory)
     finally:
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
+
+
+# -- partial state ---------------------------------------------------------------
+
+def observe(path: str, original: "Loaded", planned_sha: str) -> str:
+    """What is on disk now: 'untouched', 'purged' (exactly the planned bytes), 'changed by something else', 'unreadable'."""
+    try:
+        with open(path, "rb") as f:
+            now = sha256_bytes(f.read())
+    except OSError:
+        return "unreadable"
+    if now == original.sha256:
+        return "untouched"
+    if now == planned_sha:
+        return "purged"
+    return "changed by something else"
+
+
+def partial_report(out, ordered, payloads, verified: list[str], reason: str) -> int:
+    """Say, per file, what state the purge was left in. Always exit status 1: something was changed."""
+    purged, unverified, untouched, other = [], [], [], []
+    for loaded, _ in ordered:
+        state = observe(loaded.path, loaded, sha256_bytes(payloads[loaded.path][0]))
+        detail = ""
+        if state not in ("purged", "untouched"):
+            try:
+                detail = " (still holds the records)" if Loaded(loaded.path).has_key else " (no longer holds the records)"
+            except Refusal:
+                detail = " (not readable as JSON)"
+        if state == "purged":
+            (purged if loaded.name in verified else unverified).append(loaded.name)
+        elif state == "untouched":
+            untouched.append(loaded.name)
+        elif loaded.path in _WRITES and loaded.name not in verified:
+            # The tool replaced it, but what is on disk is not what it wrote.
+            unverified.append(loaded.name + " (what is on disk is not the planned content)" + detail)
+        else:
+            # Either never replaced by the tool, or purged and verified and then changed by something else.
+            other.append(loaded.name + detail)
+
+    def line(label, names):
+        return f"  {label:<46} {', '.join(names) if names else '(none)'}"
+
+    print("PARTIAL STATE: the purge did NOT complete, and the data has CHANGED.", file=out)
+    print(line("purged and verified (the key is gone):", purged), file=out)
+    print(line("replaced but NOT verified:", unverified), file=out)
+    print(line("not touched (still hold their records):", untouched), file=out)
+    print(line("changed by something else, not by this tool:", other), file=out)
+    print(f"  why it stopped: {reason}", file=out)
+    print("Do NOT start the application. The tool has changed nothing further. See the runbook, 'If the exit status is 1'.", file=out)
+    print("RESULT: PARTIAL (exit status 1). At least one file was changed and the purge is not complete.", file=out)
+    return 1
+
+
+def failed_while_writing(out, ordered, payloads, verified, exc) -> int:
+    """The write phase stopped early. Exit 2 only if this process replaced nothing; otherwise the partial state."""
+    reason = str(exc) if isinstance(exc, Refusal) else f"{type(exc).__name__}: {exc}"
+    if _WRITES:
+        return partial_report(out, ordered, payloads, verified, reason)
+    if isinstance(exc, Refusal):
+        print(f"STOP: {reason}", file=out)
+        print("RESULT: refused. Nothing was written.", file=out)
+        return 2
+    print(f"ERROR: {reason}", file=out)
+    print("RESULT: error. No file had been replaced, so nothing was written.", file=out)
+    return 1
 
 
 # -- commands ------------------------------------------------------------------
@@ -551,46 +628,43 @@ def cmd_apply(args, out=sys.stdout) -> int:
     # file (it is the one the application writes) leaves the live data as it was.
     ordered = sorted(targets, key=lambda item: item[0].name == LIVE_NAME)
     payloads = {loaded.path: loaded.serialized_without_key() for loaded, _ in ordered}
-    done = []
-    for loaded, _ in ordered:
-        payload, preserved = payloads[loaded.path]
-        try:
+    verified: list[str] = []
+    try:
+        for loaded, _ in ordered:
+            payload, preserved = payloads[loaded.path]
             atomic_replace(loaded.path, payload, like=loaded, unchanged_since=loaded)
-        except Refusal as exc:
-            print(f"STOP: {exc}", file=out)
-            print(f"RESULT: refused. Already purged before this: {', '.join(done) if done else 'nothing'}.", file=out)
-            return 2
-        after = Loaded(loaded.path)
-        problems = []
-        if after.sha256 != sha256_bytes(payload):
-            problems.append("the file on disk is not the planned bytes")
-        if after.has_key:
-            problems.append("the key is still present")
-        if after.rest_digest != loaded.rest_digest:
-            problems.append("something other than the key changed")
-        if after.mode != loaded.mode:
-            problems.append("the file mode changed")
-        if loaded.uid is not None and (after.uid, after.gid) != (loaded.uid, loaded.gid):
-            problems.append("the owner changed")
-        if problems:
-            print(f"ERROR: {loaded.name}: {'; '.join(problems)}. Roll back with the pre-purge copy.", file=out)
-            return 1
-        done.append(loaded.name)
-        print(f"purged {loaded.name}: {loaded.count} records removed; {loaded.size} -> {after.size} bytes; "
-              f"sha256 {after.sha256}; the rest of the file is unchanged ({after.rest_digest}); mode and owner kept", file=out)
-    written = {loaded.path: sha256_bytes(payloads[loaded.path][0]) for loaded, _ in ordered}
-    settle_seconds = float(expected["writer"].get("settle_seconds") or 0)
-    problems = settle(written, settle_seconds)
+            after = Loaded(loaded.path)
+            problems = []
+            if after.sha256 != sha256_bytes(payload):
+                problems.append("the file on disk is not the planned bytes")
+            if after.has_key:
+                problems.append("the key is still present")
+            if after.rest_digest != loaded.rest_digest:
+                problems.append("something other than the key changed")
+            if after.mode != loaded.mode:
+                problems.append("the file mode changed")
+            if loaded.uid is not None and (after.uid, after.gid) != (loaded.uid, loaded.gid):
+                problems.append("the owner changed")
+            if problems:
+                print(f"ERROR: {loaded.name}: {'; '.join(problems)}.", file=out)
+                return partial_report(out, ordered, payloads, verified, f"{loaded.name} did not verify after it was written ({'; '.join(problems)})")
+            verified.append(loaded.name)
+            print(f"purged {loaded.name}: {loaded.count} records removed; {loaded.size} -> {after.size} bytes; "
+                  f"sha256 {after.sha256}; the rest of the file is unchanged ({after.rest_digest}); mode and owner kept", file=out)
+        written = {loaded.path: sha256_bytes(payloads[loaded.path][0]) for loaded, _ in ordered}
+        settle_seconds = float(expected["writer"].get("settle_seconds") or 0)
+        problems = settle(written, settle_seconds)
+    except (Refusal, OSError, KeyboardInterrupt) as exc:
+        return failed_while_writing(out, ordered, payloads, verified, exc)
     if problems:
         for problem in problems:
             print(f"ERROR: {problem} while watching the files after the purge.", file=out)
-        print("A writer is still running. Stop it, run verify, and if the records are back run apply again with the application stopped. "
-              "Do NOT start the application.", file=out)
-        return 1
+        print("A writer is still running. Stop it, then run verify.", file=out)
+        return partial_report(out, ordered, payloads, verified, "; ".join(problems))
     print(f"watched the files for {settle_seconds:g}s after writing: unchanged", file=out)
     remaining = scan_for_key(args.data_dir)
     print("files under the data directory that still mention the key: " + (", ".join(remaining) if remaining else "none"), file=out)
-    print("RESULT: done. " + ", ".join(done), file=out)
+    print("RESULT: done. " + ", ".join(verified), file=out)
     return 0 if not remaining else 1
 
 
@@ -668,7 +742,12 @@ def cmd_rollback(args, out=sys.stdout) -> int:
         print("RESULT: STOP. Nothing was written. If the file changed since the purge, merge by hand instead of restoring over it.", file=out)
         return 2
     atomic_replace(path, source_raw, like=current, unchanged_since=current)
-    after = Loaded(path)
+    try:
+        after = Loaded(path)
+    except Refusal as exc:
+        print(f"ERROR: {args.file} was replaced with the restored copy but cannot be read back ({exc}). Do not start the application.", file=out)
+        print("RESULT: error after the file was replaced (exit status 1).", file=out)
+        return 1
     print(f"restored {args.file}: {current.size} -> {after.size} bytes; sha256 {after.sha256}; {after.count} records back", file=out)
     print("RESULT: restored.", file=out)
     return 0
@@ -717,15 +796,27 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv=None, out=sys.stdout) -> int:
     args = parser().parse_args(argv)
+    del _WRITES[:]
     try:
-        return args.run(args, out)
+        code = args.run(args, out)
     except Refusal as exc:
+        if _WRITES:
+            print(f"ERROR: {exc}", file=out)
+            print(f"RESULT: error AFTER a file was replaced ({', '.join(os.path.basename(p) for p in _WRITES)}); exit status 1, not 2. "
+                  "Run verify to see the state. Do not start the application.", file=out)
+            return 1
         print(f"STOP: {exc}", file=out)
         print("RESULT: refused. Nothing was written.", file=out)
         return 2
     except OSError as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=out)
         return 1
+    if code == 2 and _WRITES:
+        # The invariant, enforced in one place: 2 means "nothing was changed", and something was.
+        print("ERROR (internal): a file was replaced, so the exit status is 1, not 2: "
+              + ", ".join(os.path.basename(p) for p in _WRITES) + ". Run verify. Do not start the application.", file=out)
+        return 1
+    return code
 
 
 if __name__ == "__main__":

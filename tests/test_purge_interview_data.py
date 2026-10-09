@@ -465,14 +465,14 @@ class TestItChecksItsOwnWork:
             return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"), preserved
 
         monkeypatch.setattr(purge.Loaded, "serialized_without_key", buggy)
-        code, text = run(world, "apply", *apply_args(world))
+        code, out = run(world, "apply", *apply_args(world))
         assert code == 1
-        assert "something other than the key changed" in text and "Roll back with the pre-purge copy" in text
-        assert "RESULT: done." not in text
-
+        assert "did not verify after it was written (something other than the key changed)" in out
+        assert "PARTIAL STATE" in out and "Do NOT start the application." in out
+        assert "RESULT: done." not in out
 
 class TestAChangeWhileItRuns:
-    def test_a_write_to_the_live_file_after_the_checks_is_not_overwritten(self, world):
+    def test_a_write_to_the_live_file_after_the_checks_is_not_overwritten(self, world, application):
         path = world["room"] / "credentials.json"
 
         def the_app_writes(target):
@@ -482,34 +482,41 @@ class TestAChangeWhileItRuns:
                 Path(target).write_bytes(app_format(data))
 
         purge._BEFORE_REPLACE = the_app_writes
-        code, text = run(world, "apply", *apply_args(world))
-        assert code == 2 and "changed while the purge was running" in text
+        code, out = run(world, "apply", *apply_args(world))
+        # The older copy was already purged, so this is NOT "nothing changed": exit 1, with the partial state spelled out.
+        assert code == 1 and "PARTIAL STATE" in out
+        assert "changed while the purge was running" in out
+        assert "purged and verified (the key is gone):" in out and OLDER in out.split("purged and verified (the key is gone):")[1].splitlines()[0]
         written_by_the_app = json.loads(path.read_text(encoding="utf-8"))
         assert written_by_the_app["updated_at"] == "2026-10-10T00:00:00+00:00"
         assert len(written_by_the_app["interview_data"]) == 99, "the file the app wrote must survive untouched"
+        assert "interview_data" not in (world["room"] / OLDER).read_text(encoding="utf-8")
         assert not [p for p in world["room"].iterdir() if ".purge-" in p.name]
 
     def test_a_write_to_the_older_copy_stops_before_the_live_file_is_touched(self, world):
-        before_live = (world["room"] / "credentials.json").read_bytes()
+        before = snapshot(world["dir"])
 
         def the_app_writes(target):
             if os.path.basename(target) == OLDER:
                 Path(target).write_bytes(Path(target).read_bytes() + b" ")
 
         purge._BEFORE_REPLACE = the_app_writes
-        code, text = run(world, "apply", *apply_args(world))
-        assert code == 2 and "Already purged before this: nothing" in text
-        assert (world["room"] / "credentials.json").read_bytes() == before_live
+        code, out = run(world, "apply", *apply_args(world))
+        # Nothing was replaced by the tool (the only change is the stray write the hook made), so this is a true refusal.
+        assert code == 2 and "RESULT: refused. Nothing was written." in out and "PARTIAL STATE" not in out
+        assert sha(world["room"] / "credentials.json") == before["data_room/credentials.json"][0]
 
-    def test_when_the_live_file_is_the_one_that_moves_the_older_copy_is_reported_as_done(self, world):
+    def test_when_the_live_file_is_the_one_that_moves_the_older_copy_is_reported_as_purged_and_the_exit_is_1(self, world):
+        """The bug: the older copy was purged, the live file then refused, and the tool exited 2 ("nothing changed")."""
         def the_app_writes(target):
             if os.path.basename(target) == "credentials.json":
                 Path(target).write_bytes(Path(target).read_bytes() + b" ")
 
         purge._BEFORE_REPLACE = the_app_writes
-        code, text = run(world, "apply", *apply_args(world))
-        assert code == 2 and f"Already purged before this: {OLDER}" in text
-
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 1, out
+        assert "PARTIAL STATE: the purge did NOT complete, and the data has CHANGED." in out
+        assert "RESULT: PARTIAL (exit status 1)." in out and "RESULT: refused" not in out and "Nothing was written" not in out
 
 # -- the application is the only writer: it must be down ------------------------------------------------------
 
@@ -851,6 +858,204 @@ class TestStopPurgeRestart:
         application._save(stale)
         code, out = run(world, "verify", "--also", OLDER, "--after-restart")
         assert code == 2 and "[FAIL] credentials.json: the interview_data key is gone" in out
+
+
+# -- exit status 2 means nothing was changed, and only that ------------------------------------------------
+
+class TestExitStatusMeansWhatItSays:
+    """Review point: if the older copy was purged and the live-file replacement then failed, the tool returned 2 --
+    which the runbook treats as proof that nothing changed. Exit 2 is now returned only when no file was replaced;
+    anything else that went wrong after a change is exit 1 with the state of every file spelled out."""
+
+    def purged_older_then_live_fails(self, world, monkeypatch, how):
+        real = purge.os.replace
+        calls = []
+
+        def replace(src, dst):
+            calls.append(os.path.basename(dst))
+            if how == "oserror" and os.path.basename(dst) == "credentials.json":
+                raise OSError(28, "No space left on device")
+            return real(src, dst)
+
+        monkeypatch.setattr(purge.os, "replace", replace)
+        return run(world, "apply", *apply_args(world)), calls
+
+    def test_the_live_replacement_failing_after_the_older_copy_was_purged_is_exit_1_with_the_partial_state(self, world, monkeypatch):
+        live_before = (world["room"] / "credentials.json").read_bytes()
+        (code, out), calls = self.purged_older_then_live_fails(world, monkeypatch, "oserror")
+        assert calls == [OLDER, "credentials.json"], "the older copy was written first, then the live file failed"
+        assert code == 1, out
+        assert "PARTIAL STATE: the purge did NOT complete, and the data has CHANGED." in out
+        assert re.search(r"purged and verified \(the key is gone\):\s+" + re.escape(OLDER), out)
+        assert re.search(r"not touched \(still hold their records\):\s+credentials\.json\b", out)
+        assert "OSError: [Errno 28] No space left on device" in out
+        assert "Do NOT start the application." in out and "RESULT: PARTIAL (exit status 1)." in out
+        assert "Nothing was written" not in out and "refused" not in out
+        # ...and the disk agrees with the report.
+        assert "interview_data" not in (world["room"] / OLDER).read_text(encoding="utf-8")
+        assert (world["room"] / "credentials.json").read_bytes() == live_before
+        assert not [p for p in world["room"].iterdir() if ".purge-" in p.name], "the temp file of the failed write is cleaned up"
+
+    def test_the_older_copy_failing_first_changes_nothing_and_says_so(self, world, monkeypatch):
+        real = purge.os.replace
+
+        def replace(src, dst):
+            raise OSError(13, "Permission denied")
+
+        monkeypatch.setattr(purge.os, "replace", replace)
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 1 and "No file had been replaced, so nothing was written." in out and "PARTIAL STATE" not in out
+        assert snapshot(world["dir"]) == before
+
+    def test_a_file_that_cannot_be_read_back_after_it_was_replaced_is_exit_1_not_2(self, world, monkeypatch):
+        real = purge.atomic_replace
+
+        def replace_then_corrupt(path, payload, **kwargs):
+            real(path, payload, **kwargs)
+            if os.path.basename(path) == OLDER:
+                Path(path).write_bytes(b"{not json")
+
+        monkeypatch.setattr(purge, "atomic_replace", replace_then_corrupt)
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 1, out
+        assert "PARTIAL STATE" in out and "Nothing was written" not in out
+        assert re.search(r"replaced but NOT verified:\s+" + re.escape(OLDER) + r" \(what is on disk is not the planned content\) \(not readable as JSON\)", out)
+        assert re.search(r"not touched \(still hold their records\):\s+credentials\.json\b", out)
+
+    def test_a_late_writer_after_both_files_were_purged_gets_the_state_report_too(self, world, application):
+        set_writer(world, settle_seconds=2)
+        stale = application._load()
+        purge._DURING_SETTLE = lambda: threading.Timer(0.3, lambda: application._save(stale)).start()
+        code, out = run(world, "apply", *apply_args(world))
+        time.sleep(0.2)
+        assert code == 1 and "PARTIAL STATE" in out
+        assert re.search(r"purged and verified \(the key is gone\):\s+" + re.escape(OLDER), out)
+        assert re.search(r"changed by something else, not by this tool:\s+credentials\.json \(still holds the records\)", out)
+
+    # The invariant, checked at every stage: exit 2  =>  nothing changed;  something changed  =>  exit 1.
+    STAGES = [
+        "gate: wrong count", "gate: writer up", "concurrent change on the older copy", "concurrent change on the live file",
+        "oserror on the older copy", "oserror on the live file", "corrupt after the older copy", "corrupt after the live file",
+        "interrupt on the live file", "late writer", "nothing wrong",
+    ]
+
+    @pytest.mark.parametrize("stage", STAGES)
+    def test_exit_2_only_ever_means_nothing_was_changed(self, world, application, monkeypatch, stage):
+        real_replace, real_atomic = purge.os.replace, purge.atomic_replace
+        args = apply_args(world, count=98 if stage == "gate: wrong count" else 99)
+        if stage == "gate: writer up":
+            monkeypatch.setattr(purge, "processes_with_open", lambda paths: [(1, "a-writer")])
+        if stage.startswith("concurrent change"):
+            target = OLDER if "older" in stage else "credentials.json"
+            purge._BEFORE_REPLACE = lambda path: Path(path).write_bytes(Path(path).read_bytes() + b" ") if os.path.basename(path) == target else None
+        if stage.startswith("oserror"):
+            target = OLDER if "older" in stage else "credentials.json"
+
+            def replace(src, dst):
+                if os.path.basename(dst) == target:
+                    raise OSError(5, "I/O error")
+                return real_replace(src, dst)
+            monkeypatch.setattr(purge.os, "replace", replace)
+        if stage.startswith("corrupt"):
+            target = OLDER if "older" in stage else "credentials.json"
+
+            def corrupting(path, payload, **kw):
+                real_atomic(path, payload, **kw)
+                if os.path.basename(path) == target:
+                    Path(path).write_bytes(b"{broken")
+            monkeypatch.setattr(purge, "atomic_replace", corrupting)
+        if stage == "interrupt on the live file":
+            def interrupt(path):
+                if os.path.basename(path) == "credentials.json":
+                    raise KeyboardInterrupt()
+            purge._BEFORE_REPLACE = interrupt
+        if stage == "late writer":
+            set_writer(world, settle_seconds=2)
+            stale = application._load()
+            purge._DURING_SETTLE = lambda: threading.Timer(0.3, lambda: application._save(stale)).start()
+
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *args)
+        time.sleep(0.4 if stage == "late writer" else 0)
+        after = snapshot(world["dir"])
+        tool_wrote = bool(purge._WRITES)
+        if code == 2:
+            assert not tool_wrote, "exit 2 was returned after the tool replaced a file:\n" + out
+            assert "Nothing was written." in out
+        if tool_wrote:
+            assert code != 2, "a file was replaced but the exit status was 2:\n" + out
+            if stage != "nothing wrong":
+                assert code == 1, f"a file was replaced and the purge did not complete, but the exit status was {code}:\n" + out
+                assert "PARTIAL STATE" in out
+        if stage == "nothing wrong":
+            assert code == 0 and tool_wrote
+        if stage in {"gate: wrong count", "gate: writer up", "concurrent change on the older copy"}:
+            assert code == 2 and (not tool_wrote)
+
+    def test_the_backstop_turns_a_wrong_2_into_a_1(self, world, monkeypatch):
+        """Even if some code path ever returned 2 after replacing a file, main() would not let it out as 2."""
+        def lying_apply(args, out):
+            purge._WRITES.append(str(world["room"] / "credentials.json"))
+            return 2
+
+        monkeypatch.setattr(purge, "cmd_apply", lying_apply)
+        out = io.StringIO()
+        code = purge.main(["apply", "--data-dir", str(world["dir"]), "--confirm-count", "99", "--expect-file-sha256", "0" * 64], out=out)
+        assert code == 1 and "ERROR (internal): a file was replaced, so the exit status is 1, not 2: credentials.json" in out.getvalue()
+
+    def test_the_backstop_also_covers_a_refusal_raised_after_a_replacement(self, world, monkeypatch):
+        def apply_that_raises(args, out):
+            purge._WRITES.append(str(world["room"] / "credentials.json"))
+            raise purge.Refusal("something unexpected after the write")
+
+        monkeypatch.setattr(purge, "cmd_apply", apply_that_raises)
+        out = io.StringIO()
+        code = purge.main(["apply", "--data-dir", str(world["dir"]), "--confirm-count", "99", "--expect-file-sha256", "0" * 64], out=out)
+        text = out.getvalue()
+        assert code == 1 and "AFTER a file was replaced" in text and "exit status 1, not 2" in text and "Nothing was written" not in text
+
+    def loaded_pair(self, world):
+        live, older = purge.Loaded(str(world["room"] / "credentials.json")), purge.Loaded(str(world["room"] / OLDER))
+        ordered = [(older, {}), (live, {})]
+        return ordered, {item.path: item.serialized_without_key() for item, _ in ordered}
+
+    def test_the_partial_report_returns_1_on_its_own_not_thanks_to_the_backstop(self, world):
+        ordered, payloads = self.loaded_pair(world)
+        purge._WRITES[:] = [ordered[0][0].path]
+        out = io.StringIO()
+        assert purge.partial_report(out, ordered, payloads, [], "a later failure") == 1
+        assert "PARTIAL STATE" in out.getvalue()
+
+    def test_a_failure_while_writing_is_1_once_anything_was_replaced_and_2_only_before(self, world):
+        ordered, payloads = self.loaded_pair(world)
+        purge._WRITES[:] = []
+        before = io.StringIO()
+        assert purge.failed_while_writing(before, ordered, payloads, [], purge.Refusal("a gate-like refusal")) == 2
+        assert "Nothing was written." in before.getvalue()
+        purge._WRITES[:] = [ordered[0][0].path]
+        after = io.StringIO()
+        assert purge.failed_while_writing(after, ordered, payloads, [], purge.Refusal("a gate-like refusal")) == 1
+        assert "PARTIAL STATE" in after.getvalue() and "Nothing was written" not in after.getvalue()
+
+    def test_a_refusal_with_no_replacement_is_still_exit_2(self, world):
+        code, out = run(world, "apply", *apply_args(world, stopped=False))
+        assert code == 2 and "Nothing was written." in out
+
+    def test_rollback_that_cannot_read_the_restored_file_back_is_exit_1(self, world, monkeypatch, tmp_path):
+        copy = tmp_path / "pre.json"
+        copy.write_bytes((world["room"] / "credentials.json").read_bytes())
+        pre_sha = sha(copy)
+        assert run(world, "apply", *apply_args(world))[0] == 0
+        real = purge.atomic_replace
+
+        def replace_then_corrupt(path, payload, **kwargs):
+            real(path, payload, **kwargs)
+            Path(path).write_bytes(b"{broken")
+
+        monkeypatch.setattr(purge, "atomic_replace", replace_then_corrupt)
+        code, out = run(world, "rollback", "--file", "credentials.json", "--from", str(copy), "--expect-source-sha256", pre_sha)
+        assert code == 1 and "was replaced with the restored copy but cannot be read back" in out and "Nothing was written" not in out
 
 
 # ── verify ────────────────────────────────────────────────────────────────────

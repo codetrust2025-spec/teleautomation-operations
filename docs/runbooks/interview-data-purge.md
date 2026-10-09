@@ -58,10 +58,12 @@ or hurried command could switch the writer checks off. Those options no longer e
 
 ## What has been verified (9-10 Oct 2026)
 
-- **The tool** (`scripts/purge_interview_data.py`, stdlib only, pure ASCII): 108 tests against a fixture shaped like
-  production (105 run on Windows; the 3 POSIX-only ones, for file modes and the open-file check, were skipped there and
+- **The tool** (`scripts/purge_interview_data.py`, stdlib only, pure ASCII): 129 tests against a fixture shaped like
+  production (126 run on Windows; the 3 POSIX-only ones, for file modes and the open-file check, were skipped there and
   their behaviour was exercised in the Linux rehearsals below), each safety property mutation-checked, including every
-  pinned value and the refusal of `--expectations` on the production directory. They include
+  pinned value, the refusal of `--expectations` on the production directory, and the exit-status guarantee (a failure on
+  the second file after the first was purged is exit 1 with the state spelled out; a fault-injection matrix over every stage
+  of the write asserts that exit 2 only ever means nothing changed, and a central backstop enforces it). They include
   the **delayed concurrent write**: a stale writer that saves after the purge restores the records and `verify` catches
   it; the post-write watch catches a writer that wakes up late (records back, or other data rewritten); a stopped and
   restarted application cannot bring them back; `verify --watch` catches a late writer.
@@ -72,14 +74,18 @@ or hurried command could switch the writer checks off. Those options no longer e
   full stop, purge, restart, verify cycle is clean, including 14 s after the moment the dead process would have saved
   its old copy; a process holding a file open blocks apply; the **wrong port** is caught against Docker's real record
   of the real production container (read-only `docker inspect`); and on the production data path an expectations
-  override is refused before any data is read.
+  override is refused before any data is read; (3) the **partial state** on real files with the real restic binary: the older
+  copy purged and the live file changed by an application write, or failing with a disk error, gives exit status 1 with the
+  state of each file spelled out (it used to exit 2 and say "refused"); finishing the purge on the live file alone works;
+  undoing the older copy from a restic restore returns both files to their byte-identical starting state; a clean run is
+  still exit 0 and a pure refusal still exit 2 with nothing changed.
 - **The real backup**: nightly restic job healthy (last run 8 Oct 20:34 UTC; restore test and `check --read-data`
   passed; 0 consecutive failures). Snapshot `da4a7033` holds **byte-identical** copies of both target files.
 - **The production dry run**: all 12 data gates pass, exit status 0, nothing written.
 
 ## Stop conditions (STOP and tell Claude; do not force anything)
 
-The tool refuses (exit status 2, **nothing written**) unless all hold:
+Before it writes anything, the tool refuses (exit status 2: nothing was changed) unless all hold:
 
 1. the live file holds exactly **99** records with digest `d292eec0cf32e5d6`, and the older copy exactly **81** with `0b07fefcd1841e85`;
 2. everything else in each file digests as expected (`33622d20f6231a7e` / `aeba532e0c43b6f1`). Any application write changes `updated_at`, so this also trips if the application wrote since the dry run;
@@ -89,13 +95,77 @@ The tool refuses (exit status 2, **nothing written**) unless all hold:
 6. `--confirm-count 99` matches;
 7. the writer is down, by the pinned checks above: `--writers-stopped` given, the container stopped, port 8210 confirmed as its port and refusing connections, no process has the files open, both files idle for 120 s. A line saying the tool "could not confirm" something (for example Docker unavailable) is a refusal: stop.
 
-It also refuses if a file changes while it runs. After writing it re-reads each file, then watches for 10 s.
+It also refuses to replace a file that changed while it ran. **If that happens to the live file after the older copy was
+already purged, the result is a PARTIAL STATE (exit status 1), not a refusal.** After writing it re-reads each file, then
+watches for 10 s.
 Stop yourself if: the backup check does not say `IDENTICAL` twice; the dry run does not end `all gates pass`; the dry
 run differs from "Expected output"; the time is between 20:25 and 20:45 UTC (the nightly backup runs at 20:30).
 
-**Exit status 1 (`ERROR`) is different from 2.** 2 means refused before writing: start the application again
-(`docker start ...`), nothing changed. 1 means something went wrong *after* writing (for example the key came back during
-the watch): **do not start the application**, send the output to Claude, and use the rollback section.
+## Reading the result (exit status and the RESULT line)
+
+The tool's exit status is a promise, and it is enforced in one place: **exit status 2 means nothing was changed, and only
+that.** The tool returns 2 only while it has replaced no file; if any other code path ever returned 2 after a file had been
+replaced, the tool turns it into 1. Whatever else goes wrong after a change is exit status 1.
+
+Add `; echo "exit status: $?"` to the end of the deletion command (2.2 already does) and read both the last `RESULT:` line
+and the status:
+
+| Last line of the output | Exit | What it means | What to do |
+|---|---|---|---|
+| `RESULT: done. credentials.json.pre-srujan-import-..., credentials.json` (apply), `RESULT: all gates pass.` (plan), `RESULT: clean.` (verify), `RESULT: restored.` (rollback) | 0 | Complete, or all good | Continue |
+| `RESULT: STOP. N gate(s) failed. Nothing was written.` or `RESULT: refused. Nothing was written.` | 2 | **Nothing was changed.** The data is exactly as it was | Start the application again if it was stopped (3.1), then report the output |
+| `RESULT: error. No file had been replaced, so nothing was written.` | 1 | An error (disk, permission) before any file was replaced | The data is as it was, but do not retry until Claude has read the output |
+| `PARTIAL STATE: the purge did NOT complete, and the data has CHANGED.` ... `RESULT: PARTIAL (exit status 1).` | 1 | **At least one file was changed and the purge is incomplete** | **Do NOT start the application.** Follow "If the exit status is 1" below |
+| `RESULT: error AFTER a file was replaced ...` or `ERROR (internal): a file was replaced, so the exit status is 1, not 2` | 1 | The same: something failed after a change | The same |
+
+After any exit status 1, do not start the application until the state is understood. The application is only started
+again after a clean `verify` or a completed rollback.
+
+## If the exit status is 1: the partial state
+
+The tool writes the older copy first and the live file second, so the most likely partial state is: the older copy purged,
+the live file not (a disk error, or the application or someone writing to the live file in between). The output spells out the
+state of every file, for example (real output from the rehearsal on the host, fixture data):
+
+```
+PARTIAL STATE: the purge did NOT complete, and the data has CHANGED.
+  purged and verified (the key is gone):         credentials.json.pre-srujan-import-20261005T093705Z
+  replaced but NOT verified:                     (none)
+  not touched (still hold their records):        credentials.json
+  changed by something else, not by this tool:   (none)
+  why it stopped: OSError: [Errno 28] No space left on device
+Do NOT start the application. The tool has changed nothing further. See the runbook, 'If the exit status is 1'.
+RESULT: PARTIAL (exit status 1). At least one file was changed and the purge is not complete.
+```
+
+The four lines mean: *purged and verified* is finished and correct; *replaced but NOT verified* was written but is not
+what was planned (roll it back); *not touched* still holds its records, byte for byte; *changed by something else* was
+changed by the application or a person, not by the tool, and is shown with whether it still holds the records.
+
+Keep the application stopped and send the whole output to Claude. Then, depending on the state:
+
+**A. The older copy is purged and the live file is "not touched"** (the case above). Two ways out, both rehearsed:
+
+- *Finish the purge on the live file alone.* The older copy no longer holds the key, so it is simply left out (the live file's
+  digests and backup hash are unchanged). First the dry run, which must end `all gates pass`:
+
+```bash
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - plan --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --check-writer' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
+```
+
+  then the live-only deletion (expect `purged credentials.json: 99 records removed`, `RESULT: done. credentials.json`, exit status 0):
+
+```bash
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - apply --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --confirm-count 99 --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --writers-stopped' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"; echo "exit status: $?"
+```
+
+  then verify as in 2.3 (expect `RESULT: clean.`) and carry on from Phase 3.
+- *Undo the older copy, back to the starting state.* Run R1, then R3 (older copy only), then R4 below. The dry run (0.3) must
+  then end `all gates pass` again, exactly as at the start.
+
+**B. Anything else** (the live file shows "replaced but NOT verified", or "changed by something else", or "the key came
+back"): do not try to finish. Keep the application stopped, run `verify` (2.3) and send Claude both outputs. The way back is
+the rollback section: R1, then R2 for the live file (and R3 if the older copy should be restored too), then R4.
 
 ## What the deletion does NOT remove (owner's decision)
 
@@ -170,8 +240,10 @@ If it says a file was "last written ... ago" under 120 s, someone wrote to the D
 2.2 **THE DELETION** (only when 0.2, 0.3 and 2.1 are exactly as expected and the application is stopped):
 
 ```bash
-ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - apply --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --confirm-count 99 --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --also-expect-file-sha256 credentials.json.pre-srujan-import-20261005T093705Z=78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d --writers-stopped' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - apply --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --confirm-count 99 --expect-file-sha256 8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91 --also-expect-file-sha256 credentials.json.pre-srujan-import-20261005T093705Z=78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d --writers-stopped' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"; echo "exit status: $?"
 ```
+
+Read the result with the table in "Reading the result": `RESULT: done.` and exit status 0 are the only success.
 
 2.3 Verify while still stopped (expect `RESULT: clean.`):
 
@@ -239,7 +311,7 @@ ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'export RESTIC_REPO
 
 ## Rollback
 
-Use it only if something is wrong after 2.2 (exit status 1, or a failed verify). The tool will not overwrite a file that
+Use it only if something is wrong after 2.2 (exit status 1 with a PARTIAL STATE that you decided to undo, or a failed verify). The tool will not overwrite a file that
 changed since the purge, and it needs the exact pre-purge bytes, which snapshot `da4a7033` holds. **Roll back with the
 application stopped** (if it was already started, stop it first with command 1.1).
 
@@ -258,6 +330,8 @@ ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - rollback
 ```
 
 Expected: `restored credentials.json: 17948 -> 104979 bytes; sha256 8173a1ad...; 99 records back` and `RESULT: restored.`
+(Rollback's own statuses follow the same rule: 2 = nothing written; 1 = an error after the file was replaced, e.g. the restored
+file could not be read back, in which case do not start the application.)
 R3 (older copy) is the same with `--file credentials.json.pre-srujan-import-20261005T093705Z`, its path under
 `/root/purge-rollback/...` and `--expect-source-sha256 78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d`.
 Then start the application (3.1) and verify the records are back through the Data Room.
@@ -356,8 +430,9 @@ files under the data directory that still mention the key: none
 RESULT: done. credentials.json.pre-srujan-import-20261005T093705Z, credentials.json
 ```
 
-Exit status 0. Anything else (`STOP`, `ERROR`, exit status 1 or 2) means stop and report it (see "Exit status 1 is
-different from 2" above). The older copy is written first, so a refusal on the live file leaves the live data as it was.
+Exit status 0 and `RESULT: done.` are the only success. Anything else: stop and read "Reading the result". Note the order:
+the older copy is written first, so if the live file then fails, the older copy **has** been purged and the result is a
+PARTIAL STATE (exit status 1), never exit status 2.
 
 ## Expected output: verify while stopped (2.3)
 
