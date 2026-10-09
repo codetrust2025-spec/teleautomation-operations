@@ -10,17 +10,28 @@ to do anything if the data is not what it was written for.
     plan      read-only. Identifies the records (counts, digests, salted-hash tags -- never ids or
               contents), checks every gate, and predicts the file that would be written.
     apply     the same checks again, then removes the key. All-or-nothing validation before any write;
-              each file is replaced atomically and verified afterwards.
-    verify    read-only. After a purge: the key is gone everywhere and nothing else moved.
+              each file is replaced atomically and verified afterwards, then watched for a few seconds.
+    verify    read-only. After a purge: the key is gone everywhere and nothing else moved. With
+              --after-restart it tolerates the application's own later writes; with --watch it keeps
+              looking for a while, to catch a writer that wakes up late.
     rollback  puts a verified pre-purge copy of one file back, but only if nothing else has changed since.
+
+THE APPLICATION MUST BE STOPPED FIRST. The application rewrites the whole credentials file (load, change,
+save), so a request that loaded the file before the purge can write the records back after it, and no
+check made by this tool can prevent that: the application does not take any lock this tool could respect.
+So `apply` refuses unless the writer is demonstrably down -- it is told so (--writers-stopped), nothing
+is listening on the application's port (--require-port-closed), no process has the files open, and the
+files have been idle (--min-idle-seconds) -- and afterwards it watches the files (--settle-seconds).
 
 It imports nothing from the application, so it runs the same on the host, in the container or on a
 fixture, and cannot be changed by a deploy. Standard library only.
 
     python3 purge_interview_data.py plan  --data-dir DIR [--also NAME] [--manifest]
     python3 purge_interview_data.py apply --data-dir DIR [--also NAME] --confirm-count 99 \\
-                                          --expect-file-sha256 SHA [--also-expect-file-sha256 NAME=SHA]
-    python3 purge_interview_data.py verify   --data-dir DIR [--also NAME]
+                                          --expect-file-sha256 SHA [--also-expect-file-sha256 NAME=SHA] \\
+                                          --writers-stopped --require-port-closed HOST:PORT \\
+                                          [--min-idle-seconds 120] [--settle-seconds 5]
+    python3 purge_interview_data.py verify   --data-dir DIR [--also NAME] [--after-restart] [--watch SECONDS]
     python3 purge_interview_data.py rollback --data-dir DIR --file NAME --from COPY --expect-source-sha256 SHA
 
 Exit status: 0 done / all gates pass, 2 refused (a gate failed: NOTHING was written), 1 error.
@@ -31,8 +42,10 @@ import argparse
 import hashlib
 import json
 import os
+import socket
 import sys
 import tempfile
+import time
 from collections import Counter
 
 KEY = "interview_data"
@@ -61,8 +74,10 @@ EXPECTED = {
 SCAN_LIMIT_BYTES = 50_000_000
 SCAN_SKIP_DIRS = {"__pycache__"}
 
-# Test seam: called after the final unchanged-check and before the atomic replace.
+# Test seams. `_BEFORE_REPLACE` is called after the final unchanged-check and before the atomic
+# replace; `_DURING_SETTLE` once at the start of the watch that follows the writes.
 _BEFORE_REPLACE = None
+_DURING_SETTLE = None
 
 
 class Refusal(Exception):
@@ -193,13 +208,16 @@ class Gates:
         self.rows.append((bool(ok), text))
         return bool(ok)
 
+    def info(self, text: str) -> None:
+        self.rows.append((None, text))
+
     @property
     def failed(self) -> list[str]:
-        return [text for ok, text in self.rows if not ok]
+        return [text for ok, text in self.rows if ok is False]
 
     def print(self, out) -> None:
         for ok, text in self.rows:
-            print(f"  [{'PASS' if ok else 'FAIL'}] {text}", file=out)
+            print(f"  [{'INFO' if ok is None else 'PASS' if ok else 'FAIL'}] {text}", file=out)
 
 
 def build_plan(args, expected: dict):
@@ -250,6 +268,103 @@ def bound_file_gates(args, targets, gates: Gates, *, required: bool) -> None:
             gates.check(loaded.sha256 == sha, f"{loaded.name}: file sha256 is the one verified against the backup ({loaded.sha256[:12]}... vs {sha[:12]}...)")
         elif required:
             gates.check(False, f"{loaded.name}: no --expect-file-sha256 given, so the backup is not tied to this file")
+
+
+# -- is the writer really down? ------------------------------------------------
+
+def port_state(spec: str) -> str:
+    """'open' if something accepts connections, 'closed' if the connection is refused, else 'unknown'."""
+    host, _, port = spec.rpartition(":")
+    try:
+        with socket.create_connection((host or "127.0.0.1", int(port)), timeout=3):
+            return "open"
+    except ConnectionRefusedError:
+        return "closed"
+    except (OSError, ValueError):
+        return "unknown"
+
+
+def processes_with_open(paths: list[str]):
+    """(pid, command name) of every other process holding one of `paths` open, or None where /proc is absent."""
+    if not os.path.isdir("/proc"):
+        return None
+    wanted = {os.path.realpath(p) for p in paths}
+    me = os.getpid()
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == me:
+            continue
+        try:
+            fds = os.listdir(f"/proc/{entry}/fd")
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                link = os.readlink(f"/proc/{entry}/fd/{fd}")
+            except OSError:
+                continue
+            if link in wanted:
+                try:
+                    with open(f"/proc/{entry}/comm", encoding="utf-8", errors="replace") as f:
+                        name = f.read().strip()
+                except OSError:
+                    name = "?"
+                found.append((int(entry), name))
+                break
+    return found
+
+
+def writer_gates(args, targets, gates: Gates, *, required: bool) -> None:
+    """Checks that the application, the only writer of these files, is not running.
+
+    They cannot prove it, but each failure mode they catch is a real one: the operator forgot to stop it,
+    something restarted it, a request is mid-flight, or someone was just editing the Data Room.
+    """
+    ports = list(getattr(args, "require_port_closed", None) or [])
+    idle = getattr(args, "min_idle_seconds", None)
+    if required:
+        gates.check(bool(getattr(args, "writers_stopped", False)), "--writers-stopped: the application has been stopped before this run")
+        gates.check(bool(ports), "--require-port-closed names the application's port, so a running application is detected")
+    if not (required or ports or idle is not None):
+        return
+    for spec in ports:
+        state = port_state(spec)
+        gates.check(state == "closed",
+                    f"nothing is listening on {spec}" if state == "closed"
+                    else (f"something IS listening on {spec}: the application is still running" if state == "open"
+                          else f"could not confirm that {spec} is closed"))
+    if idle is not None:
+        for loaded, _ in targets:
+            age = time.time() - loaded.mtime_ns / 1e9
+            gates.check(age >= idle, f"{loaded.name}: last written {int(age)}s ago (needs at least {idle}s of quiet)")
+    holders = processes_with_open([loaded.path for loaded, _ in targets])
+    if holders is None:
+        gates.info("open files: not checked here (no /proc)")
+    else:
+        gates.check(not holders, "no process has these files open" if not holders
+                    else "these files are open in: " + ", ".join(f"{name} (pid {pid})" for pid, name in holders))
+
+
+def settle(written: dict[str, str], seconds: float) -> list[str]:
+    """Watch the files just written. Returns what went wrong (empty when they stayed as written)."""
+    if _DURING_SETTLE is not None:
+        _DURING_SETTLE()
+    deadline = time.monotonic() + max(0.0, seconds)
+    while True:
+        problems = []
+        for path, sha in written.items():
+            try:
+                now = Loaded(path)
+            except Refusal as exc:
+                problems.append(f"{os.path.basename(path)}: unreadable while watching ({exc})")
+                continue
+            if now.has_key:
+                problems.append(f"{os.path.basename(path)}: the {KEY} key came back")
+            elif now.sha256 != sha:
+                problems.append(f"{os.path.basename(path)}: rewritten by something else")
+        if problems or time.monotonic() >= deadline:
+            return problems
+        time.sleep(0.25)
 
 
 # -- writing -------------------------------------------------------------------
@@ -330,6 +445,7 @@ def cmd_plan(args, out=sys.stdout) -> int:
         payload, preserved = loaded.serialized_without_key()
         print(f"  if applied: the file would become {len(payload)} bytes, sha256 {sha256_bytes(payload)}; formatting kept: {'yes' if preserved else 'no (re-indented)'}", file=out)
     bound_file_gates(args, targets, gates, required=False)
+    writer_gates(args, targets, gates, required=False)
     print("files under the data directory that mention the key: " + (", ".join(scan) if scan else "none"), file=out)
     print("GATES:", file=out)
     gates.print(out)
@@ -346,6 +462,7 @@ def cmd_apply(args, out=sys.stdout) -> int:
     print("MODE: APPLY", file=out)
     targets, gates, scan = build_plan(args, expected)
     bound_file_gates(args, targets, gates, required=True)
+    writer_gates(args, targets, gates, required=True)
     live_expect = expected["live"]
     gates.check(args.confirm_count == live_expect["count"],
                 f"--confirm-count {args.confirm_count} matches the {live_expect['count']} records to be deleted")
@@ -388,6 +505,15 @@ def cmd_apply(args, out=sys.stdout) -> int:
         done.append(loaded.name)
         print(f"purged {loaded.name}: {loaded.count} records removed; {loaded.size} -> {after.size} bytes; "
               f"sha256 {after.sha256}; the rest of the file is unchanged ({after.rest_digest}); mode and owner kept", file=out)
+    written = {loaded.path: sha256_bytes(payloads[loaded.path][0]) for loaded, _ in ordered}
+    problems = settle(written, args.settle_seconds)
+    if problems:
+        for problem in problems:
+            print(f"ERROR: {problem} while watching the files after the purge.", file=out)
+        print("A writer is still running. Stop it, run verify, and if the records are back run apply again with the application stopped. "
+              "Do NOT start the application.", file=out)
+        return 1
+    print(f"watched the files for {args.settle_seconds:g}s after writing: unchanged", file=out)
     remaining = scan_for_key(args.data_dir)
     print("files under the data directory that still mention the key: " + (", ".join(remaining) if remaining else "none"), file=out)
     print("RESULT: done. " + ", ".join(done), file=out)
@@ -396,15 +522,35 @@ def cmd_apply(args, out=sys.stdout) -> int:
 
 def cmd_verify(args, out=sys.stdout) -> int:
     expected = load_expected(args.expectations)
-    print("MODE: VERIFY (read-only)", file=out)
+    print("MODE: VERIFY (read-only)" + (", after the application was restarted" if args.after_restart else ""), file=out)
     gates = Gates()
     names = [expected["live"]["name"]] + list(args.also or [])
+    paths = {}
     for name in names:
         info = expected["live"] if name == expected["live"]["name"] else expected.get("older_copy", {})
         loaded = Loaded(locate(args.data_dir, name))
+        paths[loaded.path] = loaded.name
         gates.check(not loaded.has_key, f"{loaded.name}: the {KEY} key is gone")
-        gates.check(loaded.rest_digest == info.get("rest_digest"), f"{loaded.name}: everything else is as it was ({loaded.rest_digest}, expected {info.get('rest_digest')})")
+        same = loaded.rest_digest == info.get("rest_digest")
+        if args.after_restart and not same:
+            # The application has been running again and may legitimately have written other data.
+            gates.info(f"{loaded.name}: other data differs from the purge-time digest ({loaded.rest_digest}); expected once the application has written")
+        else:
+            gates.check(same, f"{loaded.name}: everything else is as it was ({loaded.rest_digest}, expected {info.get('rest_digest')})")
         print(f"file: {loaded.name} size {loaded.size} sha256 {loaded.sha256}", file=out)
+    if args.watch:
+        deadline = time.monotonic() + args.watch
+        back = []
+        while time.monotonic() < deadline and not back:
+            time.sleep(1.0)
+            for path, name in paths.items():
+                try:
+                    if Loaded(path).has_key:
+                        back.append(name)
+                except Refusal:
+                    continue
+        gates.check(not back, f"watched for {args.watch:g}s: the key did not come back" if not back
+                    else f"the key CAME BACK in {', '.join(back)} while watching")
     scan = scan_for_key(args.data_dir)
     gates.check(not scan, "no file under the data directory mentions the key" + (f" (found in: {', '.join(scan)})" if scan else ""))
     print("GATES:", file=out)
@@ -469,6 +615,8 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--manifest", action="store_true", help="list every record as tag:tag (no ids, no contents)")
     sp.add_argument("--expect-file-sha256", help="check the live file's sha256 (the one verified against the backup)")
     sp.add_argument("--also-expect-file-sha256", action="append", metavar="NAME=SHA")
+    sp.add_argument("--require-port-closed", action="append", metavar="HOST:PORT", help="check that the application is not listening here")
+    sp.add_argument("--min-idle-seconds", type=int, help="check that the files have been quiet this long")
     sp.set_defaults(run=cmd_plan)
 
     sp = sub.add_parser("apply", help="remove the key")
@@ -476,10 +624,16 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--confirm-count", type=int, required=True, help="the number of records that will be deleted")
     sp.add_argument("--expect-file-sha256", required=True, help="the live file's sha256 as verified against the backup")
     sp.add_argument("--also-expect-file-sha256", action="append", metavar="NAME=SHA")
+    sp.add_argument("--writers-stopped", action="store_true", help="the application has been stopped (required)")
+    sp.add_argument("--require-port-closed", action="append", metavar="HOST:PORT", help="the application's port; must refuse connections (required)")
+    sp.add_argument("--min-idle-seconds", type=int, default=120, help="the files must have been quiet this long (default 120)")
+    sp.add_argument("--settle-seconds", type=float, default=5.0, help="watch the files this long after writing (default 5)")
     sp.set_defaults(run=cmd_apply)
 
     sp = sub.add_parser("verify", help="read-only post-check")
     common(sp)
+    sp.add_argument("--after-restart", action="store_true", help="the application has run again: its own writes to other data are not a failure")
+    sp.add_argument("--watch", type=float, default=0.0, help="keep checking for this many seconds, to catch a writer that wakes up late")
     sp.set_defaults(run=cmd_verify)
 
     sp = sub.add_parser("rollback", help="restore a verified pre-purge copy of one file")

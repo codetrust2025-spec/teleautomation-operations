@@ -15,8 +15,12 @@ import importlib.util
 import io
 import json
 import os
+import re
+import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -114,6 +118,10 @@ def world(tmp_path):
     }
     expectations_path = tmp_path / "expectations.json"
     expectations_path.write_text(json.dumps(expectations), encoding="utf-8")
+    long_ago = time.time() - 4 * 86400  # production's credentials file was last written on 5 Oct
+    for path in data_dir.rglob("*"):
+        if path.is_file():
+            os.utime(path, (long_ago, long_ago))
     return {"dir": data_dir, "room": room, "expect": expectations_path, "live": live, "older": older, "records": records}
 
 
@@ -123,9 +131,20 @@ def run(world, command, *extra, out=None):
     return code, out.getvalue()
 
 
-def apply_args(world, *, also=True, count=99):
+def free_port() -> int:
+    """A loopback port nothing is listening on: the application, stopped."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def apply_args(world, *, also=True, count=99, stopped=True, port=None, settle="0"):
     live_sha = sha(world["room"] / "credentials.json")
-    args = ["--confirm-count", str(count), "--expect-file-sha256", live_sha]
+    args = ["--confirm-count", str(count), "--expect-file-sha256", live_sha, "--settle-seconds", settle]
+    if stopped:
+        args += ["--writers-stopped"]
+    if port != "none":
+        args += ["--require-port-closed", f"127.0.0.1:{port or free_port()}"]
     if also:
         args += ["--also", OLDER, "--also-expect-file-sha256", f"{OLDER}={sha(world['room'] / OLDER)}"]
     return args
@@ -138,11 +157,25 @@ def snapshot(directory: Path) -> dict:
     }
 
 
+# These tests are about the port itself and use the real probe; everywhere else a port nothing listens on is
+# reported closed at once (Windows takes about two seconds to refuse a connection to a closed loopback port).
+REAL_PORT_TESTS = {
+    "test_a_listener_on_the_application_port_stops_it_and_nothing_is_written",
+    "test_once_the_application_is_down_the_same_command_goes_through",
+    "test_plan_shows_the_same_checks_without_requiring_them",
+    "test_the_real_port_check_tells_open_from_closed",
+}
+
+
 @pytest.fixture(autouse=True)
-def _no_hook():
+def _no_hook(request, monkeypatch):
     purge._BEFORE_REPLACE = None
+    purge._DURING_SETTLE = None
+    if request.node.name not in REAL_PORT_TESTS:
+        monkeypatch.setattr(purge, "port_state", lambda spec: "closed")
     yield
     purge._BEFORE_REPLACE = None
+    purge._DURING_SETTLE = None
 
 
 # ── plan: read-only, and identifies without revealing ─────────────────────────
@@ -372,6 +405,8 @@ class TestApply:
         assert "purged credentials.json: 99 records removed" in text
         assert f"purged {OLDER}: 81 records removed" in text
         assert "files under the data directory that still mention the key: none" in text
+        assert "watched the files for 0s after writing: unchanged" in text
+        assert "[PASS] --writers-stopped" in text and "[PASS] nothing is listening on 127.0.0.1:" in text
         assert "RESULT: done." in text
 
     def test_the_live_file_alone_is_refused_while_the_older_copy_still_holds_the_records(self, world):
@@ -466,6 +501,208 @@ class TestAChangeWhileItRuns:
         purge._BEFORE_REPLACE = the_app_writes
         code, text = run(world, "apply", *apply_args(world))
         assert code == 2 and f"Already purged before this: {OLDER}" in text
+
+
+# ── the application is the only writer: it must be down ───────────────────────
+
+class TestTheWriterMustBeDown:
+    """The application rewrites the whole credentials file (load, change, save). A request that loaded the file
+    before the purge can write the records back after it, and nothing this tool checks can prevent that, so the
+    tool refuses to run unless the writer is demonstrably stopped."""
+
+    def refused(self, world, *args, text=None):
+        before = snapshot(world["dir"])
+        code, out = run(world, "apply", *args)
+        assert code == 2 and "Nothing was written." in out, out
+        assert snapshot(world["dir"]) == before
+        if text:
+            assert text in out
+        return out
+
+    def test_it_must_be_told_the_application_is_stopped(self, world):
+        self.refused(world, *apply_args(world, stopped=False), text="[FAIL] --writers-stopped")
+
+    def test_it_must_be_told_which_port_the_application_listens_on(self, world):
+        self.refused(world, *apply_args(world, port="none"), text="[FAIL] --require-port-closed names the application's port")
+
+    def test_a_listener_on_the_application_port_stops_it_and_nothing_is_written(self, world):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            self.refused(world, *apply_args(world, port=str(port)), text=f"[FAIL] something IS listening on 127.0.0.1:{port}: the application is still running")
+
+    def test_once_the_application_is_down_the_same_command_goes_through(self, world):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            assert run(world, "apply", *apply_args(world, port=str(port)))[0] == 2
+        assert run(world, "apply", *apply_args(world, port=str(port)))[0] == 0
+
+    def test_the_real_port_check_tells_open_from_closed(self):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            assert purge.port_state(f"127.0.0.1:{listener.getsockname()[1]}") == "open"
+        assert purge.port_state(f"127.0.0.1:{free_port()}") == "closed"
+        assert purge.port_state("127.0.0.1:not-a-port") == "unknown"
+
+    def test_an_unreachable_answer_is_not_taken_as_closed(self, world, monkeypatch):
+        monkeypatch.setattr(purge, "port_state", lambda spec: "unknown")
+        self.refused(world, *apply_args(world), text="could not confirm that 127.0.0.1:")
+
+    def test_a_file_written_a_moment_ago_means_someone_is_working_in_the_data_room(self, world):
+        now = time.time()
+        os.utime(world["room"] / "credentials.json", (now, now))
+        out = self.refused(world, *apply_args(world))
+        assert re.search(r"\[FAIL\] credentials\.json: last written \d+s ago \(needs at least 120s of quiet\)", out)
+
+    def test_the_quiet_period_can_be_shortened_on_purpose(self, world):
+        now = time.time()
+        os.utime(world["room"] / "credentials.json", (now, now))
+        assert run(world, "apply", *apply_args(world), "--min-idle-seconds", "0")[0] == 0
+
+    def test_plan_shows_the_same_checks_without_requiring_them(self, world):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            code, out = run(world, "plan", "--also", OLDER, "--require-port-closed", f"127.0.0.1:{listener.getsockname()[1]}")
+        assert code == 2 and "[FAIL] something IS listening on" in out
+        _, plain = run(world, "plan", "--also", OLDER)
+        assert "listening" not in plain and "last written" not in plain
+
+    @posix_only
+    def test_a_process_with_the_file_open_blocks_it(self, world):
+        holder = subprocess.Popen([sys.executable, "-c", "import sys,time; f=open(sys.argv[1],'rb'); print('ready',flush=True); time.sleep(60)",
+                                   str(world["room"] / "credentials.json")], stdout=subprocess.PIPE, text=True)
+        try:
+            assert holder.stdout.readline().strip() == "ready"
+            self.refused(world, *apply_args(world), text="these files are open in: ")
+        finally:
+            holder.kill()
+            holder.wait()
+
+    def test_where_open_files_cannot_be_checked_it_says_so_instead_of_passing_silently(self, world, monkeypatch):
+        monkeypatch.setattr(purge, "processes_with_open", lambda paths: None)
+        code, out = run(world, "apply", *apply_args(world))
+        assert code == 0 and "[INFO] open files: not checked here (no /proc)" in out
+
+
+# ── the delayed concurrent write ──────────────────────────────────────────────
+
+@pytest.fixture()
+def application(world, monkeypatch):
+    """The real application store, pointed at the fixture: the only writer of this file in production."""
+    from features import data_room_credentials_store as store
+
+    monkeypatch.setattr(store, "_FILE", str(world["room"] / "credentials.json"))
+    return store
+
+
+class TestADelayedConcurrentWrite:
+    """A write that lands AFTER the purge. This is the failure the tool cannot prevent by itself, so these tests
+    pin what it does about it: refuse to start while the writer is up, watch afterwards, and verify again later."""
+
+    def test_a_request_that_loaded_the_file_before_the_purge_brings_the_records_back(self, world, application):
+        # An in-flight request: load (the whole dict, records included) ... the purge runs ... save.
+        stale = application._load()
+        assert len(stale["interview_data"]) == 99
+        assert run(world, "apply", *apply_args(world))[0] == 0          # the operator believed the application was stopped
+        application._save(stale)                                        # the delayed write
+        assert len(json.loads((world["room"] / "credentials.json").read_text(encoding="utf-8"))["interview_data"]) == 99, \
+            "this is the hazard: the application's own save restores the records"
+        code, out = run(world, "verify", "--also", OLDER)
+        assert code == 2 and "[FAIL] credentials.json: the interview_data key is gone" in out
+
+    def test_the_watch_after_writing_catches_a_writer_that_wakes_up_late(self, world, application):
+        stale = application._load()
+        timer = []
+
+        def late_writer():
+            thread = threading.Timer(0.4, lambda: application._save(stale))
+            thread.start()
+            timer.append(thread)
+
+        purge._DURING_SETTLE = late_writer
+        code, out = run(world, "apply", *apply_args(world, settle="3"))
+        timer[0].join()
+        assert code == 1
+        assert "ERROR: credentials.json: the interview_data key came back while watching the files after the purge." in out
+        assert "A writer is still running. Stop it" in out and "Do NOT start the application." in out
+        assert "RESULT: done." not in out
+
+    def test_a_late_write_of_other_data_is_reported_as_well(self, world, application):
+        def late_writer():
+            def write():
+                data = application._load()
+                data["handlers"].append({"username": "late", "password": "x"})
+                application._save(data)
+            threading.Timer(0.3, write).start()
+
+        purge._DURING_SETTLE = late_writer
+        code, out = run(world, "apply", *apply_args(world, settle="2"))
+        time.sleep(0.2)
+        assert code == 1 and "credentials.json: rewritten by something else" in out
+
+    def test_a_quiet_watch_reports_unchanged_and_succeeds(self, world):
+        code, out = run(world, "apply", *apply_args(world, settle="1"))
+        assert code == 0 and "watched the files for 1s after writing: unchanged" in out
+
+    def test_verify_can_keep_watching_after_the_restart_and_catches_a_late_writer(self, world, application):
+        stale = application._load()
+        assert run(world, "apply", *apply_args(world))[0] == 0
+        threading.Timer(0.5, lambda: application._save(stale)).start()
+        code, out = run(world, "verify", "--also", OLDER, "--watch", "3")
+        assert code == 2 and "the key CAME BACK in credentials.json while watching" in out
+
+    def test_verify_watch_is_clean_when_nothing_writes(self, world):
+        run(world, "apply", *apply_args(world))
+        code, out = run(world, "verify", "--also", OLDER, "--watch", "1")
+        assert code == 0 and "watched for 1s: the key did not come back" in out
+
+
+class TestStopPurgeRestart:
+    """The procedure itself, with the real store as the application: stop it, purge, start it, verify again."""
+
+    def test_a_stopped_then_restarted_application_does_not_bring_the_records_back(self, world, application):
+        stale = application._load()                      # the old process's in-memory copy, records included
+        running = {"up": True}
+
+        def old_process_write():
+            if not running["up"]:
+                raise RuntimeError("the process is stopped: it cannot write")
+            application._save(stale)
+
+        running["up"] = False                             # 1. stop the application
+        assert run(world, "apply", *apply_args(world))[0] == 0   # 2. purge while it is down
+        assert run(world, "verify", "--also", OLDER)[0] == 0     # 3. verify while it is down
+        with pytest.raises(RuntimeError):
+            old_process_write()                           # the stale copy died with the process
+
+        # 4. start it: a NEW process reads the file from disk, which no longer has the records, and goes about its business.
+        fresh = application._load()
+        assert "interview_data" not in fresh
+        application.sync_admin_login_copy({"username": "admin"})        # an ordinary write after the restart
+        application.set_handler_password_mirror("h1", "FIXTURE-HASH-new")
+
+        code, out = run(world, "verify", "--also", OLDER, "--after-restart", "--watch", "1")   # 5. verify again
+        assert code == 0 and "RESULT: clean." in out
+        assert "[INFO] credentials.json: other data differs from the purge-time digest" in out
+        assert "interview_data" not in (world["room"] / "credentials.json").read_text(encoding="utf-8")
+
+    def test_the_strict_verify_still_flags_other_data_that_moved(self, world, application):
+        run(world, "apply", *apply_args(world))
+        application.sync_admin_login_copy({"username": "admin"})
+        code, out = run(world, "verify", "--also", OLDER)
+        assert code == 2 and "[FAIL] credentials.json: everything else is as it was" in out
+
+    def test_after_the_restart_the_key_is_still_a_failure_whatever_else_moved(self, world, application):
+        stale = application._load()
+        run(world, "apply", *apply_args(world))
+        application._save(stale)
+        code, out = run(world, "verify", "--also", OLDER, "--after-restart")
+        assert code == 2 and "[FAIL] credentials.json: the interview_data key is gone" in out
 
 
 # ── verify ────────────────────────────────────────────────────────────────────
