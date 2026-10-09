@@ -1422,7 +1422,13 @@ def _prefer_reference_display(existing: str, new: str) -> str:
 
 
 def reference_dropdown_names(rows: list[dict] | None = None) -> list[str]:
-    """Sorted referrer names for add/edit candidate Reference field."""
+    """Sorted referrer names for add/edit candidate Reference field.
+
+    Referrers who are inactive as of the current month are excluded: new work
+    cannot be assigned to someone who has departed. Historical candidates that
+    still carry their name are untouched — this only governs the pick-list for
+    NEW/active work.
+    """
     if rows is None:
         rows = list_candidates()
     by_key: dict[str, str] = {}
@@ -1437,7 +1443,56 @@ def reference_dropdown_names(rows: list[dict] | None = None) -> list[str]:
         name = _canonical_reference_name(ref_raw)
         key = _reference_key(name)
         by_key[key] = _prefer_reference_display(by_key.get(key, name), ref_raw)
-    return sorted(by_key.values(), key=lambda x: x.lower())
+    index, current_month = _lifecycle_index()
+    return sorted(
+        (
+            name for name in by_key.values()
+            if _reference_active_now(name, index=index, current_month=current_month)
+        ),
+        key=lambda x: x.lower(),
+    )
+
+
+def _lifecycle_index():
+    """Materialized referrer lifecycle index (normalized name -> fields).
+
+    Reads only persisted registry rows, so it never re-enters the referrer
+    registry's dynamic-name path (which calls back into
+    ``reference_dropdown_names``). Returns {} on any failure — meaning no
+    referrer is treated as inactive, so the filter can only ever hide referrers
+    an admin has explicitly retired.
+    """
+    try:
+        from features import referrer_registry as _rr
+
+        return _rr.materialized_lifecycle_index(), _rr._current_month()
+    except Exception:
+        return {}, ""
+
+
+def _reference_active_now(reference: str, month: str | None = None, *, index=None, current_month=None) -> bool:
+    """Whether a candidate ``reference`` name is active for a current/active view.
+
+    Month-granular: a referrer marked INACTIVE effective month M is active for
+    every month strictly before M and inactive from M onward. ``month`` None
+    means the current context (resolved to the current IST month). Unknown names
+    default to active. ``index``/``current_month`` may be supplied to avoid
+    re-reading the registry inside a loop.
+    """
+    key = " ".join(str(reference or "").strip().lower().split())
+    if not key or key == "unknown":
+        return True
+    if index is None:
+        index, current_month = _lifecycle_index()
+    fields = index.get(key)
+    if not fields:
+        return True
+    if str(fields.get("lifecycle_status") or "ACTIVE").upper() != "INACTIVE":
+        return True
+    target = (month or current_month or "")[:7]
+    effective = str(fields.get("inactive_effective_month") or "0000-00")
+    # Active for months strictly before the effective inactive month.
+    return bool(target) and target < effective
 
 
 def _coerce_bool(value) -> bool:
@@ -2877,7 +2932,29 @@ def pending_works(*, month: str | None = None, reference: str | None = None) -> 
     """
     month_filter = month if month and month != "all" else None
     rows = list_candidates(stage="in_progress", month=month_filter, reference=reference)
+    rows = _drop_inactive_referrer_rows(rows, month_filter)
     return _pending_works_core(rows)
+
+
+def _drop_inactive_referrer_rows(rows: list[dict], month: str | None) -> list[dict]:
+    """Exclude active-pipeline rows whose referrer is inactive as of ``month``.
+
+    This governs CURRENT/active views (Pending Works, active roster, current &
+    future-month earnings) only. ``month`` None means "current context" and the
+    registry resolves it to the current IST month. Rows for a month strictly
+    before a referrer's inactive-effective month are kept, so September and
+    earlier history is never affected.
+    """
+    index, current_month = _lifecycle_index()
+    if not index:
+        return rows
+    kept: list[dict] = []
+    for row in rows:
+        ref = (row.get("reference") or "").strip()
+        if ref and not _reference_active_now(ref, month, index=index, current_month=current_month):
+            continue
+        kept.append(row)
+    return kept
 
 
 def active_roster(
@@ -2887,7 +2964,10 @@ def active_roster(
 ) -> dict:
     """Active (in_progress) candidates grouped by technology for roster views."""
     rows = [
-        r for r in list_candidates(stage="in_progress", month=month, reference=reference)
+        r for r in _drop_inactive_referrer_rows(
+            list_candidates(stage="in_progress", month=month, reference=reference),
+            month if month and month != "all" else None,
+        )
         if not _is_roster_placeholder(r)
     ]
     by_technology: dict[str, list[dict]] = {}
@@ -7204,6 +7284,17 @@ def stats(
         rows = list_candidates(month=month, reference=reference, service_type=service_type)
     else:
         rows = _stats_rows_deduped(all_rows)
+
+    # Referrer lifecycle: exclude a departed referrer's candidates from the
+    # CURRENT/active earnings view and from any month at or after their
+    # inactive-effective month, while leaving earlier months untouched. A
+    # specific `month` is judged against that month; the unscoped/"all" view is
+    # judged against the current month (passed as None). A per-referrer scoped
+    # view (`reference` set) is left alone so a departed referrer can still open
+    # their own historical earnings.
+    if not scope_key:
+        _earn_month = month if month and month != "all" else None
+        rows = _drop_inactive_referrer_rows(rows, _earn_month)
 
     # Thrilok's admin complimentary amount is earned on every completed
     # profile, including profiles referred by someone else. Keep those rows

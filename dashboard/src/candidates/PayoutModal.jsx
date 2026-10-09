@@ -90,6 +90,12 @@ export default function PayoutModal({
   const rR = formatDate;
 
   const [entries, setEntries] = useState([]);
+  // Accounting entries deliberately follow the selected Earnings period: they
+  // drive the outstanding-balance calculation. History must not share that
+  // filter, though. A real payment filed in October still needs to be visible
+  // when this dialog was opened from August or September.
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterHandler, setFilterHandler] = useState("all");
@@ -161,6 +167,33 @@ export default function PayoutModal({
   }, [filterMonth, ve]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const fetchHistory = useCallback(async () => {
+    if (filterHandler === "all") {
+      setHistoryEntries([]);
+      setHistoryLoading(false);
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      // No `month` here. The History month control below is intentionally a
+      // date filter over this referrer's complete, existing ledger; it does
+      // not alter the accounting-period balance above.
+      const params = new URLSearchParams({ reference: filterHandler });
+      const res = await (await fetch(`${ve}/handler-expenses?${params.toString()}`)).json();
+      if (res.status === "ok") {
+        setHistoryEntries(res.expenses || []);
+      } else {
+        setError(res.message || "Failed to load expense history");
+      }
+    } catch (err) {
+      setError(err.message || "Network error");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [filterHandler, ve]);
+
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -293,7 +326,7 @@ export default function PayoutModal({
     // the month only appears once a row already exists in it.
     const enteredMonth = String(form.date || "").slice(0, 7);
     if (/^\d{4}-\d{2}$/.test(enteredMonth)) values.add(enteredMonth);
-    filtered.forEach((row) => {
+    historyEntries.forEach((row) => {
       const value = String(row.date || "").slice(0, 7);
       if (/^\d{4}-\d{2}$/.test(value)) values.add(value);
     });
@@ -303,17 +336,21 @@ export default function PayoutModal({
         .map((value) => ({ value, label: formatMonthLabel(value) })),
       { value: "all", label: "All months" },
     ];
-  }, [filtered, historyMonth, form.date]);
+  }, [historyEntries, historyMonth, form.date]);
 
   const historyFiltered = useMemo(() => {
-    return filtered.filter((row) => (
+    return historyEntries.filter((row) => (
       isValidExpenseRecord(row) &&
       (historyMonth === "all" || String(row.date || "").startsWith(historyMonth))
     ));
-  }, [filtered, historyMonth]);
+  }, [historyEntries, historyMonth]);
   const historyTotal = useMemo(
     () => historyFiltered.reduce((sum, row) => sum + Number(row.amount), 0),
     [historyFiltered],
+  );
+  const accountingEntryIds = useMemo(
+    () => new Set(entries.map((row) => row.id)),
+    [entries],
   );
 
   // ── Pagination ──
@@ -512,6 +549,7 @@ export default function PayoutModal({
       resetForm();
       // On a move, the new month's data loads from the state change itself.
       if (!movesPeriod) await fetchData();
+      await fetchHistory();
       setHandlerStatsRevision((revision) => revision + 1);
       let notice;
       if (editId) {
@@ -643,6 +681,7 @@ export default function PayoutModal({
           ? { ...current, net_payable: (Number(current.net_payable) || 0) + (Number(row.amount) || 0) }
           : current);
         fetchData();
+        fetchHistory();
         setHandlerStatsRevision((revision) => revision + 1);
         onChanged?.();
       }
@@ -672,7 +711,7 @@ export default function PayoutModal({
         <header className="payout-modal__header payout-modal__header--expense">
           <div className="payout-modal__heading">
             <h3 className="payout-modal__title" id="payout-modal-title">
-              {showPaymentAccounts ? "Manage payment accounts" : "Add Referrer Expense"}
+              {showPaymentAccounts ? "Manage referrers" : "Add Referrer Expense"}
             </h3>
             {!showPaymentAccounts && selectedName && (
               <div className="payout-modal__summary">
@@ -690,10 +729,11 @@ export default function PayoutModal({
             type="button"
             className="cand-btn cand-btn--ghost cand-btn--xs payout-modal__accounts-action"
             onClick={() => setShowPaymentAccounts((value) => !value)}
-            disabled={filterHandler === "all"}
-            title={filterHandler === "all" ? "Select a referrer first" : undefined}
+            title={filterHandler === "all"
+              ? "Review referrer status (Active / Inactive / All) and payment accounts"
+              : undefined}
           >
-            {showPaymentAccounts ? "Back to expense" : "Manage payment accounts"}
+            {showPaymentAccounts ? "Back to expense" : "Manage referrers"}
           </button>
           <button type="button" className="cand-modal-close" onClick={onClose} aria-label="Close">×</button>
         </header>
@@ -874,7 +914,7 @@ export default function PayoutModal({
               <div className="payout-modal__table-area">
                 {filterHandler === "all" ? (
                   <div className="cand-exp-empty">Select a referrer to view recent expenses.</div>
-                ) : loading ? <div className="cand-exp-empty">Loading…</div> : historyFiltered.length === 0 ? (
+                ) : loading || historyLoading ? <div className="cand-exp-empty">Loading…</div> : historyFiltered.length === 0 ? (
                   <div className="cand-exp-empty">
                     {historyMonth === "all"
                       ? "No expenses found."
@@ -885,6 +925,7 @@ export default function PayoutModal({
                     <thead><tr>
                       <th className="payout-col--amount">Amount</th>
                       <th className="payout-col--date">Date</th>
+                      <th className="payout-col--classification">Classification</th>
                       <th className="payout-col--note">Note</th>
                       <th className="payout-col--proof">Proof</th>
                       <th className="payout-col--actions">Actions</th>
@@ -894,6 +935,7 @@ export default function PayoutModal({
                         <tr className={`payout-modal__row${editId === row.id ? " payout-modal__row--editing" : ""}`} key={row.id}>
                           <td className="payout-col--amount payout-col--amount-positive">{Jc(row.amount)}</td>
                           <td className="payout-col--date">{rR(row.date)}</td>
+                          <td className="payout-col--classification">Handler Expense</td>
                           <td className="payout-col--note">{row.note || <em>—</em>}</td>
                           <td className="payout-col--proof">
                             {(row.proofs?.length > 0)
@@ -901,8 +943,10 @@ export default function PayoutModal({
                               : <em>—</em>}
                           </td>
                           <td className="payout-col--actions">
-                            <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" onClick={() => startEdit(row)} title="Edit">✎</button>
-                            <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost" onClick={() => handleDelete(row)} title="Delete">🗑</button>
+                            {accountingEntryIds.has(row.id) ? <>
+                              <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" onClick={() => startEdit(row)} title="Edit">✎</button>
+                              <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost" onClick={() => handleDelete(row)} title="Delete">🗑</button>
+                            </> : <em>—</em>}
                           </td>
                         </tr>
                       ))}

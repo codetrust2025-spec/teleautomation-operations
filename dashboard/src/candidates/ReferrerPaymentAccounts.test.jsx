@@ -630,3 +630,100 @@ describe("referrer payment accounts", () => {
     expect(monthSelect).toHaveValue("2026-07");
   });
 });
+
+
+describe("referrer lifecycle Active / Inactive / All filter", () => {
+  function stubReferrers() {
+    // One active, one inactive-from-Oct referrer. The /referrers endpoint
+    // returns every referrer (its status filter defaults to all), so the
+    // client filters this set.
+    vi.stubGlobal("fetch", vi.fn((url, options = {}) => {
+      if (String(url).endsWith("/lifecycle")) {
+        return response({ status: "ok", referrer: { id: "referrer-venugopal", name: "Venugopal", is_active: true } });
+      }
+      if (String(url).endsWith("/referrers")) {
+        return response({
+          status: "ok",
+          referrers: [
+            { id: "referrer-thrilok", name: "Thrilok", is_active: true, lifecycle_status: "ACTIVE", inactive_effective_month: "" },
+            { id: "referrer-venugopal", name: "Venugopal", is_active: false, lifecycle_status: "INACTIVE", inactive_effective_month: "2026-10" },
+          ],
+        });
+      }
+      return response({ status: "ok", accounts: [] });
+    }));
+    return fetch;
+  }
+
+  it("shows Active / Inactive / All controls and defaults to Active", async () => {
+    stubReferrers();
+    render(<ReferrerPaymentAccounts apiBase="/api" referrerName="all" />);
+
+    expect(await screen.findByRole("button", { name: "Active" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Inactive" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "All" })).toBeInTheDocument();
+
+    // Default = Active: only the active referrer is listed.
+    expect(await screen.findByText("Thrilok")).toBeInTheDocument();
+    expect(screen.queryByText("Venugopal")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Active" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("Inactive shows only departed referrers with their effective month", async () => {
+    stubReferrers();
+    render(<ReferrerPaymentAccounts apiBase="/api" referrerName="all" />);
+
+    await screen.findByText("Thrilok");
+    fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+
+    expect(await screen.findByText("Venugopal")).toBeInTheDocument();
+    expect(screen.queryByText("Thrilok")).not.toBeInTheDocument();
+    expect(screen.getByText("Inactive from 2026-10")).toBeInTheDocument();
+  });
+
+  it("All shows both active and inactive referrers", async () => {
+    stubReferrers();
+    render(<ReferrerPaymentAccounts apiBase="/api" referrerName="all" />);
+
+    await screen.findByText("Thrilok");
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+
+    expect(await screen.findByText("Venugopal")).toBeInTheDocument();
+    expect(screen.getByText("Thrilok")).toBeInTheDocument();
+  });
+
+  it("Reactivate posts the ACTIVE lifecycle change for the inactive referrer", async () => {
+    const fetchMock = stubReferrers();
+    render(<ReferrerPaymentAccounts apiBase="/api" referrerName="all" />);
+
+    await screen.findByText("Thrilok");
+    fireEvent.click(screen.getByRole("button", { name: "Inactive" }));
+    await screen.findByText("Venugopal");
+    fireEvent.click(screen.getByRole("button", { name: "Reactivate" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/referrers/referrer-venugopal/lifecycle",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ status: "ACTIVE" }),
+      }),
+    ));
+  });
+
+  it("Mark inactive sends the chosen effective month", async () => {
+    const fetchMock = stubReferrers();
+    render(<ReferrerPaymentAccounts apiBase="/api" referrerName="all" />);
+
+    await screen.findByText("Thrilok");
+    fireEvent.change(screen.getByLabelText("Effective month"), { target: { value: "2026-11" } });
+    fireEvent.click(screen.getByRole("button", { name: "Mark inactive" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/referrers/referrer-thrilok/lifecycle",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ status: "INACTIVE", effective_month: "2026-11" }),
+      }),
+    ));
+  });
+});

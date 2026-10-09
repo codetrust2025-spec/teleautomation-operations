@@ -581,10 +581,11 @@
   justify-content: flex-end;
   padding-top: 10px;
 }
-.payout-modal--expense .payout-col--amount { width: 16%; }
-.payout-modal--expense .payout-col--date { width: 18%; }
-.payout-modal--expense .payout-col--note { width: 36%; }
-.payout-modal--expense .payout-col--proof { width: 16%; }
+.payout-modal--expense .payout-col--amount { width: 14%; }
+.payout-modal--expense .payout-col--date { width: 16%; }
+.payout-modal--expense .payout-col--classification { width: 16%; }
+.payout-modal--expense .payout-col--note { width: 26%; }
+.payout-modal--expense .payout-col--proof { width: 14%; }
 .payout-modal--expense .payout-col--actions { width: 14%; }
 .payout-col--amount-positive {
   color: #6ee7b7;
