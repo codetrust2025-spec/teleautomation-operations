@@ -56,6 +56,12 @@ function stubServer() {
       server.patches.push(value);
       return json({ status: "ok" });
     }
+    if (options.method === "POST" && value.endsWith("/handler-expenses/extract")) {
+      // The reading starts and the server answers at once; its answer is collected.
+      server.proofRequests.push({ url: value, body: options.body });
+      return json({ status: "pending", read_id: "read-1" });
+    }
+    if (value.endsWith("/handler-expenses/extract/read-1")) return server.proof;
     if (options.method === "POST" && value.endsWith("/handler-expenses")) {
       server.saves.push(options.body);
       return json({ status: "ok", expense: { id: "exp-8" } });
@@ -100,14 +106,19 @@ function attachScreenshot() {
 
 const RTX = { state: "done", node: "RTX 4060", analysed_by: ["RTX 4060"], failed_on: [] };
 
+const realSetTimeout = globalThis.setTimeout;
+
 beforeEach(() => {
   FakeEventSource.instances = [];
   vi.stubGlobal("EventSource", FakeEventSource);
+  // The wait between polls for a reading is two seconds; here it is instant.
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, ms, ...args) => realSetTimeout(fn, ms === 2000 ? 0 : ms, ...args));
   window.__TA_CONFIRM_VALUE__ = { confirm: vi.fn().mockResolvedValue(true) };
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete window.__TA_CONFIRM_VALUE__;
 });

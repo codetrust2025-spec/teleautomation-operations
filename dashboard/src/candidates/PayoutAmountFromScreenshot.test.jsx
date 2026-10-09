@@ -5,6 +5,10 @@
  * Amount; nothing is typed. The figure is shown for confirmation and is the
  * amount saved. If the screenshot cannot be read, or reads ambiguously, there is
  * no amount and nothing can be saved: a guessed amount is worse than none.
+ *
+ * A reading takes about a minute -- as long as the proxy in front of the server
+ * waits -- so the server answers the request that starts it at once and the page
+ * collects the answer by polling.
  */
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -28,12 +32,19 @@ function deferred() {
 }
 
 /**
- * The modal's API. `reads` is what reading each attached screenshot answers, in
- * turn (the last one repeats): an answer, or a function returning a promise.
+ * The modal's API. Reading a screenshot is started by one request and collected by
+ * others. `reads` is the answer to each reading, in turn (the last one repeats): an
+ * answer, or a function returning a promise. `pending` is how many polls say "not
+ * yet" first; `pollFailures` how many polls fail outright first; `start` replaces
+ * the answer to the request that starts a reading.
  */
-function stubServer({ reads = [{ status: "ok", amount: 42500 }], saveAnswer = null } = {}) {
+function stubServer({
+  reads = [{ status: "ok", amount: 42500 }], pending = 1, pollFailures = 0, start = null, saveAnswer = null,
+} = {}) {
   const queue = [...reads];
-  const server = { extracts: [], saves: [], store: [] };
+  const answers = {};
+  const polled = {};
+  const server = { extracts: [], polls: [], saves: [], store: [] };
   vi.stubGlobal("fetch", vi.fn((url, options = {}) => {
     const value = String(url);
     if (value.endsWith("/referrers")) {
@@ -48,8 +59,20 @@ function stubServer({ reads = [{ status: "ok", amount: 42500 }], saveAnswer = nu
     }
     if (options.method === "POST" && value.endsWith("/handler-expenses/extract")) {
       server.extracts.push(options.body);
-      const next = queue.length > 1 ? queue.shift() : queue[0];
-      return typeof next === "function" ? next() : json(next);
+      if (start) return start();
+      const id = `read-${server.extracts.length}`;
+      answers[id] = queue.length > 1 ? queue.shift() : queue[0];
+      return json({ status: "pending", read_id: id });
+    }
+    const poll = value.match(/\/handler-expenses\/extract\/([^/?]+)$/);
+    if (poll) {
+      const id = poll[1];
+      server.polls.push(id);
+      polled[id] = (polled[id] || 0) + 1;
+      if (polled[id] <= pollFailures) return Promise.reject(new TypeError("Failed to fetch"));
+      if (polled[id] - pollFailures <= pending) return json({ status: "pending" });
+      const answer = answers[id];
+      return typeof answer === "function" ? answer() : json(answer);
     }
     if (options.method === "POST" && value.endsWith("/handler-expenses")) {
       server.saves.push(options.body);
@@ -97,12 +120,17 @@ const saveButton = () => screen.getByRole("button", { name: "Save expense" });
 const readingBox = () => document.querySelector(".payout-modal__reading");
 const banner = () => document.querySelector(".payout-modal__success")?.textContent;
 
+const realSetTimeout = globalThis.setTimeout;
+
 beforeEach(() => {
   vi.stubGlobal("EventSource", FakeEventSource);
   window.__TA_CONFIRM_VALUE__ = { confirm: vi.fn().mockResolvedValue(true) };
+  // The wait between polls for a reading is two seconds; here it is instant.
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, ms, ...args) => realSetTimeout(fn, ms === 2000 ? 0 : ms, ...args));
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete window.__TA_CONFIRM_VALUE__;
 });
@@ -115,6 +143,15 @@ describe("attaching the screenshot", () => {
     attach();
     await waitFor(() => expect(amountField().value).toBe("42500"));
     expect(server.extracts).toHaveLength(1);
+  });
+
+  it("starts the reading at once and collects it by the id the server gave", async () => {
+    const server = stubServer({ pending: 2 });
+    await openModal();
+    attach();
+    await waitFor(() => expect(amountField().value).toBe("42500"));
+    expect(server.extracts).toHaveLength(1);
+    expect(server.polls).toEqual(["read-1", "read-1", "read-1"]);
   });
 
   it("asks the server to read it for this referrer, afresh", async () => {
@@ -281,9 +318,8 @@ describe("when the amount cannot be read", () => {
     expect(server.saves).toHaveLength(0);
   });
 
-  it("blocks when the server does not answer", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const server = stubServer({ reads: [() => Promise.reject(new TypeError("Failed to fetch"))] });
+  it("blocks when the server does not answer the request that starts the reading", async () => {
+    const server = stubServer({ start: () => Promise.reject(new TypeError("Failed to fetch")) });
     await openModal();
     attach();
     expect(await screen.findByRole("alert")).toHaveTextContent("did not answer");
@@ -291,14 +327,23 @@ describe("when the amount cannot be read", () => {
     expect(server.saves).toHaveLength(0);
   });
 
-  it("blocks when the answer is not the server's own (an error page)", async () => {
-    const server = stubServer({ reads: [() => Promise.resolve({ ok: false, status: 504, json: () => Promise.reject(new SyntaxError("Unexpected token <")) })] });
+  it("blocks when the answer to starting it is not the server's own (an error page)", async () => {
+    const server = stubServer({ start: () => Promise.resolve({ ok: false, status: 504, json: () => Promise.reject(new SyntaxError("Unexpected token <")) }) });
     await openModal();
     attach();
     expect(await screen.findByRole("alert")).toHaveTextContent("did not answer");
     expect(amountField().value).toBe("");
     expect(saveButton()).toBeDisabled();
     expect(server.saves).toHaveLength(0);
+  });
+
+  it("shows a refusal of the request itself straight away, without waiting for a reading", async () => {
+    const server = stubServer({ start: () => json({ status: "error", message: "Select one registered referrer before attaching the screenshot." }) });
+    await openModal();
+    attach();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Select one registered referrer");
+    expect(server.polls).toEqual([]);
+    expect(saveButton()).toBeDisabled();
   });
 
   it("blocks an answer that claims success but gives no usable amount", async () => {
@@ -339,14 +384,71 @@ describe("when the amount cannot be read", () => {
 describe("a newer screenshot supersedes an older one", () => {
   it("is not overwritten by the earlier one's slow answer", async () => {
     const slow = deferred();
-    stubServer({ reads: [() => slow.promise, { status: "ok", amount: 5000 }] });
+    const server = stubServer({ reads: [() => slow.promise, { status: "ok", amount: 5000 }] });
     await openModal();
     attach("first.png");
+    await waitFor(() => expect(server.polls).toContain("read-1"));
     attach("second.png");
     await waitFor(() => expect(amountField().value).toBe("5000"));
     await act(async () => slow.resolve({ ok: true, status: 200, json: () => Promise.resolve({ status: "ok", amount: 42500 }) }));
     expect(amountField().value).toBe("5000");
     expect(readingBox()).toHaveTextContent("₹5,000");
+  });
+
+  it("stops collecting the earlier reading as soon as a newer screenshot is attached", async () => {
+    const server = stubServer({ reads: [{ status: "ok", amount: 42500 }, { status: "ok", amount: 5000 }] });
+    await openModal();
+    attach("first.png");
+    attach("second.png");
+    await waitFor(() => expect(amountField().value).toBe("5000"));
+    expect(server.polls).not.toContain("read-1");
+  });
+});
+
+describe("collecting the reading", () => {
+  it("keeps asking until the reading is finished, however long that takes", async () => {
+    const server = stubServer({ pending: 40 });
+    await openModal();
+    attach();
+    await waitFor(() => expect(amountField().value).toBe("42500"));
+    expect(server.polls).toHaveLength(41);
+    expect(server.extracts).toHaveLength(1);
+  });
+
+  it("is not ended by one poll that fails", async () => {
+    stubServer({ pollFailures: 1 });
+    await openModal();
+    attach();
+    await waitFor(() => expect(amountField().value).toBe("42500"));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("is ended by a run of failed polls, which it says", async () => {
+    const server = stubServer({ pollFailures: Infinity });
+    await openModal();
+    attach();
+    expect(await screen.findByRole("alert")).toHaveTextContent("stopped answering while the screenshot was being read");
+    expect(server.polls).toHaveLength(5);
+    expect(amountField().value).toBe("");
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it("gives up when the reading never finishes, and says so", async () => {
+    const server = stubServer({ pending: Infinity });
+    await openModal();
+    attach();
+    // 150 polls, each waiting on a real (if shortened) timer.
+    expect(await screen.findByRole("alert", {}, { timeout: 10000 })).toHaveTextContent("taking too long");
+    expect(server.polls).toHaveLength(150);
+    expect(saveButton()).toBeDisabled();
+  }, 15000);
+
+  it("tells the operator when the server no longer has the reading", async () => {
+    stubServer({ reads: [{ status: "error", message: "This reading is no longer available. Attach the screenshot again." }] });
+    await openModal();
+    attach();
+    expect(await screen.findByRole("alert")).toHaveTextContent("no longer available");
+    expect(saveButton()).toBeDisabled();
   });
 });
 

@@ -55,7 +55,11 @@ function stubServer({ savedAmount } = {}) {
     if (value.includes("/candidates/stats?")) {
       return json({ status: "ok", stats: { top_performers: [{ name: "Thrilok", net_payable: closing(month) }] } });
     }
+    // The server starts a reading and answers at once; the answer is collected.
     if (options.method === "POST" && value.endsWith("/handler-expenses/extract")) {
+      return json({ status: "pending", read_id: "read-1" });
+    }
+    if (value.endsWith("/handler-expenses/extract/read-1")) {
       return json({ status: "ok", amount: receipt.amount });
     }
     if (options.method === "POST") {
@@ -121,6 +125,8 @@ async function fileExpense({ amount, date }) {
   fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
 }
 
+const realSetTimeout = globalThis.setTimeout;
+
 beforeEach(() => {
   FakeEventSource.instances = [];
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -129,10 +135,13 @@ beforeEach(() => {
   // that month is the current one whatever the real date is.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-25T10:00:00"));
+  // The wait between polls for a reading is two seconds; here it is instant.
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, ms, ...args) => realSetTimeout(fn, ms === 2000 ? 0 : ms, ...args));
 });
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete window.__TA_CONFIRM_VALUE__;
 });

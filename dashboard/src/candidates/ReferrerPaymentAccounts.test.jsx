@@ -227,6 +227,9 @@ describe("referrer payment accounts", () => {
   });
 
   it("confirms and saves an expense through the existing handler-expenses API", async () => {
+    // The wait between polls for the screenshot's reading is two seconds; here it is instant.
+    const realSetTimeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, ms, ...args) => realSetTimeout(fn, ms === 2000 ? 0 : ms, ...args));
     const confirm = vi.fn().mockResolvedValue(true);
     window.__TA_CONFIRM_VALUE__ = { confirm };
     let submittedBody;
@@ -251,6 +254,9 @@ describe("referrer payment accounts", () => {
         });
       }
       if (value.endsWith("/handler-expenses/extract") && options.method === "POST") {
+        return response({ status: "pending", read_id: "read-1" });
+      }
+      if (value.endsWith("/handler-expenses/extract/read-1")) {
         return response({ status: "ok", amount: 1000 });
       }
       if (value.endsWith("/handler-expenses") && options.method === "POST") {
@@ -311,6 +317,7 @@ describe("referrer payment accounts", () => {
       "Expense added successfully. ₹1000 was deducted from the amount owed.",
     )).toBeInTheDocument();
     delete window.__TA_CONFIRM_VALUE__;
+    vi.restoreAllMocks();
   });
 
   it("shows one global Add expense action and no row payout actions", () => {

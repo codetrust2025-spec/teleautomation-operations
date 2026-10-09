@@ -71,7 +71,11 @@ function stubServer({ outcome = "saved", lateAfter = 3, preloaded = [], refusal 
     if (value.includes("/candidates/stats?")) {
       return json({ status: "ok", stats: { top_performers: [{ name: "Thrilok", net_payable: closing(month) }] } });
     }
+    // The server starts a reading and answers at once; the answer is collected.
     if (options.method === "POST" && value.endsWith("/handler-expenses/extract")) {
+      return json({ status: "pending", read_id: "read-1" });
+    }
+    if (value.endsWith("/handler-expenses/extract/read-1")) {
       return json({ status: "ok", amount: receipt.amount });
     }
     if (options.method === "POST") {
@@ -155,8 +159,8 @@ beforeEach(() => {
   // "Today" is 6 October 2026. Only the clock is faked.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-06T10:00:00"));
-  // The wait between look-ups is four seconds; here it is instant.
-  vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, ms, ...args) => realSetTimeout(fn, ms === 4000 ? 0 : ms, ...args));
+  // The waits between look-ups (four seconds) and between polls for a reading (two) are instant here.
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, ms, ...args) => realSetTimeout(fn, ms === 4000 || ms === 2000 ? 0 : ms, ...args));
 });
 afterEach(() => {
   cleanup();

@@ -1,7 +1,11 @@
 """Operations expense, payout and salary routes."""
 import asyncio
 import logging
-from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile
+import threading
+import time
+import uuid
+from collections import OrderedDict
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from core import ai_activity
 from features import receipt_amount, transaction_identity
@@ -161,8 +165,55 @@ def _incoming_expense(reference: str, amount: int, category: str, note: str, dat
     }
 
 
+# Reading a screenshot takes about a minute on the AI node -- as long as the proxy in
+# front of this server will wait -- so the request that starts a reading is not the
+# one that answers it. It returns at once with an id, the server reads in the
+# background, and the dashboard collects the answer. Held in memory, like the AI
+# activity the dashboard follows, and forgotten after a while.
+_READ_TTL_SECONDS = 30 * 60
+_READ_LIMIT = 64
+_reads: "OrderedDict[str, dict]" = OrderedDict()
+_reads_lock = threading.Lock()
+
+
+def forget_reads() -> None:
+    with _reads_lock:
+        _reads.clear()
+
+
+def _begin_read(preferred: str = "") -> str:
+    """Register a reading as pending and return its id (the dashboard's own, when it sent a usable one)."""
+    now = time.monotonic()
+    with _reads_lock:
+        for stale in [rid for rid, entry in _reads.items() if now - entry["at"] > _READ_TTL_SECONDS]:
+            del _reads[stale]
+        read_id = preferred if ai_activity.valid_analysis_id(preferred) and preferred not in _reads else uuid.uuid4().hex
+        _reads[read_id] = {"state": "pending", "response": None, "at": now}
+        while len(_reads) > _READ_LIMIT:
+            _reads.popitem(last=False)
+    return read_id
+
+
+def _finish_read(read_id: str, response: dict) -> None:
+    with _reads_lock:
+        entry = _reads.get(read_id)
+        if entry is not None:
+            entry.update(state="done", response=response, at=time.monotonic())
+
+
+def _read_entry(read_id: str):
+    now = time.monotonic()
+    with _reads_lock:
+        entry = _reads.get(read_id)
+        if entry is None or now - entry["at"] > _READ_TTL_SECONDS:
+            _reads.pop(read_id, None)
+            return None
+        return dict(entry)
+
+
 @router.post("/handler-expenses/extract", dependencies=[Depends(_require_fleet_admin)])
 async def handler_expenses_extract(
+    background: BackgroundTasks,
     reference: str = Form(...),
     file: UploadFile = File(...),
     category: str = Form(default="commission"),
@@ -170,32 +221,61 @@ async def handler_expenses_extract(
     fresh: str = Form(default=""),
     analysis_id: str = Form(default=""),
 ):
-    """Read the amount off a payment screenshot. Saves nothing.
+    """Start reading the amount off a payment screenshot. Saves nothing.
 
-    The dashboard calls this when a screenshot is attached, fills Expense Amount
-    from the answer and shows it for confirmation. `fresh` makes a newly attached
-    screenshot be read again; without it a reading the server still remembers is
-    reused, so changing the referrer does not wait on the AI node a second time.
+    The dashboard calls this when a screenshot is attached. It answers at once --
+    with `{"status": "pending", "read_id": ...}`, or with an error when the request
+    itself is unusable (no such referrer, not an image) -- and the amount is
+    collected from `GET /handler-expenses/extract/{read_id}`. `fresh` makes a newly
+    attached screenshot be read again; without it a reading the server still
+    remembers is reused.
     """
-    with ai_activity.analysis(analysis_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
-        response = await _extract_expense_amount(reference, category, date, file, fresh=str(fresh).strip().lower() in {"1", "true", "yes"})
-    return ai_activity.with_analysis(response, analysis)
-
-
-async def _extract_expense_amount(reference: str, category: str, date: str, file: UploadFile, *, fresh: bool):
-    from features import handler_expenses
     from features.referrer_registry import resolve_referrer
 
-    selected_referrer = resolve_referrer(reference)
-    if selected_referrer is None:
+    referrer = resolve_referrer(reference)
+    if referrer is None:
         return {"status": "error", "message": "Select one registered referrer before attaching the screenshot."}
-    canonical_reference = str(selected_referrer.get("name") or "").strip()
     raw, mime, refusal = await _receipt_upload(file)
     if refusal:
         return refusal
+    read_id = _begin_read(analysis_id)
+    background.add_task(
+        _run_read, read_id, referrer, category, date, raw, mime,
+        str(fresh).strip().lower() in {"1", "true", "yes"},
+    )
+    return {"status": "pending", "read_id": read_id}
+
+
+@router.get("/handler-expenses/extract/{read_id}", dependencies=[Depends(_require_fleet_admin)])
+async def handler_expenses_extract_result(read_id: str):
+    """The answer to a reading: `pending` until it is finished, then the amount or the reason there is none."""
+    entry = _read_entry(read_id)
+    if entry is None:
+        return {"status": "error", "message": "This reading is no longer available. Attach the screenshot again."}
+    if entry["state"] == "pending":
+        return {"status": "pending"}
+    return entry["response"]
+
+
+async def _run_read(read_id: str, referrer: dict, category: str, date: str, raw: bytes, mime: str, fresh: bool):
+    """Carry out a reading and keep its answer for the dashboard to collect."""
+    try:
+        with ai_activity.analysis(read_id, kind=ai_activity.PAYMENT_ANALYSIS) as analysis:
+            response = await _read_expense_amount(referrer, category, date, raw, mime, fresh=fresh)
+        response = ai_activity.with_analysis(response, analysis)
+    except Exception:
+        logger.exception("Reading a handler expense screenshot failed")
+        response = {"status": "error", "message": "The screenshot could not be read."}
+    _finish_read(read_id, response)
+
+
+async def _read_expense_amount(referrer: dict, category: str, date: str, raw: bytes, mime: str, *, fresh: bool):
+    from features import handler_expenses
+
+    canonical_reference = str(referrer.get("name") or "").strip()
     try:
         verification = await _read_receipt(
-            raw, mime, referrer=selected_referrer, category=category, create_ledger=False,
+            raw, mime, referrer=referrer, category=category, create_ledger=False,
             cache="fresh" if fresh else "reuse",
         )
     except Exception as exc:

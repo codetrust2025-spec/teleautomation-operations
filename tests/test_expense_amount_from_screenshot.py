@@ -234,16 +234,25 @@ def client(world, receipt, monkeypatch):
         return dict(receipt["verdict"])
 
     monkeypatch.setattr("features.payment_verification_engine.verify_payment_screenshot", read_receipt)
+    routes.forget_reads()
     app = FastAPI()
     app.include_router(routes.router)
     app.dependency_overrides[routes._require_fleet_admin] = lambda: None
     return TestClient(app)
 
 
-def extract(client, image=IMAGE, **form):
+def start(client, image=IMAGE, **form):
     data = {"reference": "Thrilok", "date": "2026-10-06"}
     data.update(form)
     return client.post("/handler-expenses/extract", data=data, files={"file": ("receipt.png", image, "image/png")}).json()
+
+
+def extract(client, image=IMAGE, **form):
+    """Start a reading and collect its answer, as the dashboard does."""
+    started = start(client, image, **form)
+    if started.get("status") != "pending":
+        return started  # refused at once: the request itself was unusable
+    return client.get(f"/handler-expenses/extract/{started['read_id']}").json()
 
 
 def save(client, image=IMAGE, **form):
@@ -289,6 +298,91 @@ class TestReadingTheAmount:
         extract(client)
         asked = receipt["asked"][0]
         assert (asked["referrer_hint"], asked["referrer_id"], asked["purpose"]) == ("Thrilok", "referrer-thrilok", "handler_payout")
+
+
+class TestStartAndCollect:
+    """A reading takes about a minute -- as long as the proxy in front of the server
+    waits -- so the request that starts it must not be the one that answers it."""
+
+    def test_starting_answers_at_once_with_an_id_and_no_amount(self, client):
+        body = start(client)
+        assert body["status"] == "pending" and body["read_id"]
+        assert "amount" not in body
+
+    def test_the_answer_is_collected_with_that_id(self, client):
+        started = start(client)
+        answer = client.get(f"/handler-expenses/extract/{started['read_id']}").json()
+        assert answer["status"] == "ok" and answer["amount"] == 42500
+
+    def test_it_is_pending_until_the_reading_finishes(self, client, monkeypatch):
+        from api.routers import expenses as routes
+
+        async def never_finishes(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(routes, "_run_read", never_finishes)
+        started = start(client)
+        url = f"/handler-expenses/extract/{started['read_id']}"
+        assert client.get(url).json() == {"status": "pending"}
+        routes._finish_read(started["read_id"], {"status": "ok", "amount": 7})
+        assert client.get(url).json() == {"status": "ok", "amount": 7}
+
+    def test_the_answer_can_be_collected_more_than_once(self, client):
+        started = start(client)
+        url = f"/handler-expenses/extract/{started['read_id']}"
+        assert client.get(url).json() == client.get(url).json()
+
+    def test_the_dashboards_own_id_is_kept_so_its_progress_follows_the_same_reading(self, client):
+        mine = "ab" * 16
+        assert start(client, analysis_id=mine)["read_id"] == mine
+        assert client.get(f"/handler-expenses/extract/{mine}").json()["analysis"]["analysis_id"] == mine
+
+    def test_an_unusable_id_is_replaced(self, client):
+        read_id = start(client, analysis_id="not-an-id")["read_id"]
+        assert len(read_id) == 32 and read_id != "not-an-id"
+
+    def test_an_id_already_in_use_is_not_taken_over(self, client):
+        mine = "cd" * 16
+        first = start(client, analysis_id=mine)["read_id"]
+        second = start(client, analysis_id=mine)["read_id"]
+        assert first == mine and second != mine
+
+    def test_an_unknown_id_says_the_reading_is_gone(self, client):
+        body = client.get("/handler-expenses/extract/" + "ef" * 16).json()
+        assert body["status"] == "error" and "no longer available" in body["message"]
+
+    def test_a_reading_is_forgotten_after_its_time(self, client, monkeypatch):
+        from api.routers import expenses as routes
+
+        started = start(client)
+        monkeypatch.setattr(routes, "_READ_TTL_SECONDS", -1)
+        assert client.get(f"/handler-expenses/extract/{started['read_id']}").json()["status"] == "error"
+
+    def test_only_the_latest_readings_are_kept(self, client, monkeypatch):
+        from api.routers import expenses as routes
+
+        monkeypatch.setattr(routes, "_READ_LIMIT", 2)
+        first, second, third = (start(client)["read_id"] for _ in range(3))
+        assert client.get(f"/handler-expenses/extract/{first}").json()["status"] == "error"
+        assert client.get(f"/handler-expenses/extract/{second}").json()["status"] == "ok"
+        assert client.get(f"/handler-expenses/extract/{third}").json()["status"] == "ok"
+
+    def test_a_reading_that_blows_up_ends_as_an_error_not_as_pending_forever(self, client, monkeypatch):
+        from api.routers import expenses as routes
+
+        async def explode(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(routes, "_read_expense_amount", explode)
+        answer = client.get(f"/handler-expenses/extract/{start(client)['read_id']}").json()
+        assert answer["status"] == "error" and "could not be read" in answer["message"]
+
+    def test_the_answer_names_the_node_that_read_it(self, client):
+        assert "analysis" in extract(client)
+
+    def test_starting_checks_the_request_before_anything_is_read(self, client, receipt):
+        assert start(client, reference="Nobody")["status"] == "error"
+        assert receipt["asked"] == []
 
 
 class TestWhenTheAmountCannotBeRead:

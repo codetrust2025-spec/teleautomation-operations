@@ -31,6 +31,12 @@ function currentMonthValue() {
 // whose answer never arrived.
 const SAVE_CHECK_EVERY_MS = 4000;
 const SAVE_CHECK_ATTEMPTS = 25;
+// A reading of a screenshot takes about a minute -- as long as the proxy waits --
+// so the server answers the request that starts it at once and the page collects
+// the answer: how often it asks, and for how long before it gives up.
+const READ_POLL_EVERY_MS = 2000;
+const READ_POLL_ATTEMPTS = 150;
+const READ_POLL_FAILURES = 5;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function selectedMonthValue(value) {
@@ -597,11 +603,13 @@ export default function PayoutModal({
       // A newly attached screenshot is read afresh, never from an earlier reading.
       fd.append("fresh", "1");
       fd.append("analysis_id", run.id);
-      res = await (await fetch(`${ve}/handler-expenses/extract`, { method: "POST", body: fd })).json();
+      const started = await (await fetch(`${ve}/handler-expenses/extract`, { method: "POST", body: fd })).json();
+      // Either the request was refused outright, or the reading has begun.
+      res = started.status === "pending" ? await collectReading(started.read_id, seq) : started;
     } catch {
       res = { status: "error", message: "The server did not answer, so the amount could not be read. Attach the screenshot again." };
     }
-    if (seq !== readSeqRef.current || !aliveRef.current) return;
+    if (!res || seq !== readSeqRef.current || !aliveRef.current) return;
     run.finish(res.analysis ?? null, { ok: res.status === "ok", failureLabel: "Not read" });
     const amount = Number(res.amount);
     if (res.status === "ok" && Number.isFinite(amount) && amount > 0) {
@@ -610,6 +618,31 @@ export default function PayoutModal({
     } else {
       setReading({ state: "failed", message: res.message || "The amount could not be read from this screenshot." });
     }
+  }
+
+  /**
+   * Collect the answer to a reading the server is carrying out. One poll that
+   * fails says nothing -- the reading carries on without the page -- so only a run
+   * of failures, or too long a wait, ends it. Null when a newer screenshot, or
+   * closing the modal, has made the answer unwanted.
+   */
+  async function collectReading(readId, seq) {
+    let failures = 0;
+    for (let attempt = 0; attempt < READ_POLL_ATTEMPTS; attempt += 1) {
+      await wait(READ_POLL_EVERY_MS);
+      if (seq !== readSeqRef.current || !aliveRef.current) return null;
+      try {
+        const answer = await (await fetch(`${ve}/handler-expenses/extract/${readId}`)).json();
+        failures = 0;
+        if (answer.status !== "pending") return answer;
+      } catch {
+        failures += 1;
+        if (failures >= READ_POLL_FAILURES) {
+          return { status: "error", message: "The server stopped answering while the screenshot was being read. Attach it again." };
+        }
+      }
+    }
+    return { status: "error", message: "Reading the screenshot is taking too long. Attach it again." };
   }
 
   /** One referrer's expenses as the server holds them, or null if unreadable. */
