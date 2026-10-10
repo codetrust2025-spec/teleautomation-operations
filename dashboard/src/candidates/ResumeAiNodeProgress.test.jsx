@@ -61,7 +61,8 @@ afterEach(() => {
 describe("resume auto-fill", () => {
   it("follows the node reading a new candidate's resume, then says who read it", async () => {
     const server = stubServer();
-    const { container } = render(<ResumeAutoFill onExtracted={() => {}} />);
+    const onExtracted = vi.fn(() => ({ filled: ["name", "technology"], kept: [] }));
+    const { container } = render(<ResumeAutoFill onExtracted={onExtracted} />);
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
 
     await waitFor(() => expect(server.requests).toHaveLength(1));
@@ -80,7 +81,10 @@ describe("resume auto-fill", () => {
       analysis: { ...RTX, node: "Jagadeesh", analysed_by: ["Jagadeesh"] },
     });
     expect(await screen.findByText(/^✓ Analysed by Jagadeesh in \d+\.\ds$/)).toBeTruthy();
-    expect(screen.getByText("✓ Fill profile fields")).toBeTruthy();
+    // No extra click: the reading is applied as it arrives.
+    expect(onExtracted).toHaveBeenCalledWith(expect.objectContaining({ candidate_name: "Ravi Kumar", technology: "Java" }));
+    expect(screen.getByText("Filled from this resume: name, technology.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Fill/ })).toBeNull();
     expect(stream().closed).toBe(true);
   });
 

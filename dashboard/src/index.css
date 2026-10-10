@@ -18969,3 +18969,337 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-credentials-section { padding-bottom: 4px; }
   .dr-page .dr-credentials-section .cand-table-wrap { margin-top: 2px; }
 }
+
+/* ── Edit Candidate, compact (Oct 2026) ───────────────────────────────────────
+   One resume bar (Upload | saved file + View), fields two to a row, a one-line
+   payment summary and one compact row per payment proof with a View button.
+   Long descriptions became tooltips and the spacing is tighter, so the form
+   fits a laptop screen with little or no scrolling. Scoped to
+   .cand-modal--compact; the rules above still describe every other modal. */
+.cand-modal--compact .cand-modal-header { padding: 10px 16px; }
+.cand-modal--compact .cand-modal-title { font-size: 15px; }
+.cand-modal--compact .cand-modal-footer { padding: 8px 16px; }
+
+/* Resume bar */
+.cand-resume-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  min-width: 0;
+}
+.cand-resume-bar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.cand-resume-upload {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  color: #c7d2fe;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cand-resume-upload:hover:not(:disabled) { background: rgba(99, 102, 241, 0.26); }
+.cand-resume-upload:disabled { cursor: progress; opacity: 0.75; }
+.cand-resume-bar-hint {
+  flex: 1 1 150px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-dim, #94a3b8);
+}
+.cand-resume-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+  padding: 4px 6px 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cand-resume-file-icon {
+  flex: none;
+  padding: 3px 4px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.cand-resume-file-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.cand-resume-file-name {
+  max-width: 260px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #e5e7eb);
+}
+.cand-resume-file-text small {
+  font-size: 10px;
+  color: var(--text-dim, #94a3b8);
+  white-space: nowrap;
+}
+.cand-resume-file--unsaved small { white-space: normal; }
+.cand-resume-view { flex: none; text-decoration: none; }
+.cand-resume-progress .ai-node-progress { margin: 0; }
+.cand-resume-note { font-size: 11.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.cand-resume-note--ok { color: #4ade80; }
+.cand-resume-note--warn { color: #fbbf24; }
+.cand-resume-note--error { color: #f87171; }
+.cand-resume-note--muted { color: var(--text-dim, #94a3b8); }
+.cand-resume-reading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12px;
+  color: var(--text, #e5e7eb);
+}
+.cand-resume-reading-values { min-width: 0; overflow-wrap: anywhere; }
+
+/* Fields: two to a row at every width; service, channel and add-ons span both. */
+.cand-modal--compact .cand-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 10px;
+  align-content: start;
+  padding: 10px 16px;
+  min-width: 0;
+}
+.cand-modal--compact .cand-panel > * { grid-column: 1 / -1; min-width: 0; }
+.cand-modal--compact .cand-panel--left > .cand-field:not(.cand-service-field):not(.cand-service-scope):not(.cand-channel-field):not(.cand-bgv-field),
+.cand-modal--compact .cand-panel--right > .cand-field--pay-amount { grid-column: auto; }
+.cand-modal--compact .cand-panel .cand-panel-title { margin: 0; }
+.cand-modal--compact .cand-panel .cand-field { gap: 3px; }
+.cand-modal--compact .cand-panel .cand-input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  font-size: 13px;
+}
+/* The two choices of Service type and of Channel sit side by side. */
+.cand-modal--compact .cand-panel .cand-service-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.cand-modal--compact .cand-panel .cand-service-card { padding: 6px 10px; min-width: 0; }
+.cand-modal--compact .cand-panel .cand-consultancy-toggle { padding-top: 6px; padding-bottom: 6px; }
+.cand-modal--compact .cand-field-required-tag--muted {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+/* Payment summary: one strip */
+.cand-modal--compact .cand-panel .cand-receipt-breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+.cand-modal--compact .cand-receipt-line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 10.5px;
+  color: var(--text-dim, #94a3b8);
+}
+.cand-modal--compact .cand-receipt-line:first-child { border-left: none; }
+.cand-modal--compact .cand-receipt-line strong { font-size: 13px; color: var(--text, #e5e7eb); }
+.cand-modal--compact .cand-receipt-line--over strong { color: #86efac; }
+.cand-modal--compact .cand-panel .cand-pay-status-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.cand-modal--compact .cand-panel .cand-pay-status { margin-top: 0; padding: 5px 10px; }
+.cand-modal--compact .cand-panel .cand-pay-handler-share {
+  display: inline-flex;
+  margin-top: 0;
+  padding: 5px 10px;
+}
+
+/* Payment proofs: upload row, then one compact row per proof */
+.cand-modal--compact .cand-panel .cand-proofs,
+.cand-modal--compact .cand-panel .cand-proofs:has(.cand-proofs-grid) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: visible;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proofs-drop {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 7px 12px;
+  border-width: 1px;
+  border-radius: 8px;
+  text-align: left;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proofs-drop-icon { font-size: 16px; }
+.cand-modal--compact .cand-panel .cand-proofs .cand-proofs-drop-text {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proofs-drop-text strong { font-size: 12px; }
+.cand-modal--compact .cand-panel .cand-proofs .cand-proofs-drop-sub { font-size: 10px; white-space: normal; }
+.cand-modal--compact .cand-panel .cand-proofs .cand-proofs-grid,
+.cand-modal--compact .cand-panel .cand-proofs:has(.cand-proofs-grid) .cand-proofs-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  overflow: visible;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  width: auto;
+  max-width: none;
+  padding: 6px 8px;
+  overflow: visible;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-thumb {
+  grid-column: 1;
+  width: 44px;
+  height: 44px;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+  margin: 0;
+  border-radius: 6px;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-card img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+  border-radius: 6px;
+}
+/* A lost screenshot is a line of its own under the row, not a 44px box. */
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-thumb--lost {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: auto;
+  height: auto;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 4px 8px;
+  text-align: left;
+  font-size: 11px;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-thumb--lost small { font-size: 10px; }
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-meta {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  padding: 0;
+  font-size: 11px;
+  text-align: left;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-card:has(.cand-proof-thumb--lost) .cand-proof-meta {
+  grid-column: 1 / 3;
+}
+.cand-modal--compact .cand-proof-amount { font-size: 14px; }
+.cand-modal--compact .cand-proof-facts { display: flex; flex-wrap: wrap; gap: 0 12px; }
+.cand-modal--compact .cand-proof-facts > div { gap: 4px; }
+.cand-modal--compact .cand-proof-facts dt { flex: none; min-width: 0; }
+/* Only a reference is one unbreakable token; a date breaks between words. */
+.cand-modal--compact .cand-proof-facts dd { word-break: normal; }
+.cand-modal--compact .cand-proof-facts dd.cand-proof-ref { word-break: break-all; }
+.cand-modal--compact .cand-proof-note {
+  align-self: flex-start;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.cand-modal--compact .cand-proof-sub { display: none; }
+.cand-proof-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-actions { grid-column: 3; grid-row: 1; }
+.cand-modal--compact .cand-panel .cand-proofs .cand-proof-delete {
+  position: static;
+  opacity: 1;
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
+}
+
+@media (min-width: 900px) {
+  .cand-modal.cand-modal--compact {
+    width: min(980px, 96vw);
+    max-width: 980px;
+    max-height: 94vh;
+    max-height: 94dvh;
+  }
+}
+@media (max-width: 899px) {
+  .cand-modal--compact .cand-panel { padding: 10px 14px; }
+  .cand-resume-bar { padding: 8px 14px; }
+}
+@media (max-width: 599px) {
+  .cand-resume-file { margin-left: 0; flex: 1 1 100%; }
+  .cand-resume-file-name { max-width: none; }
+  .cand-modal--compact .cand-panel .cand-proofs .cand-proof-delete { width: 32px; height: 32px; }
+  /* Phones: the summary is two by two, so no label breaks mid-word. */
+  .cand-modal--compact .cand-panel .cand-receipt-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cand-modal--compact .cand-receipt-line { border-left: none; }
+  .cand-modal--compact .cand-receipt-line:nth-child(even) { border-left: 1px solid rgba(255, 255, 255, 0.06); }
+  .cand-modal--compact .cand-receipt-line:nth-child(n+3) { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+  /* Phones: the actions go under the details, which keep the row's width. */
+  .cand-modal--compact .cand-panel .cand-proofs .cand-proof-card { grid-template-columns: 44px minmax(0, 1fr); }
+  .cand-modal--compact .cand-panel .cand-proofs .cand-proof-actions { grid-column: 2; grid-row: 2; }
+  .cand-modal--compact .cand-panel .cand-proofs .cand-proof-thumb--lost { grid-row: 3; }
+  .cand-modal--compact .cand-panel .cand-proofs .cand-proof-card:has(.cand-proof-thumb--lost) .cand-proof-meta,
+  .cand-modal--compact .cand-panel .cand-proofs .cand-proof-card:has(.cand-proof-thumb--lost) .cand-proof-actions { grid-column: 1 / -1; }
+}

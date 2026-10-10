@@ -849,9 +849,6 @@ export function PaymentProofUploader({
         <span className="cand-field-label">
           Payment proofs<span className="cand-proofs-count">{uniqueProofs.length}</span>
         </span>
-        {!_ && t.length > 0 && (
-          <span className="cand-proofs-hint">Click a preview to enlarge</span>
-        )}
       </div>
       {_ ? (
         <div className="cand-proofs-empty cand-proofs-empty--blocked">
@@ -901,13 +898,13 @@ export function PaymentProofUploader({
                 {n ? "Upload in progress" : "Upload payment screenshot"}
               </strong>
               <span className="cand-proofs-drop-sub">
-                PNG · JPG · WebP · up to 8 MB each · select multiple
+                PNG · JPG · WebP · up to 8 MB each
               </span>
             </div>
           </div>
           <input
             className="cand-input cand-input--small"
-            placeholder="Optional note for the next upload — e.g. ₹10k UPI · 26 May"
+            placeholder="Note for next upload (optional)"
             value={c}
             onChange={(b) => o(b.target.value)}
             disabled={n}
@@ -1287,15 +1284,27 @@ export function PaymentProofUploader({
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                className="cand-proof-delete"
-                onClick={() => S(b)}
-                title="Delete proof"
-                aria-label={`Delete proof${pres.amount ? ` of ${pres.amountText}` : ""}`}
-              >
-                ×
-              </button>
+              <div className="cand-proof-actions">
+                {!isEvidenceBroken(b) && (
+                  <button
+                    type="button"
+                    className="cand-btn cand-btn--ghost cand-btn--xs cand-proof-view"
+                    onClick={() => d(b)}
+                    aria-label={`View proof${pres.amount ? ` of ${pres.amountText}` : ""}`}
+                  >
+                    View
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="cand-proof-delete"
+                  onClick={() => S(b)}
+                  title="Delete proof"
+                  aria-label={`Delete proof${pres.amount ? ` of ${pres.amountText}` : ""}`}
+                >
+                  ×
+                </button>
+              </div>
             </li>
             );
           })}
@@ -1370,26 +1379,102 @@ export function PaymentProofUploader({
     </div>
   );
 }
-export function ResumeAutoFill({ candidateId, onExtracted, onAutofilled }) {
+// The resume a candidate already has on file: the newest one.
+export function latestResumeOf(candidate) {
+  if (!candidate) return null;
+  if (candidate.latest_resume && candidate.latest_resume.id) {
+    return candidate.latest_resume;
+  }
+  const saved = Array.isArray(candidate.resumes)
+    ? candidate.resumes.filter((entry) => entry && entry.id)
+    : [];
+  if (!saved.length) return null;
+  return saved.reduce((newest, entry) =>
+    String(entry.uploaded_at || "") > String(newest.uploaded_at || "")
+      ? entry
+      : newest,
+  );
+}
+function resumeUploadedOn(value) {
+  if (!value) return "";
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return "";
+  // The India date, spelled the same in every browser ("25 Sep 2026"; some
+  // locales' data writes "Sept").
+  const ist = new Date(when.getTime() + 330 * 60000);
+  const month = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ")[
+    ist.getUTCMonth()
+  ];
+  return `Uploaded on ${ist.getUTCDate()} ${month} ${ist.getUTCFullYear()}`;
+}
+const RESUME_FIELD_NAMES = {
+  name: "name",
+  phone: "phone",
+  email: "email",
+  technology: "technology",
+};
+const resumeFieldList = (keys) =>
+  keys.map((key) => RESUME_FIELD_NAMES[key] || key).join(", ");
+// What a fill did, as the short notes under the resume bar.
+function resumeFillNotes(report, { filledText, keptText }) {
+  const notes = [];
+  if (report?.filled?.length) {
+    notes.push({ tone: "ok", text: filledText(resumeFieldList(report.filled)) });
+  }
+  if (report?.kept?.length) {
+    notes.push({ tone: "warn", text: keptText(resumeFieldList(report.kept)) });
+  }
+  return notes;
+}
+/**
+ * The resume bar of Candidate Edit: Upload and View are separate actions.
+ *
+ * Upload sends the PDF to the AI reader and fills the form as soon as the
+ * reading arrives, with no extra click:
+ *  - an existing candidate: the server decides (features/resume_autofill: only
+ *    blank or invalid values, an AI reading at sufficient confidence, a resume
+ *    whose name matches, never a phone or email another candidate holds), and
+ *    the form mirrors what it saved -- except a field the person has changed
+ *    since opening the form;
+ *  - a new candidate: the reading fills the empty fields.
+ * A blank on the resume never replaces anything. A reading the server could
+ * not judge, or one of low confidence, is shown with a button instead.
+ *
+ * View opens the saved resume in a new tab and changes nothing; it is shown
+ * only when the candidate has a saved resume.
+ */
+export function ResumeAutoFill({
+  candidateId,
+  savedResume = null,
+  onExtracted,
+  onAutofilled,
+}) {
   const [busy, setBusy] = w.useState(false);
+  // A reading left for the person to apply (see above).
   const [aiData, setAiData] = w.useState(null);
   const [error, setError] = w.useState("");
-  const [filled, setFilled] = w.useState(false);
-  // What the server filled on its own when the resume was saved, or why not.
-  const [autofillNote, setAutofillNote] = w.useState("");
+  const [notes, setNotes] = w.useState([]);
+  const [saved, setSaved] = w.useState(savedResume);
+  // A new candidate's resume is read, not saved: there is no row to file it on.
+  const [readOnlyFile, setReadOnlyFile] = w.useState(null);
   const inputRef = w.useRef(null);
   // The AI node reading the resume, and how long it took.
   const { analysis, begin: beginAnalysis } = useAiAnalysis(ve);
+  w.useEffect(() => {
+    setSaved(savedResume);
+  }, [savedResume?.id]);
   async function handleFile(file) {
     if (!file) return;
     setBusy(true);
     setError("");
     setAiData(null);
-    setFilled(false);
-    setAutofillNote("");
+    setNotes([]);
+    setReadOnlyFile(null);
     let run = beginAnalysis();
     let serverAnalysis = null;
     let outcome = { ok: false, failureLabel: "Could not read" };
+    // The server has judged this reading for this candidate.
+    let judged = false;
     try {
       const body = new FormData();
       body.append("file", file);
@@ -1412,20 +1497,44 @@ export function ResumeAutoFill({ candidateId, onExtracted, onAutofilled }) {
         if (res.ai_extraction?.is_resume === false) {
           outcome = { ok: false, failureLabel: "Not a resume" };
         }
+        if (candidateId && res.status === "ok" && res.resume?.id) {
+          setSaved(res.resume);
+        }
         if (candidateId && res.autofill) {
+          judged = true;
           const filledNow = res.autofill.filled || {};
           const names = Object.keys(filledNow);
+          const next = [];
           if (names.length) {
             // The server saved these on the candidate; mirror them into the
-            // form (blank fields only) so a later Save cannot write the blank
-            // back over them.
-            onAutofilled?.(filledNow);
-            setAutofillNote(
-              `Filled from this resume: ${names.join(", ")}. Existing details were kept.`,
+            // form so a later Save cannot write the old value back over them.
+            const report = onAutofilled?.(filledNow) || {
+              filled: names,
+              kept: [],
+            };
+            next.push(
+              ...resumeFillNotes(report, {
+                filledText: (list) =>
+                  `Filled from this resume: ${list}. Existing details were kept.`,
+                keptText: (list) => `Kept what you typed: ${list}.`,
+              }),
             );
           } else if (res.autofill.refused) {
-            setAutofillNote(`Not filled automatically: ${res.autofill.refused}.`);
+            next.push({
+              tone: "warn",
+              text: `Not filled automatically: ${res.autofill.refused}.`,
+            });
           }
+          const skipped = Object.entries(res.autofill.skipped || {});
+          if (!res.autofill.refused && skipped.length) {
+            next.push({
+              tone: "muted",
+              text: `Not filled: ${skipped
+                .map(([key, why]) => `${RESUME_FIELD_NAMES[key] || key} (${why})`)
+                .join("; ")}.`,
+            });
+          }
+          setNotes(next);
         }
         if (candidateId && res.status === "ok") {
           if (res.ai_extraction) {
@@ -1468,13 +1577,33 @@ export function ResumeAutoFill({ candidateId, onExtracted, onAutofilled }) {
         const hasUsefulData =
           d.candidate_name || d.phone || d.email || d.technology;
         if (res.success || hasUsefulData) {
-          setAiData(d);
           outcome = { ok: true };
           // Warn user if it was partial (regex-only, no AI)
           if (!res.success && hasUsefulData) {
             setError(
               "Partial extraction (AI unavailable). Review fields before saving.",
             );
+          }
+          const confidence = Number(d.confidence_score);
+          const unsure =
+            d.confidence_score != null &&
+            d.confidence_score !== "" &&
+            Number.isFinite(confidence) &&
+            confidence < 70;
+          if (!candidateId) {
+            setReadOnlyFile({ name: file.name, size: file.size });
+          }
+          if (!candidateId && !unsure) {
+            // A new candidate: fill the empty fields now.
+            const report = onExtracted?.(d);
+            setNotes(
+              resumeFillNotes(report, {
+                filledText: (list) => `Filled from this resume: ${list}.`,
+                keptText: (list) => `Kept what you entered: ${list}.`,
+              }),
+            );
+          } else if (!judged) {
+            setAiData({ ...d, unsure });
           }
         } else {
           setError(
@@ -1485,6 +1614,7 @@ export function ResumeAutoFill({ candidateId, onExtracted, onAutofilled }) {
       } else {
         setError(
           res.data?.error ||
+            res.message ||
             "Could not extract profile from resume. Fill fields manually.",
         );
       }
@@ -1505,29 +1635,31 @@ export function ResumeAutoFill({ candidateId, onExtracted, onAutofilled }) {
     }
   }
   function handleFill() {
-    if (aiData && onExtracted) {
-      onExtracted(aiData);
-      setFilled(true);
-    }
+    if (!aiData || !onExtracted) return;
+    const report = onExtracted(aiData);
+    setAiData(null);
+    const next = resumeFillNotes(report, {
+      filledText: (list) => `Filled from this resume: ${list}.`,
+      keptText: (list) => `Kept what was already there: ${list}.`,
+    });
+    setNotes(
+      next.length ? next : [{ tone: "muted", text: "Nothing to fill: every field already has a value." }],
+    );
   }
+  const savedName =
+    saved && (saved.note || saved.original_name || saved.filename || "Resume");
+  const savedFacts = saved
+    ? [saved.size ? kx(saved.size) : "", resumeUploadedOn(saved.uploaded_at)]
+        .filter(Boolean)
+        .join(" • ")
+    : "";
+  const viewUrl =
+    candidateId && saved?.id
+      ? `${ve}/candidates/${candidateId}/resumes/${saved.id}/preview`
+      : "";
   return (
-    <div
-      style={{
-        margin: "0 20px 12px",
-        padding: "12px 14px",
-        borderRadius: "8px",
-        background: "rgba(99,102,241,.06)",
-        border: "1px dashed rgba(99,102,241,.25)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          flexWrap: "wrap",
-        }}
-      >
+    <div className="cand-resume-bar">
+      <div className="cand-resume-bar-row">
         <input
           ref={inputRef}
           type="file"
@@ -1538,109 +1670,94 @@ export function ResumeAutoFill({ candidateId, onExtracted, onAutofilled }) {
         />
         <button
           type="button"
+          className="cand-resume-upload"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
-          style={{
-            padding: "6px 14px",
-            borderRadius: "6px",
-            background: "rgba(99,102,241,.15)",
-            border: "1px solid rgba(99,102,241,.3)",
-            color: "#a5b4fc",
-            fontSize: "12px",
-            fontWeight: 500,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
         >
           {/* The node reading it and the time it has taken are shown below;
               the button no longer guesses how long that will be. */}
-          {busy ? "Reading resume…" : "📄 Upload resume PDF to auto-fill"}
+          {busy ? "Reading resume…" : "Upload Resume (PDF)"}
         </button>
-        <span style={{ fontSize: "11px", color: "rgba(148,163,184,.7)" }}>
-          AI reads the PDF and fills name, phone, email, and technology
-          automatically
+        <span className="cand-resume-bar-hint">
+          Upload to auto-fill name, phone, email and technology
         </span>
+        {viewUrl ? (
+          <div className="cand-resume-file" data-resume-id={saved.id}>
+            <span className="cand-resume-file-icon" aria-hidden="true">
+              PDF
+            </span>
+            <span className="cand-resume-file-text">
+              <strong className="cand-resume-file-name" title={savedName}>
+                {savedName}
+              </strong>
+              {savedFacts && <small>{savedFacts}</small>}
+            </span>
+            <a
+              className="cand-btn cand-btn--ghost cand-btn--xs cand-resume-view"
+              href={viewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`View resume ${savedName}`}
+            >
+              View
+            </a>
+          </div>
+        ) : (
+          readOnlyFile && (
+            <div className="cand-resume-file cand-resume-file--unsaved">
+              <span className="cand-resume-file-text">
+                <strong className="cand-resume-file-name" title={readOnlyFile.name}>
+                  {readOnlyFile.name}
+                </strong>
+                <small>Read only. Upload it again after saving to keep it.</small>
+              </span>
+            </div>
+          )
+        )}
       </div>
       {analysis && (
-        <div style={{ marginTop: "8px" }}>
+        <div className="cand-resume-progress">
           <AiNodeProgress analysis={analysis} idle="Reading resume…" />
         </div>
       )}
       {error && (
         <div
-          style={{
-            marginTop: "6px",
-            fontSize: "12px",
-            color: error.startsWith("Partial") ? "#fbbf24" : "#f87171",
-          }}
+          className={`cand-resume-note cand-resume-note--${error.startsWith("Partial") ? "warn" : "error"}`}
         >
           {error}
         </div>
       )}
-      {aiData && !filled && (
-        <div
-          style={{
-            marginTop: "8px",
-            padding: "8px 10px",
-            borderRadius: "6px",
-            background: "rgba(34,197,94,.08)",
-            border: "1px solid rgba(34,197,94,.2)",
-            fontSize: "12px",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "6px 14px",
-              color: "rgba(226,232,240,.85)",
-              marginBottom: "6px",
-            }}
-          >
-            {aiData.candidate_name && <span>👤 {aiData.candidate_name}</span>}
-            {aiData.technology && <span>💻 {aiData.technology}</span>}
-            {aiData.phone && <span>📱 {aiData.phone}</span>}
-            {aiData.years_of_experience && (
-              <span>📅 {aiData.years_of_experience} yrs</span>
-            )}
-            {aiData.current_company && <span>🏢 {aiData.current_company}</span>}
-            {aiData.email && <span>✉ {aiData.email}</span>}
-          </div>
+      {aiData && (
+        <div className="cand-resume-reading">
+          <span className="cand-resume-reading-values">
+            {aiData.unsure ? "Low-confidence reading: " : "Read: "}
+            {[
+              aiData.candidate_name,
+              aiData.technology,
+              aiData.phone,
+              aiData.email,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
           <button
             type="button"
+            className="cand-btn cand-btn--xs cand-btn--primary"
             onClick={handleFill}
-            style={{
-              padding: "5px 12px",
-              borderRadius: "5px",
-              background: "#22c55e",
-              color: "#fff",
-              border: "none",
-              fontSize: "12px",
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
           >
-            ✓ Fill profile fields
+            Fill empty fields
           </button>
         </div>
       )}
-      {filled && (
-        <div style={{ marginTop: "6px", fontSize: "12px", color: "#22c55e" }}>
-          ✓ Fields filled from resume
-        </div>
-      )}
-      {autofillNote && (
+      {notes.map((note) => (
         <div
+          key={note.text}
           role="status"
-          style={{
-            marginTop: "6px",
-            fontSize: "12px",
-            color: autofillNote.startsWith("Filled") ? "#22c55e" : "#fbbf24",
-          }}
+          className={`cand-resume-note cand-resume-note--${note.tone}`}
         >
-          {autofillNote}
+          {note.text}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -2484,6 +2601,11 @@ export function CandidateEditModal({
   const [proofUploadBusy, setProofUploadBusy] = w.useState(false);
   const proofUploadControl = w.useRef(null);
   const v = w.useRef(null);
+  // The draft now, and as it was when the form opened. A resume fill reads
+  // these, so it never overwrites something the person has typed.
+  const draftNow = w.useRef(l);
+  draftNow.current = l;
+  const draftOpened = w.useRef(l);
   const requestClose = w.useCallback(async () => {
     if (proofUploadBusy) {
       const leave = await confirmModal({
@@ -2529,6 +2651,33 @@ export function CandidateEditModal({
       [C]: Y,
     }));
   }
+  // Fill name, phone, email and technology from a resume. `mayFill(draft, key)`
+  // says whether that field's current value may be replaced; a blank on the
+  // resume never replaces anything. Returns which fields were filled and which
+  // kept their own (different) value.
+  function fillFromResume(values, mayFill) {
+    const report = { filled: [], kept: [] };
+    const wanted = {};
+    for (const [key, value] of Object.entries(values || {})) {
+      let text = String(value ?? "").trim();
+      if (key === "phone") text = text.replace(/[^\d+]/g, "");
+      if (!text) continue;
+      if (String(draftNow.current[key] ?? "").trim() === text) continue;
+      wanted[key] = text;
+      (mayFill(draftNow.current, key) ? report.filled : report.kept).push(key);
+    }
+    if (report.filled.length) {
+      c((current) => {
+        const next = { ...current };
+        for (const key of report.filled) {
+          if (mayFill(current, key)) next[key] = wanted[key];
+        }
+        return next;
+      });
+    }
+    return report;
+  }
+  const blankField = (draft, key) => !String(draft[key] ?? "").trim();
   function p(C, prev) {
     const Y = Number(C.expected_payment) || 0;
     // The amount is a stale default, not an agreed charge, when it equals the
@@ -2777,7 +2926,7 @@ export function CandidateEditModal({
       }
     >
       <form
-        className="cand-modal"
+        className="cand-modal cand-modal--compact"
         onSubmit={M}
         noValidate={l.stage === "dropped"}
         aria-busy={d || proofUploadBusy}
@@ -2797,29 +2946,31 @@ export function CandidateEditModal({
         </header>
         <ResumeAutoFill
           candidateId={e?.id}
-          // Only a blank field is ever filled from a resume. This used to
-          // overwrite an existing candidate's name, technology, phone and email
-          // with whatever the resume said, valid or not.
-          onExtracted={(data) => {
-            const blank = (value) => !String(value ?? "").trim();
-            if (data.candidate_name && blank(l.name))
-              g("name", data.candidate_name);
-            if (data.technology && blank(l.technology))
-              g("technology", data.technology);
-            if (data.phone && blank(l.phone)) g("phone", data.phone);
-            if (data.email && blank(l.email)) g("email", data.email);
-          }}
-          onAutofilled={(filledNow) => {
-            // Mirror what the server saved, without touching anything the
-            // person has typed since the resume was sent.
-            c((current) => {
-              const next = { ...current };
-              for (const [key, value] of Object.entries(filledNow || {})) {
-                if (!String(current[key] ?? "").trim()) next[key] = value;
-              }
-              return next;
-            });
-          }}
+          savedResume={latestResumeOf(e)}
+          // A reading fills only an empty field. This used to overwrite an
+          // existing candidate's name, technology, phone and email with
+          // whatever the resume said, valid or not.
+          onExtracted={(data) =>
+            fillFromResume(
+              {
+                name: data.candidate_name,
+                technology: data.technology,
+                phone: data.phone,
+                email: data.email,
+              },
+              blankField,
+            )
+          }
+          // Mirror what the server saved: it replaced only a blank or invalid
+          // stored value, so the form takes it unless the person has changed
+          // that field since opening the form.
+          onAutofilled={(filledNow) =>
+            fillFromResume(
+              filledNow,
+              (draft, key) =>
+                blankField(draft, key) || draft[key] === draftOpened.current[key],
+            )
+          }
         />
         <div className="cand-modal-body">
           <div className="cand-panel cand-panel--left">
@@ -2904,7 +3055,10 @@ export function CandidateEditModal({
                 autoComplete="email"
               />
             </label>
-            <label className="cand-field">
+            <label
+              className="cand-field"
+              title="Earns 50% commission, plus ₹5,000 when a Profile-service candidate is completed."
+            >
               <span className="cand-field-label">Reference</span>
               <ReferencePicker
                 value={l.reference}
@@ -2914,7 +3068,6 @@ export function CandidateEditModal({
                 placeholder="Handler name"
                 title={a ? "Your handler name is set automatically" : undefined}
               />
-              <span className="cand-field-hint">Earns 50% commission, plus ₹5,000 when a Profile-service candidate is completed.</span>
             </label>
             <label className="cand-field">
               <span className="cand-field-label">Date</span>
@@ -2925,22 +3078,6 @@ export function CandidateEditModal({
                 onChange={(C) => g("date", C.target.value)}
               />
             </label>
-            {l.stage === "completed" && (
-              <label className="cand-field">
-                <span className="cand-field-label">Closure date</span>
-                <input
-                  className="cand-input"
-                  type="date"
-                  value={l.closure_date || ""}
-                  onChange={(C) => g("closure_date", C.target.value)}
-                />
-                <span className="cand-field-hint">
-                  Recorded automatically when the stage was set to Completed. The
-                  ₹5,000 profile-closure complimentary counts in this month —
-                  correct the date if the profile actually closed on another day.
-                </span>
-              </label>
-            )}
             {l.service_type === "profile_service" && (
               <label className="cand-field">
                 <span className="cand-field-label">
@@ -2956,6 +3093,20 @@ export function CandidateEditModal({
                   onChange={(C) => g("ctc_percentage", C.target.value)}
                   placeholder="e.g. 8.33"
                   required={l.stage !== "dropped"}
+                />
+              </label>
+            )}
+            {l.stage === "completed" && (
+              <label
+                className="cand-field"
+                title="Recorded automatically when the stage was set to Completed. The ₹5,000 profile-closure complimentary counts in this month — correct the date if the profile actually closed on another day."
+              >
+                <span className="cand-field-label">Closure date</span>
+                <input
+                  className="cand-input"
+                  type="date"
+                  value={l.closure_date || ""}
+                  onChange={(C) => g("closure_date", C.target.value)}
                 />
               </label>
             )}
@@ -3034,6 +3185,7 @@ export function CandidateEditModal({
                 <div className="cand-service-options" role="radiogroup" aria-label="Channel">
                   <label
                     className={`cand-service-card${!l.consultancy ? " cand-service-card--on" : ""}`}
+                    title="Came directly to us"
                   >
                     <input
                       type="radio"
@@ -3043,13 +3195,12 @@ export function CandidateEditModal({
                     />
                     <span className="cand-service-card-body">
                       <strong>Direct</strong>
-                      <em>
-                        ₹{Cu.toLocaleString("en-IN")} · came directly to us
-                      </em>
+                      <em>₹{Cu.toLocaleString("en-IN")}</em>
                     </span>
                   </label>
                   <label
                     className={`cand-service-card${l.consultancy ? " cand-service-card--on" : ""}`}
+                    title="Came through a consultancy"
                   >
                     <input
                       type="radio"
@@ -3059,9 +3210,7 @@ export function CandidateEditModal({
                     />
                     <span className="cand-service-card-body">
                       <strong>Consultancy</strong>
-                      <em>
-                        ₹{k_.toLocaleString("en-IN")} · came through a consultancy
-                      </em>
+                      <em>₹{k_.toLocaleString("en-IN")}</em>
                     </span>
                   </label>
                 </div>
@@ -3098,7 +3247,7 @@ export function CandidateEditModal({
           </div>
           <div className="cand-panel cand-panel--right">
             <h4 className="cand-panel-title">PAYMENT & FOLLOW-UP</h4>
-            <label className="cand-field">
+            <label className="cand-field cand-field--pay-amount">
               <span className="cand-field-label">Expected ₹</span>
               <input
                 className="cand-input"
@@ -3112,7 +3261,16 @@ export function CandidateEditModal({
                 )}
               />
             </label>
-            <label className="cand-field">
+            <label
+              className="cand-field cand-field--pay-amount"
+              title={
+                verifying
+                  ? "Locked while the screenshot is being verified."
+                  : l.payment_is_proof_derived
+                    ? "Calculated from verified payment proofs — upload, reject or remove a proof to change it."
+                    : "Entered manually. It is replaced by the verified total once a proof is verified."
+              }
+            >
               <span className="cand-field-label">
                 Received ₹
                 {receivedLocked && (
@@ -3127,6 +3285,11 @@ export function CandidateEditModal({
                 )}
                 {verifying && (
                   <span className="cand-field-required-tag">verifying…</span>
+                )}
+                {!verifying && !l.payment_is_proof_derived && (
+                  <span className="cand-field-required-tag cand-field-required-tag--muted">
+                    manual
+                  </span>
                 )}
               </span>
               <input
@@ -3155,13 +3318,6 @@ export function CandidateEditModal({
                     : undefined
                 }
               />
-              <span className="cand-field-hint">
-                {verifying
-                  ? "Locked while the screenshot is being verified."
-                  : l.payment_is_proof_derived
-                    ? "Calculated from verified payment proofs — upload, reject or remove a proof to change it."
-                    : "Entered manually. It is replaced by the verified total once a proof is verified."}
-              </span>
             </label>
             {verifying ? (
               <div
@@ -3170,8 +3326,7 @@ export function CandidateEditModal({
                 aria-live="polite"
               >
                 <span className="cand-receipt-verifying__dot" aria-hidden="true" />
-                Verification in progress — the received total, outstanding amount and
-                proof status update when the screenshot has been read.
+                Verification in progress — totals update when the screenshot is read.
               </div>
             ) : l.payment_is_proof_derived && (
               <div className="cand-field cand-receipt-breakdown">
@@ -3282,7 +3437,7 @@ export function CandidateEditModal({
                 figure; upload the receipt to evidence it.
               </div>
             )}
-            <div className="cand-field">
+            <div className="cand-field cand-pay-status-row">
               <span
                 className={`cand-pay-status cand-pay-status--${verifying ? "verifying" : E}`}
               >

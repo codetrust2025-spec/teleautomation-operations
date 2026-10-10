@@ -138,11 +138,13 @@ describe("1. Received ₹ is clearly read-only when the system owns it", () => {
         expect(input).toHaveAttribute("aria-readonly", "true");
         expect(input.className).toContain("cand-input--readonly");
         expect(screen.getByText("from verified proofs")).toBeInTheDocument();
-        expect(screen.getByText(/Calculated from verified payment proofs/)).toBeInTheDocument();
+        expect(screen.queryByText("manual")).toBeNull();
+        expect(input.closest("label").getAttribute("title")).toMatch(/Calculated from verified payment proofs/);
       } else {
         expect(input).not.toBeDisabled();
         expect(input.className).not.toContain("cand-input--readonly");
-        expect(screen.getByText(/Entered manually/)).toBeInTheDocument();
+        expect(screen.getByText("manual")).toBeInTheDocument();
+        expect(input.closest("label").getAttribute("title")).toMatch(/Entered manually/);
       }
     });
   }
@@ -293,7 +295,8 @@ describe("5. Verification in progress", () => {
     expect(screen.queryByText(/proof missing/i)).toBeNull();
     expect(screen.queryByText(/Outstanding/)).toBeNull();
     expect(receivedInput()).toBeDisabled();
-    expect(screen.getByText(/Locked while the screenshot is being verified/)).toBeInTheDocument();
+    expect(receivedInput().closest("label").getAttribute("title")).toMatch(/Locked while the screenshot is being verified/);
+    expect(screen.getByText("verifying…")).toBeInTheDocument();
 
     const xhr = FakeXMLHttpRequest.instances[FakeXMLHttpRequest.instances.length - 1];
     act(() => xhr.upload.onload());

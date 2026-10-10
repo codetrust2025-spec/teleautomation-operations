@@ -82,10 +82,10 @@ describe("the two channels are explicit and always consistent", () => {
     expect(direct()).toBeChecked();
   });
 
-  it("each choice states what it means and what it costs", () => {
+  it("each choice states what it costs, and what it means on hover", () => {
     renderModal({});
-    expect(screen.getByText(/came directly to us/)).toBeInTheDocument();
-    expect(screen.getByText(/came through a consultancy/)).toBeInTheDocument();
+    expect(direct().closest("label")).toHaveAttribute("title", "Came directly to us");
+    expect(consultancy().closest("label")).toHaveAttribute("title", "Came through a consultancy");
     expect(direct().closest("label").textContent).toContain("₹20,000");
     expect(consultancy().closest("label").textContent).toContain("₹15,000");
   });
@@ -140,7 +140,7 @@ describe("where the channel applies", () => {
   it("is not offered for a round-wise candidate", () => {
     renderModal({ service_type: "round_wise", interview_scope: "external", expected_payment: 5000, expected_minimum: 5000, balance_due: 5000, ctc_percentage: "" });
     expect(screen.queryByRole("radio", { name: /Consultancy/ })).toBeNull();
-    expect(screen.queryByText(/came directly to us/)).toBeNull();
+    expect(screen.queryByTitle(/came directly to us/i)).toBeNull();
   });
 
   it("is offered when adding a new Profile candidate, defaulting to Direct", () => {

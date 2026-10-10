@@ -122,7 +122,9 @@ describe('3. one scroller, and all of it reachable', () => {
   })
 
   it('phones still give the form the whole viewport, after the generic bound above', () => {
-    const phone = FIX.slice(FIX.lastIndexOf('@media (max-width: 599px)'))
+    // The compact block (later, see EditCandidateCompact.test.jsx) sets no
+    // phone height of its own; the bound is the one in this block.
+    const phone = FIX.slice(FIX.lastIndexOf('@media (max-width: 599px)', FIX.indexOf('.cand-modal--compact')))
     expect(phone).toMatch(/\.cand-modal\s*\{\s*max-height:\s*100dvh/)
   })
 
