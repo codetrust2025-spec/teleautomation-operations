@@ -1,6 +1,6 @@
 # Interview Data purge: execution plan (for approval)
 
-> **Status: DRAFT, NOT APPROVED. Nothing has been executed.** Production is running and unchanged by this procedure (release `856c669` since 10 Oct 13:0x UTC; `4a7c61c` when this plan was drafted),
+> **Status: DRAFT, NOT APPROVED. Nothing has been executed.** Production is running and unchanged by this procedure (release `856c669` since 10 Oct 12:43 UTC (build time); `4a7c61c` when this plan was drafted),
 > `operations-api` healthy; the three files this depends on match the recorded hashes). The application is not stopped and the
 > purge is not run until the owner approves this plan, in writing, in the block at the end.
 >
@@ -233,7 +233,7 @@ Not taken from a report: done against the real backup, then cleaned up.
 | Recovery point | restic snapshot `da4a7033`, 2026-10-08 20:33:10 UTC, tag `nightly` |
 | Expected after the purge | live 17,948 bytes, sha256 `d00ee10b7ecda4e0d9b4a49255b58116e2f9b00c5b9b2830998f7c238e20d01b`; older 16,137 bytes, sha256 `1b12a5fff9df565c7df01b53829cdc0aeca6cf34ba7c5d6327e67934ff96e7c0` |
 | Data volume pre-flight (10 Oct) | 382 files, leaving out the three self-updating application files; expense store `handler_expenses.json` sha256 `c7ef95600bfe85c3f0126f1930c5a07e2eeaa76101e7423477518047679c6ca6`. The earlier 383-file record (sorted-list sha256 `81a954b0bb3513c1a90c3de0b08ede295f07bec1c2687260a75ac91d5ce69acd`) included `cross_project_outbox.json`, which the application rewrites by itself; it changed at 04:07 UTC on 10 Oct and was the only file that differed (checked: the two credentials files and the expense store were identical). That is why the comparison baseline is now taken after the stop |
-| Application | release `856c669` (since 10 Oct 13:0x UTC; was `4a7c61c`), `operations-api` running and healthy |
+| Application | release `856c669` (since 10 Oct 12:43 UTC (build time); was `4a7c61c`), `operations-api` running and healthy |
 
 At execution time the operator keeps the **1.2** file (`purge-before.txt`, taken with the application stopped) with the approval
 record and writes down `sha256sum purge-before.txt` next to the table above. That is the working baseline for the diff in 2.4 and
