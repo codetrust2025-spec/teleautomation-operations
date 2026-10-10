@@ -653,3 +653,40 @@ class TestAGuessedYearNeedsTheSecondModel:
         out = bf.decide_row(row("", "a", date="2026-09-18"), self.first("2023-09-18"), cleaner=clean_company_name,
                             audit=self.audit("2026-09-18", company="Infosys"))
         assert out["action"] == "review_second_model_disagrees"
+
+
+
+class TestBothModelsMustQuote:
+    def test_with_require_quote_a_transcription_alone_is_not_evidence(self):
+        grounded_only = {"a" * 64: {**reading("Capgemini", raw="Interview with Capgemini"), "sha": "a" * 64}}
+        assert bf.decide_row(row("", "a"), grounded_only, cleaner=clean_company_name)["action"] == "fill"
+        assert bf.decide_row(row("", "a"), grounded_only, cleaner=clean_company_name, require_quote=True)["action"] == "review_company_not_confirmed"
+
+    def test_with_require_quote_a_quoted_name_is_evidence(self):
+        quoted = {"a" * 64: {**reading("Capgemini", raw="", verified=True), "sha": "a" * 64}}
+        assert bf.decide_row(row("", "a"), quoted, cleaner=clean_company_name, require_quote=True)["action"] == "fill"
+
+    def test_the_second_model_must_have_quoted_it_a_bare_claim_does_not_confirm(self):
+        quoted = {"a" * 64: {**reading("Capgemini", raw="", verified=True), "sha": "a" * 64}}
+        unquoted_audit = {"a" * 64: {**audited("Capgemini", verified=None), "grounded": True}}
+        out = bf.decide_row(row("", "a"), quoted, cleaner=clean_company_name, audit=unquoted_audit, require_quote=True)
+        assert out["action"] == "review_second_model_not_confirmed"
+
+
+class TestTheDateBasisIsStatedNotAssumed:
+    def basis(self, first_date, booked="2026-09-18"):
+        first = {"a" * 64: {**reading("Capgemini", verified=True, raw="", date=first_date), "sha": "a" * 64}}
+        return bf.decide_row(row("", "a", date=booked), first, cleaner=clean_company_name)["date_basis"]
+
+    def test_an_exact_date_on_the_screenshot(self):
+        assert self.basis("2026-09-18") == "exact_date"
+
+    def test_a_guessed_year_is_never_called_screenshot_verified(self):
+        assert self.basis("2023-09-18") == "day_month_year_from_record"
+
+    def test_no_date_read_is_said_plainly(self):
+        assert self.basis("") == "no_date_on_screenshot"
+
+    def test_only_writes_carry_a_date_basis(self):
+        first = {"a" * 64: {**reading("", raw=""), "sha": "a" * 64}}
+        assert "date_basis" not in bf.decide_row(row("", "a"), first, cleaner=clean_company_name)

@@ -244,7 +244,8 @@ def collapse_results(lines: list[dict]) -> dict[str, dict]:
     return standing
 
 
-def evidence_for(row: dict, shot: dict, result: dict | None, *, grounding: str = "required", cleaner=None) -> tuple[str, str]:
+def evidence_for(row: dict, shot: dict, result: dict | None, *, grounding: str = "required", cleaner=None,
+                 require_quote: bool = False) -> tuple[str, str]:
     """(kind, company) for one screenshot of one row. kind 'usable' is the only one that can write.
 
     `cleaner` re-checks the claim whoever made the reading: four early readings said "Unknown company" and a
@@ -263,7 +264,10 @@ def evidence_for(row: dict, shot: dict, result: dict | None, *, grounding: str =
         company = cleaner(company)
     if not company:
         return "no_company", ""
-    if grounding == "required" and not (result.get("grounded") or result.get("verified")):
+    # require_quote: only a separate question answered with words quoted from the image counts; the reader's own
+    # transcription containing the name (grounded) is not enough on its own.
+    supported = result.get("verified") if require_quote else (result.get("grounded") or result.get("verified"))
+    if grounding == "required" and not supported:
         return "not_confirmed", company
     if date_relation(result.get("date_raw", ""), row.get("date", "")) == "mismatch":
         return "date_mismatch", company
@@ -282,7 +286,7 @@ def audit_verdict(row: dict, candidate: str, audit: dict[str, dict], *, cleaner)
         if not result or result.get("status") != "ok":
             continue
         company = cleaner(result.get("company") or "")
-        if not company or not (result.get("verified") or result.get("grounded")):
+        if not company or result.get("verified") is not True:     # the second model must quote the words too
             continue
         if compatible(company, candidate):
             return "confirmed"
@@ -290,12 +294,15 @@ def audit_verdict(row: dict, candidate: str, audit: dict[str, dict], *, cleaner)
     return "conflict" if seen_other else "unconfirmed"
 
 
-def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required", audit: dict[str, dict] | None = None) -> dict:
+def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required", audit: dict[str, dict] | None = None,
+               require_quote: bool = False) -> dict:
     """The outcome for one record. `cleaner` is features.ollama_invite_extract.clean_company_name.
 
     With `audit` (the second model's readings) a fill or correction is only kept when that model independently agrees.
     """
-    decided = _decide_row(row, results, cleaner=cleaner, grounding=grounding)
+    decided = _decide_row(row, results, cleaner=cleaner, grounding=grounding, require_quote=require_quote)
+    if decided["action"] in ACTIONS_THAT_WRITE:
+        decided["date_basis"] = date_basis(row, decided["after"], results, cleaner=cleaner)
     if audit is not None and decided["action"] in ACTIONS_THAT_WRITE:
         verdict = audit_verdict(row, decided["after"], audit, cleaner=cleaner)
         decided["audit"] = verdict
@@ -304,6 +311,28 @@ def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str =
         elif not year_guess_confirmed(row, decided["after"], results, audit, cleaner=cleaner):
             decided["action"] = "review_year_not_confirmed"
     return decided
+
+
+def date_basis(row: dict, candidate: str, results: dict[str, dict], *, cleaner) -> str:
+    """How the screenshot is tied to this booking by date. An inferred year is never called screenshot-verified.
+
+    exact_date: the screenshot shows the booked date. day_month_year_from_record: it shows the day and month; the year is
+    the record's own booked date, not something read off the image. no_date_on_screenshot: no date was read; the link is
+    the attachment alone.
+    """
+    relations = set()
+    for shot in row.get("shots") or []:
+        result = results.get(shot["sha"])
+        if not result or result.get("status") != "ok":
+            continue
+        company = cleaner(result.get("company") or "")
+        if company and compatible(company, candidate):
+            relations.add(date_relation(result.get("date_raw", ""), row.get("date", "")))
+    if "match" in relations:
+        return "exact_date"
+    if "match_day_month" in relations:
+        return "day_month_year_from_record"
+    return "no_date_on_screenshot"
 
 
 def year_guess_confirmed(row: dict, candidate: str, results: dict[str, dict], audit: dict[str, dict], *, cleaner) -> bool:
@@ -331,12 +360,12 @@ def year_guess_confirmed(row: dict, candidate: str, results: dict[str, dict], au
     return False
 
 
-def _decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required") -> dict:
+def _decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required", require_quote: bool = False) -> dict:
     before = str(row.get("company") or "").strip()
     shots = row.get("shots") or []
     evidence = []
     for shot in shots:
-        kind, company = evidence_for(row, shot, results.get(shot["sha"]), grounding=grounding, cleaner=cleaner)
+        kind, company = evidence_for(row, shot, results.get(shot["sha"]), grounding=grounding, cleaner=cleaner, require_quote=require_quote)
         evidence.append({"sha": shot["sha"][:8], "kind": kind, "company": company})
     base = {"before": before, "after": "", "evidence": evidence}
     if not shots:
@@ -376,13 +405,15 @@ def _decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str 
     return {**base, "action": "review_conflict_with_existing", "after": candidate}
 
 
-def build_plan(inventory: dict, results: dict[str, dict], *, cleaner, grounding: str = "required", audit: dict[str, dict] | None = None) -> dict:
+def build_plan(inventory: dict, results: dict[str, dict], *, cleaner, grounding: str = "required", audit: dict[str, dict] | None = None,
+               require_quote: bool = False) -> dict:
     items = []
     for cid, row in inventory["rows"].items():
-        decision = decide_row(row, results, cleaner=cleaner, grounding=grounding, audit=audit)
+        decision = decide_row(row, results, cleaner=cleaner, grounding=grounding, audit=audit, require_quote=require_quote)
         items.append({"cid": cid, **decision})
     summary = collections.Counter(item["action"] for item in items)
-    return {"grounding": grounding, "audited": audit is not None, "generated_at": _now(), "items": items, "summary": dict(summary)}
+    return {"grounding": grounding, "audited": audit is not None, "require_quote": require_quote, "generated_at": _now(),
+            "items": items, "summary": dict(summary)}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -617,7 +648,11 @@ def cmd_plan(args) -> int:
     from features.ollama_invite_extract import clean_company_name
     inventory = _load_json(args.inventory)
     audit = _load_results(args.audit) if args.audit else None
-    plan = build_plan(inventory, _load_results(args.results), cleaner=clean_company_name, grounding=args.grounding, audit=audit)
+    results = {}
+    for path in args.results.split(","):          # later files win for the same screenshot (a re-read with a quote check)
+        results.update(_load_results(path))
+    plan = build_plan(inventory, results, cleaner=clean_company_name, grounding=args.grounding, audit=audit,
+                      require_quote=args.require_quote)
     plan["missing_entries"] = len(inventory.get("missing") or [])
     plan["unique_files"] = len(inventory.get("files") or {})
     json.dump(plan, open(args.out, "w", encoding="utf-8"), indent=1)
@@ -898,6 +933,7 @@ def main(argv=None) -> int:
     p.add_argument("--inventory", required=True); p.add_argument("--results", required=True); p.add_argument("--out", required=True)
     p.add_argument("--grounding", choices=("required", "advisory"), default="required")
     p.add_argument("--audit", default="", help="results of the second model; with it, a write needs that model to agree")
+    p.add_argument("--require-quote", action="store_true", help="the primary model must have quoted the name too (transcription alone is not enough)")
     p = sub.add_parser("apply")
     p.add_argument("--plan", required=True); p.add_argument("--expect-plan-sha256", required=True)
     p.add_argument("--confirm-count", type=int, required=True); p.add_argument("--apply", action="store_true")
