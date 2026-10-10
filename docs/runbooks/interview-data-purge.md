@@ -318,7 +318,7 @@ Expected: a few `starting` lines, then `healthy` (usually within 1-2 minutes; if
 curl -s https://operations.teleautomation.online/health && echo && curl -s https://operations.teleautomation.online/version
 ```
 
-Expected: `{"status":"ok","service":"teleautomation-operations"}` and the release SHA that was serving before the stop (`0ff815e...` at the time of writing; Phase 0 shows it).
+Expected: `{"status":"ok","service":"teleautomation-operations"}` and the release SHA that was serving before the stop (`856c669...` at the time of writing; Phase 0 shows it).
 
 ### Phase 4. Verify again, with the application running
 
