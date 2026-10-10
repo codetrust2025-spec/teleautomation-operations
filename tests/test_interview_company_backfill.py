@@ -498,5 +498,15 @@ class TestTheFasterRead:
         assert out["method"] == "slim+quote" and out["scale"] == 1.0 and out["seconds_first"] >= 0 and out["verify_role"] == "client"
         assert "Asha" not in json.dumps(out)
 
+    def test_the_company_is_asked_for_after_the_context_fields(self):
+        """Benchmarked: asked first, the model found 12 of 21 companies the original found; after the context fields, 17 of 18."""
+        template = bf.SLIM_PROMPT.split("\n")[1]
+        assert template.index('"interview_round"') < template.index('"company"') < template.index('"company_quote"')
+        assert template.index('"meeting_platform"') < template.index('"company"')
+
+    def test_the_prompt_still_tells_the_model_what_a_company_is_not(self):
+        for words in ("NOT the meeting platform", "Do not guess", "email domain", "is_interview_invite: false"):
+            assert words in bf.SLIM_PROMPT
+
     def test_each_call_has_its_own_short_timeout_so_a_hung_node_costs_minutes_not_a_quarter_hour(self):
         assert bf.CALL_TIMEOUT <= 150

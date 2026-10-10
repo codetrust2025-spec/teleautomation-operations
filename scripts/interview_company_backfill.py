@@ -95,11 +95,16 @@ VERIFY_PROMPT = (
 )
 
 
+# The company is asked for AFTER the context fields on purpose. A prompt that asked for the company first read like the
+# original method on only 12 of 21 invites; with the platform, round and technology read first it matched the original on
+# 17 of the 18 it found, with no conflict. (Benchmarked 10 Oct on the same files; a list-every-organisation prompt was worse.)
 SLIM_PROMPT = (
-    "Read this interview invite screenshot. Return ONLY valid JSON, no markdown:\n"
-    '{"is_interview_invite": true, "company": "", "company_quote": "", "interview_date": ""}\n'
+    "Read this interview invite screenshot carefully. Return ONLY valid JSON, no markdown:\n"
+    '{"is_interview_invite": true, "meeting_platform": "", "interview_round": "", "technology": "", "company": "", '
+    '"company_quote": "", "interview_date": ""}\n'
     "- is_interview_invite: false if the image is not an invitation to an interview (for example a payment receipt or an "
     "unrelated chat), otherwise true.\n"
+    "- meeting_platform, interview_round, technology: as written in the invite, empty if not written.\n"
     "- company: the organisation the interview is for (the hiring company or end client), exactly as the invite writes it. "
     "NOT the meeting platform (Teams, Zoom, HirePro, FloCareer...), a person, a job role, an email address or a URL. "
     "Empty if the invite does not name one. Do not guess, and do not infer it from an email domain or a logo.\n"
