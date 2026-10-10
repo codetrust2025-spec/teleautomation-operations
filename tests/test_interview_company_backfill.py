@@ -510,3 +510,93 @@ class TestTheFasterRead:
 
     def test_each_call_has_its_own_short_timeout_so_a_hung_node_costs_minutes_not_a_quarter_hour(self):
         assert bf.CALL_TIMEOUT <= 150
+
+
+# ---------------------------------------------------------------------------------------------
+# The second-model audit
+# ---------------------------------------------------------------------------------------------
+
+def audited(company="Capgemini", *, verified=True, status="ok"):
+    return {"sha": "a" * 64, "status": status, "company": company, "grounded": False, "verified": verified, "date_raw": ""}
+
+
+class TestTheSecondModelMustAgree:
+    FIRST = {"a" * 64: {**reading("Capgemini", verified=True, raw=""), "sha": "a" * 64}}
+
+    def plan(self, audit):
+        return decide(row("", "a"), self.FIRST) if audit is None else bf.decide_row(row("", "a"), self.FIRST, cleaner=clean_company_name, audit=audit)
+
+    def test_without_an_audit_the_fill_stands_this_is_the_preview(self):
+        assert self.plan(None)["action"] == "fill"
+
+    def test_a_second_model_that_names_the_same_company_keeps_the_write(self):
+        out = self.plan({"a" * 64: audited("Capgemini Technology Services")})
+        assert out["action"] == "fill" and out["audit"] == "confirmed"
+
+    def test_a_second_model_that_names_a_different_company_turns_it_into_a_review(self):
+        out = self.plan({"a" * 64: audited("Infosys")})
+        assert out["action"] == "review_second_model_disagrees" and out["audit"] == "conflict"
+
+    @pytest.mark.parametrize("second", [None, audited(""), audited("Capgemini", verified=False), audited("Capgemini", status="failed")])
+    def test_a_second_model_that_found_nothing_confirmed_or_was_never_asked_is_not_a_confirmation(self, second):
+        audit = {} if second is None else {"a" * 64: second}
+        out = self.plan(audit)
+        assert out["action"] == "review_second_model_not_confirmed" and out["audit"] == "unconfirmed"
+
+    def test_a_placeholder_from_the_second_model_never_confirms_anything(self):
+        assert self.plan({"a" * 64: audited("Unknown company")})["action"] == "review_second_model_not_confirmed"
+
+    def test_only_writes_are_audited_everything_else_is_untouched(self):
+        keeps = bf.decide_row(row("Capgemini", "a"), self.FIRST, cleaner=clean_company_name, audit={})
+        assert keeps["action"] == "already_correct" and "audit" not in keeps
+        none = bf.decide_row(row("", "b"), {"b" * 64: {**reading("", raw=""), "sha": "b" * 64}}, cleaner=clean_company_name, audit={})
+        assert none["action"] == "no_company_visible"
+
+    def test_the_plan_records_that_it_was_audited(self):
+        inventory = {"rows": {"c1": row("", "a")}}
+        assert bf.build_plan(inventory, self.FIRST, cleaner=clean_company_name)["audited"] is False
+        assert bf.build_plan(inventory, self.FIRST, cleaner=clean_company_name, audit={"a" * 64: audited()})["audited"] is True
+
+
+class TestThePinnedQuestion:
+    """Audit reads go to one node and one model, never through the gateway that can fail over to another machine."""
+
+    def test_it_asks_only_the_pinned_node_with_the_chosen_model_and_the_image(self, monkeypatch):
+        from core import ollama_nodes
+        seen = {}
+
+        def fake_request(node_id, path, *, method="GET", payload=None, timeout=5):
+            seen.update(node=node_id, path=path, method=method, payload=payload)
+            return {"message": {"content": json.dumps({"found": True, "quote": "Capgemini"})}}
+
+        monkeypatch.setattr(ollama_nodes, "_request", fake_request)
+        answer, error = bf._ask_pinned(FakeReader({}), "qwen2.5vl:7b", "B64DATA", "a question", 30)
+        assert error == "" and answer["found"] is True
+        assert seen["node"] == bf.PINNED_NODE == "rtx4060" and seen["path"] == "/api/chat" and seen["method"] == "POST"
+        assert seen["payload"]["model"] == "qwen2.5vl:7b" and seen["payload"]["messages"][0]["images"] == ["B64DATA"]
+        assert "think" not in seen["payload"]          # only models that know the option are sent it
+
+    def test_a_node_error_is_returned_not_raised(self, monkeypatch):
+        from core import ollama_nodes
+        monkeypatch.setattr(ollama_nodes, "_request", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("Ollama returned HTTP 500")))
+        answer, error = bf._ask_pinned(FakeReader({}), "qwen2.5vl:7b", "x", "q", 30)
+        assert answer is None and "RuntimeError" in error
+
+    def test_the_audit_read_is_the_same_two_questions_about_one_image(self, monkeypatch):
+        from core import ollama_nodes
+        prompts = []
+
+        def fake_request(node_id, path, *, method="GET", payload=None, timeout=5):
+            prompts.append((payload["model"], payload["messages"][0]["content"][:30], payload["messages"][0]["images"][0]))
+            first = prompts[-1][1].startswith("Read this interview invite")
+            body = {"is_interview_invite": True, "company": "Capgemini", "company_quote": "Capgemini"} if first else {"found": True, "quote": "Capgemini", "role": "employer"}
+            return {"message": {"content": json.dumps(body)}}
+
+        monkeypatch.setattr(ollama_nodes, "_request", fake_request)
+        out = bf.read_slim(FakeReader({}), TestFasterReadData.DATA, "qwen2.5vl:7b")
+        assert out["company"] == "Capgemini" and out["verified"] is True and out["model"] == "qwen2.5vl:7b"
+        assert len(prompts) == 2 and {p[0] for p in prompts} == {"qwen2.5vl:7b"} and prompts[0][2] == prompts[1][2]
+
+
+class TestFasterReadData:
+    DATA = TestImagePreparation().png(800, 800)

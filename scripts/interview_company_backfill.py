@@ -42,6 +42,7 @@ IN_CONTAINER = "/tmp/bf.py"
 MAX_ATTEMPTS = 3          # readings per file that ended in failure before it is called unreadable
 READ_TIMEOUT = 330        # seconds for one file on the original method (the live endpoint answers in about 80-115 s)
 VERIFY_TIMEOUT = 240      # seconds for the second, shorter read that quotes the name (original method)
+PINNED_NODE = "rtx4060"   # audit reads are sent to this node only, never through the gateway's failover to the other machines
 CALL_TIMEOUT = 150        # seconds for each call of the faster method; a file is two calls, so a hung node costs 5 min, not 11
 IMAGE_TOKEN_BUDGET = 1200  # the image is scaled DOWN (never up) to about this many visual tokens; 800 invented companies, 1200 did not
 BOOKKEEPING = {"updated_at", "_store_updated_at"}   # keys a targeted row write refreshes by itself
@@ -265,8 +266,41 @@ def evidence_for(row: dict, shot: dict, result: dict | None, *, grounding: str =
     return "usable", company
 
 
-def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required") -> dict:
-    """The outcome for one record. `cleaner` is features.ollama_invite_extract.clean_company_name."""
+def audit_verdict(row: dict, candidate: str, audit: dict[str, dict], *, cleaner) -> str:
+    """What a second, different model says about a company about to be written: 'confirmed', 'conflict' or 'unconfirmed'.
+
+    The audit model reads the same screenshots independently (its own read, then its own quote check). A write stays only
+    when it names a compatible company; a different company is a conflict; nothing found, or not yet read, is unconfirmed.
+    """
+    seen_other = False
+    for shot in row.get("shots") or []:
+        result = audit.get(shot["sha"])
+        if not result or result.get("status") != "ok":
+            continue
+        company = cleaner(result.get("company") or "")
+        if not company or not (result.get("verified") or result.get("grounded")):
+            continue
+        if compatible(company, candidate):
+            return "confirmed"
+        seen_other = True
+    return "conflict" if seen_other else "unconfirmed"
+
+
+def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required", audit: dict[str, dict] | None = None) -> dict:
+    """The outcome for one record. `cleaner` is features.ollama_invite_extract.clean_company_name.
+
+    With `audit` (the second model's readings) a fill or correction is only kept when that model independently agrees.
+    """
+    decided = _decide_row(row, results, cleaner=cleaner, grounding=grounding)
+    if audit is not None and decided["action"] in ACTIONS_THAT_WRITE:
+        verdict = audit_verdict(row, decided["after"], audit, cleaner=cleaner)
+        decided["audit"] = verdict
+        if verdict != "confirmed":
+            decided["action"] = "review_second_model_disagrees" if verdict == "conflict" else "review_second_model_not_confirmed"
+    return decided
+
+
+def _decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required") -> dict:
     before = str(row.get("company") or "").strip()
     shots = row.get("shots") or []
     evidence = []
@@ -311,13 +345,13 @@ def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str =
     return {**base, "action": "review_conflict_with_existing", "after": candidate}
 
 
-def build_plan(inventory: dict, results: dict[str, dict], *, cleaner, grounding: str = "required") -> dict:
+def build_plan(inventory: dict, results: dict[str, dict], *, cleaner, grounding: str = "required", audit: dict[str, dict] | None = None) -> dict:
     items = []
     for cid, row in inventory["rows"].items():
-        decision = decide_row(row, results, cleaner=cleaner, grounding=grounding)
+        decision = decide_row(row, results, cleaner=cleaner, grounding=grounding, audit=audit)
         items.append({"cid": cid, **decision})
     summary = collections.Counter(item["action"] for item in items)
-    return {"grounding": grounding, "generated_at": _now(), "items": items, "summary": dict(summary)}
+    return {"grounding": grounding, "audited": audit is not None, "generated_at": _now(), "items": items, "summary": dict(summary)}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -401,14 +435,45 @@ def _ask(extractor, b64: str, prompt: str, timeout: int) -> tuple[dict | None, s
     return box["answer"], ""
 
 
-def read_slim(extractor, data: bytes) -> dict:
+def _ask_pinned(extractor, model: str, b64: str, prompt: str, timeout: int) -> tuple[dict | None, str]:
+    """Like _ask, but straight to PINNED_NODE with a chosen model: no gateway, so no failover to another machine."""
+    from core import ollama_nodes
+    box: dict = {}
+
+    def run():
+        try:
+            payload = {"model": model, "stream": False, "keep_alive": "10m",
+                       "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+                       "options": {"temperature": 0.1, "num_predict": 200}}
+            if model.startswith("qwen3"):
+                payload["think"] = False
+            out = ollama_nodes._request(PINNED_NODE, "/api/chat", method="POST", payload=payload, timeout=timeout)
+            text = (out.get("message") or {}).get("content") or ""
+            box["answer"] = extractor.parse_strict_json_response(text) if text else None
+        except Exception as exc:  # noqa: BLE001
+            box["error"] = f"{type(exc).__name__}: {exc}"[:120]
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout + 20)
+    if worker.is_alive():
+        return None, "timeout"
+    if "error" in box:
+        return None, box["error"]
+    if not isinstance(box.get("answer"), dict):
+        return None, "no parseable answer"
+    return box["answer"], ""
+
+
+def read_slim(extractor, data: bytes, model: str = "") -> dict:
     """The faster method. Question one reads the company (and says if this is an invite at all); question two, asked
     about the very same image bytes so the node reuses the image it already read, must quote the words that name it."""
     import base64
     prepared, scale = prepare_image(data)
     b64 = base64.b64encode(prepared).decode("ascii")
     started = time.time()
-    first, error = _ask(extractor, b64, SLIM_PROMPT, CALL_TIMEOUT)
+    ask = (lambda prompt: _ask_pinned(extractor, model, b64, prompt, CALL_TIMEOUT)) if model else (lambda prompt: _ask(extractor, b64, prompt, CALL_TIMEOUT))
+    first, error = ask(SLIM_PROMPT)
     seconds_first = time.time() - started
     if error:
         return {"status": "failed", "error": "read: " + error}
@@ -416,11 +481,13 @@ def read_slim(extractor, data: bytes) -> dict:
     answer, seconds_second = None, 0.0
     if first["company"] and first.get("is_interview_invite") is not False:
         started = time.time()
-        answer, error = _ask(extractor, b64, VERIFY_PROMPT.format(company=first["company"].replace('"', "'")), CALL_TIMEOUT)
+        answer, error = ask(VERIFY_PROMPT.format(company=first["company"].replace('"', "'")))
         seconds_second = time.time() - started
         if error:
             return {"status": "failed", "error": "verification: " + error}
-    return slim_result_fields(first, answer, scale=scale, seconds_first=seconds_first, seconds_second=seconds_second)
+    out = slim_result_fields(first, answer, scale=scale, seconds_first=seconds_first, seconds_second=seconds_second)
+    out["model"] = model
+    return out
 
 
 def cmd_read(args) -> int:
@@ -433,7 +500,7 @@ def cmd_read(args) -> int:
         return 0
     if args.method == "slim":
         started = time.time()
-        out.update(read_slim(extractor, data))
+        out.update(read_slim(extractor, data, args.model))
         out["seconds"] = round(time.time() - started, 1)
         print(json.dumps(out))
         sys.stdout.flush()
@@ -516,7 +583,8 @@ def _load_results(path: str) -> dict[str, dict]:
 def cmd_plan(args) -> int:
     from features.ollama_invite_extract import clean_company_name
     inventory = _load_json(args.inventory)
-    plan = build_plan(inventory, _load_results(args.results), cleaner=clean_company_name, grounding=args.grounding)
+    audit = _load_results(args.audit) if args.audit else None
+    plan = build_plan(inventory, _load_results(args.results), cleaner=clean_company_name, grounding=args.grounding, audit=audit)
     plan["missing_entries"] = len(inventory.get("missing") or [])
     plan["unique_files"] = len(inventory.get("files") or {})
     json.dump(plan, open(args.out, "w", encoding="utf-8"), indent=1)
@@ -760,7 +828,7 @@ def cmd_drive(args) -> int:
             waited += 30
         try:
             run = _docker("exec", CONTAINER, "python", IN_CONTAINER, "read", "--sha", item["sha"], "--path", item["path"],
-                          "--mime", item["mime"], "--method", args.method, timeout=2 * CALL_TIMEOUT + 90)
+                          "--mime", item["mime"], "--method", args.method, "--model", args.model, timeout=2 * CALL_TIMEOUT + 90)
         except subprocess.TimeoutExpired:
             line = {"sha": item["sha"], "at": _now(), "status": "failed", "error": "driver timeout", "seconds": 2 * CALL_TIMEOUT + 90}
         else:
@@ -790,9 +858,11 @@ def main(argv=None) -> int:
     p = sub.add_parser("read")
     p.add_argument("--sha", required=True); p.add_argument("--path", required=True); p.add_argument("--mime", default="image/jpeg")
     p.add_argument("--method", choices=("slim", "full"), default="slim")
+    p.add_argument("--model", default="", help="audit model, pinned to the RTX node (empty = the production vision model through the gateway)")
     p = sub.add_parser("plan")
     p.add_argument("--inventory", required=True); p.add_argument("--results", required=True); p.add_argument("--out", required=True)
     p.add_argument("--grounding", choices=("required", "advisory"), default="required")
+    p.add_argument("--audit", default="", help="results of the second model; with it, a write needs that model to agree")
     p = sub.add_parser("apply")
     p.add_argument("--plan", required=True); p.add_argument("--expect-plan-sha256", required=True)
     p.add_argument("--confirm-count", type=int, required=True); p.add_argument("--apply", action="store_true")
@@ -802,6 +872,7 @@ def main(argv=None) -> int:
     p.add_argument("--work", default="/root/company-backfill"); p.add_argument("--until", default="")
     p.add_argument("--courtesy-seconds", type=int, default=150); p.add_argument("--only", nargs="*")
     p.add_argument("--results", default="results.jsonl"); p.add_argument("--method", choices=("slim", "full"), default="slim")
+    p.add_argument("--model", default="")
     p = sub.add_parser("compare")
     p.add_argument("--inventory", required=True); p.add_argument("--old", required=True); p.add_argument("--new", required=True)
     args = parser.parse_args(argv)
