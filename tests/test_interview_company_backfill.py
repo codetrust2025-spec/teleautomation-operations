@@ -22,9 +22,9 @@ bf = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bf)
 
 
-def reading(company="Capgemini", *, raw="Interview with Capgemini on 2026-08-01", date="2026-08-01", status="ok", **extra):
+def reading(company="Capgemini", *, raw="Interview with Capgemini on 2026-08-01", date="2026-08-01", status="ok", verified=None, **extra):
     return {"sha": "a" * 64, "status": status, "company": company, "grounded": bf.grounded(company, raw) if company else False,
-            "date_raw": date, "failures": 0, **extra}
+            "verified": verified, "date_raw": date, "failures": 0, **extra}
 
 
 def row(company="", *shas, date="2026-08-01", n_entries=None):
@@ -84,6 +84,32 @@ class TestWhatIsKeptOfAReading:
         assert bf.result_fields({"company": "", **fields})["status"] == status
 
 
+class TestTheQuoteCheck:
+    @pytest.mark.parametrize("answer, ok", [
+        ({"found": True, "quote": "Interview with CAPGEMINI India"}, True),
+        ({"found": True, "quote": "Capgemini Technology Services"}, True),
+        ({"found": True, "quote": ""}, False),                       # it said yes but showed nothing
+        ({"found": True, "quote": "Interview with Infosys"}, False),  # it quoted something else
+        ({"found": False, "quote": "Capgemini"}, False),
+        ({"found": "yes", "quote": "Capgemini"}, False),            # only a real true counts
+        (None, False), ("Capgemini", False), ({}, False),
+    ])
+    def test_the_model_must_quote_words_that_contain_the_name(self, answer, ok):
+        assert bf.quote_supports("Capgemini", answer) is ok
+
+    def test_a_very_short_name_is_not_confirmed_by_a_quote(self):
+        assert bf.quote_supports("AB", {"found": True, "quote": "AB AB AB"}) is False
+
+    def test_the_result_keeps_the_verdict_and_role_but_not_the_quote(self):
+        out = bf.result_fields({"company": "Capgemini", "raw_detected_text": ""},
+                               {"found": True, "quote": "Asha Rao, Capgemini, 9000012345", "role": "client"})
+        assert out["verified"] is True and out["verify_role"] == "client" and out["quote_len"] > 0
+        assert "Asha" not in json.dumps(out) and "9000012345" not in json.dumps(out)
+
+    def test_no_second_read_means_no_verdict(self):
+        assert bf.result_fields({"company": "Capgemini", "raw_detected_text": "Capgemini"})["verified"] is None
+
+
 class TestCheckpoints:
     def line(self, status, **extra):
         return {"sha": "s1", "status": status, **extra}
@@ -135,11 +161,18 @@ class TestTheDecisionPerRecord:
     def test_a_screenshot_that_names_no_company_changes_nothing(self):
         assert decide(row("", "a"), self.results(a={"company": ""}))["action"] == "no_company_visible"
 
-    def test_a_company_not_found_in_the_transcription_is_never_written(self):
+    def test_a_company_nothing_confirms_is_never_written(self):
         out = decide(row("", "a"), self.results(a={"raw": "Teams meeting L1"}))
-        assert out["action"] == "review_not_in_transcription"
+        assert out["action"] == "review_company_not_confirmed"
+        out = decide(row("", "a"), self.results(a={"raw": "", "verified": False}))
+        assert out["action"] == "review_company_not_confirmed"
         # Only when grounding is switched to advisory (a deliberate choice, recorded in the plan) does it write.
         assert decide(row("", "a"), self.results(a={"raw": "Teams meeting L1"}), grounding="advisory")["action"] == "fill"
+
+    def test_a_quote_from_the_image_confirms_it_when_the_transcription_is_empty(self):
+        """The reader usually leaves its transcription empty; the second read is what supports the name."""
+        out = decide(row("", "a"), self.results(a={"raw": "", "verified": True}))
+        assert (out["action"], out["after"]) == ("fill", "Capgemini")
 
     def test_a_screenshot_of_another_date_goes_to_review(self):
         out = decide(row("", "a", date="2026-08-01"), self.results(a={"date": "2026-09-15"}))
@@ -350,3 +383,120 @@ def test_the_tool_has_no_delete_and_no_other_write_than_the_one_field():
     for forbidden in ("DELETE FROM", "os.remove", "os.unlink", "shutil.rmtree", "_save(", "delete_candidate", "docker stop", "docker restart", "docker start"):
         assert forbidden not in body, forbidden
     assert body.count("_patch_row_fields(") == 1
+
+
+# ---------------------------------------------------------------------------------------------
+# The faster read
+# ---------------------------------------------------------------------------------------------
+
+class TestThePlanRechecksEveryClaim:
+    """Four early readings said "Unknown company" and a quote check alone confirmed them (the model quoted its own placeholder)."""
+
+    @pytest.mark.parametrize("claim", ["Unknown company", "Not specified in the invite", "HirePro", "Hiring company"])
+    def test_a_confirmed_placeholder_is_not_a_company(self, claim):
+        results = {"a" * 64: {**reading(claim, verified=True), "sha": "a" * 64}}
+        out = decide(row("", "a"), results)
+        assert out["action"] == "no_company_visible" and out["after"] == ""
+
+    def test_a_real_company_still_passes_the_same_check(self):
+        results = {"a" * 64: {**reading("Capgemini", verified=True, raw=""), "sha": "a" * 64}}
+        assert decide(row("", "a"), results)["action"] == "fill"
+
+
+class TestImagePreparation:
+    def png(self, width, height):
+        import io
+        from PIL import Image
+        buffer = io.BytesIO()
+        Image.new("RGB", (width, height), (240, 240, 240)).save(buffer, "PNG")
+        return buffer.getvalue()
+
+    def tokens(self, data):
+        import io
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as image:
+            import math
+            return math.ceil(image.width / 32) * math.ceil(image.height / 32)
+
+    def test_a_large_screenshot_is_scaled_down_to_about_the_budget(self):
+        original = self.png(1200, 2400)                     # ~2,850 visual tokens
+        data, scale = bf.prepare_image(original)
+        assert scale < 1 and data != original
+        assert self.tokens(data) <= bf.IMAGE_TOKEN_BUDGET * 1.1
+
+    def test_a_small_screenshot_is_sent_as_it_is_never_scaled_up(self):
+        original = self.png(700, 600)
+        data, scale = bf.prepare_image(original)
+        assert data == original and scale == 1.0
+
+    def test_the_budget_is_the_one_that_was_measured_not_a_smaller_one(self):
+        """800 tokens made the model invent companies on 2 of 9 files; 1,200 read like the original."""
+        assert bf.IMAGE_TOKEN_BUDGET == 1200
+
+
+class FakeReader:
+    """A stand-in for the vision model. It records every question and the image it was asked about."""
+    OLLAMA_VISION_MODEL = "fake-vision"
+
+    def __init__(self, first, second=None, first_error=False, second_error=False):
+        self.first, self.second, self.first_error, self.second_error = first, second, first_error, second_error
+        self.calls = []
+
+    def call_ollama_vision_model(self, model, b64, prompt, timeout):
+        self.calls.append((prompt, b64))
+        if prompt.startswith("Read this interview invite"):
+            return None if self.first_error else json.dumps(self.first)
+        return None if self.second_error else json.dumps(self.second)
+
+    parse_strict_json_response = staticmethod(json.loads)
+    clean_company_name = staticmethod(clean_company_name)
+
+
+class TestTheFasterRead:
+    DATA = TestImagePreparation().png(800, 800)
+
+    def test_a_company_the_second_question_confirms_with_a_quote_is_accepted(self):
+        reader = FakeReader({"is_interview_invite": True, "company": "Capgemini", "company_quote": "Interview with Capgemini", "interview_date": "2026-08-01"},
+                            {"found": True, "quote": "Capgemini Technology Services", "role": "employer"})
+        out = bf.read_slim(reader, self.DATA)
+        assert out["status"] == "ok" and out["company"] == "Capgemini" and out["verified"] is True and out["date_raw"] == "2026-08-01"
+        # Two questions about the SAME image bytes: that is what makes the second one cheap on the node.
+        assert len(reader.calls) == 2 and reader.calls[0][1] == reader.calls[1][1]
+        assert "Capgemini" in reader.calls[1][0]
+
+    def test_the_first_answers_own_quote_does_not_count_only_the_second_question_does(self):
+        reader = FakeReader({"is_interview_invite": True, "company": "Deloitte", "company_quote": "Deloitte"}, {"found": False, "quote": "", "role": "other"})
+        out = bf.read_slim(reader, self.DATA)
+        assert out["quote1"] is True and out["verified"] is False
+        assert decide(row("", "a"), {"a" * 64: {**out, "sha": "a" * 64}})["action"] == "review_company_not_confirmed"
+
+    def test_no_company_means_no_second_question(self):
+        reader = FakeReader({"is_interview_invite": True, "company": "", "company_quote": ""})
+        out = bf.read_slim(reader, self.DATA)
+        assert out["company"] == "" and out["verified"] is None and len(reader.calls) == 1
+
+    def test_a_placeholder_is_cleaned_before_it_can_cost_a_second_question_or_be_accepted(self):
+        reader = FakeReader({"is_interview_invite": True, "company": "Unknown company", "company_quote": "Unknown company"})
+        out = bf.read_slim(reader, self.DATA)
+        assert out["company"] == "" and len(reader.calls) == 1
+
+    def test_something_that_is_not_an_invite_never_yields_a_company(self):
+        """A payment receipt attached by mistake names a bank, not an employer."""
+        reader = FakeReader({"is_interview_invite": False, "company": "HDFC Bank", "company_quote": "HDFC Bank"})
+        out = bf.read_slim(reader, self.DATA)
+        assert out["status"] == "not_an_invite" and out["company"] == "" and len(reader.calls) == 1
+
+    def test_a_failed_question_fails_the_file_so_it_is_retried_not_guessed(self):
+        out = bf.read_slim(FakeReader({}, first_error=True), self.DATA)
+        assert out["status"] == "failed" and out["error"].startswith("read:")
+        out = bf.read_slim(FakeReader({"is_interview_invite": True, "company": "Capgemini", "company_quote": "Capgemini"}, second_error=True), self.DATA)
+        assert out["status"] == "failed" and out["error"].startswith("verification:")
+
+    def test_the_method_and_timings_are_recorded(self):
+        reader = FakeReader({"is_interview_invite": True, "company": "Capgemini", "company_quote": "Capgemini"}, {"found": True, "quote": "Capgemini", "role": "client"})
+        out = bf.read_slim(reader, self.DATA)
+        assert out["method"] == "slim+quote" and out["scale"] == 1.0 and out["seconds_first"] >= 0 and out["verify_role"] == "client"
+        assert "Asha" not in json.dumps(out)
+
+    def test_each_call_has_its_own_short_timeout_so_a_hung_node_costs_minutes_not_a_quarter_hour(self):
+        assert bf.CALL_TIMEOUT <= 150

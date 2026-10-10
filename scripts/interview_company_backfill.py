@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import collections
 import hashlib
+import io
 import json
+import math
 import os
 import re
 import subprocess
@@ -38,7 +40,10 @@ sys.path.insert(0, os.getcwd())  # `docker exec` starts in the application direc
 CONTAINER = "teleautomation-production-operations-api-1"
 IN_CONTAINER = "/tmp/bf.py"
 MAX_ATTEMPTS = 3          # readings per file that ended in failure before it is called unreadable
-READ_TIMEOUT = 330        # seconds; the live endpoint answers in about 80-115 s
+READ_TIMEOUT = 330        # seconds for one file on the original method (the live endpoint answers in about 80-115 s)
+VERIFY_TIMEOUT = 240      # seconds for the second, shorter read that quotes the name (original method)
+CALL_TIMEOUT = 150        # seconds for each call of the faster method; a file is two calls, so a hung node costs 5 min, not 11
+IMAGE_TOKEN_BUDGET = 1200  # the image is scaled DOWN (never up) to about this many visual tokens; 800 invented companies, 1200 did not
 BOOKKEEPING = {"updated_at", "_store_updated_at"}   # keys a targeted row write refreshes by itself
 ACTIONS_THAT_WRITE = ("fill", "correct_invalid")
 
@@ -79,6 +84,68 @@ def grounded(company: str, raw_text: str) -> bool:
     return len(key) >= 3 and key in alnum(raw_text)
 
 
+VERIFY_PROMPT = (
+    "Look at this screenshot of an interview invite.\n"
+    "Question: is the organisation named \"{company}\" written anywhere in the image, as the company the interview is "
+    "with or for (the hiring company, the end client or the interviewing organisation)?\n"
+    "Return ONLY valid JSON: {{\"found\": true or false, \"quote\": \"the exact words from the image that name it, at most "
+    "120 characters, empty if not found\", \"role\": \"employer, client, vendor, sender or other\"}}\n"
+    "Rules: do not guess. If the name is not actually written in the image, found is false and quote is empty. "
+    "A name that appears only inside an email address or a web address does not count."
+)
+
+
+SLIM_PROMPT = (
+    "Read this interview invite screenshot. Return ONLY valid JSON, no markdown:\n"
+    '{"is_interview_invite": true, "company": "", "company_quote": "", "interview_date": ""}\n'
+    "- is_interview_invite: false if the image is not an invitation to an interview (for example a payment receipt or an "
+    "unrelated chat), otherwise true.\n"
+    "- company: the organisation the interview is for (the hiring company or end client), exactly as the invite writes it. "
+    "NOT the meeting platform (Teams, Zoom, HirePro, FloCareer...), a person, a job role, an email address or a URL. "
+    "Empty if the invite does not name one. Do not guess, and do not infer it from an email domain or a logo.\n"
+    "- company_quote: the exact words from the image that name the company (at most 100 characters). Empty if company is empty.\n"
+    "- interview_date: YYYY-MM-DD, only if a date is written in the invite; otherwise empty."
+)
+
+
+def slim_result_fields(first: dict | None, answer: dict | None, *, scale: float, seconds_first: float, seconds_second: float) -> dict:
+    """What is kept of a faster-method file: the claim, whether the SECOND question confirmed it with a quote, the date.
+
+    The first call's own quote is recorded (`quote1`) but does not count: a model that invents a company also invents
+    the words it quotes for it. Only the second, separate question on the same image can confirm.
+    """
+    first = first or {}
+    company = str(first.get("company") or "").strip()
+    invite = first.get("is_interview_invite")
+    out = {
+        "status": "not_an_invite" if invite is False else "ok",
+        "company": company if invite is not False else "",
+        "grounded": False,
+        "quote1": bool(company) and quote_supports(company, {"found": True, "quote": first.get("company_quote")}),
+        "verified": quote_supports(company, answer) if answer is not None else None,
+        "verify_role": str((answer or {}).get("role") or "")[:20],
+        "quote_len": len(str((answer or {}).get("quote") or "")),
+        "raw_text_len": 0,
+        "date_raw": str(first.get("interview_date") or ""),
+        "confidence_score": 0,
+        "method": "slim+quote",
+        "model": "",
+        "node": "",
+        "scale": round(scale, 2),
+        "seconds_first": round(seconds_first, 1),
+        "seconds_second": round(seconds_second, 1),
+    }
+    return out
+
+
+def quote_supports(company: str, answer: dict | None) -> bool:
+    """The model found the name AND the words it quotes from the image contain it (it cannot just say yes)."""
+    if not isinstance(answer, dict) or answer.get("found") is not True:
+        return False
+    key = alnum(company)
+    return len(key) >= 3 and key in alnum(str(answer.get("quote") or ""))
+
+
 def date_relation(raw_date: str, row_date: str) -> str:
     """'match' / 'mismatch' / 'unknown' between the date the reader transcribed and the booked date."""
     def parse(value: str):
@@ -92,8 +159,30 @@ def date_relation(raw_date: str, row_date: str) -> str:
     return "match" if seen == booked else "mismatch"
 
 
-def result_fields(reading: dict) -> dict:
-    """What is kept of one reading. The transcription itself is not kept (it holds names and phone numbers)."""
+def prepare_image(data: bytes, budget: int = IMAGE_TOKEN_BUDGET) -> tuple[bytes, float]:
+    """The image to send: scaled DOWN to about `budget` visual tokens (one per 32x32 px), never up. The stored file is not touched.
+
+    The node reads an image at roughly 37 tokens a second on the CPU, so a 2,900-token screenshot costs a minute
+    before a word is generated. 800 tokens made the model invent companies; 1,200 read like the original.
+    """
+    from PIL import Image
+    with Image.open(io.BytesIO(data)) as image:
+        tokens = math.ceil(image.width / 32) * math.ceil(image.height / 32)
+        if tokens <= budget:
+            return data, 1.0
+        scale = math.sqrt(budget * 1024 / (image.width * image.height))
+        small = image.convert("RGB").resize((max(64, int(image.width * scale)), max(64, int(image.height * scale))), Image.LANCZOS)
+        buffer = io.BytesIO()
+        small.save(buffer, "PNG", optimize=True)
+        return buffer.getvalue(), scale
+
+
+def result_fields(reading: dict, answer: dict | None = None) -> dict:
+    """What is kept of one reading. Neither the transcription nor the quote is kept (they hold names and phone numbers).
+
+    `answer` is the verification read: it is only made when the reading names a company that the reader's own
+    transcription does not already contain.
+    """
     company = str(reading.get("company") or "").strip()
     raw_text = str(reading.get("raw_detected_text") or "")
     if reading.get("is_payment_screenshot"):
@@ -108,6 +197,9 @@ def result_fields(reading: dict) -> dict:
         "status": status,
         "company": company,
         "grounded": grounded(company, raw_text) if company else False,
+        "verified": quote_supports(company, answer) if answer is not None else None,
+        "verify_role": str((answer or {}).get("role") or "")[:20],
+        "quote_len": len(str((answer or {}).get("quote") or "")),
         "raw_text_len": len(raw_text),
         "date_raw": str(reading.get("_model_raw_interview_date") or reading.get("interview_date") or ""),
         "confidence_score": int(reading.get("confidence_score") or 0),
@@ -142,8 +234,11 @@ def collapse_results(lines: list[dict]) -> dict[str, dict]:
     return standing
 
 
-def evidence_for(row: dict, shot: dict, result: dict | None, *, grounding: str = "required") -> tuple[str, str]:
-    """(kind, company) for one screenshot of one row. kind 'usable' is the only one that can write."""
+def evidence_for(row: dict, shot: dict, result: dict | None, *, grounding: str = "required", cleaner=None) -> tuple[str, str]:
+    """(kind, company) for one screenshot of one row. kind 'usable' is the only one that can write.
+
+    `cleaner` re-checks the claim whoever made the reading: four early readings said "Unknown company" and a
+    quote check alone confirmed them, because the model quoted its own placeholder."""
     if result is None:
         return "pending", ""
     status = result.get("status")
@@ -154,10 +249,12 @@ def evidence_for(row: dict, shot: dict, result: dict | None, *, grounding: str =
     if status == "not_an_invite":
         return "not_an_invite", ""
     company = str(result.get("company") or "").strip()
+    if company and cleaner is not None:
+        company = cleaner(company)
     if not company:
         return "no_company", ""
-    if grounding == "required" and not result.get("grounded"):
-        return "not_grounded", company
+    if grounding == "required" and not (result.get("grounded") or result.get("verified")):
+        return "not_confirmed", company
     if date_relation(result.get("date_raw", ""), row.get("date", "")) == "mismatch":
         return "date_mismatch", company
     return "usable", company
@@ -169,7 +266,7 @@ def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str =
     shots = row.get("shots") or []
     evidence = []
     for shot in shots:
-        kind, company = evidence_for(row, shot, results.get(shot["sha"]), grounding=grounding)
+        kind, company = evidence_for(row, shot, results.get(shot["sha"]), grounding=grounding, cleaner=cleaner)
         evidence.append({"sha": shot["sha"][:8], "kind": kind, "company": company})
     base = {"before": before, "after": "", "evidence": evidence}
     if not shots:
@@ -190,7 +287,7 @@ def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str =
         candidate = max(usable, key=lambda name: len(company_key(name)))
     before_valid = bool(cleaner(before)) if before else False
     if not candidate:
-        for kind, action in (("date_mismatch", "review_date_mismatch"), ("not_grounded", "review_not_in_transcription")):
+        for kind, action in (("date_mismatch", "review_date_mismatch"), ("not_confirmed", "review_company_not_confirmed")):
             if kind in kinds:
                 return {**base, "action": action}
         if "unreadable" in kinds:
@@ -276,6 +373,51 @@ def cmd_inventory(_args) -> int:
     return 0
 
 
+def _ask(extractor, b64: str, prompt: str, timeout: int) -> tuple[dict | None, str]:
+    """One question to the vision model about one image, in a thread so a hung node cannot hold the file. (answer, error)"""
+    box: dict = {}
+
+    def run():
+        try:
+            text = extractor.call_ollama_vision_model(extractor.OLLAMA_VISION_MODEL, b64, prompt, timeout=timeout)
+            box["answer"] = extractor.parse_strict_json_response(text) if text else None
+        except Exception as exc:  # noqa: BLE001
+            box["error"] = f"{type(exc).__name__}: {exc}"[:120]
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout + 20)
+    if worker.is_alive():
+        return None, "timeout"
+    if "error" in box:
+        return None, box["error"]
+    if not isinstance(box.get("answer"), dict):
+        return None, "no parseable answer"
+    return box["answer"], ""
+
+
+def read_slim(extractor, data: bytes) -> dict:
+    """The faster method. Question one reads the company (and says if this is an invite at all); question two, asked
+    about the very same image bytes so the node reuses the image it already read, must quote the words that name it."""
+    import base64
+    prepared, scale = prepare_image(data)
+    b64 = base64.b64encode(prepared).decode("ascii")
+    started = time.time()
+    first, error = _ask(extractor, b64, SLIM_PROMPT, CALL_TIMEOUT)
+    seconds_first = time.time() - started
+    if error:
+        return {"status": "failed", "error": "read: " + error}
+    first["company"] = extractor.clean_company_name(first.get("company"))
+    answer, seconds_second = None, 0.0
+    if first["company"] and first.get("is_interview_invite") is not False:
+        started = time.time()
+        answer, error = _ask(extractor, b64, VERIFY_PROMPT.format(company=first["company"].replace('"', "'")), CALL_TIMEOUT)
+        seconds_second = time.time() - started
+        if error:
+            return {"status": "failed", "error": "verification: " + error}
+    return slim_result_fields(first, answer, scale=scale, seconds_first=seconds_first, seconds_second=seconds_second)
+
+
 def cmd_read(args) -> int:
     _, extractor = _app()
     data = open(args.path, "rb").read()
@@ -284,6 +426,13 @@ def cmd_read(args) -> int:
         out.update(status="failed", error="file does not match its recorded hash", seconds=0.0)
         print(json.dumps(out))
         return 0
+    if args.method == "slim":
+        started = time.time()
+        out.update(read_slim(extractor, data))
+        out["seconds"] = round(time.time() - started, 1)
+        print(json.dumps(out))
+        sys.stdout.flush()
+        os._exit(0)
     box: dict = {}
 
     def run():
@@ -296,16 +445,53 @@ def cmd_read(args) -> int:
     worker = threading.Thread(target=run, daemon=True)
     worker.start()
     worker.join(READ_TIMEOUT)
-    out["seconds"] = round(time.time() - started, 1)
     if worker.is_alive():
         out.update(status="failed", error="timeout")
     elif "error" in box:
         out.update(status="failed", error=box["error"])
     else:
-        out.update(result_fields(box["reading"]))
+        reading = box["reading"]
+        fields = result_fields(reading)
+        company = fields["company"]
+        if fields["status"] == "ok" and company and not fields["grounded"]:
+            answer, error = _verify_by_quote(extractor, data, company)
+            if error:
+                out.update(status="failed", error="verification: " + error)
+            else:
+                fields = result_fields(reading, answer)
+                out.update(fields)
+        else:
+            out.update(fields)
+    out["seconds"] = round(time.time() - started, 1)
     print(json.dumps(out))
     sys.stdout.flush()
     os._exit(0)   # a timed-out reading's thread must not keep the process alive
+
+
+def _verify_by_quote(extractor, data: bytes, company: str) -> tuple[dict | None, str]:
+    """Second read: ask the same vision model to quote the words that name the company. (answer, error)"""
+    import base64
+    box: dict = {}
+
+    def run():
+        try:
+            text = extractor.call_ollama_vision_model(
+                extractor.OLLAMA_VISION_MODEL, base64.b64encode(data).decode("ascii"),
+                VERIFY_PROMPT.format(company=company.replace('"', "'")), timeout=VERIFY_TIMEOUT)
+            box["answer"] = extractor.parse_strict_json_response(text) if text else None
+        except Exception as exc:  # noqa: BLE001
+            box["error"] = f"{type(exc).__name__}: {exc}"[:120]
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(VERIFY_TIMEOUT + 30)
+    if worker.is_alive():
+        return None, "timeout"
+    if "error" in box:
+        return None, box["error"]
+    if not isinstance(box.get("answer"), dict):
+        return None, "no parseable answer"
+    return box["answer"], ""
 
 
 def _load_json(path: str):
@@ -330,6 +516,51 @@ def cmd_plan(args) -> int:
     plan["unique_files"] = len(inventory.get("files") or {})
     json.dump(plan, open(args.out, "w", encoding="utf-8"), indent=1)
     print(json.dumps({"summary": plan["summary"], "missing_entries": plan["missing_entries"], "unique_files": plan["unique_files"]}))
+    return 0
+
+
+def cmd_compare(args) -> int:
+    from features.ollama_invite_extract import clean_company_name as clean
+    inventory = _load_json(args.inventory)
+    old, new = _load_results(args.old), _load_results(args.new)
+    rows, files = inventory["rows"], inventory["files"]
+
+    def accepted(result):
+        company = clean(result.get("company") or "")
+        return company if company and result.get("status") == "ok" and (result.get("grounded") or result.get("verified")) else ""
+
+    def known(sha):
+        names = sorted({rows[u["cid"]]["company"] for u in files[sha]["uploads"] if rows[u["cid"]]["company"]})
+        return names[0] if names else ""
+
+    cats: collections.Counter = collections.Counter()
+    notes: dict = collections.defaultdict(list)
+    seconds_old, seconds_new = [], []
+    vs_record: collections.Counter = collections.Counter()
+    for sha, result in new.items():
+        if sha not in old or result.get("status") == "failed":
+            continue
+        a_old, a_new = accepted(old[sha]), accepted(result)
+        seconds_old.append(old[sha].get("seconds") or 0)
+        seconds_new.append(result.get("seconds") or 0)
+        if a_old and a_new:
+            cat = "same_company" if compatible(a_old, a_new) else "CONFLICT"
+        elif a_old:
+            cat = "original_found_one_new_did_not"
+        elif a_new:
+            cat = "new_found_one_original_did_not"
+        else:
+            cat = "both_name_nothing"
+        cats[cat] += 1
+        if cat not in ("same_company", "both_name_nothing"):
+            notes[cat].append(f"{sha[:8]}: original {a_old!r} / new {a_new!r}")
+        record = known(sha)
+        if record:
+            for label, value in (("original", a_old), ("new", a_new)):
+                vs_record[f"{label}:" + ("matches_record" if value and compatible(record, value) else "names_nothing" if not value else "differs_from_record")] += 1
+    mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else 0
+    print(json.dumps({"files_compared": sum(cats.values()), "outcome": dict(cats), "against_existing_records": dict(vs_record),
+                      "mean_seconds_original": mean(seconds_old), "mean_seconds_new": mean(seconds_new), "details": dict(notes)}, indent=1))
     return 0
 
 
@@ -478,7 +709,7 @@ def _docker(*argv: str, timeout: int) -> subprocess.CompletedProcess:
 def cmd_drive(args) -> int:
     work = args.work
     inventory = _load_json(os.path.join(work, "inventory.json"))
-    results_path = os.path.join(work, "results.jsonl")
+    results_path = os.path.join(work, args.results)
     log_path = os.path.join(work, "driver.log")
     stop_file = os.path.join(work, "STOP")
     until = datetime.fromisoformat(args.until.replace("Z", "+00:00")) if args.until else None
@@ -524,9 +755,9 @@ def cmd_drive(args) -> int:
             waited += 30
         try:
             run = _docker("exec", CONTAINER, "python", IN_CONTAINER, "read", "--sha", item["sha"], "--path", item["path"],
-                          "--mime", item["mime"], timeout=READ_TIMEOUT + 90)
+                          "--mime", item["mime"], "--method", args.method, timeout=2 * CALL_TIMEOUT + 90)
         except subprocess.TimeoutExpired:
-            line = {"sha": item["sha"], "at": _now(), "status": "failed", "error": "driver timeout", "seconds": READ_TIMEOUT + 90}
+            line = {"sha": item["sha"], "at": _now(), "status": "failed", "error": "driver timeout", "seconds": 2 * CALL_TIMEOUT + 90}
         else:
             last = next((l for l in reversed(run.stdout.splitlines()) if l.startswith("{")), "")
             if not last:
@@ -541,7 +772,8 @@ def cmd_drive(args) -> int:
             handle.flush()
             os.fsync(handle.fileno())
         done += 1
-        company_note = f"company={'yes' if line.get('company') else 'no'} grounded={line.get('grounded')}" if line.get("status") == "ok" else line.get("error", "")
+        company_note = (f"company={'yes' if line.get('company') else 'no'} grounded={line.get('grounded')} verified={line.get('verified')}"
+                        if line.get("status") == "ok" else line.get("error", ""))
         log(f"{len(standing) + 1}/{total} {item['sha'][:8]} {line.get('status')} {line.get('seconds')}s {company_note}")
 
 
@@ -552,6 +784,7 @@ def main(argv=None) -> int:
     sub.add_parser("snapshot")
     p = sub.add_parser("read")
     p.add_argument("--sha", required=True); p.add_argument("--path", required=True); p.add_argument("--mime", default="image/jpeg")
+    p.add_argument("--method", choices=("slim", "full"), default="slim")
     p = sub.add_parser("plan")
     p.add_argument("--inventory", required=True); p.add_argument("--results", required=True); p.add_argument("--out", required=True)
     p.add_argument("--grounding", choices=("required", "advisory"), default="required")
@@ -563,9 +796,12 @@ def main(argv=None) -> int:
     p = sub.add_parser("drive")
     p.add_argument("--work", default="/root/company-backfill"); p.add_argument("--until", default="")
     p.add_argument("--courtesy-seconds", type=int, default=150); p.add_argument("--only", nargs="*")
+    p.add_argument("--results", default="results.jsonl"); p.add_argument("--method", choices=("slim", "full"), default="slim")
+    p = sub.add_parser("compare")
+    p.add_argument("--inventory", required=True); p.add_argument("--old", required=True); p.add_argument("--new", required=True)
     args = parser.parse_args(argv)
     return {"inventory": cmd_inventory, "read": cmd_read, "plan": cmd_plan, "snapshot": cmd_snapshot,
-            "apply": cmd_apply, "verify": cmd_verify, "drive": cmd_drive}[args.cmd](args)
+            "apply": cmd_apply, "verify": cmd_verify, "drive": cmd_drive, "compare": cmd_compare}[args.cmd](args)
 
 
 if __name__ == "__main__":
