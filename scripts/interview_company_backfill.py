@@ -153,7 +153,7 @@ def quote_supports(company: str, answer: dict | None) -> bool:
 
 
 def date_relation(raw_date: str, row_date: str) -> str:
-    """'match' / 'mismatch' / 'unknown' between the date the reader transcribed and the booked date."""
+    """'match', 'match_day_month' (right day and month, guessed year), 'mismatch' or 'unknown' against the booked date."""
     def parse(value: str):
         try:
             return date.fromisoformat(str(value or "").strip()[:10])
@@ -164,7 +164,9 @@ def date_relation(raw_date: str, row_date: str) -> str:
         return "unknown"
     # Invites usually omit the year and the model guesses one (on 10 Oct, 18 of 25 "mismatches" were the right day
     # and month with the year 3 out). The day and month are what the invite actually shows.
-    return "match" if (seen.month, seen.day) == (booked.month, booked.day) else "mismatch"
+    if seen == booked:
+        return "match"
+    return "match_day_month" if (seen.month, seen.day) == (booked.month, booked.day) else "mismatch"
 
 
 def prepare_image(data: bytes, budget: int = IMAGE_TOKEN_BUDGET) -> tuple[bytes, float]:
@@ -299,7 +301,34 @@ def decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str =
         decided["audit"] = verdict
         if verdict != "confirmed":
             decided["action"] = "review_second_model_disagrees" if verdict == "conflict" else "review_second_model_not_confirmed"
+        elif not year_guess_confirmed(row, decided["after"], results, audit, cleaner=cleaner):
+            decided["action"] = "review_year_not_confirmed"
     return decided
+
+
+def year_guess_confirmed(row: dict, candidate: str, results: dict[str, dict], audit: dict[str, dict], *, cleaner) -> bool:
+    """A record accepted on a guessed year needs the second model to read the same day and month off the screenshot.
+
+    Only applies when none of the screenshots behind the company matched the booked date exactly and at least one matched
+    only on day and month. The second model's own transcription of the date must then match on day and month too;
+    a different day, or no date at all, is not a confirmation.
+    """
+    relations = {}
+    for shot in row.get("shots") or []:
+        result = results.get(shot["sha"])
+        if not result or result.get("status") != "ok":
+            continue
+        company = cleaner(result.get("company") or "")
+        if company and compatible(company, candidate):
+            relations[shot["sha"]] = date_relation(result.get("date_raw", ""), row.get("date", ""))
+    if "match" in relations.values() or "match_day_month" not in relations.values():
+        return True
+    for sha, relation in relations.items():
+        if relation == "match_day_month":
+            second = audit.get(sha) or {}
+            if date_relation(second.get("date_raw", ""), row.get("date", "")) in ("match", "match_day_month"):
+                return True
+    return False
 
 
 def _decide_row(row: dict, results: dict[str, dict], *, cleaner, grounding: str = "required") -> dict:

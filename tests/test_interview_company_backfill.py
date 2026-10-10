@@ -59,8 +59,8 @@ class TestTheNameChecks:
         assert bf.date_relation("2026-08-02", "2026-08-01") == "mismatch"
         assert bf.date_relation("2026-09-01", "2026-08-01") == "mismatch"
         # the invite shows no year and the model guessed one: same day and month is the same interview
-        assert bf.date_relation("2023-08-01", "2026-08-01") == "match"
-        assert bf.date_relation("2027-08-01", "2026-08-01") == "match"
+        assert bf.date_relation("2023-08-01", "2026-08-01") == "match_day_month"
+        assert bf.date_relation("2027-08-01", "2026-08-01") == "match_day_month"
         assert bf.date_relation("", "2026-08-01") == "unknown"
         assert bf.date_relation("tomorrow", "2026-08-01") == "unknown"
         assert bf.date_relation("2026-08-01", "") == "unknown"
@@ -616,3 +616,40 @@ class TestThePinnedQuestion:
 
 class TestFasterReadData:
     DATA = TestImagePreparation().png(800, 800)
+
+
+
+class TestAGuessedYearNeedsTheSecondModel:
+    """18 of 25 date "mismatches" were the right day and month with the year 3 out. They are accepted only when the second
+    model independently reads the same day and month off the same screenshot."""
+
+    def first(self, date):
+        return {"a" * 64: {**reading("Capgemini", verified=True, raw="", date=date), "sha": "a" * 64}}
+
+    def audit(self, date, company="Capgemini"):
+        return {"a" * 64: {**audited(company), "date_raw": date}}
+
+    def decide(self, first_date, audit_date):
+        return bf.decide_row(row("", "a", date="2026-09-18"), self.first(first_date), cleaner=clean_company_name, audit=self.audit(audit_date))
+
+    def test_the_second_model_reading_the_same_day_and_month_confirms_it(self):
+        assert self.decide("2023-09-18", "2026-09-18")["action"] == "fill"
+        assert self.decide("2023-09-18", "2025-09-18")["action"] == "fill"
+
+    @pytest.mark.parametrize("audit_date", ["2026-09-19", "2026-10-18", "", "next Tuesday"])
+    def test_a_different_day_or_no_date_from_the_second_model_is_a_review(self, audit_date):
+        assert self.decide("2023-09-18", audit_date)["action"] == "review_year_not_confirmed"
+
+    def test_an_exact_date_needs_no_extra_check(self):
+        assert self.decide("2026-09-18", "")["action"] == "fill"
+
+    def test_no_date_on_the_first_read_needs_no_extra_check(self):
+        assert self.decide("", "")["action"] == "fill"
+
+    def test_without_the_audit_the_preview_still_shows_it_as_a_fill(self):
+        assert decide(row("", "a", date="2026-09-18"), self.first("2023-09-18"))["action"] == "fill"
+
+    def test_the_second_model_must_still_agree_on_the_company_first(self):
+        out = bf.decide_row(row("", "a", date="2026-09-18"), self.first("2023-09-18"), cleaner=clean_company_name,
+                            audit=self.audit("2026-09-18", company="Infosys"))
+        assert out["action"] == "review_second_model_disagrees"
