@@ -162,7 +162,9 @@ def date_relation(raw_date: str, row_date: str) -> str:
     seen, booked = parse(raw_date), parse(row_date)
     if seen is None or booked is None:
         return "unknown"
-    return "match" if seen == booked else "mismatch"
+    # Invites usually omit the year and the model guesses one (on 10 Oct, 18 of 25 "mismatches" were the right day
+    # and month with the year 3 out). The day and month are what the invite actually shows.
+    return "match" if (seen.month, seen.day) == (booked.month, booked.day) else "mismatch"
 
 
 def prepare_image(data: bytes, budget: int = IMAGE_TOKEN_BUDGET) -> tuple[bytes, float]:

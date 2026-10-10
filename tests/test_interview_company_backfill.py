@@ -56,7 +56,11 @@ class TestTheNameChecks:
 
     def test_date_relation(self):
         assert bf.date_relation("2026-08-01", "2026-08-01") == "match"
-        assert bf.date_relation("2027-08-01", "2026-08-01") == "mismatch"
+        assert bf.date_relation("2026-08-02", "2026-08-01") == "mismatch"
+        assert bf.date_relation("2026-09-01", "2026-08-01") == "mismatch"
+        # the invite shows no year and the model guessed one: same day and month is the same interview
+        assert bf.date_relation("2023-08-01", "2026-08-01") == "match"
+        assert bf.date_relation("2027-08-01", "2026-08-01") == "match"
         assert bf.date_relation("", "2026-08-01") == "unknown"
         assert bf.date_relation("tomorrow", "2026-08-01") == "unknown"
         assert bf.date_relation("2026-08-01", "") == "unknown"
@@ -177,6 +181,10 @@ class TestTheDecisionPerRecord:
     def test_a_screenshot_of_another_date_goes_to_review(self):
         out = decide(row("", "a", date="2026-08-01"), self.results(a={"date": "2026-09-15"}))
         assert out["action"] == "review_date_mismatch"
+        assert decide(row("", "a", date="2026-08-01"), self.results(a={"date": "2026-08-03"}))["action"] == "review_date_mismatch"
+
+    def test_a_guessed_year_is_not_a_date_mismatch(self):
+        assert decide(row("", "a", date="2026-09-18"), self.results(a={"date": "2023-09-18"}))["action"] == "fill"
 
     def test_an_unreadable_date_does_not_block_a_grounded_company(self):
         assert decide(row("", "a"), self.results(a={"date": ""}))["action"] == "fill"
