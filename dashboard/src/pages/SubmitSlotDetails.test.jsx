@@ -9,7 +9,7 @@
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { SubmitSlotPage } from './SubmitSlotPage.jsx'
+import { SubmitSlotPage, roundFromInvite } from './SubmitSlotPage.jsx'
 
 afterEach(() => {
   cleanup()
@@ -197,5 +197,35 @@ describe('where the details sit', () => {
     await readyForm()
     expect(field('End time').closest('.sbs-field-row')).toBe(field('Time zone').closest('.sbs-field-row'))
     expect(field('Platform').closest('.sbs-field-row')).toBe(field('Meeting link').closest('.sbs-field-row'))
+  })
+})
+
+
+describe('the interview round the invite names', () => {
+  it.each([
+    ['L1', 'L1'], ['L1 Technical', 'L1'], ['Technical Round 1', 'L1'], ['Round 2', 'L2'], ['L2 - Managerial', 'L2'],
+    ['Screening call', 'Screening'], ['Final round', 'Final'], ['HR discussion', 'HR'],
+  ])('%s -> %s', (text, option) => {
+    expect(roundFromInvite(text)).toBe(option)
+  })
+
+  it.each(['', 'Technical', 'L3', 'L1 / Final', 'Round 1 and Round 2', 'Candidate ID 123', 'hrs'])('names none of the options, or more than one: %s', text => {
+    expect(roundFromInvite(text)).toBe('')
+  })
+
+  it('selects the option the invite names, so the round is really chosen and sent', async () => {
+    const { confirm, calls } = await readyForm({ ...CONFIRMED, interview_round: 'L1 Technical' })
+    expect(document.querySelector('select.sbs-select').value).toBe('L1')
+    fireEvent.click(confirm)
+    await waitFor(() => expect(calls.confirms).toHaveLength(1))
+    expect(calls.confirms[0].get('interview_round')).toBe('L1')
+  })
+
+  it('leaves the round to the candidate when the invite is not clear, and asks for it', async () => {
+    const { confirm, calls } = await readyForm({ ...CONFIRMED, interview_round: 'L1 / Final' })
+    expect(document.querySelector('select.sbs-select').value).toBe('')
+    fireEvent.click(confirm)
+    expect(await screen.findByText('Choose the interview round.')).toBeInTheDocument()
+    expect(calls.confirms).toHaveLength(0)
   })
 })

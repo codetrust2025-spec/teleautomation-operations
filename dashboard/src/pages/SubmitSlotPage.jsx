@@ -126,6 +126,22 @@ function uniqueNonEmptyTags(values) {
 
 const ROUND_OPTIONS = ['Screening', 'L1', 'L2', 'Final', 'HR']
 
+/**
+ * The round option an invite clearly names ("L1 Technical", "Technical Round 1" -> L1), or '' when it names none
+ * of them or more than one. Setting the reader's own words ("L1 Technical") left the select showing nothing while
+ * the form believed a round was chosen, and the server then refused the booking for want of one.
+ */
+export function roundFromInvite(text) {
+  const value = String(text || '')
+  if (!value.trim()) return ''
+  const found = new Set()
+  for (const m of value.matchAll(/\b(?:L|LEVEL|ROUND|R)\s*-?\s*([12])\b/gi)) found.add(`L${m[1]}`)
+  if (/\bscreening\b/i.test(value)) found.add('Screening')
+  if (/\bfinal\b/i.test(value)) found.add('Final')
+  if (/\bHR\b/.test(value) || /\bhuman resources\b/i.test(value)) found.add('HR')
+  return found.size === 1 ? [...found][0] : ''
+}
+
 function candidateNameKey(value) {
   return String(value || '').trim().toLocaleLowerCase().replace(/[^a-z0-9]/g, '')
 }
@@ -831,9 +847,10 @@ export function SubmitSlotPage() {
           platform: ext.confirmed_platform || '',
           link: ext.confirmed_meeting_link || '',
         })
-        if (ext.interview_round && !interviewRound && !userEditedFields.round) {
-          setInterviewRound(ext.interview_round)
-          slot.interview_round = ext.interview_round
+        const readRound = roundFromInvite(ext.interview_round)
+        if (readRound && !interviewRound && !userEditedFields.round) {
+          setInterviewRound(readRound)
+          slot.interview_round = readRound
         }
 
         console.log('[Invite extraction]', { raw: ext, mapped: slot })
@@ -873,7 +890,7 @@ export function SubmitSlotPage() {
         if (slot.time_end) slot.time_end = normalizeTo12h(slot.time_end)
       }
       setParsedSlot(slot)
-      if (!interviewRound) setInterviewRound(slot?.interview_round || '')
+      if (!interviewRound) setInterviewRound(roundFromInvite(slot?.interview_round))
       applyInviteDetails({ endTime: slot?.time_end || '' })
       setManualDate(''); setManualTime('')
       run.finish(null)
