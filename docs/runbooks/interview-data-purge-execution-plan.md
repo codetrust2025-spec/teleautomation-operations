@@ -1,6 +1,6 @@
 # Interview Data purge: execution plan (for approval)
 
-> **Status: DRAFT, NOT APPROVED. Nothing has been executed.** Production is running and unchanged by this procedure (release `856c669` since 10 Oct 12:43 UTC (build time); `4a7c61c` when this plan was drafted),
+> **Status: DRAFT, NOT APPROVED. Nothing has been executed.** Production is running and unchanged by this procedure (release `131b6d2` since 10 Oct 16:34 UTC (build time); `4a7c61c` when this plan was drafted),
 > `operations-api` healthy; the three files this depends on match the recorded hashes). The application is not stopped and the
 > purge is not run until the owner approves this plan, in writing, in the block at the end.
 >
@@ -35,7 +35,7 @@
 - **Backups.** Every nightly snapshot since 5 Oct holds the records, and retention (7 daily, 4 weekly, 6 monthly) keeps them up
   to about 6 months. Neither snapshots nor retention are touched (standing rule). Removing the records from backups is a
   separate decision for the owner (section 10).
-- No release, no deploy, no code change, no database change. The application image stays whatever is running when the window starts (`856c669` at the time of writing).
+- No release, no deploy, no code change, no database change. The application image stays whatever is running when the window starts (`131b6d2` at the time of writing).
 
 ## 3. Recovery point
 
@@ -144,7 +144,7 @@ already exist, and the host has free disk (the 0.2 output ends with the free spa
 2. Data volume: the checksum diff against the baseline taken after the stop (1.2) shows exactly two changed lines (the two
    credentials files) out of about 382, and nothing else: the expense store, the other Data Room files, salaries, proofs and every
    other store are byte-identical. Exact, because the application was stopped for the whole interval.
-3. After the restart: `operations-api` healthy, `/health` ok, `/version` shows the same release as before the stop (read it in Phase 0; `856c669` at the time of writing).
+3. After the restart: `operations-api` healthy, `/health` ok, `/version` shows the same release as before the stop (read it in Phase 0; `131b6d2` at the time of writing).
 4. With the application running: `verify --after-restart --watch 60` is clean (nothing brought the key back), and the
    checksum diff is still those two files, plus at most files the running application wrote after the restart (each explained by
    activity; none a Data Room file). This is stability evidence; the proof that unrelated data is untouched is item 2.
@@ -177,7 +177,7 @@ the files return byte-identical, with modes and owners kept.
 No: the quiet check is **not** what prevents writes, and it cannot be: it only says nobody is working right now. What prevents them is
 that **the only writer is stopped, and the tool refuses to proceed unless that is demonstrably true**, repeatedly.
 
-**Who can write these two files** (audited against the code deployed on production, `4a7c61c`, read-only; the two releases since, `0ff815e` and `856c669`, change only the invite reader and its company-name cleaner, the booking form and booking validation, and touch no Data Room store, auth route or worker):
+**Who can write these two files** (audited against the code deployed on production, `4a7c61c`, read-only; the three releases since, `0ff815e`, `856c669` and `131b6d2`, change only the invite reader and its company-name cleaner, the booking form (and its field order) and booking validation, and touch no Data Room store, auth route or worker):
 
 - Only the Data Room routes (POST/PATCH/DELETE under `/data-room/credentials/...`, service-account images, offer-letter uploads) and the
   password routes (`/auth/change-password`, `/auth/reset-password`, which write the credentials file). Every one needs a logged-in
@@ -233,7 +233,7 @@ Not taken from a report: done against the real backup, then cleaned up.
 | Recovery point | restic snapshot `da4a7033`, 2026-10-08 20:33:10 UTC, tag `nightly` |
 | Expected after the purge | live 17,948 bytes, sha256 `d00ee10b7ecda4e0d9b4a49255b58116e2f9b00c5b9b2830998f7c238e20d01b`; older 16,137 bytes, sha256 `1b12a5fff9df565c7df01b53829cdc0aeca6cf34ba7c5d6327e67934ff96e7c0` |
 | Data volume pre-flight (10 Oct) | 382 files, leaving out the three self-updating application files; expense store `handler_expenses.json` sha256 `c7ef95600bfe85c3f0126f1930c5a07e2eeaa76101e7423477518047679c6ca6`. The earlier 383-file record (sorted-list sha256 `81a954b0bb3513c1a90c3de0b08ede295f07bec1c2687260a75ac91d5ce69acd`) included `cross_project_outbox.json`, which the application rewrites by itself; it changed at 04:07 UTC on 10 Oct and was the only file that differed (checked: the two credentials files and the expense store were identical). That is why the comparison baseline is now taken after the stop |
-| Application | release `856c669` (since 10 Oct 12:43 UTC (build time); was `4a7c61c`), `operations-api` running and healthy |
+| Application | release `131b6d2` (since 10 Oct 16:34 UTC (build time); was `4a7c61c`), `operations-api` running and healthy |
 
 At execution time the operator keeps the **1.2** file (`purge-before.txt`, taken with the application stopped) with the approval
 record and writes down `sha256sum purge-before.txt` next to the table above. That is the working baseline for the diff in 2.4 and
