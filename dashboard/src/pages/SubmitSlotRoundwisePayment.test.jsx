@@ -400,8 +400,9 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
 
     await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
 
-    // 7. Verify detected invite row
-    expect(screen.getByText(/03:00 PM/)).toBeTruthy()
+    // 7. The invite is read (its status line says so; what it read is no longer
+    // shown back, it is booked: see the time asserted below)
+    expect(document.querySelector('.ai-node-progress').textContent).toMatch(/^✓/)
 
     // 8. Verify Confirm button is ENABLED
     const confirmBtn = screen.getByRole('button', { name: /confirm booking/i })
@@ -416,6 +417,7 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     expect(confirmBody.get('service_type')).toBe('round_wise')
     expect(confirmBody.get('phone')).toBe('9876543210')
     expect(confirmBody.get('technology')).toBe('Java Backend')
+    expect(confirmBody.get('time')).toBe('15:00')        // the 03:00 PM the invite showed
     expect(confirmBody.get('interview_round')).toBe('L1')
     expect(confirmBody.get('payment_proof_ids')).toBe('proof-1,proof-2,proof-3')
   })

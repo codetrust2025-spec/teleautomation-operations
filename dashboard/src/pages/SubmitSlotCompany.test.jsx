@@ -73,7 +73,7 @@ async function attachInvite() {
   Object.defineProperty(invite, 'files', { value: [new File(['x'], 'invite.jpg', { type: 'image/jpeg' })], configurable: true })
   fireEvent.change(invite)
   await waitFor(() => expect(screen.queryByText(/reading invite/i)).toBeNull())
-  await waitFor(() => expect(document.querySelector('.sbs-detected-compact')).not.toBeNull())
+  await waitFor(() => expect(document.querySelector('.ai-node-progress')?.textContent || '').toMatch(/^✓/))
 }
 
 async function completedForm({ company, readCompany } = {}) {
@@ -160,14 +160,10 @@ describe('the invite comes first', () => {
     expect(labels[1]).toMatch(/^Interview round/)
   })
 
-  it('keeps what the invite read, and the manual date and time, with the invite above Company', async () => {
-    const { calls } = await completedForm({ readCompany: 'Infosys' })
-    expect(calls).toBeTruthy()
-    const company = screen.getByLabelText('Company')
-    const result = document.querySelector('.sbs-detected-compact')
-    expect(result).not.toBeNull()
-    expect(before(result, company)).toBe(true)
-    expect(before(inviteInput(), result)).toBe(true)
+  it('shows no result panel for what the invite read: it fills Company, and that is all that shows', async () => {
+    await completedForm({ readCompany: 'Infosys' })
+    expect(document.querySelector('.sbs-detected-compact')).toBeNull()
+    expect(companyBox().value).toBe('Infosys')
   })
 
   it('is attached before the company is typed, and the read company can still be corrected', async () => {
