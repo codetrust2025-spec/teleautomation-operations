@@ -1,0 +1,352 @@
+"""The historical company backfill: what it decides, and that it writes one field and nothing else.
+
+The decisions are pure and are pinned as a table. The writes are driven against a real candidate
+store in a temporary directory, so a guard that stops working shows up as a changed record.
+"""
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from features import candidate_store as cs
+from features.ollama_invite_extract import clean_company_name
+
+SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "interview_company_backfill.py"
+spec = importlib.util.spec_from_file_location("interview_company_backfill", SCRIPT)
+bf = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bf)
+
+
+def reading(company="Capgemini", *, raw="Interview with Capgemini on 2026-08-01", date="2026-08-01", status="ok", **extra):
+    return {"sha": "a" * 64, "status": status, "company": company, "grounded": bf.grounded(company, raw) if company else False,
+            "date_raw": date, "failures": 0, **extra}
+
+
+def row(company="", *shas, date="2026-08-01", n_entries=None):
+    shots = [{"sha": sha * 64, "pid": f"p{i}", "primary": i == 0, "uploaded_at": "2026-08-01T10:00:00+00:00"} for i, sha in enumerate(shas)]
+    return {"company": company, "date": date, "time": "10:00", "slot_confirmed": True,
+            "n_entries": len(shots) if n_entries is None else n_entries, "shots": shots}
+
+
+def decide(r, results, grounding="required"):
+    return bf.decide_row(r, results, cleaner=clean_company_name, grounding=grounding)
+
+
+class TestTheNameChecks:
+    @pytest.mark.parametrize("a, b", [("Capgemini", "CAPGEMINI"), ("Wipro Ltd.", "Wipro"), ("Tech  Mahindra", "TechMahindra"),
+                                      ("Capgemini", "Capgemini Technology Services"), ("Infosys Limited", "infosys")])
+    def test_the_same_company_in_another_spelling_is_compatible(self, a, b):
+        assert bf.compatible(a, b) and bf.compatible(b, a)
+
+    @pytest.mark.parametrize("a, b", [("Capgemini", "Wipro"), ("TCS", "Tata Consultancy Services"), ("", "Wipro"), ("Cap", "Capgemini")])
+    def test_different_companies_are_not(self, a, b):
+        assert not bf.compatible(a, b)
+
+    def test_grounding_needs_the_name_in_the_readers_own_transcription(self):
+        assert bf.grounded("Capgemini", "Subject: L1 | Java | CAPGEMINI India")
+        assert bf.grounded("Tech Mahindra", "from TechMahindra recruiting")
+        assert not bf.grounded("Capgemini", "Teams meeting, Java L1")
+        assert not bf.grounded("Capgemini", "")
+        assert not bf.grounded("AB", "AB ab AB")          # too short to mean anything
+
+    def test_date_relation(self):
+        assert bf.date_relation("2026-08-01", "2026-08-01") == "match"
+        assert bf.date_relation("2027-08-01", "2026-08-01") == "mismatch"
+        assert bf.date_relation("", "2026-08-01") == "unknown"
+        assert bf.date_relation("tomorrow", "2026-08-01") == "unknown"
+        assert bf.date_relation("2026-08-01", "") == "unknown"
+
+
+class TestWhatIsKeptOfAReading:
+    def test_a_reading_keeps_the_company_and_the_evidence_flags_but_not_the_transcription(self):
+        out = bf.result_fields({"company": "Capgemini", "raw_detected_text": "Asha Rao 9000012345 Capgemini L1",
+                                "interview_date": "2027-08-01", "_model_raw_interview_date": "2026-08-01",
+                                "confidence_score": 90, "extraction_method": "ai_only", "primary_model": "m",
+                                "inference_node_label": "RTX 4060"})
+        assert out["status"] == "ok" and out["company"] == "Capgemini" and out["grounded"] is True
+        assert out["date_raw"] == "2026-08-01"            # the model's own date, not the year-corrected one
+        assert out["node"] == "RTX 4060"
+        assert "Asha" not in json.dumps(out) and "9000012345" not in json.dumps(out)
+
+    @pytest.mark.parametrize("fields, status", [
+        ({"is_payment_screenshot": True}, "payment_screenshot"),
+        ({"looks_like_interview_invite": False}, "not_an_invite"),
+        ({"failure_stage": "vision", "failure_reason": "The AI could not read this screenshot."}, "failed"),
+        ({"failure_stage": "ollama_unavailable"}, "failed"),
+        ({"failure_stage": "ai_incomplete"}, "ok"),        # no date is still a reading of the company
+    ])
+    def test_the_status_of_a_reading(self, fields, status):
+        assert bf.result_fields({"company": "", **fields})["status"] == status
+
+
+class TestCheckpoints:
+    def line(self, status, **extra):
+        return {"sha": "s1", "status": status, **extra}
+
+    def test_a_success_stands_over_an_earlier_failure(self):
+        standing = bf.collapse_results([self.line("failed"), self.line("ok", company="X")])
+        assert standing["s1"]["status"] == "ok" and standing["s1"]["failures"] == 1
+
+    def test_failures_are_counted_until_the_file_is_called_unreadable(self):
+        standing = bf.collapse_results([self.line("failed"), self.line("failed"), self.line("failed")])
+        assert standing["s1"]["failures"] == 3
+        kind, _ = bf.evidence_for(row("", "s"), {"sha": "s1"}, standing["s1"])
+        assert kind == "unreadable"
+
+    def test_fewer_failures_leave_it_pending_for_another_try(self):
+        standing = bf.collapse_results([self.line("failed")])
+        assert bf.evidence_for(row("", "s"), {"sha": "s1"}, standing["s1"])[0] == "pending"
+
+    def test_a_late_failure_does_not_undo_a_success(self):
+        standing = bf.collapse_results([self.line("ok", company="X"), self.line("failed")])
+        assert standing["s1"]["status"] == "ok"
+
+
+class TestTheDecisionPerRecord:
+    def results(self, **by_char):
+        return {ch * 64: {**reading(**kw), "sha": ch * 64} for ch, kw in by_char.items()}
+
+    def test_a_missing_company_is_filled_when_the_screenshot_names_one(self):
+        out = decide(row("", "a"), self.results(a={}))
+        assert (out["action"], out["after"]) == ("fill", "Capgemini")
+
+    def test_an_existing_valid_company_is_kept(self):
+        assert decide(row("Capgemini", "a"), self.results(a={}))["action"] == "already_correct"
+        assert decide(row("Capgemini Technology Services", "a"), self.results(a={}))["action"] == "already_correct"
+        assert decide(row("Wipro", "a"), self.results(a={"company": ""}))["action"] == "kept_existing"
+
+    def test_an_existing_valid_company_that_differs_goes_to_review_and_is_not_overwritten(self):
+        out = decide(row("Wipro", "a"), self.results(a={}))
+        assert out["action"] == "review_conflict_with_existing" and out["before"] == "Wipro"
+
+    @pytest.mark.parametrize("before", ["HirePro", "N/A", "Microsoft Teams"])
+    def test_an_invalid_existing_value_is_corrected_by_clear_evidence(self, before):
+        out = decide(row(before, "a"), self.results(a={}))
+        assert (out["action"], out["after"]) == ("correct_invalid", "Capgemini")
+
+    def test_an_invalid_existing_value_with_no_evidence_is_left_for_review(self):
+        assert decide(row("HirePro", "a"), self.results(a={"company": ""}))["action"] == "invalid_unresolved"
+
+    def test_a_screenshot_that_names_no_company_changes_nothing(self):
+        assert decide(row("", "a"), self.results(a={"company": ""}))["action"] == "no_company_visible"
+
+    def test_a_company_not_found_in_the_transcription_is_never_written(self):
+        out = decide(row("", "a"), self.results(a={"raw": "Teams meeting L1"}))
+        assert out["action"] == "review_not_in_transcription"
+        # Only when grounding is switched to advisory (a deliberate choice, recorded in the plan) does it write.
+        assert decide(row("", "a"), self.results(a={"raw": "Teams meeting L1"}), grounding="advisory")["action"] == "fill"
+
+    def test_a_screenshot_of_another_date_goes_to_review(self):
+        out = decide(row("", "a", date="2026-08-01"), self.results(a={"date": "2026-09-15"}))
+        assert out["action"] == "review_date_mismatch"
+
+    def test_an_unreadable_date_does_not_block_a_grounded_company(self):
+        assert decide(row("", "a"), self.results(a={"date": ""}))["action"] == "fill"
+
+    def test_two_screenshots_that_agree_write_the_fuller_name(self):
+        out = decide(row("", "a", "b"), self.results(a={"company": "Capgemini"}, b={"company": "Capgemini Technology Services", "raw": "Capgemini Technology Services"}))
+        assert (out["action"], out["after"]) == ("fill", "Capgemini Technology Services")
+
+    def test_two_screenshots_that_disagree_write_nothing(self):
+        out = decide(row("", "a", "b"), self.results(a={"company": "Capgemini"}, b={"company": "Infosys", "raw": "Infosys"}))
+        assert out["action"] == "review_conflict_between_screenshots" and out["after"] == ""
+
+    def test_a_usable_screenshot_next_to_one_naming_nothing_still_writes(self):
+        out = decide(row("", "a", "b"), self.results(a={"company": "Capgemini"}, b={"company": ""}))
+        assert out["action"] == "fill"
+
+    def test_payment_screenshots_and_non_invites_are_not_evidence(self):
+        assert decide(row("", "a"), self.results(a={"company": "", "status": "payment_screenshot"}))["action"] == "not_an_invite"
+        assert decide(row("", "a"), self.results(a={"company": "", "status": "not_an_invite"}))["action"] == "not_an_invite"
+
+    def test_a_record_with_no_screenshot_or_no_file_is_reported_not_guessed(self):
+        assert decide(row(""), {})["action"] == "no_screenshot"
+        assert decide(row("", n_entries=2), {})["action"] == "file_missing"
+
+    def test_a_screenshot_not_read_yet_is_pending_and_never_written(self):
+        assert decide(row("", "a"), {})["action"] == "pending"
+
+    def test_the_plan_counts_every_record_once(self):
+        inventory = {"rows": {"c1": row("", "a"), "c2": row("Wipro", "a"), "c3": row("")}}
+        plan = bf.build_plan(inventory, self.results(a={}), cleaner=clean_company_name)
+        assert plan["summary"] == {"fill": 1, "review_conflict_with_existing": 1, "no_screenshot": 1}
+        assert len(plan["items"]) == 3
+
+
+# ---------------------------------------------------------------------------------------------
+# Writes, against a real store
+# ---------------------------------------------------------------------------------------------
+
+@pytest.fixture()
+def store(monkeypatch, tmp_path):
+    monkeypatch.setattr(cs, "_FILE", str(tmp_path / "candidates.json"))
+    monkeypatch.setattr(cs, "PROOFS_DIR", str(tmp_path / "proofs"))
+    monkeypatch.setattr(cs, "_load_cache", None)
+    monkeypatch.setattr(cs, "_load_cache_at", 0.0)
+    monkeypatch.setattr("core.db.connection.use_postgres", lambda: False)
+    ids = {}
+    for name in ("Asha Test", "Vikram Test", "Devi Test"):
+        made = cs.create_candidate({"name": name, "phone": "9000000" + str(100 + len(ids)), "service_type": "profile_service",
+                                    "interview_round": "L1", "date": "2099-01-0" + str(1 + len(ids)), "time": "10:00",
+                                    "time_end": "11:00"})
+        ids[name] = made["id"]
+    return ids
+
+
+def write_plan(tmp_path, items):
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({"items": items}), encoding="utf-8")
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def run(capsys, *argv):
+    code = bf.main(list(argv))
+    return code, capsys.readouterr().out
+
+
+def live(cid):
+    return next(r for r in cs._load(force=True)["candidates"] if r["id"] == cid)
+
+
+class TestApply:
+    def plan_items(self, store):
+        return [{"cid": store["Asha Test"], "action": "fill", "before": "", "after": "Capgemini"},
+                {"cid": store["Vikram Test"], "action": "review_conflict_with_existing", "before": "Wipro", "after": "Infosys"}]
+
+    def test_it_refuses_a_plan_that_is_not_the_reviewed_one(self, store, tmp_path, capsys):
+        path, _ = write_plan(tmp_path, self.plan_items(store))
+        code, out = run(capsys, "apply", "--plan", str(path), "--expect-plan-sha256", "0" * 64, "--confirm-count", "1", "--apply")
+        assert code == 2 and "not the one that was reviewed" in out
+        assert not live(store["Asha Test"]).get("interview_company")
+
+    def test_it_refuses_when_the_number_of_writes_is_not_the_reviewed_number(self, store, tmp_path, capsys):
+        path, digest = write_plan(tmp_path, self.plan_items(store))
+        code, out = run(capsys, "apply", "--plan", str(path), "--expect-plan-sha256", digest, "--confirm-count", "2", "--apply")
+        assert code == 2 and "--confirm-count" in out
+        assert not live(store["Asha Test"]).get("interview_company")
+
+    def test_without_apply_nothing_is_written(self, store, tmp_path, capsys):
+        path, digest = write_plan(tmp_path, self.plan_items(store))
+        code, out = run(capsys, "apply", "--plan", str(path), "--expect-plan-sha256", digest, "--confirm-count", "1")
+        assert code == 0 and '"would_write": 1' in out
+        assert not live(store["Asha Test"]).get("interview_company")
+
+    def test_it_writes_the_one_field_on_the_planned_rows_only(self, store, tmp_path, capsys):
+        before = {cid: json.loads(json.dumps(live(cid))) for cid in store.values()}
+        path, digest = write_plan(tmp_path, self.plan_items(store))
+        code, out = run(capsys, "apply", "--plan", str(path), "--expect-plan-sha256", digest, "--confirm-count", "1", "--apply")
+        assert code == 0 and '"written": 1' in out
+        assert live(store["Asha Test"])["interview_company"] == "Capgemini"
+        for name, cid in store.items():
+            now = live(cid)
+            changed = {k for k in set(before[cid]) | set(now) if before[cid].get(k) != now.get(k)} - bf.BOOKKEEPING
+            assert changed == ({"interview_company"} if name == "Asha Test" else set()), name
+        # a row whose action is a review is never written, whatever it carries as "after"
+        assert not live(store["Vikram Test"]).get("interview_company")
+
+    def test_it_is_idempotent(self, store, tmp_path, capsys):
+        path, digest = write_plan(tmp_path, self.plan_items(store))
+        args = ("apply", "--plan", str(path), "--expect-plan-sha256", digest, "--confirm-count", "1", "--apply")
+        run(capsys, *args)
+        code, out = run(capsys, *args)
+        assert code == 0 and '"already_set": 1' in out and "written" not in json.loads(out.strip().splitlines()[-1])["counts"]
+
+    def test_it_does_not_overwrite_a_value_that_appeared_after_the_plan_was_made(self, store, tmp_path, capsys):
+        path, digest = write_plan(tmp_path, self.plan_items(store))
+        cs._patch_row_fields(store["Asha Test"], {"interview_company": "Wipro"})   # someone typed one meanwhile
+        code, out = run(capsys, "apply", "--plan", str(path), "--expect-plan-sha256", digest, "--confirm-count", "1", "--apply")
+        assert code == 0 and "skipped_changed_since_plan" in out
+        assert live(store["Asha Test"])["interview_company"] == "Wipro"
+
+    def test_a_row_that_is_gone_is_skipped_not_created(self, store, tmp_path, capsys):
+        items = [{"cid": "does-not-exist", "action": "fill", "before": "", "after": "Capgemini"}]
+        path, digest = write_plan(tmp_path, items)
+        code, out = run(capsys, "apply", "--plan", str(path), "--expect-plan-sha256", digest, "--confirm-count", "1", "--apply")
+        assert code == 0 and "row_gone" in out
+        assert len(cs._load(force=True)["candidates"]) == 3
+
+
+class TestVerify:
+    def snapshot_file(self, capsys, tmp_path):
+        code, out = run(capsys, "snapshot")
+        assert code == 0
+        path = tmp_path / "before.jsonl"
+        path.write_text(out, encoding="utf-8")
+        footer = json.loads(out.strip().splitlines()[-1])
+        assert footer["count"] == 3 and footer["_snapshot_footer"]
+        return path
+
+    def test_it_confirms_only_the_planned_field_changed(self, store, tmp_path, capsys):
+        before = self.snapshot_file(capsys, tmp_path)
+        items = [{"cid": store["Asha Test"], "action": "fill", "before": "", "after": "Capgemini"}]
+        plan, digest = write_plan(tmp_path, items)
+        run(capsys, "apply", "--plan", str(plan), "--expect-plan-sha256", digest, "--confirm-count", "1", "--apply")
+        code, out = run(capsys, "verify", "--before", str(before), "--plan", str(plan))
+        result = json.loads(out)
+        assert result["outcome"] == {"company_written_as_planned": 1, "unchanged": 2, "new_rows_since_snapshot": 0}
+
+    def test_it_reports_a_change_to_anything_else(self, store, tmp_path, capsys):
+        before = self.snapshot_file(capsys, tmp_path)
+        cs._patch_row_fields(store["Devi Test"], {"notes": "edited by someone"})
+        plan, _ = write_plan(tmp_path, [])
+        _, out = run(capsys, "verify", "--before", str(before), "--plan", str(plan))
+        result = json.loads(out)
+        assert result["outcome"]["other_fields_changed"] == 1 and result["other_fields_changed_by_key"] == {"notes": 1}
+
+    def test_it_reports_a_deleted_record(self, store, tmp_path, capsys):
+        before = self.snapshot_file(capsys, tmp_path)
+        data = cs._load(force=True)
+        data["candidates"] = [r for r in data["candidates"] if r["id"] != store["Devi Test"]]
+        cs._save(data)
+        plan, _ = write_plan(tmp_path, [])
+        _, out = run(capsys, "verify", "--before", str(before), "--plan", str(plan))
+        assert json.loads(out)["outcome"].get("DELETED") == 1
+
+
+class TestTheInventory:
+    def test_it_lists_every_row_including_ones_without_a_screenshot(self, store, capsys):
+        code, out = run(capsys, "inventory")
+        inventory = json.loads(out)
+        assert code == 0 and len(inventory["rows"]) == 3
+        assert all(r["n_entries"] == 0 and r["shots"] == [] for r in inventory["rows"].values())
+
+    def test_a_screenshot_is_found_hashed_and_shared_by_rows_that_attach_the_same_file(self, store, capsys):
+        png = b"\x89PNG\r\n\x1a\n" + b"x" * 64
+        for name in ("Asha Test", "Vikram Test"):
+            cs.attach_public_slot_screenshot(store[name], data=png, original_name="slot-screenshot.png", mime_type="image/png")
+        inventory = json.loads(run(capsys, "inventory")[1])
+        sha = hashlib.sha256(png).hexdigest()
+        assert list(inventory["files"]) == [sha]
+        assert inventory["files"][sha]["mime"] == "image/png"
+        assert len(inventory["files"][sha]["uploads"]) == 2
+        assert inventory["rows"][store["Asha Test"]]["shots"][0]["sha"] == sha
+        assert inventory["missing"] == []
+
+
+class TestTheCourtesyCheck:
+    def log(self, tmp_path, minutes_ago, path="/public/slots/extract-invite-ai", ip="203.0.113.7"):
+        when = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        line = f'{ip} - - [{when:%d/%b/%Y:%H:%M:%S +0000}] "POST {path} HTTP/1.1" 200 12 "-" "x"\n'
+        target = tmp_path / "access.log"
+        target.write_text("old line\n" + line, encoding="utf-8")
+        return (str(target),)
+
+    def test_a_person_reading_an_invite_right_now_is_seen(self, tmp_path):
+        assert bf.live_ai_requests_in_last(150, self.log(tmp_path, 1)) == 1
+
+    def test_an_old_request_an_internal_address_or_another_path_is_not(self, tmp_path):
+        assert bf.live_ai_requests_in_last(150, self.log(tmp_path, 10)) == 0
+        assert bf.live_ai_requests_in_last(150, self.log(tmp_path, 1, ip="172.18.0.4")) == 0
+        assert bf.live_ai_requests_in_last(150, self.log(tmp_path, 1, path="/health")) == 0
+
+
+def test_the_tool_has_no_delete_and_no_other_write_than_the_one_field():
+    body = SCRIPT.read_text(encoding="utf-8")
+    for forbidden in ("DELETE FROM", "os.remove", "os.unlink", "shutil.rmtree", "_save(", "delete_candidate", "docker stop", "docker restart", "docker start"):
+        assert forbidden not in body, forbidden
+    assert body.count("_patch_row_fields(") == 1
