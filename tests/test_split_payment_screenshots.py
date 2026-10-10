@@ -108,7 +108,7 @@ def _confirm(client, proof_ids):
         "/bookings/confirm",
         data={
             "name": "Aniket", "service_type": "round_wise", "phone": PHONE,
-            "technology": "Testing", "interview_round": "L2", "date": "2026-09-02",
+            "technology": "Testing", "interview_round": "L2", "company": "Capgemini", "date": "2026-09-02",
             "time": "03:00 PM", "time_end": "04:00 PM",
             "payment_proof_ids": ",".join(proof_ids),
             "idempotency_key": "aniket-split-2026-09-02",
@@ -215,7 +215,7 @@ def test_a_single_screenshot_covering_the_fee_still_books_unchanged(monkeypatch,
         "/bookings/confirm",
         data={
             "name": "Aniket", "service_type": "round_wise", "phone": PHONE,
-            "technology": "Testing", "interview_round": "L2", "date": "2026-09-02",
+            "technology": "Testing", "interview_round": "L2", "company": "Capgemini", "date": "2026-09-02",
             "time": "03:00 PM", "time_end": "04:00 PM",
             "payment_proof_id": body["proof_id"],
             "idempotency_key": "aniket-single-2026-09-02",

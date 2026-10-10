@@ -76,7 +76,7 @@ def _upload(client: TestClient) -> str:
 def _booking(proof_id: str) -> dict:
     return {
         "name": "Raju", "service_type": "round_wise", "phone": "9876543210",
-        "technology": "ETL", "interview_round": "L1", "date": "2026-08-01",
+        "technology": "ETL", "interview_round": "L1", "company": "Capgemini", "date": "2026-08-01",
         "time": "02:00 PM", "time_end": "03:00 PM", "payment_proof_id": proof_id,
         "idempotency_key": "raju-booking-2026-08-01-1400",
     }
@@ -100,7 +100,7 @@ def _profile_booking(key: str = "abilash-2026-08-12-1600") -> dict:
     """A profile-service booking, which needs no payment proof."""
     return {
         "name": "Abilash Perla", "service_type": "profile_service",
-        "interview_round": "L1", "date": "2026-08-12",
+        "interview_round": "L1", "company": "Capgemini", "date": "2026-08-12",
         "time": "16:00", "time_end": "17:00",
         "idempotency_key": key,
     }

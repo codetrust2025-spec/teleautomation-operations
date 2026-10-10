@@ -475,9 +475,16 @@ export function SubmitSlotPage() {
   const [manualTime, setManualTime] = useState('')
   const [interviewRound, setInterviewRound] = useState('')
   const [technology, setTechnology] = useState('')
-  // The company the interview is with. Optional: an invite does not always
-  // name it. Saved with the booking, so Confirmed slots and Daily Ops show it.
+  // The company the interview is with. Required: it is read from the invite
+  // when the invite names it, and typed when it does not. Saved with the
+  // booking, so Confirmed slots and Daily Ops show it.
   const [company, setCompany] = useState('')
+  // Whether what is in the box came from the invite rather than from the
+  // candidate, so the hint can say which, and so another invite may replace it.
+  const [companyFromInvite, setCompanyFromInvite] = useState(false)
+  // True once the candidate has typed one. What they typed is never replaced by
+  // a reading; a ref, because a reading arrives after the render that started it.
+  const companyTypedRef = useRef(false)
   const [serviceType, setServiceType] = useState('profile_service')
   const [showServiceDrop, setShowServiceDrop] = useState(false)
   // Which one field the form is currently asking for, not merely that a
@@ -498,6 +505,7 @@ export function SubmitSlotPage() {
   const nameFieldRef = useRef(null)
   const phoneRef = useRef(null)
   const technologyRef = useRef(null)
+  const companyRef = useRef(null)
   const roundRef = useRef(null)
   const paymentRef = useRef(null)
   const inviteRef = useRef(null)
@@ -649,10 +657,22 @@ export function SubmitSlotPage() {
   // they took -- and every warning. The confirmed booking is saved on the
   // server and listed under Confirmed slots; that list, the roster and the open
   // tab are left alone. Previews are released by the effect that owns them.
+  // What an invite says the company is. A reading replaces an earlier reading, and
+  // an invite that names none (or is refused, or is removed) clears it, so the
+  // previous invite's company is never left standing for this one. What the
+  // candidate typed is theirs: it is kept.
+  const applyInviteCompany = useCallback(name => {
+    if (companyTypedRef.current) return
+    const read = String(name || '').trim()
+    setCompany(read)
+    setCompanyFromInvite(Boolean(read))
+  }, [])
+
   const resetBookForm = useCallback(() => {
     setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
     setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
     setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setCompany('')
+    setCompanyFromInvite(false); companyTypedRef.current = false
     setSessionFile(null); setSessionPreview('')
     setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
     resetInviteAnalysis()
@@ -699,6 +719,7 @@ export function SubmitSlotPage() {
 
         // Check if it's a payment screenshot
         if (ext.is_payment_screenshot) {
+          applyInviteCompany('')
           setAiBlocked('This looks like a payment screenshot. Please upload the interview invite screenshot here.')
           setParsedSlot(null)
           run.finish(data.analysis, { ok: false, failureLabel: 'Not an invite' })
@@ -707,6 +728,7 @@ export function SubmitSlotPage() {
         }
         // Check if it doesn't look like an invite
         if (ext.looks_like_interview_invite === false) {
+          applyInviteCompany('')
           setAiBlocked('This image does not look like an interview invite.')
           setParsedSlot(null)
           run.finish(data.analysis, { ok: false, failureLabel: 'Not an invite' })
@@ -725,9 +747,9 @@ export function SubmitSlotPage() {
         if (ext.technology && !technology && !userEditedFields.technology) {
           setTechnology(ext.technology)
         }
-        // Only if the reader ever returns one; it does not ask for it today.
-        const extCompany = String((ext.company && ext.company.name) || (typeof ext.company === 'string' ? ext.company : '') || '').trim()
-        if (extCompany && !company && !userEditedFields.company) setCompany(extCompany)
+        // The reader is asked for the company and returns it only when the invite
+        // names one. Empty clears an earlier reading; a typed company stays.
+        applyInviteCompany((ext.company && ext.company.name) || (typeof ext.company === 'string' ? ext.company : ''))
         if (ext.interview_round && !interviewRound && !userEditedFields.round) {
           setInterviewRound(ext.interview_round)
           slot.interview_round = ext.interview_round
@@ -749,7 +771,9 @@ export function SubmitSlotPage() {
       run.detach()
     }
 
-    // Fallback to existing OCR endpoint
+    // Fallback to existing OCR endpoint. It reads a date and a time, never a
+    // company, so nothing is filled and the candidate types it.
+    applyInviteCompany('')
     try {
       const fd2 = new FormData(); fd2.append('file', file)
       const res2 = await fetch(`${API_BASE}/public/slots/parse-screenshot`, { method: 'POST', body: fd2 })
@@ -780,6 +804,7 @@ export function SubmitSlotPage() {
   async function onSlotFileChange(file) {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
+    applyInviteCompany('')
     resetInviteAnalysis()
     if (file) { setSlotPreview(URL.createObjectURL(file)); await parseScreenshot(file) }
     else setSlotPreview('')
@@ -882,13 +907,14 @@ export function SubmitSlotPage() {
       name: !!effectiveName,
       phone: serviceType !== 'round_wise' || !!roundWisePhone.trim(),
       technology: serviceType !== 'round_wise' || !!effectiveTechnology,
+      company: !!company.trim(),
       round: !!interviewRound,
       payment: !needsPaymentProof,
       invite: !!slotFile,
     }[missingField]
     if (satisfied) setMissingField('')
   }, [missingField, effectiveName, serviceType, roundWisePhone, effectiveTechnology,
-      interviewRound, needsPaymentProof, slotFile])
+      company, interviewRound, needsPaymentProof, slotFile])
 
   async function submitBook(ev) {
     ev.preventDefault()
@@ -914,6 +940,7 @@ export function SubmitSlotPage() {
         ok: serviceType !== 'round_wise' || !!roundWisePhone.trim() },
       { key: 'technology', ref: technologyRef,
         ok: serviceType !== 'round_wise' || !!effectiveTechnology },
+      { key: 'company', ref: companyRef, ok: !!company.trim() },
       { key: 'round', ref: roundRef, ok: !!interviewRound },
       { key: 'payment', ref: paymentRef, ok: !needsPaymentProof },
       { key: 'invite', ref: inviteRef, ok: !!slotFile },
@@ -946,7 +973,7 @@ export function SubmitSlotPage() {
       if (bookingSlot?.time_end) fd.append('time_end', bookingSlot.time_end)
       if (bookingSlot?.interview_round) fd.append('interview_round', bookingSlot.interview_round)
       if (effectiveTechnology) fd.append('technology', effectiveTechnology)
-      if (company.trim()) fd.append('company', company.trim())
+      fd.append('company', company.trim())
       if (serviceType === 'round_wise') fd.append('phone', roundWisePhone.trim())
       fd.append('candidate_id', selected?.id || '')
       if (paymentProofIds.length) fd.append('payment_proof_ids', paymentProofIds.join(','))
@@ -1179,21 +1206,36 @@ export function SubmitSlotPage() {
                 </label>
               )}
 
-              {/* Company and round share one row: the company is new, and a
-                  row of its own would have made every booking form taller. */}
+              {/* Company and round share one row, so a required field more
+                  does not make every booking form taller. */}
               <div className="sbs-field-row">
               <label className="sbs-field sbs-field--company">
-                <span className="sbs-label">Company <span className="sbs-optional">optional</span></span>
+                <span className="sbs-label">Company <span className="sbs-required" aria-hidden="true">*</span></span>
                 <input
+                  ref={companyRef}
                   className="sbs-input"
                   type="text"
                   value={company}
                   maxLength={120}
-                  onChange={e => { setCompany(e.target.value); setUserEditedFields(prev => ({ ...prev, company: true })) }}
+                  onChange={e => {
+                    companyTypedRef.current = Boolean(e.target.value.trim())
+                    setCompany(e.target.value)
+                    setCompanyFromInvite(false)
+                  }}
                   placeholder="e.g. Capgemini"
                   disabled={busy || parsing}
                   aria-label="Company"
+                  aria-required="true"
                 />
+                {/* Short, because this column is half a row: where the name came
+                    from, or that the candidate has to supply it. */}
+                {missingField === 'company'
+                  ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter the company name.</span>
+                  : companyFromInvite
+                    ? <span className="sbs-hint">Read from the invite. Check it.</span>
+                    : slotFile && !parsing && !aiBlocked && !company.trim()
+                      ? <span className="sbs-hint">Not on the invite. Type it.</span>
+                      : <span className="sbs-hint">Read from the invite, or type it.</span>}
               </label>
               <label className="sbs-field">
                 <span className="sbs-label">Interview round <span className="sbs-required" aria-hidden="true">*</span></span>

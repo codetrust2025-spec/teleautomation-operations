@@ -123,7 +123,7 @@ IMPORTANT: Today's date is {today}. Use this to resolve relative dates:
   resolve it from the server date or guess.
 
 Schema:
-{{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}}
+{{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "company": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}}
 
 Rules:
 - Extract only visible information.
@@ -149,6 +149,11 @@ Rules:
 - Do NOT confuse screenshot_source with meeting_platform. They are different fields.
 - technology should be the job role or tech stack (Java, React JS, Data Engineer, Sr Data Reliability Engineer, etc.)
 - Do NOT put meeting platform names in technology field.
+- company is the organisation the interview is for (the hiring company or end client, for example Capgemini, Infosys or Wipro), written as the invite names it.
+  Look for a Company, Client, Organisation or Customer label, a subject such as "Interview with X" or "X | Java | L1", or the sender's signature.
+  Return only the name, never a sentence.
+- Do NOT put the meeting platform, the app the screenshot came from, a job role, a person's name or an email address in company.
+  Do not infer it from an email domain or a logo. If the invite does not name the company, keep company empty.
 - If the screenshot is a payment receipt, UPI screenshot, bank transfer screenshot, transaction proof, or payment confirmation, set is_payment_screenshot=true.
 - If it is not an interview invite, set looks_like_interview_invite=false.
 - confidence_score must be between 0 and 100."""
@@ -175,13 +180,16 @@ IMPORTANT RULES:
 - Do NOT confuse screenshot_source with meeting_platform.
 - technology should be the job role/tech stack (Java, React JS, Data Engineer, Sr Data Reliability Engineer, etc.)
 - Do NOT put meeting platform names in technology field.
+- company is the organisation the interview is for (the hiring company or end client, for example Capgemini, Infosys or Wipro), written as the text names it.
+  Return only the name. Do NOT put the meeting platform, a job role, a person's name or an email address in company.
+  Do not infer it from an email domain. If the text does not name the company, keep company empty.
 - If only start_time is visible and no end_time or duration is mentioned, leave end_time empty.
 - Convert all times to 12-hour hh:mm AM/PM format.
 - Convert all dates to YYYY-MM-DD.
 - confidence_score must be between 0 and 100.
 
 Schema:
-{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}
+{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "company": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}
 
 OCR TEXT:
 """
@@ -445,6 +453,59 @@ def retry_invalid_json_once(
     return None
 
 
+# What a model puts in `company` when it has nothing to say, and the names of
+# the places an invite is held or received. None of these is the organisation
+# the interview is for, so none may fill the field the candidate would then
+# confirm without reading.
+_NO_COMPANY = frozenset({
+    "", "na", "n a", "none", "null", "nil", "unknown", "unspecified", "tbd", "not visible",
+    "not available", "not mentioned", "not specified", "not found", "not provided",
+    "not applicable", "company", "company name", "client", "client name",
+    "organisation", "organization", "customer",
+})
+_NOT_A_COMPANY = frozenset({
+    "hirepro", "flocareer", "zoom", "zoom meeting", "teams", "microsoft teams", "google meet", "meet",
+    "barraiser", "skype", "webex", "cisco webex", "gmail", "google calendar", "calendar", "outlook",
+    "whatsapp", "telegram", "linkedin", "naukri", "codility", "hackerrank", "hackerearth",
+    "mettl", "mercer mettl", "amcat", "cocubes", "jobma", "hirevue", "interview", "interviewer",
+})
+_COMPANY_MAX_LENGTH = 120
+_COMPANY_MAX_WORDS = 10
+
+
+def _company_key(value: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", value.lower()).split())
+
+
+def clean_company_name(value: Any, *, people: tuple[str, ...] = ()) -> str:
+    """The company an invite names, or "" when what the model returned cannot be one.
+
+    A model may answer with a string, an object with a `name`, a placeholder
+    ("N/A", "Not visible"), the platform the invite came through, the
+    candidate's own name, an address or a whole sentence. Only a plausible
+    organisation name is kept; anything else is "", which is what sends the
+    candidate to type it. A wrong name saved without anyone noticing is worse
+    than an empty field that is asked for.
+    """
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("company") or ""
+    if not isinstance(value, str):
+        return ""
+    text = " ".join(value.split()).strip(" \t\"'`,;:-|")
+    if not text or len(text) > _COMPANY_MAX_LENGTH:
+        return ""
+    if "@" in text or "://" in text or text.lower().startswith("www."):
+        return ""
+    if not re.search(r"[A-Za-z]", text) or len(text.split()) > _COMPANY_MAX_WORDS:
+        return ""
+    key = _company_key(text)
+    if key in _NO_COMPANY or key in _NOT_A_COMPANY:
+        return ""
+    if key and key in {_company_key(person) for person in people if person}:
+        return ""
+    return text
+
+
 def validate_invite_extraction(extracted: dict[str, Any]) -> dict[str, Any]:
     """Validate and normalize the extracted data."""
     if not extracted:
@@ -464,6 +525,16 @@ def validate_invite_extraction(extracted: dict[str, Any]) -> dict[str, Any]:
     # ── Fix wrong year: if extracted date is in the past, correct year ──────
     if extracted.get("interview_date"):
         extracted["interview_date"] = _fix_past_year(extracted["interview_date"])
+
+    # The company is read like any other field, but a placeholder, a platform
+    # or a person is not one, so it is checked before anything shows it.
+    extracted["company"] = clean_company_name(
+        extracted.get("company"),
+        people=tuple(
+            str(extracted.get(field) or "")
+            for field in ("candidate_name", "client_name", "attendee_name")
+        ),
+    )
 
     # Ensure confidence_score is an integer 0-100
     score = extracted.get("confidence_score", 0)
@@ -581,6 +652,7 @@ def _empty_extraction() -> dict[str, Any]:
         "candidate_phone": "",
         "client_name": "",
         "technology": "",
+        "company": "",
         "service_type": "",
         "interview_round": "",
         "interview_date": "",

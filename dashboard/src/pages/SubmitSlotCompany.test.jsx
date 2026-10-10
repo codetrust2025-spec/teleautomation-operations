@@ -1,8 +1,9 @@
 /**
  * Company on the booking form and on Confirmed slots.
  *
- * The form takes the company the interview is with (optional -- an invite
- * does not always name it) and sends it with the booking; Confirmed slots
+ * The form takes the company the interview is with. It is read from the invite
+ * when the invite names it and typed when it does not, it is required, and it
+ * is sent with the booking; Confirmed slots
  * shows it beside the technology on the card's second line, with the round
  * beside the name and the status and source as two small chips, so a card is
  * two lines rather than a stack of three chips.
@@ -36,13 +37,21 @@ const SLOTS = [
     date: '2026-10-20', time: '12:00', time_end: '12:30', interview_booking_source: 'candidate_booked' },
 ]
 
+/**
+ * `invite.company` is what the reader returns for the next invite; a test may change it
+ * between two uploads. Left undefined, the invite names no company, as many do not.
+ */
 function stubFetch() {
-  const calls = { confirms: [] }
+  const calls = { confirms: [], invite: { company: undefined } }
   vi.stubGlobal('fetch', vi.fn((url, options) => {
     const target = String(url)
     const reply = body => Promise.resolve({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(body) })
     if (target.includes('/public/slots/payment-requirement')) return reply({ status: 'ok', service_type: 'profile_service', amount_due: 0, payment_required: false })
-    if (target.includes('/extract-invite-ai')) return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '04:00 PM', confidence_score: 95 } })
+    if (target.includes('/extract-invite-ai')) {
+      const data = { interview_date: upcomingDate(), start_time: '04:00 PM', confidence_score: 95 }
+      if (calls.invite.company !== undefined) data.company = calls.invite.company
+      return reply({ status: 'ok', success: true, data })
+    }
     if (target.includes('/bookings/confirm')) {
       calls.confirms.push(options?.body)
       return reply({ status: 'ok', candidate: { name: 'Aniket' } })
@@ -54,45 +63,154 @@ function stubFetch() {
   return calls
 }
 
-async function completedForm({ company } = {}) {
+const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
+const companyBox = () => screen.getByLabelText('Company')
+const hintOf = () => companyBox().closest('label').querySelector('.sbs-hint')
+
+/** Attach an invite and wait until it has been read. */
+async function attachInvite() {
+  const invite = inviteInput()
+  Object.defineProperty(invite, 'files', { value: [new File(['x'], 'invite.jpg', { type: 'image/jpeg' })], configurable: true })
+  fireEvent.change(invite)
+  await waitFor(() => expect(screen.queryByText(/reading invite/i)).toBeNull())
+  await waitFor(() => expect(document.querySelector('.sbs-detected-compact')).not.toBeNull())
+}
+
+async function completedForm({ company, readCompany } = {}) {
+  const calls = stubFetch()
+  if (readCompany !== undefined) calls.invite.company = readCompany
   render(<SubmitSlotPage />)
   const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
   fireEvent.change(document.querySelector('.sbs-field input'), { target: { value: 'Aniket' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
-  if (company !== undefined) fireEvent.change(screen.getByLabelText('Company'), { target: { value: company } })
-  const invite = [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
-  Object.defineProperty(invite, 'files', { value: [new File(['x'], 'invite.jpg', { type: 'image/jpeg' })], configurable: true })
-  fireEvent.change(invite)
-  await waitFor(() => expect(screen.queryByText(/reading invite/i)).toBeNull())
-  return confirm
+  if (company !== undefined) fireEvent.change(companyBox(), { target: { value: company } })
+  await attachInvite()
+  return { confirm, calls }
 }
 
 describe('the booking form', () => {
-  it('asks for the company, optionally, before the round and in its row', async () => {
+  it('asks for the company, as a required field, before the round and in its row', async () => {
     stubFetch()
     render(<SubmitSlotPage />)
     const field = await screen.findByLabelText('Company')
     expect(field.tagName).toBe('INPUT')
-    expect(field).not.toBeRequired()
-    expect(field.closest('label').textContent).toMatch(/optional/i)
+    expect(field).toHaveAttribute('aria-required', 'true')
+    const label = field.closest('label')
+    expect(label.textContent).not.toMatch(/optional/i)
+    expect(label.querySelector('.sbs-required')).not.toBeNull()
     const row = field.closest('.sbs-field-row')
     const labels = [...row.querySelectorAll(':scope > .sbs-field .sbs-label')].map(l => l.textContent)
     expect(labels[0]).toMatch(/^Company/)
     expect(labels[1]).toMatch(/^Interview round/)
   })
 
-  it('sends the company with the booking', async () => {
-    const calls = stubFetch()
-    fireEvent.click(await completedForm({ company: '  Capgemini  ' }))
+  it('sends the company the candidate typed, trimmed', async () => {
+    const { confirm, calls } = await completedForm({ company: '  Capgemini  ' })
+    fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
     expect(calls.confirms[0].get('company')).toBe('Capgemini')
   })
 
-  it('sends no company when none was entered', async () => {
-    const calls = stubFetch()
-    fireEvent.click(await completedForm())
+  it('does not book without a company: it names the field, beside the field, and sends nothing', async () => {
+    const { confirm, calls } = await completedForm()
+    expect(companyBox().value).toBe('')
+    fireEvent.click(confirm)
+    const warning = await screen.findByText('Enter the company name.')
+    expect(warning).toHaveAttribute('role', 'alert')
+    expect(warning.closest('label')).toBe(companyBox().closest('label'))
+    expect(screen.getAllByText('Enter the company name.')).toHaveLength(1)
+    expect(document.querySelector('.sbs-alert--error')).toBeNull()
+    expect(calls.confirms).toHaveLength(0)
+  })
+
+  it('a company of only spaces is not a company', async () => {
+    const { confirm, calls } = await completedForm({ company: '   ' })
+    fireEvent.click(confirm)
+    expect(await screen.findByText('Enter the company name.')).toBeInTheDocument()
+    expect(calls.confirms).toHaveLength(0)
+  })
+
+  it('stops asking the moment the company is entered, and then books', async () => {
+    const { confirm, calls } = await completedForm()
+    fireEvent.click(confirm)
+    await screen.findByText('Enter the company name.')
+    fireEvent.change(companyBox(), { target: { value: 'Wipro' } })
+    await waitFor(() => expect(screen.queryByText('Enter the company name.')).toBeNull())
+    fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
-    expect(calls.confirms[0].has('company')).toBe(false)
+    expect(calls.confirms[0].get('company')).toBe('Wipro')
+  })
+})
+
+describe('the company is read from the invite', () => {
+  it('fills the company the invite names, says where it came from, and books with it', async () => {
+    const { confirm, calls } = await completedForm({ readCompany: 'Infosys' })
+    expect(companyBox().value).toBe('Infosys')
+    expect(hintOf().textContent).toBe('Read from the invite. Check it.')
+    expect(hintOf().className).not.toContain('sbs-hint--warn')
+    fireEvent.click(confirm)
+    await waitFor(() => expect(calls.confirms).toHaveLength(1))
+    expect(calls.confirms[0].get('company')).toBe('Infosys')
+  })
+
+  it('accepts the company as an object with a name, the other shape a reader may use', async () => {
+    await completedForm({ readCompany: { name: 'Tech Mahindra' } })
+    expect(companyBox().value).toBe('Tech Mahindra')
+  })
+
+  it('leaves the box empty and says the invite did not name one, as a hint rather than a warning', async () => {
+    await completedForm({ readCompany: '' })
+    expect(companyBox().value).toBe('')
+    expect(hintOf().textContent).toBe('Not on the invite. Type it.')
+    expect(hintOf().className).not.toContain('sbs-hint--warn')
+    expect(document.querySelector('.sbs-hint--warn')).toBeNull()
+  })
+
+  it('a company read from the invite can be corrected, and the correction is what is booked', async () => {
+    const { confirm, calls } = await completedForm({ readCompany: 'Infosis' })
+    fireEvent.change(companyBox(), { target: { value: 'Infosys' } })
+    expect(hintOf().textContent).toBe('Read from the invite, or type it.')
+    fireEvent.click(confirm)
+    await waitFor(() => expect(calls.confirms).toHaveLength(1))
+    expect(calls.confirms[0].get('company')).toBe('Infosys')
+  })
+
+  it('never replaces what the candidate typed with a reading', async () => {
+    const { calls } = await completedForm({ company: 'Wipro', readCompany: 'Infosys' })
+    expect(companyBox().value).toBe('Wipro')
+    // And a second invite does not take it over either.
+    calls.invite.company = 'Cognizant'
+    await attachInvite()
+    expect(companyBox().value).toBe('Wipro')
+  })
+
+  it('the next invite replaces a company that was read, and clears it when it names none', async () => {
+    const { calls } = await completedForm({ readCompany: 'Infosys' })
+    expect(companyBox().value).toBe('Infosys')
+
+    calls.invite.company = 'Cognizant'
+    await attachInvite()
+    expect(companyBox().value).toBe('Cognizant')
+
+    // The second invite names no company: the first invite's must not stand in for it.
+    calls.invite.company = ''
+    await attachInvite()
+    expect(companyBox().value).toBe('')
+    expect(hintOf().textContent).toBe('Not on the invite. Type it.')
+  })
+
+  it('removing the invite clears a company that was read from it, but not one the candidate typed', async () => {
+    await completedForm({ readCompany: 'Infosys' })
+    fireEvent.click(screen.getByRole('button', { name: /remove invite screenshot/i }))
+    await waitFor(() => expect(companyBox().value).toBe(''))
+    expect(hintOf().textContent).toBe('Read from the invite, or type it.')
+
+    cleanup()
+    vi.unstubAllGlobals()
+    await completedForm({ company: 'Wipro', readCompany: 'Infosys' })
+    fireEvent.click(screen.getByRole('button', { name: /remove invite screenshot/i }))
+    await waitFor(() => expect(screen.queryByText(/invite screenshot attached/i)).toBeNull())
+    expect(companyBox().value).toBe('Wipro')
   })
 })
 

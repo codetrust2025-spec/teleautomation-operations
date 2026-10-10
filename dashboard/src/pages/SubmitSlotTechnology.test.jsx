@@ -33,7 +33,7 @@ function stubFetch({ extraction } = {}) {
       return reply({ status: 'ok', service_type: 'round_wise', amount_due: 5000, needs_payment: false, waived: true })
     }
     if (target.includes('/extract-invite-ai')) {
-      return reply({ status: 'ok', success: true, data: extraction || {} })
+      return reply({ status: 'ok', success: true, data: { company: 'Capgemini', ...(extraction || {}) } })
     }
     // Round-wise owes the round tariff, which would put a payment card on
     // screen. These are about the technology field, so the booking is waived by

@@ -60,7 +60,7 @@ def _form(client: TestClient, *, time="02:15 PM", time_end="02:45 PM", key="form
     return client.post(
         "/bookings/confirm",
         data={
-            "name": NAME, "service_type": "profile_service", "interview_round": round_,
+            "name": NAME, "service_type": "profile_service", "interview_round": round_, "company": "Capgemini",
             "date": "2099-09-18", "time": time, "time_end": time_end, "idempotency_key": key,
         },
         files={"file": ("invite.png", b"invite", "image/png")},

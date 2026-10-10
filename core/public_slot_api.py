@@ -75,6 +75,7 @@ def _invite_extraction_fallback(warning: str, *, trace_id: str = "") -> dict:
             "end_time": "",
             "interview_round": "",
             "technology": "",
+            "company": "",
             "meeting_platform": "",
             "confidence_score": 0,
             "missing_fields": ["interview_date", "start_time", "interview_round"],
@@ -928,8 +929,9 @@ def install_public_slot_routes(app) -> None:
         payment_proof_ids: str = Form(default=""),
         idempotency_key: str = Form(default=""),
         invite_trace_id: str = Form(default=""),
-        # Optional: the company the interview is with. Kept on the booked
-        # slot as interview_company, the field Daily Ops already shows.
+        # Required: the company the interview is with. Read from the invite
+        # when it names one, typed otherwise. Kept on the booked slot as
+        # interview_company, the field Daily Ops already shows.
         company: str = Form(default=""),
         invite_display_date: str = Form(default=""),
         invite_display_time: str = Form(default=""),
@@ -947,6 +949,10 @@ def install_public_slot_routes(app) -> None:
         if not normalized_round:
             return _json_error(
                 "Interview round is required. Select L1, L2, or another valid round."
+            )
+        if not normalized_company:
+            return _json_error(
+                "Company is required. Enter the company this interview is with."
             )
         if normalized_service_type == "round_wise" and not normalized_technology:
             return _json_error(

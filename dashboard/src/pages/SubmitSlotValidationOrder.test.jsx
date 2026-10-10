@@ -124,7 +124,7 @@ describe('the browser no longer decides', () => {
 describe('validation runs top to bottom', () => {
   it('checks the fields in the order they appear on the form', () => {
     expect(steps()).toEqual([
-      'name', 'phone', 'technology', 'round', 'payment', 'invite',
+      'name', 'phone', 'technology', 'company', 'round', 'payment', 'invite',
     ])
   })
 
@@ -133,6 +133,7 @@ describe('validation runs top to bottom', () => {
     // checking it earlier would judge an amount that is not settled yet.
     const order = steps()
     expect(order.indexOf('payment')).toBeGreaterThan(order.indexOf('round'))
+    expect(order.indexOf('payment')).toBeGreaterThan(order.indexOf('company'))
     expect(order.indexOf('payment')).toBeGreaterThan(order.indexOf('technology'))
   })
 
@@ -150,6 +151,7 @@ describe('validation runs top to bottom', () => {
       'Enter the client name for this round.',
       'Enter the candidate phone number.',
       'Choose the technology for this interview.',
+      'Enter the company name.',
       'Choose the interview round.',
       'Attach a payment screenshot that covers the amount due.',
       'Attach the payment screenshot.',
@@ -175,6 +177,10 @@ describe('the rules themselves are unchanged', () => {
     expect(page).toContain("ok: serviceType !== 'round_wise' || !!effectiveTechnology")
   })
 
+  it('the company is required, whatever the service type, and a blank one does not count', () => {
+    expect(page).toContain('ok: !!company.trim()')
+  })
+
   it('payment still gates on the same needsPaymentProof flag', () => {
     expect(page).toContain('ok: !needsPaymentProof')
   })
@@ -189,7 +195,7 @@ describe('the rules themselves are unchanged', () => {
 describe('every field in the sequence can actually be reached', () => {
   it('each ref is attached to something in the markup', () => {
     const refFor = { name: 'nameRef', phone: 'phoneRef', technology: 'technologyRef',
-                     round: 'roundRef', payment: 'paymentRef', invite: 'inviteRef' }
+                     company: 'companyRef', round: 'roundRef', payment: 'paymentRef', invite: 'inviteRef' }
     for (const key of steps()) {
       expect(page).toContain(`ref={${refFor[key]}}`)
     }

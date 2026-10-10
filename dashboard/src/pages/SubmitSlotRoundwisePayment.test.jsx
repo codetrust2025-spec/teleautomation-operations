@@ -80,7 +80,7 @@ function stubFetch({ paymentRequirementOverride, uploadReply, confirmReply, conf
       })
     }
     if (target.includes('/extract-invite-ai')) {
-      return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '03:00 PM', confidence_score: 92 } })
+      return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '03:00 PM', company: 'Capgemini', confidence_score: 92 } })
     }
     if (target.includes('/bookings/confirm')) {
       calls.confirms.push(options.body)
@@ -298,7 +298,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
       const target = String(url)
       const reply = body => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
       if (target.includes('/extract-invite-ai')) {
-        return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '03:00 PM', technology: 'React Native', confidence_score: 92 } })
+        return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '03:00 PM', technology: 'React Native', company: 'Capgemini', confidence_score: 92 } })
       }
       if (target.includes('/public/slots/payment-requirement')) {
         return reply({ status: 'ok', service_type: 'round_wise', amount_due: 5000, payment_required: true, re_service: false })
@@ -322,7 +322,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
       const target = String(url)
       const reply = body => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
       if (target.includes('/extract-invite-ai')) {
-        return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '03:00 PM', technology: 'Overwritten Tech', confidence_score: 92 } })
+        return reply({ status: 'ok', success: true, data: { interview_date: upcomingDate(), start_time: '03:00 PM', technology: 'Overwritten Tech', company: 'Capgemini', confidence_score: 92 } })
       }
       if (target.includes('/public/slots/payment-requirement')) {
         return reply({ status: 'ok', service_type: 'round_wise', amount_due: 5000, payment_required: true, re_service: false })

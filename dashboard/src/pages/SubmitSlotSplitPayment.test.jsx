@@ -38,7 +38,7 @@ function stubFetch(uploadReplies) {
       return Promise.resolve({
         ok: true, status: 200,
         json: () => Promise.resolve({ status: 'ok', success: true, data: {
-          interview_date: soon.toISOString().slice(0, 10), start_time: '03:00 PM', confidence_score: 92,
+          interview_date: soon.toISOString().slice(0, 10), start_time: '03:00 PM', company: 'Capgemini', confidence_score: 92,
         } }),
       })
     }

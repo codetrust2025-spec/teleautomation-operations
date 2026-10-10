@@ -85,7 +85,7 @@ def _upload(client: TestClient, *, phone: str = PHONE, candidate_id: str = ""):
 def _confirm(client: TestClient, proof_id: str, *, phone: str = PHONE, candidate_id: str = ""):
     return client.post(
         "/bookings/confirm",
-        data={"name": "Aniket", "service_type": "round_wise", "phone": phone, "candidate_id": candidate_id, "technology": "Testing", "interview_round": "L2", "date": "2026-08-02", "time": "03:00 PM", "time_end": "04:00 PM", "payment_proof_id": proof_id, "idempotency_key": "aniket-rebook-2026-08-02"},
+        data={"name": "Aniket", "service_type": "round_wise", "phone": phone, "candidate_id": candidate_id, "technology": "Testing", "interview_round": "L2", "company": "Capgemini", "date": "2026-08-02", "time": "03:00 PM", "time_end": "04:00 PM", "payment_proof_id": proof_id, "idempotency_key": "aniket-rebook-2026-08-02"},
         files={"file": ("invite.jpg", b"interview-invite", "image/jpeg")},
     )
 

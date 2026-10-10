@@ -93,7 +93,7 @@ def upload(client: TestClient, *, name: str = "Raju", body: bytes = b"receipt-a"
 def booking(proof_id: str, **overrides) -> dict:
     data = {
         "name": "Raju", "service_type": "round_wise", "phone": "9876543210",
-        "technology": "ETL", "interview_round": "L1", "date": "2026-08-01",
+        "technology": "ETL", "interview_round": "L1", "company": "Capgemini", "date": "2026-08-01",
         "time": "02:00 PM", "time_end": "03:00 PM", "payment_proof_id": proof_id,
         "idempotency_key": "raju-2026-08-01-1400",
     }

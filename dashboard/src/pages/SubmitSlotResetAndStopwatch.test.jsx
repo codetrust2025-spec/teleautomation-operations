@@ -48,7 +48,7 @@ function pending() {
 const ANALYSED = { state: 'done', node: 'RTX 4060', analysed_by: ['RTX 4060'] }
 const INVITE = {
   status: 'ok', success: true, analysis: ANALYSED,
-  data: { interview_date: upcomingDate(), start_time: '05:00 PM', end_time: '06:00 PM', interview_round: 'L1', confidence_score: 95 },
+  data: { interview_date: upcomingDate(), start_time: '05:00 PM', end_time: '06:00 PM', interview_round: 'L1', company: 'Capgemini', confidence_score: 95 },
 }
 const PAYMENT = {
   status: 'ok', proof_ids: ['proof-1'], verified_total: 5000, remaining_due: 0, amount_due: 5000,

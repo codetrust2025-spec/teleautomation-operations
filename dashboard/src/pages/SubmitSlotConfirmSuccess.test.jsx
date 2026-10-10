@@ -50,7 +50,7 @@ function stubFetch(confirmReply) {
     }
     if (target.includes('/extract-invite-ai')) {
       return reply({ status: 'ok', success: true,
-                     data: { interview_date: upcomingDate(), start_time: '04:00 PM', confidence_score: 95 } })
+                     data: { interview_date: upcomingDate(), start_time: '04:00 PM', company: 'Capgemini', confidence_score: 95 } })
     }
     if (target.includes('/bookings/confirm')) {
       calls.confirms.push(options?.body)
