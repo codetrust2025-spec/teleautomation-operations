@@ -124,7 +124,7 @@ describe('the browser no longer decides', () => {
 describe('validation runs top to bottom', () => {
   it('checks the fields in the order they appear on the form', () => {
     expect(steps()).toEqual([
-      'name', 'phone', 'technology', 'invite', 'company', 'round', 'payment',
+      'name', 'phone', 'technology', 'invite', 'end_time', 'meeting_link', 'company', 'round', 'payment',
     ])
   })
 
@@ -154,6 +154,8 @@ describe('validation runs top to bottom', () => {
       'Enter the candidate phone number.',
       'Choose the technology for this interview.',
       'Enter the company name.',
+      'Enter a time after the start, like 03:00 PM, or leave it empty.',
+      'Enter the full link starting with https://, or leave it empty.',
       'Choose the interview round.',
       'Attach a payment screenshot that covers the amount due.',
       'Attach the payment screenshot.',
@@ -197,7 +199,7 @@ describe('the rules themselves are unchanged', () => {
 describe('every field in the sequence can actually be reached', () => {
   it('each ref is attached to something in the markup', () => {
     const refFor = { name: 'nameRef', phone: 'phoneRef', technology: 'technologyRef',
-                     company: 'companyRef', round: 'roundRef', payment: 'paymentRef', invite: 'inviteRef' }
+                     end_time: 'endTimeRef', meeting_link: 'meetingLinkRef', company: 'companyRef', round: 'roundRef', payment: 'paymentRef', invite: 'inviteRef' }
     for (const key of steps()) {
       expect(page).toContain(`ref={${refFor[key]}}`)
     }

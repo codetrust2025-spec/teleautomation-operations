@@ -64,6 +64,30 @@ function to24h(val) {
   return `${String(h).padStart(2,'0')}:${min}`
 }
 
+/** Minutes after midnight for a typed or read time ("2:30 pm", "14:30"), or null when it is not a time. */
+function minutesOf(val) {
+  const t = to24h(normalizeTo12h(String(val || '')))
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t)
+  if (!m) return null
+  const h = Number(m[1]), min = Number(m[2])
+  return h < 24 && min < 60 ? h * 60 + min : null
+}
+
+/** One complete http(s) web address: what a meeting link has to be if one is given. */
+function isWebLink(val) {
+  const text = String(val || '').trim()
+  if (!text || /\s/.test(text)) return false
+  try {
+    const url = new URL(text)
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.includes('.')
+  } catch {
+    return false
+  }
+}
+
+const PLATFORM_CHOICES = ['Microsoft Teams', 'Zoom', 'Google Meet', 'Webex', 'HirePro', 'FloCareer', 'BarRaiser', 'Skype', 'Phone call', 'In person']
+const TIMEZONE_CHOICES = ['IST', 'GMT', 'UTC', 'EST', 'CST', 'PST', 'BST', 'CET', 'SGT', 'AEST']
+
 function platformLabel(platform) {
   const map = { teams: 'Microsoft Teams', zoom: 'Zoom', gmail: 'Gmail', google_calendar: 'Google Calendar', barraiser: 'BarRaiser' }
   return map[platform] || platform || ''
@@ -485,6 +509,16 @@ export function SubmitSlotPage() {
   // True once the candidate has typed one. What they typed is never replaced by
   // a reading; a ref, because a reading arrives after the render that started it.
   const companyTypedRef = useRef(false)
+  // More of what the invite says: end time, time zone, platform, meeting link.
+  // Each is filled only with a value the reader confirmed (a known platform, a
+  // complete link on a meeting service, a time zone the invite writes), stays
+  // editable, and is never replaced once the candidate has typed in it.
+  const [endTime, setEndTime] = useState('')
+  const [inviteTimezone, setInviteTimezone] = useState('')
+  const [meetingPlatform, setMeetingPlatform] = useState('')
+  const [meetingLink, setMeetingLink] = useState('')
+  const [detailsFromInvite, setDetailsFromInvite] = useState({})
+  const detailsTypedRef = useRef({})
   const [serviceType, setServiceType] = useState('profile_service')
   const [showServiceDrop, setShowServiceDrop] = useState(false)
   // Which one field the form is currently asking for, not merely that a
@@ -506,6 +540,8 @@ export function SubmitSlotPage() {
   const phoneRef = useRef(null)
   const technologyRef = useRef(null)
   const companyRef = useRef(null)
+  const endTimeRef = useRef(null)
+  const meetingLinkRef = useRef(null)
   const roundRef = useRef(null)
   const paymentRef = useRef(null)
   const inviteRef = useRef(null)
@@ -547,10 +583,16 @@ export function SubmitSlotPage() {
   const bookingSlot = useMemo(() => {
     const effectiveDate = manualDate || parsedSlot?.date || ''
     const effectiveTime = manualTime || parsedSlot?.time || ''
-    const effectiveEnd = parsedSlot?.time_end || ''
+    const effectiveEnd = endTime.trim() ? normalizeTo12h(endTime) : ''
     if (effectiveDate && effectiveTime) return { ...parsedSlot, date: effectiveDate, time: to24h(effectiveTime), time_end: to24h(effectiveEnd), interview_round: interviewRound }
     return null
-  }, [parsedSlot, manualDate, manualTime, interviewRound])
+  }, [parsedSlot, manualDate, manualTime, interviewRound, endTime])
+  // Optional fields are checked only when filled: an end time must be a time
+  // after the start, a meeting link one complete web address.
+  const startMinutes = minutesOf(manualTime || parsedSlot?.time || '')
+  const endMinutes = minutesOf(endTime)
+  const endTimeOk = !endTime.trim() || (endMinutes != null && (startMinutes == null || endMinutes > startMinutes))
+  const meetingLinkOk = !meetingLink.trim() || isWebLink(meetingLink)
 
   const effectiveBookingDate = manualDate || parsedSlot?.date || ''
   const isPastDate = (() => {
@@ -668,11 +710,40 @@ export function SubmitSlotPage() {
     setCompanyFromInvite(Boolean(read))
   }, [])
 
+  // The details an invite confirms. Same rules as the company: a reading
+  // replaces an earlier reading, an invite that confirms none clears it, and
+  // what the candidate typed is kept.
+  const applyInviteDetails = useCallback(read => {
+    const typed = detailsTypedRef.current
+    const values = {
+      endTime: normalizeTo12h(String(read?.endTime || '')),
+      timezone: String(read?.timezone || '').trim(),
+      platform: String(read?.platform || '').trim(),
+      link: String(read?.link || '').trim(),
+    }
+    const setters = { endTime: setEndTime, timezone: setInviteTimezone, platform: setMeetingPlatform, link: setMeetingLink }
+    const from = {}
+    for (const key of Object.keys(setters)) {
+      if (typed[key]) continue
+      setters[key](values[key])
+      from[key] = Boolean(values[key])
+    }
+    setDetailsFromInvite(prev => ({ ...prev, ...from }))
+  }, [])
+
+  const typeDetail = (key, setter) => event => {
+    detailsTypedRef.current = { ...detailsTypedRef.current, [key]: Boolean(event.target.value.trim()) }
+    setter(event.target.value)
+    setDetailsFromInvite(prev => ({ ...prev, [key]: false }))
+  }
+
   const resetBookForm = useCallback(() => {
     setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
     setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
     setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setCompany('')
     setCompanyFromInvite(false); companyTypedRef.current = false
+    setEndTime(''); setInviteTimezone(''); setMeetingPlatform(''); setMeetingLink('')
+    setDetailsFromInvite({}); detailsTypedRef.current = {}
     setSessionFile(null); setSessionPreview('')
     setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
     resetInviteAnalysis()
@@ -720,6 +791,7 @@ export function SubmitSlotPage() {
         // Check if it's a payment screenshot
         if (ext.is_payment_screenshot) {
           applyInviteCompany('')
+          applyInviteDetails({})
           setAiBlocked('This looks like a payment screenshot. Please upload the interview invite screenshot here.')
           setParsedSlot(null)
           run.finish(data.analysis, { ok: false, failureLabel: 'Not an invite' })
@@ -729,6 +801,7 @@ export function SubmitSlotPage() {
         // Check if it doesn't look like an invite
         if (ext.looks_like_interview_invite === false) {
           applyInviteCompany('')
+          applyInviteDetails({})
           setAiBlocked('This image does not look like an interview invite.')
           setParsedSlot(null)
           run.finish(data.analysis, { ok: false, failureLabel: 'Not an invite' })
@@ -750,6 +823,14 @@ export function SubmitSlotPage() {
         // The reader is asked for the company and returns it only when the invite
         // names one. Empty clears an earlier reading; a typed company stays.
         applyInviteCompany((ext.company && ext.company.name) || (typeof ext.company === 'string' ? ext.company : ''))
+        // Only the reader's confirmed values; the raw platform or link it saw is
+        // not enough on its own.
+        applyInviteDetails({
+          endTime: ext.end_time || ext.time_end || '',
+          timezone: ext.confirmed_timezone || '',
+          platform: ext.confirmed_platform || '',
+          link: ext.confirmed_meeting_link || '',
+        })
         if (ext.interview_round && !interviewRound && !userEditedFields.round) {
           setInterviewRound(ext.interview_round)
           slot.interview_round = ext.interview_round
@@ -774,6 +855,7 @@ export function SubmitSlotPage() {
     // Fallback to existing OCR endpoint. It reads a date and a time, never a
     // company, so nothing is filled and the candidate types it.
     applyInviteCompany('')
+    applyInviteDetails({})
     try {
       const fd2 = new FormData(); fd2.append('file', file)
       const res2 = await fetch(`${API_BASE}/public/slots/parse-screenshot`, { method: 'POST', body: fd2 })
@@ -792,6 +874,7 @@ export function SubmitSlotPage() {
       }
       setParsedSlot(slot)
       if (!interviewRound) setInterviewRound(slot?.interview_round || '')
+      applyInviteDetails({ endTime: slot?.time_end || '' })
       setManualDate(''); setManualTime('')
       run.finish(null)
     } catch {
@@ -805,6 +888,7 @@ export function SubmitSlotPage() {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
     applyInviteCompany('')
+    applyInviteDetails({})
     resetInviteAnalysis()
     if (file) { setSlotPreview(URL.createObjectURL(file)); await parseScreenshot(file) }
     else setSlotPreview('')
@@ -911,10 +995,12 @@ export function SubmitSlotPage() {
       round: !!interviewRound,
       payment: !needsPaymentProof,
       invite: !!slotFile,
+      end_time: endTimeOk,
+      meeting_link: meetingLinkOk,
     }[missingField]
     if (satisfied) setMissingField('')
   }, [missingField, effectiveName, serviceType, roundWisePhone, effectiveTechnology,
-      company, interviewRound, needsPaymentProof, slotFile])
+      company, interviewRound, needsPaymentProof, slotFile, endTimeOk, meetingLinkOk])
 
   async function submitBook(ev) {
     ev.preventDefault()
@@ -943,6 +1029,8 @@ export function SubmitSlotPage() {
       { key: 'technology', ref: technologyRef,
         ok: serviceType !== 'round_wise' || !!effectiveTechnology },
       { key: 'invite', ref: inviteRef, ok: !!slotFile },
+      { key: 'end_time', ref: endTimeRef, ok: endTimeOk },
+      { key: 'meeting_link', ref: meetingLinkRef, ok: meetingLinkOk },
       { key: 'company', ref: companyRef, ok: !!company.trim() },
       { key: 'round', ref: roundRef, ok: !!interviewRound },
       { key: 'payment', ref: paymentRef, ok: !needsPaymentProof },
@@ -976,6 +1064,9 @@ export function SubmitSlotPage() {
       if (bookingSlot?.interview_round) fd.append('interview_round', bookingSlot.interview_round)
       if (effectiveTechnology) fd.append('technology', effectiveTechnology)
       fd.append('company', company.trim())
+      if (meetingPlatform.trim()) fd.append('meeting_platform', meetingPlatform.trim())
+      if (meetingLink.trim()) fd.append('meeting_link', meetingLink.trim())
+      if (inviteTimezone.trim()) fd.append('timezone', inviteTimezone.trim())
       if (serviceType === 'round_wise') fd.append('phone', roundWisePhone.trim())
       fd.append('candidate_id', selected?.id || '')
       if (paymentProofIds.length) fd.append('payment_proof_ids', paymentProofIds.join(','))
@@ -1269,6 +1360,51 @@ export function SubmitSlotPage() {
                     <label className="sbs-field"><span className="sbs-label">Start time</span><input className="sbs-input" type="text" placeholder="e.g. 02:00 PM" value={normalizeTo12h(manualTime || parsedSlot?.time || '')} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} disabled={busy || parsing} /></label>
                   </div>
                   {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
+                </div>
+              )}
+
+              {/* What else the invite says. Filled only with values the reader
+                  confirmed; empty otherwise, and always editable. */}
+              {slotFile && !parsing && !aiBlocked && (
+                <div className="sbs-details" aria-label="Interview details">
+                  <div className="sbs-field-row">
+                    <label className="sbs-field">
+                      <span className="sbs-label">End time</span>
+                      <input ref={endTimeRef} className="sbs-input" type="text" inputMode="text" value={endTime} placeholder="e.g. 03:00 PM"
+                        onChange={typeDetail('endTime', setEndTime)} disabled={busy || parsing} aria-label="End time" />
+                      {missingField === 'end_time'
+                        ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter a time after the start, like 03:00 PM, or leave it empty.</span>
+                        : <span className="sbs-hint">{detailsFromInvite.endTime ? 'Read from the invite. Check it.' : 'Optional.'}</span>}
+                    </label>
+                    <label className="sbs-field">
+                      <span className="sbs-label">Time zone</span>
+                      <input className="sbs-input" type="text" list="sbs-timezone-choices" value={inviteTimezone} placeholder="e.g. IST"
+                        onChange={typeDetail('timezone', setInviteTimezone)} disabled={busy || parsing} aria-label="Time zone" maxLength={40} />
+                      <span className="sbs-hint">
+                        {inviteTimezone.trim() && inviteTimezone.trim().toUpperCase() !== 'IST'
+                          ? 'Not IST: check the time you enter.'
+                          : detailsFromInvite.timezone ? 'Read from the invite. Check it.' : 'Optional.'}
+                      </span>
+                    </label>
+                  </div>
+                  <div className="sbs-field-row">
+                    <label className="sbs-field">
+                      <span className="sbs-label">Platform</span>
+                      <input className="sbs-input" type="text" list="sbs-platform-choices" value={meetingPlatform} placeholder="e.g. Microsoft Teams"
+                        onChange={typeDetail('platform', setMeetingPlatform)} disabled={busy || parsing} aria-label="Platform" maxLength={60} />
+                      <span className="sbs-hint">{detailsFromInvite.platform ? 'Read from the invite. Check it.' : 'Optional.'}</span>
+                    </label>
+                    <label className="sbs-field">
+                      <span className="sbs-label">Meeting link</span>
+                      <input ref={meetingLinkRef} className="sbs-input" type="url" inputMode="url" value={meetingLink} placeholder="https://"
+                        onChange={typeDetail('link', setMeetingLink)} disabled={busy || parsing} aria-label="Meeting link" maxLength={600} />
+                      {missingField === 'meeting_link'
+                        ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter the full link starting with https://, or leave it empty.</span>
+                        : <span className="sbs-hint">{detailsFromInvite.link ? 'Read from the invite. Check it.' : 'Optional.'}</span>}
+                    </label>
+                  </div>
+                  <datalist id="sbs-platform-choices">{PLATFORM_CHOICES.map(p => <option key={p} value={p} />)}</datalist>
+                  <datalist id="sbs-timezone-choices">{TIMEZONE_CHOICES.map(t => <option key={t} value={t} />)}</datalist>
                 </div>
               )}
 

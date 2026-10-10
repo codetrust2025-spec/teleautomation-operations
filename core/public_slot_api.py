@@ -76,6 +76,10 @@ def _invite_extraction_fallback(warning: str, *, trace_id: str = "") -> dict:
             "interview_round": "",
             "technology": "",
             "company": "",
+            "timezone_written": "",
+            "confirmed_platform": "",
+            "confirmed_meeting_link": "",
+            "confirmed_timezone": "",
             "meeting_platform": "",
             "confidence_score": 0,
             "missing_fields": ["interview_date", "start_time", "interview_round"],
@@ -933,6 +937,11 @@ def install_public_slot_routes(app) -> None:
         # when it names one, typed otherwise. Kept on the booked slot as
         # interview_company, the field Daily Ops already shows.
         company: str = Form(default=""),
+        # Optional details read off the invite (or typed): kept on the booked
+        # slot beside the company. A link must be a complete web address.
+        meeting_platform: str = Form(default=""),
+        meeting_link: str = Form(default=""),
+        timezone: str = Form(default=""),
         invite_display_date: str = Form(default=""),
         invite_display_time: str = Form(default=""),
         invite_extracted_start_time: str = Form(default=""),
@@ -954,6 +963,13 @@ def install_public_slot_routes(app) -> None:
             return _json_error(
                 "Company is required. Enter the company this interview is with."
             )
+        normalized_link, link_ok = cs.normalise_meeting_link(meeting_link if isinstance(meeting_link, str) else "")
+        if not link_ok:
+            return _json_error(
+                "Meeting link must be a full web address starting with https:// - or leave it empty."
+            )
+        normalized_platform = cs.normalise_interview_detail(meeting_platform if isinstance(meeting_platform, str) else "")
+        normalized_timezone = cs.normalise_interview_detail(timezone if isinstance(timezone, str) else "", 40)
         if normalized_service_type == "round_wise" and not normalized_technology:
             return _json_error(
                 "Technology is required for round-wise booking. "
@@ -1185,6 +1201,9 @@ def install_public_slot_routes(app) -> None:
                         name=name, date=day, time=slot_time, time_end=slot_end,
                         interview_round=normalized_round, technology=normalized_technology,
                         interview_company=normalized_company,
+                        interview_platform=normalized_platform,
+                        interview_meeting_link=normalized_link,
+                        interview_timezone=normalized_timezone,
                         phone=normalized_phone, service_type=normalized_service_type,
                         notes=notes, source="submit-slot form",
                         payment_proof_id=normalized_proof_id or None,

@@ -123,7 +123,7 @@ IMPORTANT: Today's date is {today}. Use this to resolve relative dates:
   resolve it from the server date or guess.
 
 Schema:
-{{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "company": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}}
+{{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "company": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "timezone_written": "", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}}
 
 Rules:
 - Extract only visible information.
@@ -149,6 +149,8 @@ Rules:
 - Do NOT confuse screenshot_source with meeting_platform. They are different fields.
 - technology should be the job role or tech stack (Java, React JS, Data Engineer, Sr Data Reliability Engineer, etc.)
 - Do NOT put meeting platform names in technology field.
+- timezone_written is the time zone exactly as the invite writes it (for example IST, GMT+5:30, EST). If no time zone is written, keep it empty. Never assume one.
+- meeting_link is the full meeting URL only if it is completely visible. If it is cut off or shortened with ..., keep it empty.
 - company is the organisation the interview is for (the hiring company or end client, for example Capgemini, Infosys or Wipro), written as the invite names it.
   Look for a Company, Client, Organisation or Customer label, a subject such as "Interview with X" or "X | Java | L1", or the sender's signature.
   Return only the name, never a sentence.
@@ -180,6 +182,7 @@ IMPORTANT RULES:
 - Do NOT confuse screenshot_source with meeting_platform.
 - technology should be the job role/tech stack (Java, React JS, Data Engineer, Sr Data Reliability Engineer, etc.)
 - Do NOT put meeting platform names in technology field.
+- timezone_written is the time zone exactly as the text writes it (for example IST, GMT+5:30, EST). If none is written, keep it empty.
 - company is the organisation the interview is for (the hiring company or end client, for example Capgemini, Infosys or Wipro), written as the text names it.
   Return only the name. Do NOT put the meeting platform, a job role, a person's name or an email address in company.
   Do not infer it from an email domain. If the text does not name the company, keep company empty.
@@ -189,7 +192,7 @@ IMPORTANT RULES:
 - confidence_score must be between 0 and 100.
 
 Schema:
-{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "company": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}
+{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "company": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "timezone_written": "", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}
 
 OCR TEXT:
 """
@@ -526,6 +529,80 @@ def clean_company_name(value: Any, *, people: tuple[str, ...] = ()) -> str:
     return text
 
 
+# The booking form fills platform, meeting link and time zone only with values that pass these checks; anything else is
+# left empty for the candidate to type. A known platform, a complete link on a known meeting service, a time zone the
+# invite actually writes: nothing is assumed.
+_PLATFORMS = (
+    (("microsoft teams", "ms teams", "teams meeting", "teams"), "Microsoft Teams"),
+    (("google meet", "meet.google", "gmeet"), "Google Meet"),
+    (("zoom",), "Zoom"),
+    (("webex",), "Webex"),
+    (("hirepro",), "HirePro"),
+    (("flocareer",), "FloCareer"),
+    (("barraiser",), "BarRaiser"),
+    (("skype",), "Skype"),
+    (("amazon chime", "chime"), "Amazon Chime"),
+    (("gotomeeting", "goto meeting"), "GoTo Meeting"),
+    (("jitsi",), "Jitsi Meet"),
+    (("telephonic", "phone call", "phone interview", "voice call"), "Phone call"),
+    (("in person", "in-person", "face to face", "face-to-face", "f2f", "walk-in", "walk in", "office visit"), "In person"),
+)
+_MEETING_HOSTS = (
+    "teams.microsoft.com", "teams.live.com", "zoom.us", "meet.google.com", "webex.com", "hirepro.in", "flocareer.com",
+    "barraiser.com", "skype.com", "chime.aws", "gotomeeting.com", "goto.com", "meet.jit.si",
+)
+_TIMEZONES = {
+    "ist": "IST", "india standard time": "IST", "asia/kolkata": "IST", "asia/calcutta": "IST", "gmt+5:30": "IST", "gmt+05:30": "IST",
+    "utc+5:30": "IST", "utc+05:30": "IST", "gmt +5:30": "IST", "gmt +05:30": "IST", "utc +05:30": "IST", "+05:30": "IST",
+    "est": "EST", "edt": "EDT", "et": "ET", "cst": "CST", "cdt": "CDT", "ct": "CT", "mst": "MST", "mdt": "MDT", "pst": "PST", "pdt": "PDT",
+    "pt": "PT", "gmt": "GMT", "utc": "UTC", "bst": "BST", "cet": "CET", "cest": "CEST", "eet": "EET", "sgt": "SGT", "aest": "AEST",
+    "aedt": "AEDT", "jst": "JST", "gst": "GST", "pkt": "PKT", "npt": "NPT", "bdt": "BDT",
+}
+
+
+def clean_meeting_platform(value: Any) -> str:
+    """A known meeting platform's own name, or "" when the reading names none we recognise."""
+    text = " ".join(str(value or "").lower().split())
+    if not text:
+        return ""
+    for spellings, name in _PLATFORMS:
+        if any(spelling in text for spelling in spellings):
+            return name
+    return ""
+
+
+def clean_meeting_link(value: Any) -> str:
+    """A complete http(s) link on a known meeting service, or "". A link cut off with ... is never complete."""
+    from urllib.parse import urlsplit
+
+    text = str(value or "").strip().strip("<>()[]\"'")
+    if not text or len(text) > 600 or any(ch.isspace() for ch in text) or "..." in text or "\u2026" in text:
+        return ""
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return ""
+    host = (parts.hostname or "").lower()
+    if parts.scheme not in ("https", "http") or not host or not parts.path.strip("/"):
+        return ""
+    if not any(host == known or host.endswith("." + known) for known in _MEETING_HOSTS):
+        return ""
+    return text
+
+
+def clean_written_timezone(value: Any) -> str:
+    """The time zone the invite writes, as a short label (IST, EST, GMT...), or "" when none is written or it is unclear."""
+    text = " ".join(str(value or "").lower().replace("(", " ").replace(")", " ").split())
+    if not text:
+        return ""
+    if text in _TIMEZONES:
+        return _TIMEZONES[text]
+    for word in text.replace(",", " ").split():
+        if word in _TIMEZONES:
+            return _TIMEZONES[word]
+    return ""
+
+
 def validate_invite_extraction(extracted: dict[str, Any]) -> dict[str, Any]:
     """Validate and normalize the extracted data."""
     if not extracted:
@@ -555,6 +632,11 @@ def validate_invite_extraction(extracted: dict[str, Any]) -> dict[str, Any]:
             for field in ("candidate_name", "client_name", "attendee_name")
         ),
     )
+
+    # What the booking form may fill without asking: only values that pass the checks above.
+    extracted["confirmed_platform"] = clean_meeting_platform(extracted.get("meeting_platform"))
+    extracted["confirmed_meeting_link"] = clean_meeting_link(extracted.get("meeting_link"))
+    extracted["confirmed_timezone"] = clean_written_timezone(extracted.get("timezone_written"))
 
     # Ensure confidence_score is an integer 0-100
     score = extracted.get("confidence_score", 0)
@@ -682,6 +764,10 @@ def _empty_extraction() -> dict[str, Any]:
         "meeting_platform": "",
         "screenshot_source": "",
         "meeting_link": "",
+        "timezone_written": "",
+        "confirmed_platform": "",
+        "confirmed_meeting_link": "",
+        "confirmed_timezone": "",
         "attendee_name": "",
         "confidence_score": 0,
         "missing_fields": ["interview_date", "start_time", "interview_round"],

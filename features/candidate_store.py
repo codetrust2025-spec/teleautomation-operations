@@ -5959,6 +5959,29 @@ def normalise_interview_company(value: str | None) -> str:
     return " ".join(str(value or "").split())[:120]
 
 
+def normalise_interview_detail(value: str | None, limit: int = 60) -> str:
+    """A short booking detail (platform, time zone) as typed: one line, spaces collapsed."""
+    return " ".join(str(value or "").split())[:limit]
+
+
+def normalise_meeting_link(value: str | None) -> tuple[str, bool]:
+    """(link, ok). Empty is fine; anything else must be one complete http(s) web address."""
+    from urllib.parse import urlsplit
+
+    text = str(value or "").strip()
+    if not text:
+        return "", True
+    if len(text) > 600 or any(ch.isspace() for ch in text):
+        return "", False
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return "", False
+    if parts.scheme not in ("http", "https") or not parts.hostname or "." not in parts.hostname:
+        return "", False
+    return text, True
+
+
 def import_confirmed_interview_slot(**kwargs) -> tuple[dict, str]:
     """Book the slot, then record whether it consumed a Re-Service grant.
 
@@ -5969,9 +5992,15 @@ def import_confirmed_interview_slot(**kwargs) -> tuple[dict, str]:
     `interview_company`, when the form gave one, is stamped onto the booked
     row afterwards the same way: one targeted field, so none of the booking
     paths change, and a blank never clears a company already recorded (by the
-    mail pipeline, say).
+    mail pipeline, say). The meeting platform, link and time zone read off the
+    invite (or typed) are stamped in the same write, on the same terms.
     """
     company = normalise_interview_company(kwargs.pop("interview_company", ""))
+    details = {
+        "interview_platform": normalise_interview_detail(kwargs.pop("interview_platform", "")),
+        "interview_meeting_link": normalise_meeting_link(kwargs.pop("interview_meeting_link", ""))[0],
+        "interview_timezone": normalise_interview_detail(kwargs.pop("interview_timezone", ""), 40),
+    }
     grant = find_re_service_grant(
         name=_clean_str(kwargs.get("name") or ""),
         phone=_clean_str(kwargs.get("phone") or ""),
@@ -5983,8 +6012,10 @@ def import_confirmed_interview_slot(**kwargs) -> tuple[dict, str]:
         row = _mark_re_service_booking(
             str(row["id"]), grant_row_id=str(grant.get("id") or "")
         ) or row
-    if company and isinstance(row, dict) and row.get("id") and _clean_str(row.get("interview_company")) != company:
-        row = _patch_row_fields(str(row["id"]), {"interview_company": company}) or row
+    stamp = {"interview_company": company, **details} if company else dict(details)
+    stamp = {key: value for key, value in stamp.items() if value and isinstance(row, dict) and _clean_str(row.get(key)) != value}
+    if stamp and isinstance(row, dict) and row.get("id"):
+        row = _patch_row_fields(str(row["id"]), stamp) or row
     return row, action
 
 
