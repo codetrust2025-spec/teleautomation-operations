@@ -255,6 +255,32 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
   )
 }
 
+/**
+ * The existing client an invite names, or none. A client is only picked when the invite gives a full name (two
+ * words or more, initials aside) that matches exactly one client on the list, case, spacing and word order aside.
+ * One word, initials, two clients with those words, or no client at all: nothing is picked, and the candidate
+ * confirms by hand. Picking the wrong client would put the booking (and its payment) on someone else.
+ */
+export function matchClientFromInvite(readName, candidates) {
+  const words = value => String(value || '').toLocaleLowerCase().normalize('NFKD').replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2)
+  const read = words(readName)
+  if (read.length < 2) return { name: '', reason: read.length ? 'one_word' : 'none' }
+  const inOrder = read.join(' ')
+  const anyOrder = [...read].sort().join(' ')
+  const exact = []
+  const sameWords = []
+  for (const client of dedupeCandidates(candidates)) {
+    const own = words(client.name)
+    if (own.join(' ') === inOrder) exact.push(client)
+    else if ([...own].sort().join(' ') === anyOrder) sameWords.push(client)
+  }
+  if (exact.length === 1) return { name: exact[0].name, reason: 'exact' }
+  if (exact.length > 1) return { name: '', reason: 'ambiguous' }
+  if (sameWords.length === 1) return { name: sameWords[0].name, reason: 'same_words' }
+  if (sameWords.length > 1) return { name: '', reason: 'ambiguous' }
+  return { name: '', reason: 'no_match' }
+}
+
 function dedupeCandidates(rows) {
   const byName = new Map()
   for (const row of rows || []) {
@@ -490,6 +516,15 @@ export function SubmitSlotPage() {
   // True once the candidate has typed one. What they typed is never replaced by
   // a reading; a ref, because a reading arrives after the render that started it.
   const companyTypedRef = useRef(false)
+  // The client the invite names. Picked only on a reliable match with an
+  // existing client (profile service), never over a name the candidate has
+  // typed or picked; otherwise the read name is offered for confirmation.
+  const [nameFromInvite, setNameFromInvite] = useState(false)
+  const [inviteNameHint, setInviteNameHint] = useState('')
+  const nameTypedRef = useRef(false)
+  const nameValueRef = useRef('')
+  const candidatesRef = useRef([])
+  const serviceTypeRef = useRef('profile_service')
   const [serviceType, setServiceType] = useState('profile_service')
   const [showServiceDrop, setShowServiceDrop] = useState(false)
   // Which one field the form is currently asking for, not merely that a
@@ -529,6 +564,16 @@ export function SubmitSlotPage() {
   const [paymentAnalysedBy, setPaymentAnalysedBy] = useState([])
 
   const effectiveName = name.trim()
+  useEffect(() => { nameValueRef.current = name }, [name])
+  useEffect(() => { candidatesRef.current = candidates }, [candidates])
+  useEffect(() => {
+    // A new service type starts with an empty name (its handlers clear it), so
+    // nothing typed or matched carries over.
+    serviceTypeRef.current = serviceType
+    nameTypedRef.current = false
+    setNameFromInvite(false)
+    setInviteNameHint('')
+  }, [serviceType])
   const selected = useMemo(() => {
     if (!effectiveName) return null
     const key = effectiveName.toLowerCase()
@@ -666,11 +711,39 @@ export function SubmitSlotPage() {
     setCompanyFromInvite(Boolean(read))
   }, [])
 
+  const applyInviteClient = useCallback(readName => {
+    const read = String(readName || '').trim()
+    if (!read || nameTypedRef.current || nameValueRef.current.trim()) {
+      setInviteNameHint('')
+      return
+    }
+    // Round-wise clients are typed, and the name with the phone is whose payment
+    // it is: the invite's name is offered, never entered.
+    const match = serviceTypeRef.current === 'profile_service'
+      ? matchClientFromInvite(read, candidatesRef.current)
+      : { name: '' }
+    if (match.name) {
+      setName(match.name)
+      setNameFromInvite(true)
+      setInviteNameHint('')
+    } else {
+      setInviteNameHint(read)
+    }
+  }, [])
+
+  const typeClientName = value => {
+    nameTypedRef.current = Boolean(String(value || '').trim())
+    setNameFromInvite(false)
+    setName(value)
+    resetPaymentProofs()
+  }
+
   const resetBookForm = useCallback(() => {
     setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
     setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
     setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setCompany('')
     setCompanyFromInvite(false); companyTypedRef.current = false
+    setNameFromInvite(false); setInviteNameHint(''); nameTypedRef.current = false
     setSessionFile(null); setSessionPreview('')
     setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
     resetInviteAnalysis()
@@ -748,6 +821,7 @@ export function SubmitSlotPage() {
         // The reader is asked for the company and returns it only when the invite
         // names one. Empty clears an earlier reading; a typed company stays.
         applyInviteCompany((ext.company && ext.company.name) || (typeof ext.company === 'string' ? ext.company : ''))
+        applyInviteClient(ext.candidate_name)
         const readRound = roundFromInvite(ext.interview_round)
         if (readRound && !interviewRound && !userEditedFields.round) {
           setInterviewRound(readRound)
@@ -803,6 +877,7 @@ export function SubmitSlotPage() {
   async function onSlotFileChange(file) {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
+    setInviteNameHint('')   // a name already in the box stays: a payment may already be filed under it
     applyInviteCompany('')
     resetInviteAnalysis()
     if (file) { setSlotPreview(URL.createObjectURL(file)); await parseScreenshot(file) }
@@ -1157,13 +1232,19 @@ export function SubmitSlotPage() {
               <label ref={nameFieldRef} className="sbs-field">
                 <span className="sbs-label">Client name</span>
                 {serviceType === "round_wise" ? (
-                  <input ref={nameRef} className="sbs-input" type="text" value={name} onChange={e => { setName(e.target.value); resetPaymentProofs(); }} placeholder="Type client name" disabled={busy || parsing} />
+                  <input ref={nameRef} className="sbs-input" type="text" value={name} onChange={e => typeClientName(e.target.value)} placeholder="Type client name" disabled={busy || parsing} />
                 ) : (
-                  <SlotCandidatePicker candidates={candidates} value={name} onChange={v => { setName(v); resetPaymentProofs() }} disabled={busy || parsing} />
+                  <SlotCandidatePicker candidates={candidates} value={name} onChange={typeClientName} disabled={busy || parsing} />
                 )}
                 {missingField === 'name'
                   ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter the client name for this round.</span>
-                  : <span className="sbs-hint">{serviceType === "round_wise" ? "Type the client name for this round." : "Pick from the list or type a new client name."}</span>}
+                  : nameFromInvite
+                    ? <span className="sbs-hint">Matched from the invite. Check it.</span>
+                    : inviteNameHint && !name.trim()
+                      ? <span className="sbs-hint">{serviceType === "round_wise"
+                          ? `The invite names “${inviteNameHint}”. Type the client name to confirm.`
+                          : `The invite names “${inviteNameHint}”. Pick the client to confirm.`}</span>
+                      : <span className="sbs-hint">{serviceType === "round_wise" ? "Type the client name for this round." : "Pick from the list or type a new client name."}</span>}
               </label>
 
               {serviceType === "round_wise" && (
