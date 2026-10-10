@@ -469,6 +469,21 @@ _NOT_A_COMPANY = frozenset({
     "whatsapp", "telegram", "linkedin", "naukri", "codility", "hackerrank", "hackerearth",
     "mettl", "mercer mettl", "amcat", "cocubes", "jobma", "hirevue", "interview", "interviewer",
 })
+# A model that has nothing to put in `company` often writes a phrase instead of leaving it empty
+# ("Unknown company", "Not specified in the invite", "No company mentioned"). The exact words above
+# cannot list every phrasing, so a value is also refused when it opens with one of these words, when it
+# says the name is missing, or when it is made only of generic words ("Hiring company", "Employer").
+_NO_COMPANY_FIRST_WORDS = frozenset({
+    "unknown", "unspecified", "undefined", "unnamed", "unnamed", "not", "no", "none", "null", "tbd", "tba", "na", "n",
+})
+_NAME_IS_MISSING = (
+    "not visible", "not mentioned", "not specified", "not provided", "not available", "not found", "not named",
+    "not stated", "not given", "not shown", "not clear", "not disclosed", "name unknown",
+)
+_GENERIC_WORDS = frozenset({
+    "company", "organisation", "organization", "client", "customer", "employer", "name", "the", "a", "hiring",
+    "end", "interviewing", "firm", "business", "unknown", "your", "our", "this", "that",
+})
 _COMPANY_MAX_LENGTH = 120
 _COMPANY_MAX_WORDS = 10
 
@@ -500,6 +515,11 @@ def clean_company_name(value: Any, *, people: tuple[str, ...] = ()) -> str:
         return ""
     key = _company_key(text)
     if key in _NO_COMPANY or key in _NOT_A_COMPANY:
+        return ""
+    words = key.split()
+    if words and (words[0] in _NO_COMPANY_FIRST_WORDS or all(w in _GENERIC_WORDS for w in words)):
+        return ""
+    if any(phrase in key for phrase in _NAME_IS_MISSING):
         return ""
     if key and key in {_company_key(person) for person in people if person}:
         return ""

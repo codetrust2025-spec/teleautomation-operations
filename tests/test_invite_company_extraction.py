@@ -69,6 +69,23 @@ class TestWhatCountsAsACompany:
         assert clean_company_name(given) == ""
 
     @pytest.mark.parametrize("given", [
+        # What a model writes when the invite names no company, instead of leaving the field empty. "Unknown company"
+        # was the live case: the slim prompt returned it for every invite without a company and it was accepted.
+        "Unknown company", "Unknown Company Name", "unknown organisation", "Unspecified", "Unnamed organisation", "Undefined",
+        "Not specified in the invite", "Not mentioned", "No company mentioned", "No name", "Company not mentioned", "Name not visible",
+        "Not Applicable", "None specified", "Hiring company", "Employer", "The company", "Client name", "Organisation name",
+    ])
+    def test_a_phrase_that_says_there_is_no_company_is_not_a_company(self, given):
+        assert clean_company_name(given) == ""
+
+    @pytest.mark.parametrize("given", [
+        "Nilkamal Ltd", "Notion Labs", "Nokia", "Norton Lifelock", "Nova Tech", "NoBroker", "Nucleus Software",
+        "Unisys", "UNISYS", "Unilever", "Uniphore", "Nagarro", "EY", "Insight Global", "Arrise Solutions India Private",
+    ])
+    def test_names_that_merely_start_like_a_placeholder_are_kept(self, given):
+        assert clean_company_name(given) == given
+
+    @pytest.mark.parametrize("given", [
         "HirePro", "FloCareer", "Zoom", "Microsoft Teams", "Google Meet", "BarRaiser", "Gmail", "WhatsApp", "Skype",
     ])
     def test_the_platform_the_invite_came_through_is_not_a_company(self, given):
