@@ -176,12 +176,16 @@ def test_date_boundary_same_day_slot_timing(monkeypatch):
 def test_monitor_future_slot_today_stays_in_upcoming(monkeypatch):
     """A pending slot whose end time is still in the future today must appear
     in interview_monitor.interviews (Upcoming), NOT in awaiting_interviews."""
-    now_ist = ist_now()
+    # The clock is pinned to 10:00 IST. Reading the real one made this fail every
+    # night after 22:30 IST: the "future" slot was capped at 22:00-22:30 and had
+    # already ended, and date.today() (UTC on CI) is not the IST date after 18:30 UTC.
+    now_ist = ist_now().replace(hour=10, minute=0, second=0, microsecond=0)
+    monkeypatch.setattr("core.ist_time.ist_now", lambda *_args, **_kwargs: now_ist)
     today_str = now_ist.strftime("%Y-%m-%d")
-    today = date.today()
+    today = now_ist.date()
 
     # A slot that ends 2 hours from now (guaranteed future)
-    future_hour = min(22, now_ist.hour + 2)
+    future_hour = now_ist.hour + 2
     slot_time = f"{future_hour:02d}:00"
     slot_end = f"{future_hour:02d}:30"
 
