@@ -931,7 +931,9 @@ export function SubmitSlotPage() {
     // the name box is blank is not an explanation of what to do next.
     //
     // The rules themselves are unchanged; they are only ordered and reported
-    // one at a time. Payment sits after the candidate details deliberately:
+    // one at a time, in the order the fields appear: the invite now sits above
+    // Company and Interview round, because reading it fills them. Payment sits
+    // after the candidate details deliberately:
     // what is owed depends on the service type, the round and the candidate,
     // so validating it earlier would judge an amount that is not settled yet.
     const steps = [
@@ -940,10 +942,10 @@ export function SubmitSlotPage() {
         ok: serviceType !== 'round_wise' || !!roundWisePhone.trim() },
       { key: 'technology', ref: technologyRef,
         ok: serviceType !== 'round_wise' || !!effectiveTechnology },
+      { key: 'invite', ref: inviteRef, ok: !!slotFile },
       { key: 'company', ref: companyRef, ok: !!company.trim() },
       { key: 'round', ref: roundRef, ok: !!interviewRound },
       { key: 'payment', ref: paymentRef, ok: !needsPaymentProof },
-      { key: 'invite', ref: inviteRef, ok: !!slotFile },
     ]
     const firstMissing = steps.find(step => !step.ok)
     if (firstMissing) {
@@ -1206,6 +1208,70 @@ export function SubmitSlotPage() {
                 </label>
               )}
 
+              {/* The invite comes before Company and Interview round: reading it
+                  fills both, so the candidate attaches it first and then checks
+                  or corrects what was read, top to bottom. Its result and the
+                  manual date and time stay with it. */}
+              <div ref={inviteRef} className="sbs-field">
+                <span className="sbs-label">Interview invite screenshot</span>
+                <SubmitSlotFileDrop hint="Teams, Gmail, Calendar, or Zoom — date and time must be visible." file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} attachedLabel="Invite screenshot attached" removeLabel="Remove invite screenshot" />
+                {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
+              </div>
+
+              {/* The node reading the invite, then who read it and how long it
+                  took. When the result card below shows what a node read, the
+                  card carries that line instead; a refused invite, or one read
+                  by the fallback parser, has it here on its own. */}
+              {slotFile && inviteAnalysis && !inviteResultNamesNode && (
+                <AiNodeProgress analysis={inviteAnalysis} idle="Reading invite…" finishedLabel="Invite read" />
+              )}
+
+              {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
+
+              {aiExtraction && !aiBlocked && aiExtraction.confidence_score > 0 && (
+                <div className="sbs-detected-compact">
+                  <span className="sbs-detected-compact__check">✓</span>
+                  <span className="sbs-detected-compact__text">
+                    {[
+                      aiExtraction.interview_date ? formatFriendlyDate(aiExtraction.interview_date) : '',
+                      aiExtraction.start_time ? aiExtraction.start_time + (aiExtraction.end_time ? ` – ${aiExtraction.end_time}` : '') : '',
+                      aiExtraction.interview_round ? `${aiExtraction.interview_round} Discussion` : '',
+                      aiExtraction.meeting_platform ? platformLabel(aiExtraction.meeting_platform) : '',
+                      aiExtraction.confidence_score ? `${aiExtraction.confidence_score}%` : ''
+                    ].filter(Boolean).join(' • ')}
+                  </span>
+                  {inviteResultNamesNode && <AiNodeProgress analysis={inviteAnalysis} />}
+                  {aiExtraction.warnings && aiExtraction.warnings.length > 0 && (
+                    <div className="sbs-detected-compact__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>
+                  )}
+                </div>
+              )}
+
+              {!aiExtraction && parsedSlot?.date && parsedSlot?.time && (
+                <div className="sbs-detected-compact">
+                  <span className="sbs-detected-compact__check">✓</span>
+                  <span className="sbs-detected-compact__text">
+                    {[
+                      formatFriendlyDate(parsedSlot.date),
+                      formatFriendlyTime(parsedSlot.time) + (parsedSlot.time_end ? ` – ${formatFriendlyTime(parsedSlot.time_end)}` : ''),
+                      parsedSlot.interview_round ? `${parsedSlot.interview_round} Discussion` : '',
+                      parsedSlot.platform ? platformLabel(parsedSlot.platform) : ''
+                    ].filter(Boolean).join(' • ')}
+                  </span>
+                </div>
+              )}
+
+              {showManualSlotFields && (
+                <div className="sbs-manual">
+                  <p className="sbs-manual__hint">{parsedSlot?.date ? 'Verify detected date & time — correct below if wrong.' : 'Include the date line in your screenshot or enter manually.'}</p>
+                  <div className="sbs-manual__grid">
+                    <label className="sbs-field"><span className="sbs-label">Interview date</span><input className="sbs-input" type="date" value={manualDate || parsedSlot?.date || ''} onChange={e => { setManualDate(e.target.value); setUserEditedFields(f => ({...f, date: true})); }} disabled={busy || parsing} /></label>
+                    <label className="sbs-field"><span className="sbs-label">Start time</span><input className="sbs-input" type="text" placeholder="e.g. 02:00 PM" value={normalizeTo12h(manualTime || parsedSlot?.time || '')} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} disabled={busy || parsing} /></label>
+                  </div>
+                  {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
+                </div>
+              )}
+
               {/* Company and round share one row, so a required field more
                   does not make every booking form taller. */}
               <div className="sbs-field-row">
@@ -1325,66 +1391,6 @@ export function SubmitSlotPage() {
                       )}
                     </div>
                   )}
-                </div>
-              )}
-
-              <div ref={inviteRef} className="sbs-field">
-                <span className="sbs-label">Interview invite screenshot</span>
-                <SubmitSlotFileDrop hint="Teams, Gmail, Calendar, or Zoom — date and time must be visible." file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} attachedLabel="Invite screenshot attached" removeLabel="Remove invite screenshot" />
-                {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
-              </div>
-
-              {/* The node reading the invite, then who read it and how long it
-                  took. When the result card below shows what a node read, the
-                  card carries that line instead; a refused invite, or one read
-                  by the fallback parser, has it here on its own. */}
-              {slotFile && inviteAnalysis && !inviteResultNamesNode && (
-                <AiNodeProgress analysis={inviteAnalysis} idle="Reading invite…" finishedLabel="Invite read" />
-              )}
-
-              {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
-
-              {aiExtraction && !aiBlocked && aiExtraction.confidence_score > 0 && (
-                <div className="sbs-detected-compact">
-                  <span className="sbs-detected-compact__check">✓</span>
-                  <span className="sbs-detected-compact__text">
-                    {[
-                      aiExtraction.interview_date ? formatFriendlyDate(aiExtraction.interview_date) : '',
-                      aiExtraction.start_time ? aiExtraction.start_time + (aiExtraction.end_time ? ` – ${aiExtraction.end_time}` : '') : '',
-                      aiExtraction.interview_round ? `${aiExtraction.interview_round} Discussion` : '',
-                      aiExtraction.meeting_platform ? platformLabel(aiExtraction.meeting_platform) : '',
-                      aiExtraction.confidence_score ? `${aiExtraction.confidence_score}%` : ''
-                    ].filter(Boolean).join(' • ')}
-                  </span>
-                  {inviteResultNamesNode && <AiNodeProgress analysis={inviteAnalysis} />}
-                  {aiExtraction.warnings && aiExtraction.warnings.length > 0 && (
-                    <div className="sbs-detected-compact__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>
-                  )}
-                </div>
-              )}
-
-              {!aiExtraction && parsedSlot?.date && parsedSlot?.time && (
-                <div className="sbs-detected-compact">
-                  <span className="sbs-detected-compact__check">✓</span>
-                  <span className="sbs-detected-compact__text">
-                    {[
-                      formatFriendlyDate(parsedSlot.date),
-                      formatFriendlyTime(parsedSlot.time) + (parsedSlot.time_end ? ` – ${formatFriendlyTime(parsedSlot.time_end)}` : ''),
-                      parsedSlot.interview_round ? `${parsedSlot.interview_round} Discussion` : '',
-                      parsedSlot.platform ? platformLabel(parsedSlot.platform) : ''
-                    ].filter(Boolean).join(' • ')}
-                  </span>
-                </div>
-              )}
-
-              {showManualSlotFields && (
-                <div className="sbs-manual">
-                  <p className="sbs-manual__hint">{parsedSlot?.date ? 'Verify detected date & time — correct below if wrong.' : 'Include the date line in your screenshot or enter manually.'}</p>
-                  <div className="sbs-manual__grid">
-                    <label className="sbs-field"><span className="sbs-label">Interview date</span><input className="sbs-input" type="date" value={manualDate || parsedSlot?.date || ''} onChange={e => { setManualDate(e.target.value); setUserEditedFields(f => ({...f, date: true})); }} disabled={busy || parsing} /></label>
-                    <label className="sbs-field"><span className="sbs-label">Start time</span><input className="sbs-input" type="text" placeholder="e.g. 02:00 PM" value={normalizeTo12h(manualTime || parsedSlot?.time || '')} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} disabled={busy || parsing} /></label>
-                  </div>
-                  {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
                 </div>
               )}
 

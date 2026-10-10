@@ -68,7 +68,7 @@ async function pickCandidate() {
 
 function paymentInput() {
   // The payment drop is the multi-select one; the invite drop is not.
-  return document.querySelectorAll('input[type="file"]')[0]
+  return [...document.querySelectorAll('input[type="file"]')].find(input => input.multiple)
 }
 
 function attach(input, files) {

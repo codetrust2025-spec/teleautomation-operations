@@ -142,6 +142,43 @@ describe('the booking form', () => {
   })
 })
 
+describe('the invite comes first', () => {
+  const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+  it('puts the invite screenshot above Company and Interview round', async () => {
+    stubFetch()
+    render(<SubmitSlotPage />)
+    const company = await screen.findByLabelText('Company')
+    const invite = inviteInput()
+    const round = screen.getByRole('combobox')
+    expect(before(invite, company)).toBe(true)
+    expect(before(invite, round)).toBe(true)
+    expect(screen.getByText('Interview invite screenshot').closest('.sbs-field').contains(invite)).toBe(true)
+    // Company and round still share their row, company first.
+    const labels = [...company.closest('.sbs-field-row').querySelectorAll(':scope > .sbs-field .sbs-label')].map(l => l.textContent)
+    expect(labels[0]).toMatch(/^Company/)
+    expect(labels[1]).toMatch(/^Interview round/)
+  })
+
+  it('keeps what the invite read, and the manual date and time, with the invite above Company', async () => {
+    const { calls } = await completedForm({ readCompany: 'Infosys' })
+    expect(calls).toBeTruthy()
+    const company = screen.getByLabelText('Company')
+    const result = document.querySelector('.sbs-detected-compact')
+    expect(result).not.toBeNull()
+    expect(before(result, company)).toBe(true)
+    expect(before(inviteInput(), result)).toBe(true)
+  })
+
+  it('is attached before the company is typed, and the read company can still be corrected', async () => {
+    const { confirm, calls } = await completedForm({ readCompany: 'Infosis' })
+    fireEvent.change(companyBox(), { target: { value: 'Infosys' } })
+    fireEvent.click(confirm)
+    await waitFor(() => expect(calls.confirms).toHaveLength(1))
+    expect(calls.confirms[0].get('company')).toBe('Infosys')
+  })
+})
+
 describe('the company is read from the invite', () => {
   it('fills the company the invite names, says where it came from, and books with it', async () => {
     const { confirm, calls } = await completedForm({ readCompany: 'Infosys' })

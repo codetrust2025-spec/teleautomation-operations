@@ -100,7 +100,7 @@ async function startPaymentUpload() {
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
   await screen.findByText(/paid in parts\? attach each screenshot/i)
   // Attaching is the upload: the analysis starts at once, as the invite's does.
-  attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('receipt')])
+  attach([...document.querySelectorAll('input[type="file"]')].find(input => input.multiple), [screenshot('receipt')])
 }
 
 /** The payment card's live status row, where the node reading the receipt is named. */

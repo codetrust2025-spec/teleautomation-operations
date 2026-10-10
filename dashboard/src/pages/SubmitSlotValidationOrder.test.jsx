@@ -124,7 +124,7 @@ describe('the browser no longer decides', () => {
 describe('validation runs top to bottom', () => {
   it('checks the fields in the order they appear on the form', () => {
     expect(steps()).toEqual([
-      'name', 'phone', 'technology', 'company', 'round', 'payment', 'invite',
+      'name', 'phone', 'technology', 'invite', 'company', 'round', 'payment',
     ])
   })
 
@@ -137,9 +137,11 @@ describe('validation runs top to bottom', () => {
     expect(order.indexOf('payment')).toBeGreaterThan(order.indexOf('technology'))
   })
 
-  it('the invite screenshot is checked after payment', () => {
+  it('the invite screenshot is checked before the company and round it fills, as it now appears above them', () => {
     const order = steps()
-    expect(order.indexOf('invite')).toBeGreaterThan(order.indexOf('payment'))
+    expect(order.indexOf('invite')).toBeLessThan(order.indexOf('company'))
+    expect(order.indexOf('invite')).toBeLessThan(order.indexOf('round'))
+    expect(order.indexOf('invite')).toBeGreaterThan(order.indexOf('technology'))
   })
 
   it('stops at the first missing field rather than reporting all of them', () => {

@@ -180,7 +180,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
 
     // Attach payment screenshot
-    const payInput = document.querySelectorAll('input[type="file"]')[0]
+    const payInput = [...document.querySelectorAll('input[type="file"]')].find(input => input.multiple)
     attach(payInput, [screenshot('payment-proof')])
 
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
@@ -205,7 +205,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
     expect(await screen.findByText(PAYMENT_UPLOAD)).toBeTruthy()
 
-    attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
+    attach([...document.querySelectorAll('input[type="file"]')].find(input => input.multiple), [screenshot('payment-proof')])
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
 
     const uploadBody = calls.uploads[0]
@@ -224,7 +224,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'Aniket' }))
 
     expect(await screen.findByText(/payment due/i)).toBeTruthy()
-    const payInput = document.querySelectorAll('input[type="file"]')[0]
+    const payInput = [...document.querySelectorAll('input[type="file"]')].find(input => input.multiple)
     attach(payInput, [screenshot('payment-proof')])
 
     await waitFor(() => expect(calls.uploads).toHaveLength(1))
@@ -244,7 +244,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L2' } })
 
     // Upload payment
-    const payInput = document.querySelectorAll('input[type="file"]')[0]
+    const payInput = [...document.querySelectorAll('input[type="file"]')].find(input => input.multiple)
     attach(payInput, [screenshot('pay')])
     await screen.findByText(/payment verified/i)
 
@@ -275,7 +275,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
     // Upload payment
-    const payInput = document.querySelectorAll('input[type="file"]')[0]
+    const payInput = [...document.querySelectorAll('input[type="file"]')].find(input => input.multiple)
     attach(payInput, [screenshot('pay')])
     await screen.findByText(/payment verified/i)
 
@@ -382,7 +382,7 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
     // 5. Upload 3 payment screenshots
-    const payInput = document.querySelectorAll('input[type="file"]')[0]
+    const payInput = [...document.querySelectorAll('input[type="file"]')].find(input => input.multiple)
     attach(payInput, [screenshot('receipt-1'), screenshot('receipt-2'), screenshot('receipt-3')])
 
     await screen.findByText(/payment verified/i)
@@ -454,12 +454,11 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
     // Payment verified first, so the date is the only thing holding Confirm.
-    attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('pay')])
+    attach([...document.querySelectorAll('input[type="file"]')].find(input => input.multiple), [screenshot('pay')])
     await screen.findByText(/payment verified/i)
 
     // Upload invite with past date (yesterday)
-    const fileInputs = document.querySelectorAll('input[type="file"]')
-    const inviteInput = fileInputs[fileInputs.length - 1]
+    const inviteInput = [...document.querySelectorAll('input[type="file"]')].find(input => !input.multiple)
     attach(inviteInput, [screenshot('past-invite')])
 
     await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
@@ -499,7 +498,7 @@ describe('Round-wise payment — no pricing is shown', () => {
     // A round-wise proof is filed under the phone, so the upload waits for it.
     fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
 
-    attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('payment-proof')])
+    attach([...document.querySelectorAll('input[type="file"]')].find(input => input.multiple), [screenshot('payment-proof')])
 
     expect(await screen.findByText('₹2,000 verified so far')).toBeTruthy()
     expect(screen.queryByText(/still to upload|more to reach/i)).toBeNull()
@@ -529,7 +528,7 @@ describe('Round-wise payment — no pricing is shown', () => {
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
-    attach(document.querySelectorAll('input[type="file"]')[0], [screenshot('pay')])
+    attach([...document.querySelectorAll('input[type="file"]')].find(input => input.multiple), [screenshot('pay')])
     await screen.findByText(/payment verified/i)
 
     attach(inviteFileInput(), [screenshot('invite')])
