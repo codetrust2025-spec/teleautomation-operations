@@ -576,6 +576,14 @@ class TestThePinnedQuestion:
         assert seen["payload"]["model"] == "qwen2.5vl:7b" and seen["payload"]["messages"][0]["images"] == ["B64DATA"]
         assert "think" not in seen["payload"]          # only models that know the option are sent it
 
+    @pytest.mark.parametrize("threads, expected", [(0, None), (12, 12)])
+    def test_the_thread_count_is_sent_with_the_request_only_when_asked_for(self, monkeypatch, threads, expected):
+        from core import ollama_nodes
+        seen = {}
+        monkeypatch.setattr(ollama_nodes, "_request", lambda node, path, **kw: seen.update(kw) or {"message": {"content": "{}"}})
+        bf._ask_pinned(FakeReader({}), "qwen2.5vl:7b", "x", "q", 30, threads)
+        assert seen["payload"]["options"].get("num_thread") == expected
+
     def test_a_node_error_is_returned_not_raised(self, monkeypatch):
         from core import ollama_nodes
         monkeypatch.setattr(ollama_nodes, "_request", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("Ollama returned HTTP 500")))

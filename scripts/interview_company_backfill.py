@@ -435,7 +435,7 @@ def _ask(extractor, b64: str, prompt: str, timeout: int) -> tuple[dict | None, s
     return box["answer"], ""
 
 
-def _ask_pinned(extractor, model: str, b64: str, prompt: str, timeout: int) -> tuple[dict | None, str]:
+def _ask_pinned(extractor, model: str, b64: str, prompt: str, timeout: int, threads: int = 0) -> tuple[dict | None, str]:
     """Like _ask, but straight to PINNED_NODE with a chosen model: no gateway, so no failover to another machine."""
     from core import ollama_nodes
     box: dict = {}
@@ -447,6 +447,8 @@ def _ask_pinned(extractor, model: str, b64: str, prompt: str, timeout: int) -> t
                        "options": {"temperature": 0.1, "num_predict": 200}}
             if model.startswith("qwen3"):
                 payload["think"] = False
+            if threads:
+                payload["options"]["num_thread"] = int(threads)   # a per-request CPU setting; nothing is changed on the node
             out = ollama_nodes._request(PINNED_NODE, "/api/chat", method="POST", payload=payload, timeout=timeout)
             text = (out.get("message") or {}).get("content") or ""
             box["answer"] = extractor.parse_strict_json_response(text) if text else None
@@ -465,14 +467,14 @@ def _ask_pinned(extractor, model: str, b64: str, prompt: str, timeout: int) -> t
     return box["answer"], ""
 
 
-def read_slim(extractor, data: bytes, model: str = "") -> dict:
+def read_slim(extractor, data: bytes, model: str = "", threads: int = 0) -> dict:
     """The faster method. Question one reads the company (and says if this is an invite at all); question two, asked
     about the very same image bytes so the node reuses the image it already read, must quote the words that name it."""
     import base64
     prepared, scale = prepare_image(data)
     b64 = base64.b64encode(prepared).decode("ascii")
     started = time.time()
-    ask = (lambda prompt: _ask_pinned(extractor, model, b64, prompt, CALL_TIMEOUT)) if model else (lambda prompt: _ask(extractor, b64, prompt, CALL_TIMEOUT))
+    ask = (lambda prompt: _ask_pinned(extractor, model, b64, prompt, CALL_TIMEOUT, threads)) if model else (lambda prompt: _ask(extractor, b64, prompt, CALL_TIMEOUT))
     first, error = ask(SLIM_PROMPT)
     seconds_first = time.time() - started
     if error:
@@ -500,7 +502,7 @@ def cmd_read(args) -> int:
         return 0
     if args.method == "slim":
         started = time.time()
-        out.update(read_slim(extractor, data, args.model))
+        out.update(read_slim(extractor, data, args.model, args.threads))
         out["seconds"] = round(time.time() - started, 1)
         print(json.dumps(out))
         sys.stdout.flush()
@@ -828,7 +830,8 @@ def cmd_drive(args) -> int:
             waited += 30
         try:
             run = _docker("exec", CONTAINER, "python", IN_CONTAINER, "read", "--sha", item["sha"], "--path", item["path"],
-                          "--mime", item["mime"], "--method", args.method, "--model", args.model, timeout=2 * CALL_TIMEOUT + 90)
+                          "--mime", item["mime"], "--method", args.method, "--model", args.model, "--threads", str(args.threads),
+                          timeout=2 * CALL_TIMEOUT + 90)
         except subprocess.TimeoutExpired:
             line = {"sha": item["sha"], "at": _now(), "status": "failed", "error": "driver timeout", "seconds": 2 * CALL_TIMEOUT + 90}
         else:
@@ -859,6 +862,7 @@ def main(argv=None) -> int:
     p.add_argument("--sha", required=True); p.add_argument("--path", required=True); p.add_argument("--mime", default="image/jpeg")
     p.add_argument("--method", choices=("slim", "full"), default="slim")
     p.add_argument("--model", default="", help="audit model, pinned to the RTX node (empty = the production vision model through the gateway)")
+    p.add_argument("--threads", type=int, default=0, help="CPU threads per request for pinned (audit) reads; 0 = leave to Ollama")
     p = sub.add_parser("plan")
     p.add_argument("--inventory", required=True); p.add_argument("--results", required=True); p.add_argument("--out", required=True)
     p.add_argument("--grounding", choices=("required", "advisory"), default="required")
@@ -872,7 +876,7 @@ def main(argv=None) -> int:
     p.add_argument("--work", default="/root/company-backfill"); p.add_argument("--until", default="")
     p.add_argument("--courtesy-seconds", type=int, default=150); p.add_argument("--only", nargs="*")
     p.add_argument("--results", default="results.jsonl"); p.add_argument("--method", choices=("slim", "full"), default="slim")
-    p.add_argument("--model", default="")
+    p.add_argument("--model", default=""); p.add_argument("--threads", type=int, default=0)
     p = sub.add_parser("compare")
     p.add_argument("--inventory", required=True); p.add_argument("--old", required=True); p.add_argument("--new", required=True)
     args = parser.parse_args(argv)
