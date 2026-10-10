@@ -1,7 +1,7 @@
 # Interview Data purge: execution plan (for approval)
 
 > **Status: DRAFT, NOT APPROVED. Nothing has been executed.** Production is running and unchanged (release `4a7c61c`,
-> `operations-api` healthy, all 383 data files identical to the Phase 0 baseline). The application is not stopped and the
+> `operations-api` healthy; the three files this depends on match the recorded hashes). The application is not stopped and the
 > purge is not run until the owner approves this plan, in writing, in the block at the end.
 >
 > The commands, the expected outputs and the tool are in [`interview-data-purge.md`](interview-data-purge.md). This page is
@@ -14,7 +14,7 @@
 | **Scope** | Remove the top-level key `interview_data` from exactly two files: the live `data_room/credentials.json` (99 records) and the older app-made copy `credentials.json.pre-srujan-import-20261005T093705Z` (81 records, all of which are also in the live file). Nothing else. |
 | **Recovery point** | Nightly restic snapshot `da4a7033` (8 Oct 20:33 UTC): byte-identical copies of both files, verified read-only. The files have not been written since 5 Oct, so no data is lost by restoring it. Re-verified at execution time (Phase 0.2). |
 | **Downtime** | The application is stopped for the purge: **about 3-5 minutes** (stop up to 30 s, purge a minute or two of human steps, start about 1-2 min; the 9 Oct restart reached healthy in 42 s). Window to be chosen: see section 4. |
-| **Verification** | Before: backup byte-identity, dry run (12 data gates), pinned writer checks, no deploy running. After: verify while stopped, health and release after restart, verify with a 60 s watch, checksum diff of all 383 files (exactly two lines differ), a soak check later. Section 7. |
+| **Verification** | Before: backup byte-identity, dry run (12 data gates), pinned writer checks, no deploy running. After: verify while stopped, health and release after restart, verify with a 60 s watch, checksum diff of every data file against a baseline taken after the stop (exactly two lines differ), a soak check later. Section 7. |
 | **Rollback** | Restore the two files from snapshot `da4a7033` into a root-only scratch directory, put each back with the tool (refuses if anything else changed), remove the scratch copy. Section 8. |
 | **Who runs what** | The owner runs every command that stops the application or deletes data. Claude reads each output with you and says go or stop; Claude does not run Phase 1 or the deletion. |
 
@@ -101,6 +101,7 @@ no interview scheduled to be reminded in the window (Daily Ops), and the live qu
 |---|---|---|---|---|
 | T minus 30 min | **Phase 0** read-only checks (0.1 to 0.5) and the go/no-go list in section 6 | 5 min | owner, Claude reads | Any item not green: do not start |
 | T | **1.1** `docker stop` the application | up to 30 s | owner | Must show 0 containers and 0 listeners; otherwise stop here, nothing changed |
+| T + 30 s | **1.2** comparison baseline of all data files, with the application stopped | seconds | Claude (read-only) | About 382 lines, and the three key hashes present |
 | T + 1 min | **2.1** dry run with `--check-writer` | seconds (measured 0.4 s on production) | owner | Must end `all gates pass`; a "last written ... ago" under 120 s means wait |
 | T + 2 min | **2.2** the deletion | about 15 s (a 10 s watch after writing) | owner | `RESULT: done.` and exit 0 only; anything else: section 8 |
 | T + 3 min | **2.3, 2.4** verify and checksum diff while stopped | 1 min | owner | `clean`, and exactly two lines differ |
@@ -122,7 +123,10 @@ Phase 1.1 (or anything unexpected happens), repeat Phase 0 from the top. Every b
 within the 30 minutes), the rollback commands R1 to R4 are open and ready in a second window, `/root/purge-rollback` does not
 already exist, and the host has free disk (the 0.2 output ends with the free space of the backup volume).
 
-- [ ] Phase 0.1: 383 lines; identical to the previous baseline if one was kept.
+- [ ] Phase 0.1: about 382 lines (not fewer than 380), and the `grep -c` check prints `3` (both credentials files and the expense store
+      as recorded). It does **not** have to equal an earlier snapshot: the running application changes its own stores with normal work
+      (and `cross_project_outbox.json`, `job_heartbeats.json`, `gmail_reconnect_notices.json` on their own), so the comparison
+      baseline is taken after the stop (1.2).
 - [ ] Phase 0.2: `IDENTICAL` for both files; `last_result: ok`; backup lock not held; free disk shown.
 - [ ] Phase 0.3: `RESULT: all gates pass. Nothing was written.`, exit 0, numbers as in the runbook.
 - [ ] Phase 0.4: `operations-api: running healthy`, one listener on 8210 (confirms nothing was stopped early).
@@ -137,11 +141,13 @@ already exist, and the host has free disk (the 0.2 output ends with the free spa
 ## 7. Verification (what proves it worked)
 
 1. Tool, while stopped: `verify` prints `RESULT: clean.`; the key is gone from both files and everything else in them is as it was.
-2. Data volume: the checksum diff shows exactly two changed lines (the two credentials files) out of 383, and nothing else:
-   the expense store, the other Data Room files, salaries, proofs and every other store are byte-identical.
+2. Data volume: the checksum diff against the baseline taken after the stop (1.2) shows exactly two changed lines (the two
+   credentials files) out of about 382, and nothing else: the expense store, the other Data Room files, salaries, proofs and every
+   other store are byte-identical. Exact, because the application was stopped for the whole interval.
 3. After the restart: `operations-api` healthy, `/health` ok, `/version` shows the same release as before (`4a7c61c`).
 4. With the application running: `verify --after-restart --watch 60` is clean (nothing brought the key back), and the
-   checksum diff is still only the two files.
+   checksum diff is still those two files, plus at most files the running application wrote after the restart (each explained by
+   activity; none a Data Room file). This is stability evidence; the proof that unrelated data is untouched is item 2.
 5. Soak: the same verify about 10 minutes later and the next day; the backup content check after the next nightly backup
    prints `0`.
 6. What this does not prove, stated plainly: it proves the records are gone from the data directory and the new backups. It does
@@ -226,11 +232,12 @@ Not taken from a report: done against the real backup, then cleaned up.
 | Older copy | size 82,698; mtime 2026-10-05 08:54:15 UTC; sha256 `78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d`; 81 records, digest `0b07fefcd1841e85`; rest-of-file digest `aeba532e0c43b6f1` |
 | Recovery point | restic snapshot `da4a7033`, 2026-10-08 20:33:10 UTC, tag `nightly` |
 | Expected after the purge | live 17,948 bytes, sha256 `d00ee10b7ecda4e0d9b4a49255b58116e2f9b00c5b9b2830998f7c238e20d01b`; older 16,137 bytes, sha256 `1b12a5fff9df565c7df01b53829cdc0aeca6cf34ba7c5d6327e67934ff96e7c0` |
-| Data volume baseline | 383 files; sha256 of the sorted list `81a954b0bb3513c1a90c3de0b08ede295f07bec1c2687260a75ac91d5ce69acd`; expense store `handler_expenses.json` sha256 `c7ef95600bfe85c3f0126f1930c5a07e2eeaa76101e7423477518047679c6ca6` |
+| Data volume pre-flight (10 Oct) | 382 files, leaving out the three self-updating application files; expense store `handler_expenses.json` sha256 `c7ef95600bfe85c3f0126f1930c5a07e2eeaa76101e7423477518047679c6ca6`. The earlier 383-file record (sorted-list sha256 `81a954b0bb3513c1a90c3de0b08ede295f07bec1c2687260a75ac91d5ce69acd`) included `cross_project_outbox.json`, which the application rewrites by itself; it changed at 04:07 UTC on 10 Oct and was the only file that differed (checked: the two credentials files and the expense store were identical). That is why the comparison baseline is now taken after the stop |
 | Application | release `4a7c61c`, `operations-api` running and healthy |
 
-At execution time the operator keeps the Phase 0.1 file (`purge-before.txt`) with the approval record and writes down
-`sha256sum purge-before.txt` next to the table above. That is the working baseline for the diff in 2.4 and 4.2.
+At execution time the operator keeps the **1.2** file (`purge-before.txt`, taken with the application stopped) with the approval
+record and writes down `sha256sum purge-before.txt` next to the table above. That is the working baseline for the diff in 2.4 and
+4.2. The Phase 0.1 file (`purge-preflight.txt`) is kept as the pre-flight record only.
 
 ## 9. Residual risks, honestly
 

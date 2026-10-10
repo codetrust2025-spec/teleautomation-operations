@@ -188,11 +188,25 @@ and nothing on the host restarts it (the monitor never does).
 
 ### Phase 0. Before stopping anything (all read-only)
 
-0.1 Baseline checksum of everything else (writes `purge-before.txt` locally; expect 383 lines):
+0.1 Pre-flight snapshot of everything else (writes `purge-preflight.txt` locally). It leaves out the three files the running
+application rewrites on its own all day: `job_heartbeats.json`, `gmail_reconnect_notices.json` and `cross_project_outbox.json` (the
+last one changed at 04:07 UTC on 10 Oct with nobody working, which is what broke an earlier whole-list comparison). Expect about 382
+lines (not fewer than 380):
 
 ```bash
-ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 "cd /var/lib/docker/volumes/teleautomation-production_operations_data/_data && find . -type f ! -name job_heartbeats.json ! -name gmail_reconnect_notices.json ! -name '*.tmp' -print0 | sort -z | xargs -0 sha256sum" > purge-before.txt
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 "cd /var/lib/docker/volumes/teleautomation-production_operations_data/_data && find . -type f ! -name job_heartbeats.json ! -name gmail_reconnect_notices.json ! -name cross_project_outbox.json ! -name '*.tmp' -print0 | sort -z | xargs -0 sha256sum" > purge-preflight.txt
 ```
+
+This snapshot is a record and a sanity check. **It is not the baseline for the later comparison**: while the application runs, its
+other stores change with normal work (the expense store, referrers, reminders, payment ledger, uploaded proofs), so two snapshots
+taken hours apart are not expected to be identical, and requiring that would give a false failure. What it must show is that the three
+files this procedure depends on are as recorded (the two credentials files and the expense store):
+
+```bash
+grep -c -E "^(8173a1ad1cf9b5bf9d44f94d841df1a6ccaad12e6c28c29c5775054343b68e91  \./data_room/credentials\.json|78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d  \./data_room/credentials\.json\.pre-srujan-import-20261005T093705Z|c7ef95600bfe85c3f0126f1930c5a07e2eeaa76101e7423477518047679c6ca6  \./handler_expenses\.json)$" purge-preflight.txt
+```
+
+Expected: `3`. Anything else: do not start (a file was changed; find out why).
 
 0.2 Backup check (expect `IDENTICAL` for **both** files, `backup lock held right now: no`, `last_result: ok`):
 
@@ -243,6 +257,14 @@ ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'docker stop --time
 Expected: `teleautomation-production-operations-api-1`, then `running operations-api containers: 0` and `listeners on 8210: 0`.
 If either is not `0`, do not continue.
 
+1.2 Take the **comparison baseline now, with the application stopped** (read-only; writes `purge-before.txt` locally). With the only writer
+down nothing can change between this and the end of Phase 2, so the diff in 2.4 is exact. Expect about the same 382 lines as 0.1 (a
+few more if work was saved between 0.1 and the stop) and `3` from the same `grep -c` check as in 0.1, run on this file:
+
+```bash
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 "cd /var/lib/docker/volumes/teleautomation-production_operations_data/_data && find . -type f ! -name job_heartbeats.json ! -name gmail_reconnect_notices.json ! -name cross_project_outbox.json ! -name '*.tmp' -print0 | sort -z | xargs -0 sha256sum" > purge-before.txt
+```
+
 ### Phase 2. Purge while it is stopped
 
 2.1 Dry run again, now also checking the pinned writer safeguards (expect all gates pass, including the six writer lines):
@@ -267,17 +289,18 @@ Read the result with the table in "Reading the result": `RESULT: done.` and exit
 ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - verify --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
 ```
 
-2.4 Checksum everything else again, still stopped, and compare:
+2.4 Checksum everything else again, still stopped, and compare with the baseline from 1.2 (same exclusions, so the same files are compared):
 
 ```bash
-ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 "cd /var/lib/docker/volumes/teleautomation-production_operations_data/_data && find . -type f ! -name job_heartbeats.json ! -name gmail_reconnect_notices.json ! -name '*.tmp' -print0 | sort -z | xargs -0 sha256sum" > purge-after.txt
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 "cd /var/lib/docker/volumes/teleautomation-production_operations_data/_data && find . -type f ! -name job_heartbeats.json ! -name gmail_reconnect_notices.json ! -name cross_project_outbox.json ! -name '*.tmp' -print0 | sort -z | xargs -0 sha256sum" > purge-after.txt
 ```
 
 ```bash
 diff purge-before.txt purge-after.txt
 ```
 
-Expected: exactly the two-hunk diff shown under "Expected output: checksum diff", and nothing else.
+Expected: exactly the two-hunk diff shown under "Expected output: checksum diff", and nothing else. This one is exact, because the
+application was stopped from 1.2 until now.
 
 ### Phase 3. Restart and wait until healthy
 
@@ -305,14 +328,24 @@ Expected: `{"status":"ok","service":"teleautomation-operations"}` and the releas
 ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 'python3 - verify --data-dir /var/lib/docker/volumes/teleautomation-production_operations_data/_data --also credentials.json.pre-srujan-import-20261005T093705Z --after-restart --watch 60' < "C:/Project Opus/tele-ops/.worktrees/interview-purge/scripts/purge_interview_data.py"
 ```
 
-4.2 Checksums once more with the application running; the diff against `purge-before.txt` must still be only the two files:
+4.2 Checksums once more with the application running, compared with the same baseline from 1.2. The two credentials files must show
+their purged hashes. Because the application is running again, it may also have written its own stores since the restart (someone
+saved an expense, uploaded a proof, a reminder was sent); any other line that differs must be explained by that, and none of it may be
+a Data Room file. It is stability evidence, not the proof of untouched data (that is 2.4, which is exact):
 
 ```bash
-ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 "cd /var/lib/docker/volumes/teleautomation-production_operations_data/_data && find . -type f ! -name job_heartbeats.json ! -name gmail_reconnect_notices.json ! -name '*.tmp' -print0 | sort -z | xargs -0 sha256sum" > purge-after-restart.txt
+ssh -i ~/.ssh/teleautomation_vps_ed25519 root@187.127.164.90 "cd /var/lib/docker/volumes/teleautomation-production_operations_data/_data && find . -type f ! -name job_heartbeats.json ! -name gmail_reconnect_notices.json ! -name cross_project_outbox.json ! -name '*.tmp' -print0 | sort -z | xargs -0 sha256sum" > purge-after-restart.txt
 ```
 
 ```bash
 diff purge-before.txt purge-after-restart.txt
+```
+
+Expected: the same two hunks as in 2.4, plus at most lines for files the application wrote after the restart. Check the expense store
+separately (it should be unchanged unless someone used it since the restart):
+
+```bash
+grep handler_expenses.json purge-before.txt purge-after-restart.txt
 ```
 
 ### Phase 5. Soak (same 4.1 command without `--watch`)
@@ -490,9 +523,9 @@ the application (1.1) and report.
 
 ## Expected output: checksum diff (2.4 and 4.2)
 
-Exactly two lines differ (one hunk each) and nothing else, which means the expense store, the other Data Room files,
-salaries, proofs and every other store are identical. Line numbers can shift by a line or two if files were added
-meanwhile; the content must be this:
+**In 2.4** exactly two lines differ (one hunk each) and nothing else, which means the expense store, the other Data Room files,
+salaries, proofs and every other store are identical. **In 4.2** the same two hunks appear, plus at most lines for files the running
+application wrote after the restart. Line numbers can shift by a line or two if files were added; the content must be this:
 
 ```
 250c250
