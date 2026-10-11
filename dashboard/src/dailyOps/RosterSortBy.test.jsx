@@ -20,7 +20,7 @@ vi.mock('./PendingWorksStrip.jsx', () => ({ PendingWorksStrip: () => null }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
 import {
-  DEFAULT_ROSTER_SORT, ROSTER_SORT_STORAGE_KEY, minutesOfDay, readRosterSort, saveRosterSort, sortRosterRows,
+  DEFAULT_ROSTER_SORT, ROSTER_SORT_OPTIONS, ROSTER_SORT_STORAGE_KEY, minutesOfDay, readRosterSort, saveRosterSort, sortRosterRows,
 } from './rosterSort.js'
 
 const row = (id, name, date, time) => ({
@@ -121,7 +121,10 @@ describe('Sort By on the Daily Ops roster', () => {
     render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
     expect(sortBox().value).toBe('date_desc')
-    expect([...sortBox().options].map(o => o.textContent)).toEqual(['Latest to Oldest', 'Oldest to Latest'])
+    expect([...sortBox().options].map(o => o.textContent)).toEqual([
+      'Latest to Oldest', 'Oldest to Latest', 'Time Earliest', 'Time Latest', 'Interview Round', 'Attendance Status',
+      'Recently Updated', 'Recently Created', 'Screenshot Available First', 'Missing Company First', 'Missing Round First',
+    ])
     expect(sortBox().closest('.ops-roster-controls__filters')).not.toBeNull()
     expect(shown()).toEqual(['Dev', 'Bala', 'Chitra', 'Asha'])
   })
@@ -154,5 +157,49 @@ describe('Sort By on the Daily Ops roster', () => {
     await waitFor(() => expect(shown()).toHaveLength(4))
     expect(sortBox().value).toBe('date_asc')
     expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala'])
+  })
+})
+
+describe('the other orders (11 Oct, second request)', () => {
+  // Four interviews with every field the orders read. Names are invented.
+  const r = (id, over) => ({ id, name: `${id} Fakename`, date: '2026-10-14', time: '10:00', interview_round: 'L1',
+    interview_attendance_status: '', interview_company: 'Example Co', created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z', slot_screenshot_proof: { url: `/x/${id}` }, ...over })
+  const ROWS = [
+    r('p', { date: '2026-10-12', time: '16:00', interview_round: 'L2', interview_attendance_status: 'attended',
+             interview_company: '', updated_at: '2026-10-11T09:00:00Z', created_at: '2026-10-02T00:00:00Z' }),
+    r('q', { date: '2026-10-15', time: '09:00', interview_round: '', interview_attendance_status: 'cancelled',
+             slot_screenshot_proof: null, created_at: '2026-10-09T00:00:00Z' }),
+    r('s', { date: '2026-10-13', time: '11:30', interview_round: 'Screening', updated_at: '2026-10-10T00:00:00Z' }),
+    r('t', { date: '2026-10-14', time: '14:00', interview_round: 'Final', interview_attendance_status: 'not_attended',
+             interview_company: '', slot_screenshot_proof: { url: '' }, created_at: '' }),
+  ]
+  const ids = order => sortRosterRows(ROWS, order).map(x => x.id).join('')
+
+  it.each([
+    ['date_desc', 'qtsp'],              // 15, 14, 13, 12 Oct
+    ['date_asc', 'pstq'],
+    ['time_asc', 'qstp'],               // 09:00, 11:30, 14:00, 16:00
+    ['time_desc', 'ptsq'],
+    ['round', 'sptq'],                  // Screening, L2, Final, then no round
+    ['status', 'sptq'],                 // Pending, Attended, Not attended, Cancelled
+    ['updated_desc', 'psqt'],           // 11 Oct, 10 Oct, then the rest by date
+    ['created_desc', 'qpst'],           // 9 Oct, 2 Oct, 1 Oct, then none
+    ['screenshot_first', 'spqt'],       // with a file first (by date), then none
+    ['missing_company_first', 'tpqs'],  // no company first (by date), then the rest
+    ['missing_round_first', 'qtsp'],    // no round first, then the rest by date
+  ])('%s -> %s', (order, expected) => {
+    expect(ids(order)).toBe(expected)
+  })
+
+  it('offers no alphabetical order by candidate, company, technology or attendee', () => {
+    expect(ROSTER_SORT_OPTIONS).toHaveLength(11)
+    for (const { value, label } of ROSTER_SORT_OPTIONS) {
+      expect(`${value} ${label}`).not.toMatch(/name|alpha|a-z|company name|technology|attendee/i)
+    }
+  })
+
+  it('an unknown saved value falls back to the default order', () => {
+    expect(ids('by_candidate_name')).toBe(ids('date_desc'))
   })
 })

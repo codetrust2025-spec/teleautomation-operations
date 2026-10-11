@@ -1721,9 +1721,12 @@
    and a narrower minimum for the candidate select, so a 1440 screen keeps
    Reset and Refresh on the same line as the filters. */
 @media(min-width:1101px){
-  .ops-roster-search{flex-basis:120px;min-width:120px}
-  .ops-roster-control--candidate{min-width:150px}
-  .ops-roster-control--sort{min-width:0}
+  .ops-roster-search{flex-basis:100px;min-width:100px}
+  .ops-roster-control--candidate{min-width:140px}
+  /* A select is as wide as its longest option ("Screenshot Available First"); held
+     to 150px, the closed box clips only the longest names, shown whole in the list
+     and on hover. */
+  .ops-roster-control--sort{min-width:0;width:150px;max-width:150px}
 }
 @media(max-width:1100px){.ops-roster-controls__range,.ops-roster-controls__filters{flex-wrap:wrap}.ops-roster-search{flex-basis:100%}.ops-roster-controls__actions{margin-left:0}}
 @media(max-width:1200px){.ops-booking-pie{min-width:310px}.ops-booking-pie__legend{grid-template-columns:repeat(2,minmax(85px,1fr))}}

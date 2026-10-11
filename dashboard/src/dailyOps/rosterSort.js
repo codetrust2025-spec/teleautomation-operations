@@ -1,20 +1,42 @@
 /**
  * Sort By for the Daily Ops interview roster.
  *
- * Latest to Oldest (the default) or Oldest to Latest by interview date. On one
- * date the interviews read as that day's schedule, earliest first, whichever
- * way the dates run. A row with no date, or no readable time, goes after the
- * dated ones. Only the order on screen changes: nothing is sent or saved
- * except the choice itself, in this browser, so it survives a reload.
+ * Every order is read from fields the roster rows already carry; nothing is
+ * requested for it and nothing is written except the choice itself, kept in
+ * this browser so it survives a reload. Within any order, ties fall back to
+ * the default: newest date first, and on one date the day's schedule earliest
+ * first. A missing value (no date, no readable time, no round...) goes last.
+ * Alphabetical orders by candidate, company, technology or attendee name are
+ * deliberately not offered.
  */
+import { INTERVIEW_STATUSES, canonicalStatus } from './interviewStatuses.js'
+
 export const ROSTER_SORT_OPTIONS = [
   { value: 'date_desc', label: 'Latest to Oldest' },
   { value: 'date_asc', label: 'Oldest to Latest' },
+  { value: 'time_asc', label: 'Time Earliest' },
+  { value: 'time_desc', label: 'Time Latest' },
+  { value: 'round', label: 'Interview Round' },
+  { value: 'status', label: 'Attendance Status' },
+  { value: 'updated_desc', label: 'Recently Updated' },
+  { value: 'created_desc', label: 'Recently Created' },
+  { value: 'screenshot_first', label: 'Screenshot Available First' },
+  { value: 'missing_company_first', label: 'Missing Company First' },
+  { value: 'missing_round_first', label: 'Missing Round First' },
 ]
 export const DEFAULT_ROSTER_SORT = 'date_desc'
 export const ROSTER_SORT_STORAGE_KEY = 'ta.dailyOps.rosterSort'
 
 const VALID = new Set(ROSTER_SORT_OPTIONS.map(option => option.value))
+
+/** Earliest stage first; the same rounds the roster's Level filter offers, plus L3. */
+const ROUND_ORDER = ['screening', 'l1', 'l2', 'l3', 'final', 'hr']
+/** The order of the status tabs above the table: Pending, Attended, Not attended, ... */
+const STATUS_ORDER = INTERVIEW_STATUSES.map(entry => entry.value)
+
+export function rosterSortLabel(value) {
+  return (ROSTER_SORT_OPTIONS.find(option => option.value === value) || ROSTER_SORT_OPTIONS[0]).label
+}
 
 /** The saved choice, or the default when there is none, it is unknown, or storage is unavailable. */
 export function readRosterSort() {
@@ -53,22 +75,56 @@ function dateKey(row) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
 }
 
+function stamp(value) {
+  const ms = Date.parse(String(value || ''))
+  return Number.isFinite(ms) ? ms : null
+}
+
+function roundRank(row) {
+  const round = String(row?.interview_round || '').trim().toLowerCase()
+  if (!round) return null
+  const at = ROUND_ORDER.indexOf(round)
+  return at === -1 ? ROUND_ORDER.length : at
+}
+
+function statusRank(row) {
+  const status = canonicalStatus(row?.interview_attendance_status_resolved || row?.interview_attendance_status)
+  const at = STATUS_ORDER.indexOf(status)
+  return at === -1 ? STATUS_ORDER.length : at
+}
+
+const has = value => String(value || '').trim() !== ''
+
+/** Compare two values, missing (null/undefined) last, `direction` 1 ascending / -1 descending. */
+function by(a, b, direction = 1) {
+  const missingA = a === null || a === undefined || a === ''
+  const missingB = b === null || b === undefined || b === ''
+  if (missingA || missingB) return missingA === missingB ? 0 : missingA ? 1 : -1
+  if (a === b) return 0
+  return (a < b ? -1 : 1) * direction
+}
+
+/** The default order: newest date first, each date earliest first. */
+function defaultOrder(a, b) {
+  return by(dateKey(a), dateKey(b), -1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1)
+}
+
+const COMPARE = {
+  date_desc: defaultOrder,
+  date_asc: (a, b) => by(dateKey(a), dateKey(b), 1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1),
+  time_asc: (a, b) => by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1) || defaultOrder(a, b),
+  time_desc: (a, b) => by(minutesOfDay(a?.time), minutesOfDay(b?.time), -1) || defaultOrder(a, b),
+  round: (a, b) => by(roundRank(a), roundRank(b), 1) || defaultOrder(a, b),
+  status: (a, b) => by(statusRank(a), statusRank(b), 1) || defaultOrder(a, b),
+  updated_desc: (a, b) => by(stamp(a?.updated_at), stamp(b?.updated_at), -1) || defaultOrder(a, b),
+  created_desc: (a, b) => by(stamp(a?.created_at), stamp(b?.created_at), -1) || defaultOrder(a, b),
+  screenshot_first: (a, b) => by(has(a?.slot_screenshot_proof?.url) ? 0 : 1, has(b?.slot_screenshot_proof?.url) ? 0 : 1) || defaultOrder(a, b),
+  missing_company_first: (a, b) => by(has(a?.interview_company) ? 1 : 0, has(b?.interview_company) ? 1 : 0) || defaultOrder(a, b),
+  missing_round_first: (a, b) => by(has(a?.interview_round) ? 1 : 0, has(b?.interview_round) ? 1 : 0) || defaultOrder(a, b),
+}
+
 /** A new array in the chosen order; the input is left as it was. */
 export function sortRosterRows(rows, order = DEFAULT_ROSTER_SORT) {
-  const direction = order === 'date_asc' ? 1 : -1
-  return [...(rows || [])].sort((a, b) => {
-    const da = dateKey(a)
-    const db = dateKey(b)
-    if (da !== db) {
-      if (!da) return 1
-      if (!db) return -1
-      return da < db ? -direction : direction
-    }
-    const ta = minutesOfDay(a?.time)
-    const tb = minutesOfDay(b?.time)
-    if (ta === tb) return 0
-    if (ta === null) return 1
-    if (tb === null) return -1
-    return ta - tb
-  })
+  const compare = COMPARE[order] || defaultOrder
+  return [...(rows || [])].sort(compare)
 }

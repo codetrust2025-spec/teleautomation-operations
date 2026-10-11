@@ -3,7 +3,7 @@ import { API } from '../config.js'
 import { STATUS_TABS } from './interviewStatuses.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { InterviewRoster } from './InterviewRoster.jsx'
-import { ROSTER_SORT_OPTIONS, readRosterSort, saveRosterSort } from './rosterSort.js'
+import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } from './rosterSort.js'
 import { PendingWorksStrip } from './PendingWorksStrip.jsx'
 import { ALL_TIME_RANGE, PRESETS, detectPresetFromRange, resolvePresetRange } from './dateRangePresets.js'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
@@ -457,6 +457,7 @@ export function DailyOpsPanel({
           value={sortOrder}
           onChange={e => changeSortOrder(e.target.value)}
           aria-label="Sort by"
+          title={`Sort by: ${rosterSortLabel(sortOrder)}`}
         >
           {ROSTER_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
