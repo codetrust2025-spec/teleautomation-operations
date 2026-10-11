@@ -347,3 +347,65 @@ def test_a_file_that_is_not_a_resume_is_still_refused_and_fills_nothing(api, sto
     body = upload(api).json()
     assert body["status"] == "error"
     assert store.get_candidate("c1")["email"] == ""
+
+
+# --- complete names and phones (11 Oct: "Linga Srinava" / "77995" were kept) ----------
+# Invented values in the shape of the case: the resume says "Raghavendrarao Kolla",
+# the record holds the name cut short, in another order, or with a spelling variant.
+
+FULL = {"candidate_name": "Raghavendrarao Kolla", "phone": "+919000000777",
+        "email": "raghav.k@example.test", "technology": "React.js"}
+STORED = {"name": "Kolla Raghava", "email": "raghav.k@example.test", "phone": "9000000777", "technology": "React JS"}
+
+
+def test_a_name_cut_short_is_completed_when_the_phone_confirms_the_person():
+    result = plan(STORED, reading(**FULL))
+    assert result["fill"] == {"name": "Raghavendrarao Kolla"}
+    assert result["refused"] == ""
+
+
+@pytest.mark.parametrize("stored_name", ["Kolla Raghavendrarao", "Kolla Ragavendrarao", "Raghavendrarao Kolla"])
+def test_the_same_name_in_another_order_or_spelling_is_kept(stored_name):
+    assert plan({**STORED, "name": stored_name}, reading(**FULL))["fill"] == {}
+
+
+def test_a_cut_short_name_is_not_completed_without_a_shared_phone_or_email():
+    result = plan({**STORED, "phone": "", "email": ""}, reading(**FULL))
+    assert "name" not in result["fill"]
+
+
+def test_a_short_real_name_is_not_taken_for_a_cut_short_one():
+    result = plan({**STORED, "name": "Ram Kolla"}, reading(**{**FULL, "candidate_name": "Ramesh Kolla"}))
+    assert "name" not in result["fill"]
+
+
+@pytest.mark.parametrize("partial_phone", ["90000", "900000077", "90000 0077", "+91 90000 00"])
+def test_a_partial_phone_is_replaced_by_the_resumes_full_number(partial_phone):
+    result = plan({**STORED, "name": "Raghavendrarao Kolla", "phone": partial_phone}, reading(**FULL))
+    assert result["fill"] == {"phone": "9000000777"}
+
+
+def test_an_incomplete_name_on_the_resume_is_never_written():
+    result = plan({**STORED, "name": ""}, reading(**{**FULL, "candidate_name": "Raghavendrarao K"}))
+    assert "name" not in result["fill"]
+    assert result["skipped"]["name"] == "the name on the resume is incomplete"
+
+
+def test_react_dot_js_is_the_rosters_react_js():
+    assert cs.canonical_technology("React.js") == "React JS"
+    assert cs.canonical_technology("Node.js") == "Node JS"
+    result = plan({**STORED, "name": "Raghavendrarao Kolla", "technology": ""}, reading(**FULL))
+    assert result["fill"] == {"technology": "React JS"}
+
+
+@pytest.mark.parametrize(("current", "complete", "partial"), [
+    ("Kolla Raghava", "Raghavendrarao Kolla", True),      # a word cut short
+    ("Raghavendrarao", "Raghavendrarao Kolla", True),     # a word missing
+    ("Kolla Raghavendrarao", "Raghavendrarao Kolla", False),
+    ("Kolla Ragavendrarao", "Raghavendrarao Kolla", False),
+    ("Ram Kolla", "Ramesh Kolla", False),
+    ("Someone Else", "Raghavendrarao Kolla", False),
+])
+def test_partial_name(current, complete, partial):
+    assert ra.partial_name(current, complete) is partial
+

@@ -8,7 +8,13 @@ were already right, and nothing filled a gap on its own.
 The rule here is narrower and safer:
 
 * only a field that is **blank or unusable** is filled; a valid value is never
-  replaced, and a blank from the resume never replaces anything;
+  replaced, and a blank from the resume never replaces anything. A phone is
+  usable only as a full 10-digit Indian mobile; a name cut short ("Linga
+  Srinava" for "Srinivasarao Linga") is completed from the resume when the
+  resume's phone or email confirms it is the same person, while the same name
+  in another order or spelling ("Linga Srinavasarao") is kept as it is;
+* only a **complete** reading is used: a name needs two words of two letters
+  or more, a phone ten digits;
 * only an **AI reading** at or above `MIN_CONFIDENCE` is trusted. A regex or OCR
   guess ("the first email in the file") may be someone else's -- a referee's, a
   company's -- so it is reported, never applied;
@@ -75,6 +81,67 @@ def same_person(a: str, b: str) -> bool:
     return matched / len(short) >= 0.5 and matched >= 1
 
 
+def complete_name(value: Any) -> str:
+    """A full name -- at least two words of two letters or more (initials may be
+    added) and not a placeholder -- or "" when the value is not one."""
+    text = " ".join(_clean(value).split())
+    if text.lower() in _PLACEHOLDER_NAMES:
+        return ""
+    words = re.findall(r"[A-Za-z]+", text)
+    if sum(1 for word in words if len(word) >= 2) < 2:
+        return ""
+    return text
+
+
+def _close(a: str, b: str) -> bool:
+    return a == b or difflib.SequenceMatcher(None, a, b).ratio() >= 0.8
+
+
+def equivalent_names(a: str, b: str) -> bool:
+    """The same words, in any order, spelling variants aside:
+    "Linga Srinavasarao" and "Srinivasarao Linga" are one name."""
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or len(ta) != len(tb):
+        return False
+    remaining = list(tb)
+    for token in ta:
+        match = next((other for other in remaining if _close(token, other)), None)
+        if match is None:
+            return False
+        remaining.remove(match)
+    return True
+
+
+def _cut_short(token: str, full: str) -> bool:
+    """`token` is `full` cut short: "srinava" of "srinivasarao". Four letters at
+    least, so a short real name ("Ram" beside "Ramesh") is not taken for one."""
+    if len(token) < 4 or len(token) >= len(full):
+        return False
+    head = full[: len(token)]
+    return head == token or difflib.SequenceMatcher(None, token, head).ratio() >= 0.8
+
+
+def partial_name(current: str, complete: str) -> bool:
+    """Is `current` the complete name `complete` cut short? Every word of it is
+    a word of the complete name or a cut-short one, and something is missing:
+    a word is cut short, or whole words are absent. The same name in another
+    order or spelling is not partial."""
+    tc, tf = _tokens(current), _tokens(complete)
+    if not tc or not complete_name(complete) or equivalent_names(current, complete):
+        return False
+    remaining = list(tf)
+    shortened = False
+    for token in tc:
+        match = next((other for other in remaining if _close(token, other)), None)
+        if match is None:
+            match = next((other for other in remaining if _cut_short(token, other)), None)
+            if match is None:
+                return False
+            shortened = True
+        remaining.remove(match)
+    return shortened or bool(remaining)
+
+
 def valid_email(value: str) -> str:
     email = _clean(value).lower()
     if not _EMAIL.match(email):
@@ -97,7 +164,8 @@ def usable(field: str, value: Any, *, normalise_phone, canonical_technology) -> 
     if field == "email":
         return bool(valid_email(text))
     if field == "phone":
-        return bool(normalise_phone(text))
+        # Ten digits, a mobile: "77995" or a nine-digit number is not a phone.
+        return bool(valid_phone(text, normalise_phone))
     if field == "technology":
         return canonical_technology(text) not in {"", "Unspecified"}
     if field == "name":
@@ -143,10 +211,19 @@ def plan_autofill(
     # A resume whose own phone number differs from a candidate's valid one is
     # not evidence about that candidate: a copied template, or someone else's
     # contact block. Nothing it says about them is trusted.
-    current_phone = normalise_phone(candidate.get("phone"))
+    current_phone = valid_phone(candidate.get("phone"), normalise_phone)
     resume_phone = valid_phone(extraction.get("phone"), normalise_phone)
     if current_phone and resume_phone and current_phone != resume_phone:
         return {"fill": {}, "skipped": {}, "refused": "the phone number on the resume differs from this candidate's"}
+
+    # The resume is confirmed to be this person's by a phone or email they share;
+    # only then may a cut-short name be completed from it.
+    found_complete = complete_name(found_name)
+    current_email = valid_email(candidate.get("email"))
+    confirmed = bool(
+        (current_phone and current_phone == resume_phone)
+        or (current_email and current_email == valid_email(extraction.get("email")))
+    )
 
     others = list(others)
     taken_emails = {valid_email(o.get("email")) for o in others} - {""}
@@ -155,6 +232,13 @@ def plan_autofill(
 
     for field in FIELDS:
         if usable(field, candidate.get(field), normalise_phone=normalise_phone, canonical_technology=canonical_technology):
+            if (
+                field == "name"
+                and found_complete
+                and confirmed
+                and partial_name(_clean(candidate.get("name")), found_complete)
+            ):
+                fill[field] = found_complete
             continue  # a valid value is never replaced
         if field == "email":
             email = valid_email(extraction.get("email"))
@@ -181,8 +265,10 @@ def plan_autofill(
             else:
                 fill[field] = tech
         elif field == "name":
-            if found_name and len(_tokens(found_name)) >= 1:
-                fill[field] = found_name
+            if found_complete:
+                fill[field] = found_complete
+            elif found_name:
+                skipped[field] = "the name on the resume is incomplete"
             else:
                 skipped[field] = "no name on the resume"
     return {"fill": fill, "skipped": skipped, "refused": ""}

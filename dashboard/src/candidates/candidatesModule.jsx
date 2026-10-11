@@ -1415,6 +1415,120 @@ export function PaymentProofUploader({
     </div>
   );
 }
+// ---- Values read from a resume: complete ones only --------------------------
+// 11 Oct: a form holding "Linga Srinava" and "77995" kept them after the resume
+// was read, because a cut-short name counted as a name and a typed number as a
+// correction. A reading now fills a field that is blank, holds no valid value,
+// or holds the name cut short; it never fills from an incomplete reading, and
+// the same name in another order or spelling counts as already filled.
+
+/** The 10-digit Indian mobile in `value` (+91 / leading 0 allowed), or "". */
+export function indianMobile(value) {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return /^[6-9]\d{9}$/.test(digits) ? digits : "";
+}
+/** A full name: two words of two letters or more (initials may be added), or "". */
+export function completeName(value) {
+  const text = String(value ?? "").trim().split(/\s+/).join(" ");
+  const words = text.match(/[A-Za-z]+/g) || [];
+  return words.filter((word) => word.length >= 2).length >= 2 ? text : "";
+}
+const resumeEmail = (value) => {
+  const email = String(value ?? "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+};
+const nameWords = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((word) => word.length > 1);
+function wordSimilarity(a, b) {
+  if (a === b) return 1;
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return 1 - row[b.length] / Math.max(a.length, b.length, 1);
+}
+const closeWord = (a, b) => a === b || wordSimilarity(a, b) >= 0.8;
+// `word` is `full` cut short ("srinava" of "srinivasarao"); four letters at
+// least, so a short real name ("Ram" beside "Ramesh") is not taken for one.
+const cutShort = (word, full) =>
+  word.length >= 4 &&
+  word.length < full.length &&
+  closeWord(word, full.slice(0, word.length));
+/** The same words in any order, spelling variants aside. */
+export function equivalentNames(a, b) {
+  const left = nameWords(a);
+  const right = nameWords(b);
+  if (!left.length || left.length !== right.length) return false;
+  const remaining = [...right];
+  return left.every((word) => {
+    const at = remaining.findIndex((other) => closeWord(word, other));
+    if (at < 0) return false;
+    remaining.splice(at, 1);
+    return true;
+  });
+}
+/** Is `current` the complete name `complete` cut short (a word shortened or missing)? */
+export function partialName(current, complete) {
+  const words = nameWords(current);
+  if (!words.length || !completeName(complete) || equivalentNames(current, complete)) return false;
+  const remaining = nameWords(complete);
+  let shortened = false;
+  for (const word of words) {
+    let at = remaining.findIndex((other) => closeWord(word, other));
+    if (at < 0) {
+      at = remaining.findIndex((other) => cutShort(word, other));
+      if (at < 0) return false;
+      shortened = true;
+    }
+    remaining.splice(at, 1);
+  }
+  return shortened || remaining.length > 0;
+}
+// "React.js" is the roster's "React JS": the option whose letters match.
+function technologyOption(value) {
+  const raw = String(value ?? "").trim();
+  const key = (text) => String(text).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return H8.find((option) => key(option) === key(raw)) || raw;
+}
+/** A reading's four fields, each complete or "" (incomplete values are dropped). */
+export function resumeReadingValues(reading) {
+  const data = reading || {};
+  return {
+    name: completeName(data.candidate_name ?? data.name),
+    technology: technologyOption(data.technology),
+    phone: indianMobile(data.phone),
+    email: resumeEmail(data.email),
+  };
+}
+const resumeBlank = (value) => !String(value ?? "").trim();
+// Already holds that value: the same number, address or option, or the same name
+// in another order or spelling.
+function sameResumeValue(key, current, value) {
+  if (key === "phone") return indianMobile(current) === value;
+  if (key === "email") return resumeEmail(current) === value;
+  if (key === "name") return completeName(current) !== "" && equivalentNames(current, value);
+  return String(current ?? "").trim().toLowerCase() === String(value).toLowerCase();
+}
+// May a complete value from a resume replace what the field holds now?
+function resumeMayReplace(key, current, value) {
+  if (resumeBlank(current)) return true;
+  if (key === "phone") return !indianMobile(current);
+  if (key === "email") return !resumeEmail(current);
+  if (key === "name") return partialName(current, value);
+  return false;
+}
+
 // The resume a candidate already has on file: the newest one.
 export function latestResumeOf(candidate) {
   if (!candidate) return null;
@@ -1541,13 +1655,17 @@ export function ResumeAutoFill({
           const filledNow = res.autofill.filled || {};
           const names = Object.keys(filledNow);
           const next = [];
-          if (names.length) {
-            // The server saved these on the candidate; mirror them into the
-            // form so a later Save cannot write the old value back over them.
-            const report = onAutofilled?.(filledNow) || {
-              filled: names,
-              kept: [],
-            };
+          // The server saved these on the candidate; mirror them into the form
+          // so a later Save cannot write the old value back over them, and let
+          // the reading complete what the form holds cut short.
+          const mirrored = res.autofill.refused
+            ? null
+            : onAutofilled?.(filledNow, {
+                reading: res.ai_extraction || {},
+                skipped: res.autofill.skipped || {},
+              });
+          if (names.length || mirrored?.filled?.length || mirrored?.kept?.length) {
+            const report = mirrored || { filled: names, kept: [] };
             next.push(
               ...resumeFillNotes(report, {
                 filledText: (list) =>
@@ -2703,26 +2821,29 @@ export function CandidateEditModal({
       [C]: Y,
     }));
   }
-  // Fill name, phone, email and technology from a resume. `mayFill(draft, key)`
-  // says whether that field's current value may be replaced; a blank on the
-  // resume never replaces anything. Returns which fields were filled and which
-  // kept their own (different) value.
+  // Fill name, phone, email and technology from a resume's complete values
+  // (resumeReadingValues). `mayFill(draft, key, value)` says whether the field's
+  // current value may be replaced; a field already holding that value (the same
+  // name in another order or spelling, the same number written differently) is
+  // left alone. Returns which fields were filled and which kept their own value.
   function fillFromResume(values, mayFill) {
     const report = { filled: [], kept: [] };
     const wanted = {};
     for (const [key, value] of Object.entries(values || {})) {
-      let text = String(value ?? "").trim();
-      if (key === "phone") text = text.replace(/[^\d+]/g, "");
-      if (!text) continue;
-      if (String(draftNow.current[key] ?? "").trim() === text) continue;
-      wanted[key] = text;
-      (mayFill(draftNow.current, key) ? report.filled : report.kept).push(key);
+      if (!value || sameResumeValue(key, draftNow.current[key], value)) continue;
+      wanted[key] = value;
+      (mayFill(draftNow.current, key, value) ? report.filled : report.kept).push(key);
     }
     if (report.filled.length) {
       c((current) => {
         const next = { ...current };
         for (const key of report.filled) {
-          if (mayFill(current, key)) next[key] = wanted[key];
+          if (
+            !sameResumeValue(key, current[key], wanted[key]) &&
+            mayFill(current, key, wanted[key])
+          ) {
+            next[key] = wanted[key];
+          }
         }
         return next;
       });
@@ -2730,6 +2851,16 @@ export function CandidateEditModal({
     return report;
   }
   const blankField = (draft, key) => !String(draft[key] ?? "").trim();
+  // A cut-short name of an existing candidate is completed only when the resume
+  // shares this person's phone or email (in the form, or as it was saved).
+  const resumeIsTheirs = (draft, values) =>
+    (values.phone &&
+      [draft.phone, draftOpened.current.phone].some((v) => indianMobile(v) === values.phone)) ||
+    (values.email &&
+      [draft.email, draftOpened.current.email].some((v) => resumeEmail(v) === values.email));
+  const readingMayReplace = (draft, key, value, values) =>
+    resumeMayReplace(key, draft[key], value) &&
+    (key !== "name" || !e || blankField(draft, key) || resumeIsTheirs(draft, values));
   function p(C, prev) {
     const Y = Number(C.expected_payment) || 0;
     // The amount is a stale default, not an agreed charge, when it equals the
@@ -3002,27 +3133,37 @@ export function CandidateEditModal({
           // A reading fills only an empty field. This used to overwrite an
           // existing candidate's name, technology, phone and email with
           // whatever the resume said, valid or not.
-          onExtracted={(data) =>
-            fillFromResume(
-              {
-                name: data.candidate_name,
-                technology: data.technology,
-                phone: data.phone,
-                email: data.email,
-              },
-              blankField,
-            )
-          }
-          // Mirror what the server saved: it replaced only a blank or invalid
-          // stored value, so the form takes it unless the person has changed
-          // that field since opening the form.
-          onAutofilled={(filledNow) =>
-            fillFromResume(
-              filledNow,
-              (draft, key) =>
-                blankField(draft, key) || draft[key] === draftOpened.current[key],
-            )
-          }
+          onExtracted={(data) => {
+            const values = resumeReadingValues(data);
+            return fillFromResume(values, (draft, key, value) =>
+              readingMayReplace(draft, key, value, values),
+            );
+          }}
+          // What the server saved replaced only a blank, invalid or cut-short
+          // stored value: the form takes it unless the person has changed that
+          // field since opening the form. The reading also completes a field
+          // the form holds blank, invalid or cut short -- except one the server
+          // would not fill (another candidate's number, say).
+          onAutofilled={(filledNow, { reading, skipped } = {}) => {
+            const saved = resumeReadingValues(filledNow);
+            const values = resumeReadingValues(reading);
+            for (const key of Object.keys(skipped || {})) delete values[key];
+            for (const key of Object.keys(saved)) {
+              if (saved[key]) values[key] = saved[key];
+            }
+            const report = fillFromResume(
+              values,
+              (draft, key, value) =>
+                (Boolean(saved[key]) &&
+                  (blankField(draft, key) || draft[key] === draftOpened.current[key])) ||
+                readingMayReplace(draft, key, value, values),
+            );
+            // "Kept" is for what the person typed, not for a saved value.
+            report.kept = report.kept.filter(
+              (key) => draftNow.current[key] !== draftOpened.current[key],
+            );
+            return report;
+          }}
         />
         <div className="cand-modal-body">
           <div className="cand-panel cand-panel--left">

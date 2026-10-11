@@ -183,6 +183,69 @@ def _parse_json_response(raw: str) -> dict[str, Any] | None:
     return None
 
 
+# ── Complete contact fields only ────────────────────────────────────────────
+_NAME_WORD = re.compile(r"[A-Za-z]+")
+_EMAIL_SHAPE = re.compile(r"^[a-z0-9._%+\-]+@[a-z0-9\-]+(?:\.[a-z0-9\-]+)+$")
+
+
+def _indian_mobile(value: Any) -> str:
+    """The 10-digit Indian mobile in `value` (+91 / leading 0 allowed), or ""."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    return digits if re.fullmatch(r"[6-9]\d{9}", digits) else ""
+
+
+def _complete_name(value: Any) -> str:
+    """At least two words of two letters or more, or ""."""
+    text = " ".join(str(value or "").split())
+    words = _NAME_WORD.findall(text)
+    return text if sum(1 for word in words if len(word) >= 2) >= 2 else ""
+
+
+def _on_page_name(name: str, text: str) -> bool:
+    return all(
+        re.search(rf"(?<![A-Za-z]){re.escape(word)}(?![A-Za-z])", text, re.IGNORECASE)
+        for word in _NAME_WORD.findall(name)
+    )
+
+
+def _settle_contact_fields(result: dict[str, Any], text: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    """Keep the name, phone and email the model read only when each is complete
+    and -- when the resume has a text layer -- actually written in it. Otherwise
+    take the plain-text reading's value if that one is, or leave the field
+    empty: a cut-short "Linga Srinava" or "77995" is never passed on."""
+    text = text or ""
+    digits = re.sub(r"\D", "", text)
+    lowered = text.lower()
+
+    phone = ""
+    for candidate in (result.get("phone"), fallback.get("phone")):
+        mobile = _indian_mobile(candidate)
+        if mobile and (not text or mobile in digits):
+            phone = mobile
+            break
+
+    name = ""
+    for candidate in (result.get("candidate_name"), fallback.get("candidate_name")):
+        complete = _complete_name(candidate)
+        if complete and (not text or _on_page_name(complete, text)):
+            name = complete
+            break
+
+    email = ""
+    for candidate in (result.get("email"), fallback.get("email")):
+        address = str(candidate or "").strip().lower()
+        if _EMAIL_SHAPE.match(address) and (not text or address in lowered):
+            email = address
+            break
+
+    result["candidate_name"], result["phone"], result["email"] = name, phone, email
+    return result
+
+
 # ── PDF text extraction ─────────────────────────────────────────────────────
 def _extract_text_from_pdf(pdf_data: bytes) -> str | None:
     """Extract text from a PDF using available libraries."""
@@ -476,6 +539,7 @@ def extract_resume_with_ollama(
                         result["confidence_score"] = max(0, min(100, int(result.get("confidence_score", 0))))
                     except (ValueError, TypeError):
                         result["confidence_score"] = 70
+                    _settle_contact_fields(result, pdf_text, regex_result)
                     logger.info(
                         "AI extracted: name=%s, tech=%s, exp=%s",
                         result["candidate_name"],
@@ -543,6 +607,8 @@ def extract_resume_with_ollama(
                 result["confidence_score"] = max(0, min(100, int(result.get("confidence_score", 0))))
             except (ValueError, TypeError):
                 result["confidence_score"] = 60
+            # No text layer to check against: completeness only.
+            _settle_contact_fields(result, "", {})
             return result
 
     # Everything failed

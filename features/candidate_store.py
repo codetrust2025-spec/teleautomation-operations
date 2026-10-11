@@ -442,10 +442,12 @@ def canonical_technology(tech: str) -> str:
     raw = (tech or "").strip()
     if not raw:
         return "Unspecified"
-    key = " ".join(raw.lower().replace("_", " ").replace("-", " ").split())
+    key = " ".join(raw.lower().replace("_", " ").replace("-", " ").replace(".", " ").split())
     aliases = {
         "react js": "React JS",
         "reactjs": "React JS",
+        "node js": "Node JS",
+        "nodejs": "Node JS",
         "angular": "Angular",
         "angularjs": "Angular",
         "mern stack": "MERN stack",
