@@ -26,6 +26,7 @@ const ROW = {
   id: "r1", name: "Asha Rao", phone: "9000000001", stage: "in_progress", service_type: "profile_service",
   technology: "Java", reference: "Karthik", date: "2026-09-10", logged_date: "2026-09-10",
   expected_payment: 20000, payment: 20000, payment_status: "paid", resume_count: 1, proof_count: 1,
+  active_resume: { id: "cv1", original_name: "Asha_Rao.pdf", uploaded_at: "2026-09-10T10:00:00+00:00" },
   payment_proofs: [{ id: "p1", attachment_type: "payment_proof", url: "/p1", verification_state: "VERIFIED_COMPANY_PAYMENT", verified_amount: 20000 }],
 };
 

@@ -2058,14 +2058,7 @@ def _with_computed(row: dict) -> dict:
     enriched["attachment_schema_version"] = 2
     resumes = enriched.get("resumes") or []
     enriched["resumes"] = resumes
-    enriched["resume_count"] = len(resumes)
-    if resumes:
-        enriched["latest_resume"] = max(
-            resumes,
-            key=lambda r: r.get("uploaded_at") or "",
-        )
-    else:
-        enriched["latest_resume"] = None
+    _set_active_resume(enriched, [row], len(resumes))
     required_details = {
         "name": _clean_str(enriched.get("name")),
         "technology": _clean_str(enriched.get("technology")),
@@ -2429,8 +2422,10 @@ def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) 
         all_resumes = {item.get("id"): item for r in group for item in (r.get("resumes") or []) if item.get("id")}
         if all_resumes:
             merged["resumes"] = list(all_resumes.values())
-            merged["resume_count"] = len(all_resumes)
-            merged["latest_resume"] = max(all_resumes.values(), key=lambda item: item.get("uploaded_at") or "")
+        # One resume per person: the newest one whose file is stored, across
+        # every slot row. The count used to add up each row's records -- lost
+        # files and copies included -- and showed "10 resumes".
+        _set_active_resume(merged, group, len(all_resumes))
         # Merge each typed collection independently across legacy profile clones.
         all_proofs = {}
         slot_proofs = {}
@@ -2691,7 +2686,6 @@ def _merge_profile_rows_for_pending(rows: list[dict]) -> dict:
     payment = max(int(r.get("payment") or 0) for r in rows)
     # Match dashboard merge: use representative row's channel-aware expected, not max across clones.
     expected = effective_expected_payment(rep)
-    resume_count = max(len(r.get("resumes") or []) for r in rows)
     # Merge resumes from all clones into the representative row
     all_resumes_merged = {}
     for r in rows:
@@ -2734,7 +2728,8 @@ def _merge_profile_rows_for_pending(rows: list[dict]) -> dict:
         ),
         "expected_payment": expected,
         "balance_due": max(0, expected - payment),
-        "resume_count": len(merged_resumes),
+        "resume_count": 1 if active_resume(rows) else 0,
+        "resume_history_count": len(merged_resumes),
         "resumes": merged_resumes,
         "phone": phone or rep.get("phone"),
         "reference": reference or rep.get("reference"),
@@ -8861,6 +8856,54 @@ def _resume_dir(cid: str) -> str:
     return os.path.join(RESUMES_DIR, cid)
 
 
+#: Superseded resume files are moved here (inside the candidate's folder), not
+#: deleted: they stay until the owner approves a clean-up.
+SUPERSEDED_RESUME_DIR = "_superseded"
+
+
+def _resume_file_path(row_id: str, item: dict) -> str:
+    storage = _resume_storage_candidate_id(str(row_id), item)
+    return os.path.join(_resume_dir(storage), str(item.get("filename") or ""))
+
+
+def _resume_file_present(row_id: str, item: dict) -> bool:
+    return bool(item.get("filename")) and os.path.isfile(_resume_file_path(row_id, item))
+
+
+def active_resume(rows: list[dict]) -> dict | None:
+    """The one resume shown for a person: the newest whose file is stored.
+
+    A person has one current resume. Older versions, copies left on other slot
+    rows and records whose file was lost (the 25 Aug server move) stay in the
+    data as history but are never shown or counted."""
+    best = None
+    for row in rows:
+        for item in row.get("resumes") or []:
+            if not _resume_file_present(str(row.get("id") or ""), item):
+                continue
+            if best is None or str(item.get("uploaded_at") or "") > str(best.get("uploaded_at") or ""):
+                best = dict(item)
+    return best
+
+
+def _set_active_resume(target: dict, rows: list[dict], history_count: int) -> None:
+    active = active_resume(rows)
+    target["active_resume"] = active
+    target["latest_resume"] = active
+    target["resume_count"] = 1 if active else 0
+    target["resume_history_count"] = history_count
+
+
+def _resume_digest(row_id: str, item: dict) -> str:
+    if item.get("sha256"):
+        return str(item["sha256"])
+    try:
+        with open(_resume_file_path(row_id, item), "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return ""
+
+
 def reconcile_resume_metadata() -> int:
     """Restore metadata for resume files that survived an incomplete restore.
 
@@ -8882,6 +8925,8 @@ def reconcile_resume_metadata() -> int:
             continue
         entries = list(row.get("resumes") or [])
         known = {_clean_str(item.get("filename")) for item in entries}
+        # A superseded version is history, not a file to bring back.
+        known |= {_clean_str(item.get("filename")) for item in row.get("resume_history") or []}
         row_changed = False
         for filename in sorted(os.listdir(folder)):
             path = os.path.join(folder, filename)
@@ -8965,10 +9010,12 @@ def add_resume(cid: str, *, data: bytes, original_name: str, mime_type: str,
 
     # Re-uploading the same file is not a new version of anything. One
     # candidate accumulated eight byte-identical copies over eighty minutes
-    # because every attempt appended a row.
-    for item in existing:
-        if item.get("sha256") == digest:
-            return dict(item)
+    # because every attempt appended a row -- and the same file uploaded from
+    # another of the person's slot rows was stored again there.
+    for owner in _resume_owner_rows(cid) or [rows[idx]]:
+        for item in owner.get("resumes") or []:
+            if _resume_file_present(str(owner.get("id") or ""), item) and _resume_digest(str(owner.get("id") or ""), item) == digest:
+                return dict(item)
 
     rid = uuid.uuid4().hex[:12]
     filename = f"{rid}.{ext}"
@@ -8992,20 +9039,27 @@ def add_resume(cid: str, *, data: bytes, original_name: str, mime_type: str,
         "url":           f"/candidates/{cid}/resumes/{rid}",
     }
     # A candidate has one current resume. A newer one supersedes the last
-    # rather than joining a pile nobody can pick the right file out of; the
-    # superseded file is removed so the list cannot drift back into a stack.
+    # rather than joining a pile nobody can pick the right file out of. The
+    # superseded file is moved aside (never deleted) and its record kept as
+    # history, until the owner approves a clean-up. Being in a sub-folder, it
+    # is not picked up again by reconcile_resume_metadata.
+    history = list(rows[idx].get("resume_history") or [])
     for item in existing:
-        superseded = os.path.join(
-            _resume_dir(_resume_storage_candidate_id(cid, item)),
-            str(item.get("filename") or ""),
-        )
-        try:
-            if item.get("filename") and os.path.exists(superseded):
-                os.remove(superseded)
-        except OSError:
-            # A file we cannot delete must not stop the new resume landing.
-            pass
+        record = dict(item, superseded_at=_now_iso(), superseded_by=rid)
+        current = _resume_file_path(cid, item)
+        if item.get("filename") and os.path.isfile(current):
+            archive = os.path.join(os.path.dirname(current), SUPERSEDED_RESUME_DIR)
+            try:
+                os.makedirs(archive, exist_ok=True)
+                os.replace(current, os.path.join(archive, str(item["filename"])))
+                record["archived_file"] = os.path.join(SUPERSEDED_RESUME_DIR, str(item["filename"]))
+            except OSError:
+                # A file we cannot move stays where it is; the new resume still lands.
+                record["archived_file"] = ""
+        history.append(record)
     rows[idx]["resumes"] = [entry]
+    if history:
+        rows[idx]["resume_history"] = history
     rows[idx]["updated_at"] = _now_iso()
     cdata["candidates"] = rows
     _save(cdata)

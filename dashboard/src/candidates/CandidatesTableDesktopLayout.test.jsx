@@ -35,7 +35,8 @@ const base = {
   payment_proofs: [], proof_count: 0, resume_count: 0, slot_count: 1,
 };
 const ROWS = [
-  { ...base, id: "r1", name: "Ram Charan M S", phone: "9000000811", resume_count: 1, needs_followup: true },
+  { ...base, id: "r1", name: "Ram Charan M S", phone: "9000000811", resume_count: 1, needs_followup: true,
+    active_resume: { id: "cv1", original_name: "Ram_Charan.pdf", uploaded_at: "2026-09-10T10:00:00+00:00" } },
   { ...base, id: "r2", name: "ram charan m s", phone: "9000000812", reference: "Bhavana", service_type: "round_wise", technology: "React JS",
     payment: 10000, payment_status: "partial", proof_count: 1, needs_followup: true,
     payment_proofs: [{ id: "p2", attachment_type: "payment_proof", url: "/p2", verification_state: "VERIFIED_COMPANY_PAYMENT", verified_amount: 10000 }] },
@@ -87,14 +88,16 @@ describe("phone and referrer under the name", () => {
 });
 
 describe("the resume cell", () => {
-  it("is one control either way: Upload resume, or the count with Update", async () => {
+  it("is one control either way: Upload resume, or the one resume's View, Download and Update", async () => {
     await renderTable();
     const none = within(rowById("r3").querySelector(".cand-cell-resume")).getAllByRole("button");
     expect(none.map((b) => b.textContent)).toEqual(["Upload resume"]);
-    const one = within(rowById("r1").querySelector(".cand-cell-resume")).getAllByRole("button");
-    expect(one).toHaveLength(1);
-    expect(one[0]).toHaveAccessibleName("1 resume: view or update");
-    expect(one[0].querySelector(".cand-resume-chip__cta").textContent).toBe("Update");
+    const cell = rowById("r1").querySelector(".cand-cell-resume");
+    expect(cell.querySelectorAll(".cand-resume-chip")).toHaveLength(1);
+    expect(within(cell).getByRole("link", { name: "View resume Ram_Charan.pdf" })).toBeInTheDocument();
+    expect(within(cell).getByRole("link", { name: "Download resume Ram_Charan.pdf" })).toBeInTheDocument();
+    expect(within(cell).getByRole("button", { name: "Update resume Ram_Charan.pdf" }).textContent).toBe("Update");
+    expect(cell.textContent).not.toMatch(/\d+ resumes?/);
   });
 });
 

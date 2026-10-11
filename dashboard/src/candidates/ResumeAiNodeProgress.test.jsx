@@ -170,38 +170,19 @@ describe("resume upload from the candidates table", () => {
     expect(document.querySelector(".ai-node-progress")).toBeNull();
   });
 
-  it("follows the node in the resume manager, and keeps its result when the list redraws", async () => {
-    const saved = { id: "resume-0", note: "Old resume", uploaded_at: "2026-09-01T10:00:00Z" };
-    const server = stubServer((url, options) =>
-      url === "/candidates/cand-1" && !options.method
-        ? { status: "ok", candidate: { ...CANDIDATE, resume_count: 1, resumes: [saved] } }
-        : null,
-    );
-    render(<ResumeCell candidate={{ ...CANDIDATE, resume_count: 1, resumes: [saved] }} onRefresh={async () => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /1 resume/ }));
-
-    const uploadButton = await screen.findByRole("button", { name: "Upload new resume" });
-    const input = uploadButton.parentElement.querySelector('input[type="file"]');
-    Object.defineProperty(input, "files", { value: [pdf()], configurable: true });
-    await act(async () => { input.onchange(); });
+  it("follows the node when Update uploads a newer resume", async () => {
+    const saved = { id: "resume-0", original_name: "Old.pdf", uploaded_at: "2026-09-01T10:00:00Z" };
+    const server = stubServer();
+    const onRefresh = vi.fn(async () => {});
+    const { container } = render(<ResumeCell candidate={{ ...CANDIDATE, resume_count: 1, active_resume: saved }} onRefresh={onRefresh} />);
+    fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
 
     await waitFor(() => expect(server.requests).toHaveLength(1));
-    expect(await screen.findByText("Waiting for AI node…")).toBeTruthy();
+    expect(server.requests[0].url).toBe("/candidates/cand-1/resumes");
     push({ state: "running", node: "Praveen" });
-    await waitFor(() =>
-      expect(document.querySelector(".cand-resume-ai-progress").textContent).toContain("● Praveen · Analysing…"),
-    );
-
+    expect(document.querySelector(".ai-node-progress--compact").textContent).toContain("● Praveen · Analysing…");
     await server.answer({ status: "ok", resume: { id: "resume-1" }, analysis: { ...RTX, node: "Praveen", analysed_by: ["Praveen"] } });
-    // The list is fetched again and redrawn after the upload; the finished
-    // line is carried into the redrawn modal rather than lost with it.
-    const detailLoads = () => fetch.mock.calls.filter(([url, options]) => url === "/candidates/cand-1" && !options?.method);
-    await waitFor(() => expect(detailLoads()).toHaveLength(2));
-    await waitFor(() =>
-      expect(document.querySelector(".cand-resume-ai-progress")?.textContent).toMatch(/^✓ Analysed by Praveen in \d+\.\ds$/),
-    );
-
-    fireEvent.click(document.querySelector(".cand-resume-manager .cand-modal-close"));
-    expect(document.querySelector(".cand-resume-manager")).toBeNull();
+    expect(await screen.findByText(/^✓ Analysed by Praveen in \d+\.\ds$/)).toBeTruthy();
+    expect(onRefresh).toHaveBeenCalled();
   });
 });
