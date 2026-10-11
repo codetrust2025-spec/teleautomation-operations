@@ -1,19 +1,14 @@
 /**
- * Resume in Candidate Edit: Upload and View are separate, and a reading fills
- * the form by itself.
+ * Resume in Candidate Edit: Upload, View and Download are separate, and a
+ * reading never silently replaces what the form holds.
  *
- * "Fill profile fields" used to overwrite an existing candidate's name,
- * technology, phone and email with whatever the resume said, and later needed
- * a click. Now the reading is applied as it arrives:
- *  - an existing candidate: what the server saved (features/resume_autofill
- *    decides: blank or invalid values only, matching name, never another
- *    candidate's phone or email) is mirrored into the form, unless the person
- *    changed that field since opening the form;
- *  - a new candidate: the reading fills the empty fields.
- * A blank on the resume never replaces anything. A reading the server could not
- * judge, or one of low confidence, waits for "Fill empty fields".
- * View opens the saved resume in a new tab, changes nothing, and is shown only
- * when there is a saved resume.
+ * Only an EMPTY field is filled: for an existing candidate, what the server
+ * saved (features/resume_autofill: an AI reading at sufficient confidence, a
+ * matching name, never another candidate's phone or email); for a new
+ * candidate, a confident reading. Every other difference -- a typed value, a
+ * cut-short name, an incomplete number, another person's phone -- is shown as
+ * Existing -> Resume to accept or keep field by field, with a warning at the
+ * field (11 Oct). A blank on the resume never replaces anything.
  */
 import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -161,37 +156,51 @@ describe("Upload and View are separate", () => {
   });
 });
 
-describe("an existing candidate: what the server filled is applied by itself", () => {
-  it("is named, and mirrored into the form so Save cannot write the blank back", async () => {
+const row = (key) => document.querySelector(`[data-compare="${key}"]`);
+const accept = (key) => fireEvent.click(row(key).querySelector(".cand-btn--primary"));
+const keep = (key) => fireEvent.click(row(key).querySelector(".cand-btn--ghost"));
+const warning = (key) => document.querySelector(`[data-field-warning="${key}"]`)?.textContent || "";
+
+describe("an existing candidate: only an empty field is filled; every other difference is offered", () => {
+  it("mirrors the empty field the server filled, and offers the differing phone and technology", async () => {
     mockResumeUpload({
-      status: "ok",
-      resume: { id: "r1" },
-      candidate: { ...CANDIDATE, email: "asha.rao@example.test" },
-      ai_extraction: RESUME_READING,
-      autofill: { filled: { email: "asha.rao@example.test" }, skipped: {}, refused: "" },
+      status: "ok", resume: { id: "r1" }, candidate: { ...CANDIDATE, email: "asha.rao@example.test" },
+      ai_extraction: RESUME_READING, autofill: { filled: { email: "asha.rao@example.test" }, skipped: {}, refused: "" },
     });
     const { container } = renderModal();
     await uploadResume(container);
     await waitFor(() => expect(field("Email")).toHaveValue("asha.rao@example.test"));
-    expect(await screen.findByText(/Filled from this resume: email/)).toBeInTheDocument();
-    expect(screen.getByText(/existing details were kept/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Fill empty fields/ })).toBeNull();
-    // Nothing the server did not fill moves.
+    expect(screen.getByText("Filled from this resume: email. Existing details were kept.")).toBeInTheDocument();
+    // Nothing else changed by itself...
     expect(field("Phone")).toHaveValue("9000000901");
     expect(field("Technology")).toHaveValue("Salesforce");
+    // ...but each difference is shown Existing -> Resume, with a warning at the field.
+    expect(row("phone").textContent).toContain("9000000901 → 9000000999");
+    expect(row("technology").textContent).toContain("Salesforce → ServiceNow");
+    expect(row("name")).toBeNull();
+    expect(row("email")).toBeNull();
+    expect(warning("phone")).toBe("Resume: 9000000999");
   });
 
-  it("replaces an invalid stored value the server corrected, when the person left it alone", async () => {
+  it("Accept takes the resume's value into the form; Keep leaves the form as it is", async () => {
     mockResumeUpload({
       status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: RESUME_READING,
-      autofill: { filled: { phone: "9000000999" }, skipped: {}, refused: "" },
+      autofill: { filled: {}, skipped: {}, refused: "" },
     });
-    const { container } = renderModal({ phone: "12345" });
+    const { container } = renderModal({ email: "asha@example.test" });
     await uploadResume(container);
-    await waitFor(() => expect(field("Phone")).toHaveValue("9000000999"));
+    await waitFor(() => expect(row("phone")).not.toBeNull());
+    accept("technology");
+    expect(field("Technology")).toHaveValue("ServiceNow");
+    keep("phone");
+    expect(field("Phone")).toHaveValue("9000000901");
+    keep("email");
+    expect(field("Email")).toHaveValue("asha@example.test");
+    expect(document.querySelector(".cand-resume-compare")).toBeNull();
+    expect(warning("phone")).toBe("");
   });
 
-  it("does not overwrite something typed while the resume was being read, and says so", async () => {
+  it("never overwrites what was typed while the resume was being read", async () => {
     const upload = mockResumeUpload({
       status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: RESUME_READING,
       autofill: { filled: { email: "asha.rao@example.test" }, skipped: {}, refused: "" },
@@ -201,11 +210,43 @@ describe("an existing candidate: what the server filled is applied by itself", (
     fireEvent.change(field("Email"), { target: { value: "typed@example.test" } });
     await waitFor(() => expect(upload.release).toBeTypeOf("function"));
     upload.release();
-    expect(await screen.findByText("Kept what you typed: email.")).toBeInTheDocument();
+    await waitFor(() => expect(row("email")).not.toBeNull());
     expect(field("Email")).toHaveValue("typed@example.test");
+    expect(row("email").textContent).toContain("typed@example.test → asha.rao@example.test");
   });
 
-  it("says why nothing was filled when the server refused the reading, and offers no way around it", async () => {
+  it("a cut-short name and an incomplete phone are offered, not replaced", async () => {
+    mockResumeUpload({
+      status: "ok", resume: { id: "r1" }, candidate: CANDIDATE,
+      ai_extraction: { ...RESUME_READING, candidate_name: "Asha Raghavendra", phone: "+91 90000 00901" },
+      autofill: { filled: {}, skipped: {}, refused: "" },
+    });
+    const { container } = renderModal({ name: "Asha Ragha", phone: "900000090", email: "asha@example.test" });
+    expect(warning("phone")).toBe("Not a full 10-digit mobile number");
+    await uploadResume(container);
+    await waitFor(() => expect(row("name")).not.toBeNull());
+    expect(row("name").textContent).toContain("Looks cut short");
+    expect(row("phone").textContent).toContain("Incomplete number");
+    expect(field("Candidate name *")).toHaveValue("Asha Ragha");
+    accept("name");
+    accept("phone");
+    expect(field("Candidate name *")).toHaveValue("Asha Raghavendra");
+    expect(field("Phone")).toHaveValue("9000000901");
+  });
+
+  it("the same name in another order is not offered", async () => {
+    mockResumeUpload({
+      status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: { ...RESUME_READING, candidate_name: "Rao Asha" },
+      autofill: { filled: {}, skipped: {}, refused: "" },
+    });
+    const { container } = renderModal({ email: "asha.rao@example.test", phone: "9000000999", technology: "ServiceNow" });
+    await uploadResume(container);
+    await readingDone();
+    expect(document.querySelector(".cand-resume-compare")).toBeNull();
+    expect(field("Candidate name *")).toHaveValue("Asha Rao");
+  });
+
+  it("says why nothing was filled when the server refused the reading, and offers nothing", async () => {
     mockResumeUpload({
       status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: RESUME_READING,
       autofill: { filled: {}, skipped: {}, refused: "the name on the resume does not match this candidate" },
@@ -214,88 +255,90 @@ describe("an existing candidate: what the server filled is applied by itself", (
     await uploadResume(container);
     expect(await screen.findByText(/Not filled automatically: the name on the resume does not match this candidate/)).toBeInTheDocument();
     expect(field("Email")).toHaveValue("");
-    expect(screen.queryByRole("button", { name: /Fill empty fields/ })).toBeNull();
+    expect(document.querySelector(".cand-resume-compare")).toBeNull();
   });
 
-  it("names a field it would not fill, and why", async () => {
+  it("a resume whose phone differs fills nothing but is compared field by field", async () => {
     mockResumeUpload({
       status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: RESUME_READING,
-      autofill: { filled: {}, skipped: { email: "that email belongs to another candidate" }, refused: "" },
+      autofill: { filled: {}, skipped: {}, refused: "", compare_only: "the phone number on the resume differs from this candidate's" },
     });
     const { container } = renderModal();
     await uploadResume(container);
-    expect(await screen.findByText("Not filled: email (that email belongs to another candidate).")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing was filled: the phone number on the resume differs from this candidate's.")).toBeInTheDocument();
     expect(field("Email")).toHaveValue("");
+    expect(row("email").textContent).toContain("empty → asha.rao@example.test");
+    expect(row("phone")).not.toBeNull();
   });
 
-  it("stays quiet when there was nothing to fill", async () => {
+  it("does not offer a value the server would not fill, and says why", async () => {
+    mockResumeUpload({
+      status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: RESUME_READING,
+      autofill: { filled: {}, skipped: { phone: "that number belongs to another candidate" }, refused: "" },
+    });
+    const { container } = renderModal({ phone: "", email: "asha.rao@example.test", technology: "ServiceNow" });
+    await uploadResume(container);
+    expect(await screen.findByText("Not filled: phone (that number belongs to another candidate).")).toBeInTheDocument();
+    expect(row("phone")).toBeNull();
+    expect(field("Phone")).toHaveValue("");
+  });
+
+  it("stays quiet when the resume agrees with the form", async () => {
     mockResumeUpload({
       status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: RESUME_READING,
       autofill: { filled: {}, skipped: {}, refused: "" },
     });
-    const { container } = renderModal({ email: "asha.rao@example.test" });
+    const { container } = renderModal({ email: "asha.rao@example.test", phone: "9000000999", technology: "ServiceNow" });
     await uploadResume(container);
     await readingDone();
     expect(screen.queryByText(/Filled from this resume/)).toBeNull();
-    expect(screen.queryByText(/Not filled/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /Fill empty fields/ })).toBeNull();
+    expect(document.querySelector(".cand-resume-compare")).toBeNull();
   });
-});
 
-describe("a reading the server could not judge waits for a click, and still never overwrites", () => {
-  // Filed, but the server returned no auto-fill verdict.
-  const unjudged = (reading) => ({ status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: reading });
-
-  it("fills only the blank email and keeps the valid phone and technology", async () => {
-    mockResumeUpload(unjudged(RESUME_READING));
+  it("a reading the server could not judge is only compared, including empty fields", async () => {
+    mockResumeUpload({ status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: RESUME_READING });
     const { container } = renderModal();
     await uploadResume(container);
-    fireEvent.click(await screen.findByRole("button", { name: /Fill empty fields/ }));
-
+    await waitFor(() => expect(row("email")).not.toBeNull());
+    expect(field("Email")).toHaveValue("");
+    accept("email");
     expect(field("Email")).toHaveValue("asha.rao@example.test");
-    expect(field("Phone")).toHaveValue("9000000901");
-    expect(field("Technology")).toHaveValue("Salesforce");
-    expect(screen.getByText("Filled from this resume: email.")).toBeInTheDocument();
-  });
-
-  it("keeps an existing valid email", async () => {
-    mockResumeUpload(unjudged({ ...RESUME_READING, email: "other@example.test" }));
-    const { container } = renderModal({ email: "keep@example.test" });
-    await uploadResume(container);
-    fireEvent.click(await screen.findByRole("button", { name: /Fill empty fields/ }));
-    expect(field("Email")).toHaveValue("keep@example.test");
-  });
-
-  it("never blanks a field because the resume left it empty", async () => {
-    mockResumeUpload(unjudged({ ...RESUME_READING, phone: "", technology: "" }));
-    const { container } = renderModal();
-    await uploadResume(container);
-    fireEvent.click(await screen.findByRole("button", { name: /Fill empty fields/ }));
-    expect(field("Phone")).toHaveValue("9000000901");
-    expect(field("Technology")).toHaveValue("Salesforce");
-  });
-
-  it("does not replace the name of an existing candidate", async () => {
-    mockResumeUpload(unjudged({ ...RESUME_READING, candidate_name: "Someone Entirely Else" }));
-    const { container } = renderModal();
-    await uploadResume(container);
-    fireEvent.click(await screen.findByRole("button", { name: /Fill empty fields/ }));
-    expect(field("Candidate name *")).toHaveValue("Asha Rao");
   });
 });
 
-describe("a new candidate: the reading fills the empty fields by itself", () => {
+describe("the field-level warnings", () => {
+  it("names a phone or email that is another person's", () => {
+    renderModal({ identity_warnings: { phone: "Also the phone of Farha Sample (13 records)", email: "Also the email of Farha Sample" }, email: "x@example.test" });
+    expect(warning("phone")).toBe("Also the phone of Farha Sample (13 records)");
+    expect(warning("email")).toBe("Also the email of Farha Sample");
+    expect(field("Phone").className).toContain("cand-input--warn");
+  });
+
+  it("goes when the person changes the value", () => {
+    renderModal({ identity_warnings: { phone: "Also the phone of Farha Sample (13 records)" } });
+    fireEvent.change(field("Phone"), { target: { value: "9000000777" } });
+    expect(warning("phone")).toBe("");
+  });
+
+  it("says an incomplete phone or an invalid email is one", () => {
+    renderModal({ phone: "77995", email: "asha@example" });
+    expect(warning("phone")).toBe("Not a full 10-digit mobile number");
+    expect(warning("email")).toBe("Not a valid email");
+  });
+});
+
+describe("a new candidate: a confident reading fills the empty fields", () => {
   const reading = (data) => ({ status: "ok", success: true, data: { ...RESUME_READING, ...data } });
 
-  it("fills name, phone, email and technology, with progress and a note", async () => {
-    mockResumeUpload(reading({ phone: "+91 90000 00999" }));
+  it("fills name, phone, email and technology, with a note", async () => {
+    mockResumeUpload(reading({ phone: "+91 90000 00999", technology: "React.js" }));
     const { container } = renderModal(null);
     await uploadResume(container, "Asha.pdf");
     await waitFor(() => expect(field("Candidate name *")).toHaveValue("Asha Rao"));
     expect(field("Phone")).toHaveValue("9000000999");
     expect(field("Email")).toHaveValue("asha.rao@example.test");
-    expect(field("Technology")).toHaveValue("ServiceNow");
-    expect(screen.getByText("Filled from this resume: name, technology, phone, email.")).toBeInTheDocument();
+    expect(field("Technology")).toHaveValue("React JS");
+    expect(screen.getByText("Filled from this resume: name, phone, email, technology.")).toBeInTheDocument();
     expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/public/slots/extract-resume-ai"))).toBe(true);
     // Read, not saved: a new candidate has no row to file it on, so no View or Download.
     expect(screen.getByText("Asha.pdf")).toBeInTheDocument();
@@ -303,35 +346,41 @@ describe("a new candidate: the reading fills the empty fields by itself", () => 
     expect(screen.queryByRole("link", { name: /Download resume/ })).toBeNull();
   });
 
-  it("keeps what was typed while the resume was being read", async () => {
+  it("offers, rather than replaces, what was typed", async () => {
     const upload = mockResumeUpload(reading({}), { hold: true });
     const { container } = renderModal(null);
     await uploadResume(container);
     fireEvent.change(field("Candidate name *"), { target: { value: "Asha Raghavan" } });
+    fireEvent.change(field("Phone"), { target: { value: "77995" } });
     await waitFor(() => expect(upload.release).toBeTypeOf("function"));
     upload.release();
-    expect(await screen.findByText("Kept what you entered: name.")).toBeInTheDocument();
+    await waitFor(() => expect(row("name")).not.toBeNull());
     expect(field("Candidate name *")).toHaveValue("Asha Raghavan");
+    expect(field("Phone")).toHaveValue("77995");
     expect(field("Email")).toHaveValue("asha.rao@example.test");
+    accept("phone");
+    expect(field("Phone")).toHaveValue("9000000999");
   });
 
-  it("leaves a field empty when the resume has nothing for it", async () => {
-    mockResumeUpload(reading({ email: "", phone: "  " }));
+  it("does not use an incomplete name or phone from the reading", async () => {
+    mockResumeUpload(reading({ candidate_name: "Asha R", phone: "+91 90000" }));
     const { container } = renderModal(null);
     await uploadResume(container);
-    await waitFor(() => expect(field("Candidate name *")).toHaveValue("Asha Rao"));
-    expect(field("Email")).toHaveValue("");
+    await waitFor(() => expect(field("Email")).toHaveValue("asha.rao@example.test"));
+    expect(field("Candidate name *")).toHaveValue("");
     expect(field("Phone")).toHaveValue("");
+    expect(row("name")).toBeNull();
+    expect(row("phone")).toBeNull();
   });
 
-  it("a low-confidence reading is shown, not applied, until clicked", async () => {
+  it("a low-confidence reading is only compared until accepted", async () => {
     mockResumeUpload(reading({ confidence_score: 40 }));
     const { container } = renderModal(null);
     await uploadResume(container);
-    const fill = await screen.findByRole("button", { name: /Fill empty fields/ });
+    await waitFor(() => expect(row("name")).not.toBeNull());
     expect(screen.getByText(/Low-confidence reading/)).toBeInTheDocument();
     expect(field("Candidate name *")).toHaveValue("");
-    fireEvent.click(fill);
+    accept("name");
     expect(field("Candidate name *")).toHaveValue("Asha Rao");
   });
 
@@ -344,88 +393,44 @@ describe("a new candidate: the reading fills the empty fields by itself", () => 
   });
 });
 
-describe("complete names and 10-digit phones (11 Oct: \"Linga Srinava\" / \"77995\" were kept)", () => {
-  // Invented values in the shape of the reported resume: it reads
-  // "Raghavendrarao Kolla", +91 90000 00777, React.js.
+describe("the reported case: phone, email and technology differ from the resume (invented values)", () => {
+  // The resume reads "Raghavendrarao Kolla", 90000 00777, raghav.k@, React.js. The
+  // record holds another person's phone, a shortened email and another technology.
   const READ = {
     is_resume: true, candidate_name: "Raghavendrarao Kolla", phone: "+919000000777",
     email: "raghav.k@example.test", technology: "React.js", confidence_score: 85, extraction_source: "pdf_text_ai",
   };
   const ROW = {
-    name: "Kolla Raghava", phone: "9000000777", email: "raghav.k@example.test", technology: "React JS",
+    ...CANDIDATE, name: "Raghavendrarao Kolla", phone: "9000000998", email: "raghav@example.test", technology: "SAP Sales",
+    follow_up: "Balance after the offer",
+    identity_warnings: { phone: "Also the phone of Farha Sample (13 records)" },
   };
-  const judged = (filled = {}, skipped = {}) => ({
-    status: "ok", resume: { id: "r1" }, candidate: CANDIDATE, ai_extraction: READ, autofill: { filled, skipped, refused: "" },
-  });
 
-  it("the cut-short name the server completed, and a cut-short phone typed in the form, both end complete", async () => {
-    mockResumeUpload(judged({ name: "Raghavendrarao Kolla" }));
-    const { container } = renderModal(ROW);
-    fireEvent.change(field("Phone"), { target: { value: "90000" } });
+  it("shows each difference with a warning, and Save sends exactly what was accepted or kept", async () => {
+    mockResumeUpload({ status: "ok", resume: { id: "r1" }, candidate: ROW, ai_extraction: READ,
+      autofill: { filled: {}, skipped: {}, refused: "", compare_only: "the phone number on the resume differs from this candidate's" } });
+    const onSave = vi.fn(async () => {});
+    const { container } = render(
+      <ConfirmProvider>
+        <CandidateEditModal initial={ROW} onClose={vi.fn()} onSave={onSave} isAdmin={true} />
+      </ConfirmProvider>,
+    );
+    expect(warning("phone")).toBe("Also the phone of Farha Sample (13 records)");
     await uploadResume(container);
-    await waitFor(() => expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla"));
-    expect(field("Phone")).toHaveValue("9000000777");
-    expect(field("Email")).toHaveValue("raghav.k@example.test");
-    expect(field("Technology")).toHaveValue("React JS");
-    expect(screen.getByText("Filled from this resume: name, phone. Existing details were kept.")).toBeInTheDocument();
-  });
-
-  it("completes a name and phone cut short in the form even when the record is complete", async () => {
-    mockResumeUpload(judged());
-    const { container } = renderModal({ ...ROW, name: "Raghavendrarao Kolla" });
-    fireEvent.change(field("Candidate name *"), { target: { value: "Kolla Raghava" } });
-    fireEvent.change(field("Phone"), { target: { value: "900000077" } });
-    await uploadResume(container);
-    await waitFor(() => expect(field("Phone")).toHaveValue("9000000777"));
-    expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla");
-  });
-
-  it.each(["Kolla Raghavendrarao", "Kolla Ragavendrarao"])(
-    "keeps the same name in another order or spelling (%s)", async (stored) => {
-      mockResumeUpload(judged());
-      const { container } = renderModal({ ...ROW, name: stored });
-      await uploadResume(container);
-      await readingDone();
-      expect(field("Candidate name *")).toHaveValue(stored);
-      expect(screen.queryByText(/Filled from this resume/)).toBeNull();
-      expect(screen.queryByText(/Kept what you typed/)).toBeNull();
-    });
-
-  it("keeps a valid phone the person typed, and says so", async () => {
-    mockResumeUpload(judged());
-    const { container } = renderModal({ ...ROW, name: "Raghavendrarao Kolla" });
-    fireEvent.change(field("Phone"), { target: { value: "9000000888" } });
-    await uploadResume(container);
-    expect(await screen.findByText("Kept what you typed: phone.")).toBeInTheDocument();
-    expect(field("Phone")).toHaveValue("9000000888");
-  });
-
-  it("does not complete a field the server would not fill", async () => {
-    mockResumeUpload(judged({}, { phone: "that number belongs to another candidate" }));
-    const { container } = renderModal({ ...ROW, name: "Raghavendrarao Kolla", phone: "" });
-    await uploadResume(container);
-    expect(await screen.findByText("Not filled: phone (that number belongs to another candidate).")).toBeInTheDocument();
-    expect(field("Phone")).toHaveValue("");
-  });
-
-  it("a new candidate: an incomplete name or phone on the reading is not used; React.js is React JS", async () => {
-    mockResumeUpload({ status: "ok", success: true, data: { ...READ, candidate_name: "Raghavendrarao K", phone: "+91 90000" } });
-    const { container } = renderModal(null);
-    await uploadResume(container);
-    await waitFor(() => expect(field("Email")).toHaveValue("raghav.k@example.test"));
-    expect(field("Candidate name *")).toHaveValue("");
-    expect(field("Phone")).toHaveValue("");
-    expect(field("Technology")).toHaveValue("React JS");
-  });
-
-  it("a new candidate: a cut-short name typed before the upload is completed", async () => {
-    mockResumeUpload({ status: "ok", success: true, data: READ });
-    const { container } = renderModal(null);
-    fireEvent.change(field("Candidate name *"), { target: { value: "Kolla Raghava" } });
-    fireEvent.change(field("Phone"), { target: { value: "77995" } });
-    await uploadResume(container);
-    await waitFor(() => expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla"));
-    expect(field("Phone")).toHaveValue("9000000777");
+    await waitFor(() => expect(row("phone")).not.toBeNull());
+    expect(row("phone").textContent).toContain("9000000998 → 9000000777");
+    expect(row("email").textContent).toContain("raghav@example.test → raghav.k@example.test");
+    expect(row("technology").textContent).toContain("SAP Sales → React JS");
+    expect(row("name")).toBeNull();
+    accept("phone");
+    keep("email");
+    accept("technology");
+    expect(warning("phone")).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const sent = onSave.mock.calls[0][0];
+    expect([sent.name, sent.phone, sent.email, sent.technology]).toEqual(
+      ["Raghavendrarao Kolla", "9000000777", "raghav@example.test", "React JS"]);
   });
 });
 
@@ -453,10 +458,14 @@ describe("after Save and reopen, the complete values stay; a save never cuts the
 
   it("the completed name, the 10-digit phone, the email and the technology are what Save sends and what reopens", async () => {
     mockResumeUpload({ status: "ok", resume: { id: "r1" }, candidate: ROW, ai_extraction: READ,
-      autofill: { filled: { name: "Raghavendrarao Kolla" }, skipped: {}, refused: "" } });
+      autofill: { filled: {}, skipped: {}, refused: "" } });
     const { container, onSave, onServerChange, unmount } = openModal(ROW);
     await uploadResume(container);
-    await waitFor(() => expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla"));
+    // The cut-short name is offered, not replaced; accepted, it is the complete one.
+    await waitFor(() => expect(row("name")).not.toBeNull());
+    expect(field("Candidate name *")).toHaveValue("Kolla Raghava");
+    accept("name");
+    expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla");
     expect(onServerChange).toHaveBeenCalled();          // the list behind the form is reloaded
     save();
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));

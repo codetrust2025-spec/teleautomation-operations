@@ -61,8 +61,8 @@ afterEach(() => {
 describe("resume auto-fill", () => {
   it("follows the node reading a new candidate's resume, then says who read it", async () => {
     const server = stubServer();
-    const onExtracted = vi.fn(() => ({ filled: ["name", "technology"], kept: [] }));
-    const { container } = render(<ResumeAutoFill onExtracted={onExtracted} />);
+    const onReading = vi.fn(() => ({ filled: ["name", "technology"], rows: [] }));
+    const { container } = render(<ResumeAutoFill onReading={onReading} />);
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
 
     await waitFor(() => expect(server.requests).toHaveLength(1));
@@ -82,7 +82,9 @@ describe("resume auto-fill", () => {
     });
     expect(await screen.findByText(/^✓ Analysed by Jagadeesh in \d+\.\ds$/)).toBeTruthy();
     // No extra click: the reading is applied as it arrives.
-    expect(onExtracted).toHaveBeenCalledWith(expect.objectContaining({ candidate_name: "Ravi Kumar", technology: "Java" }));
+    expect(onReading).toHaveBeenCalledWith(expect.objectContaining({
+      reading: expect.objectContaining({ candidate_name: "Ravi Kumar", technology: "Java" }), mode: "auto",
+    }));
     expect(screen.getByText("Filled from this resume: name, technology.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Fill/ })).toBeNull();
     expect(stream().closed).toBe(true);
@@ -90,7 +92,7 @@ describe("resume auto-fill", () => {
 
   it("says a document that is not a resume was refused, with the node that read it", async () => {
     const server = stubServer();
-    const { container } = render(<ResumeAutoFill candidateId="cand-1" onExtracted={() => {}} />);
+    const { container } = render(<ResumeAutoFill candidateId="cand-1" onReading={() => ({ filled: [], rows: [] })} />);
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
 
     await waitFor(() => expect(server.requests).toHaveLength(1));
@@ -105,7 +107,7 @@ describe("resume auto-fill", () => {
 
   it("keeps counting across the second read an edit makes, and names that read's node", async () => {
     const server = stubServer();
-    const { container } = render(<ResumeAutoFill candidateId="cand-1" onExtracted={() => {}} />);
+    const { container } = render(<ResumeAutoFill candidateId="cand-1" onReading={() => ({ filled: [], rows: [] })} />);
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
 
     await waitFor(() => expect(server.requests).toHaveLength(1));
@@ -125,7 +127,7 @@ describe("resume auto-fill", () => {
 
   it("names no node when the request never got an answer", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))));
-    const { container } = render(<ResumeAutoFill onExtracted={() => {}} />);
+    const { container } = render(<ResumeAutoFill onReading={() => ({ filled: [], rows: [] })} />);
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
 
     expect(await screen.findByText(/^✕ Could not read after \d+\.\ds$/)).toBeTruthy();

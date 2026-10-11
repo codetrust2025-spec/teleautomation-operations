@@ -1520,14 +1520,16 @@ function sameResumeValue(key, current, value) {
   if (key === "name") return completeName(current) !== "" && equivalentNames(current, value);
   return String(current ?? "").trim().toLowerCase() === String(value).toLowerCase();
 }
-// May a complete value from a resume replace what the field holds now?
-function resumeMayReplace(key, current, value) {
-  if (resumeBlank(current)) return true;
-  if (key === "phone") return !indianMobile(current);
-  if (key === "email") return !resumeEmail(current);
-  if (key === "name") return partialName(current, value);
-  return false;
+// Why the form's value and the resume's differ, in a word or two.
+function resumeDifference(key, current, value) {
+  if (resumeBlank(current)) return "Empty";
+  if (key === "phone" && !indianMobile(current)) return "Incomplete number";
+  if (key === "email" && !resumeEmail(current)) return "Not a valid email";
+  if (key === "name" && partialName(current, value)) return "Looks cut short";
+  return "Differs";
 }
+const RESUME_FIELDS = ["name", "phone", "email", "technology"];
+const RESUME_FIELD_LABELS = { name: "Name", phone: "Phone", email: "Email", technology: "Technology" };
 
 // The resume a candidate already has on file: the newest one.
 export function latestResumeOf(candidate) {
@@ -1565,30 +1567,19 @@ const RESUME_FIELD_NAMES = {
 };
 const resumeFieldList = (keys) =>
   keys.map((key) => RESUME_FIELD_NAMES[key] || key).join(", ");
-// What a fill did, as the short notes under the resume bar.
-function resumeFillNotes(report, { filledText, keptText }) {
-  const notes = [];
-  if (report?.filled?.length) {
-    notes.push({ tone: "ok", text: filledText(resumeFieldList(report.filled)) });
-  }
-  if (report?.kept?.length) {
-    notes.push({ tone: "warn", text: keptText(resumeFieldList(report.kept)) });
-  }
-  return notes;
-}
 /**
  * The resume bar of Candidate Edit: Upload and View are separate actions.
  *
- * Upload sends the PDF to the AI reader and fills the form as soon as the
- * reading arrives, with no extra click:
- *  - an existing candidate: the server decides (features/resume_autofill: only
- *    blank or invalid values, an AI reading at sufficient confidence, a resume
- *    whose name matches, never a phone or email another candidate holds), and
- *    the form mirrors what it saved -- except a field the person has changed
- *    since opening the form;
- *  - a new candidate: the reading fills the empty fields.
- * A blank on the resume never replaces anything. A reading the server could
- * not judge, or one of low confidence, is shown with a button instead.
+ * Upload sends the PDF to the AI reader and hands the reading to the form
+ * (`onReading`) as soon as it arrives:
+ *  - only an EMPTY field is filled: for an existing candidate, what the server
+ *    saved (features/resume_autofill: an AI reading at sufficient confidence,
+ *    a resume whose name matches, never a phone or email another candidate
+ *    holds); for a new candidate, a confident reading;
+ *  - every other difference is shown as Existing -> Resume, to accept or keep
+ *    field by field (11 Oct). A reading the server could not judge, a
+ *    low-confidence one, or one whose phone differs is only compared.
+ * A blank on the resume never replaces anything.
  *
  * View opens the saved resume in a new tab and changes nothing; it is shown
  * only when the candidate has a saved resume.
@@ -1596,13 +1587,10 @@ function resumeFillNotes(report, { filledText, keptText }) {
 export function ResumeAutoFill({
   candidateId,
   savedResume = null,
-  onExtracted,
-  onAutofilled,
+  onReading,
   onServerChange,
 }) {
   const [busy, setBusy] = w.useState(false);
-  // A reading left for the person to apply (see above).
-  const [aiData, setAiData] = w.useState(null);
   const [error, setError] = w.useState("");
   const [notes, setNotes] = w.useState([]);
   const [saved, setSaved] = w.useState(savedResume);
@@ -1618,7 +1606,6 @@ export function ResumeAutoFill({
     if (!file) return;
     setBusy(true);
     setError("");
-    setAiData(null);
     setNotes([]);
     setReadOnlyFile(null);
     let run = beginAnalysis();
@@ -1656,41 +1643,40 @@ export function ResumeAutoFill({
         }
         if (candidateId && res.autofill) {
           judged = true;
-          const filledNow = res.autofill.filled || {};
-          const names = Object.keys(filledNow);
           const next = [];
-          // The server saved these on the candidate; mirror them into the form
-          // so a later Save cannot write the old value back over them, and let
-          // the reading complete what the form holds cut short.
-          const mirrored = res.autofill.refused
-            ? null
-            : onAutofilled?.(filledNow, {
-                reading: res.ai_extraction || {},
-                skipped: res.autofill.skipped || {},
+          if (res.autofill.refused) {
+            // Probably someone else's resume: nothing is filled or offered.
+            next.push({ tone: "warn", text: `Not filled automatically: ${res.autofill.refused}.` });
+          } else {
+            // Empty fields the server filled are mirrored into the form; every
+            // other difference is offered field by field to accept or keep.
+            const report = onReading?.({
+              reading: res.ai_extraction || {},
+              filled: res.autofill.filled || {},
+              skipped: res.autofill.skipped || {},
+              mode: res.autofill.compare_only ? "compare" : "auto",
+            }) || { filled: Object.keys(res.autofill.filled || {}) };
+            if (report.filled?.length) {
+              next.push({
+                tone: "ok",
+                text: `Filled from this resume: ${resumeFieldList(report.filled)}. Existing details were kept.`,
               });
-          if (names.length || mirrored?.filled?.length || mirrored?.kept?.length) {
-            const report = mirrored || { filled: names, kept: [] };
-            next.push(
-              ...resumeFillNotes(report, {
-                filledText: (list) =>
-                  `Filled from this resume: ${list}. Existing details were kept.`,
-                keptText: (list) => `Kept what you typed: ${list}.`,
-              }),
-            );
-          } else if (res.autofill.refused) {
-            next.push({
-              tone: "warn",
-              text: `Not filled automatically: ${res.autofill.refused}.`,
-            });
-          }
-          const skipped = Object.entries(res.autofill.skipped || {});
-          if (!res.autofill.refused && skipped.length) {
-            next.push({
-              tone: "muted",
-              text: `Not filled: ${skipped
-                .map(([key, why]) => `${RESUME_FIELD_NAMES[key] || key} (${why})`)
-                .join("; ")}.`,
-            });
+            }
+            if (res.autofill.compare_only) {
+              next.push({
+                tone: "warn",
+                text: `Nothing was filled: ${res.autofill.compare_only}.`,
+              });
+            }
+            const skipped = Object.entries(res.autofill.skipped || {});
+            if (skipped.length) {
+              next.push({
+                tone: "muted",
+                text: `Not filled: ${skipped
+                  .map(([key, why]) => `${RESUME_FIELD_NAMES[key] || key} (${why})`)
+                  .join("; ")}.`,
+              });
+            }
           }
           setNotes(next);
         }
@@ -1751,17 +1737,20 @@ export function ResumeAutoFill({
           if (!candidateId) {
             setReadOnlyFile({ name: file.name, size: file.size });
           }
-          if (!candidateId && !unsure) {
-            // A new candidate: fill the empty fields now.
-            const report = onExtracted?.(d);
-            setNotes(
-              resumeFillNotes(report, {
-                filledText: (list) => `Filled from this resume: ${list}.`,
-                keptText: (list) => `Kept what you entered: ${list}.`,
-              }),
-            );
-          } else if (!judged) {
-            setAiData({ ...d, unsure });
+          if (!judged) {
+            // A new candidate's confident reading fills its empty fields; a
+            // reading nobody could judge, or a low-confidence one, is only
+            // compared, field by field.
+            const mode = !candidateId && !unsure ? "auto" : "compare";
+            const report = onReading?.({ reading: d, filled: {}, skipped: {}, mode });
+            const next = [];
+            if (report?.filled?.length) {
+              next.push({ tone: "ok", text: `Filled from this resume: ${resumeFieldList(report.filled)}.` });
+            }
+            if (unsure) {
+              next.push({ tone: "warn", text: "Low-confidence reading: check each value before accepting it." });
+            }
+            setNotes(next);
           }
         } else {
           setError(
@@ -1791,18 +1780,6 @@ export function ResumeAutoFill({
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
-  }
-  function handleFill() {
-    if (!aiData || !onExtracted) return;
-    const report = onExtracted(aiData);
-    setAiData(null);
-    const next = resumeFillNotes(report, {
-      filledText: (list) => `Filled from this resume: ${list}.`,
-      keptText: (list) => `Kept what was already there: ${list}.`,
-    });
-    setNotes(
-      next.length ? next : [{ tone: "muted", text: "Nothing to fill: every field already has a value." }],
-    );
   }
   const savedName =
     saved && (saved.note || saved.original_name || saved.filename || "Resume");
@@ -1899,28 +1876,6 @@ export function ResumeAutoFill({
           className={`cand-resume-note cand-resume-note--${error.startsWith("Partial") ? "warn" : "error"}`}
         >
           {error}
-        </div>
-      )}
-      {aiData && (
-        <div className="cand-resume-reading">
-          <span className="cand-resume-reading-values">
-            {aiData.unsure ? "Low-confidence reading: " : "Read: "}
-            {[
-              aiData.candidate_name,
-              aiData.technology,
-              aiData.phone,
-              aiData.email,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-          <button
-            type="button"
-            className="cand-btn cand-btn--xs cand-btn--primary"
-            onClick={handleFill}
-          >
-            Fill empty fields
-          </button>
         </div>
       )}
       {notes.map((note) => (
@@ -2826,46 +2781,81 @@ export function CandidateEditModal({
       [C]: Y,
     }));
   }
-  // Fill name, phone, email and technology from a resume's complete values
-  // (resumeReadingValues). `mayFill(draft, key, value)` says whether the field's
-  // current value may be replaced; a field already holding that value (the same
-  // name in another order or spelling, the same number written differently) is
-  // left alone. Returns which fields were filled and which kept their own value.
-  function fillFromResume(values, mayFill) {
-    const report = { filled: [], kept: [] };
-    const wanted = {};
-    for (const [key, value] of Object.entries(values || {})) {
-      if (!value || sameResumeValue(key, draftNow.current[key], value)) continue;
-      wanted[key] = value;
-      (mayFill(draftNow.current, key, value) ? report.filled : report.kept).push(key);
+  const blankField = (draft, key) => !String(draft[key] ?? "").trim();
+  // Fields where the resume says something other than the form, as
+  // Existing -> Resume, each to accept or keep. Nothing the person typed or the
+  // record holds -- a phone that links payments, a verified detail -- changes
+  // without that click; only an empty field is filled.
+  const [resumeRows, setResumeRows] = w.useState([]);
+  function applyResumeReading({ reading, filled = {}, skipped = {}, mode = "auto" }) {
+    const values = resumeReadingValues(reading);
+    const saved = resumeReadingValues(filled);
+    for (const key of Object.keys(skipped || {})) delete values[key];
+    const now = draftNow.current;
+    const take = {};
+    const rows = [];
+    for (const key of RESUME_FIELDS) {
+      const value = saved[key] || values[key];
+      if (!value || sameResumeValue(key, now[key], value)) continue;
+      // The server filled a field the record had empty: the form takes it too,
+      // unless the person has typed into it since opening the form.
+      const serverFilled =
+        Boolean(saved[key]) && (blankField(now, key) || now[key] === draftOpened.current[key]);
+      // A new candidate's empty field takes a confident reading.
+      const newAndEmpty = !e && mode === "auto" && blankField(now, key);
+      if (serverFilled || newAndEmpty) {
+        take[key] = value;
+        continue;
+      }
+      rows.push({
+        key,
+        existing: String(now[key] ?? "").trim(),
+        resume: value,
+        reason: resumeDifference(key, now[key], value),
+      });
     }
-    if (report.filled.length) {
+    const filledKeys = Object.keys(take);
+    if (filledKeys.length) {
       c((current) => {
         const next = { ...current };
-        for (const key of report.filled) {
-          if (
-            !sameResumeValue(key, current[key], wanted[key]) &&
-            mayFill(current, key, wanted[key])
-          ) {
-            next[key] = wanted[key];
-          }
+        for (const key of filledKeys) {
+          if (current[key] === now[key]) next[key] = take[key];
         }
         return next;
       });
     }
-    return report;
+    setResumeRows(rows);
+    return { filled: filledKeys, rows };
   }
-  const blankField = (draft, key) => !String(draft[key] ?? "").trim();
-  // A cut-short name of an existing candidate is completed only when the resume
-  // shares this person's phone or email (in the form, or as it was saved).
-  const resumeIsTheirs = (draft, values) =>
-    (values.phone &&
-      [draft.phone, draftOpened.current.phone].some((v) => indianMobile(v) === values.phone)) ||
-    (values.email &&
-      [draft.email, draftOpened.current.email].some((v) => resumeEmail(v) === values.email));
-  const readingMayReplace = (draft, key, value, values) =>
-    resumeMayReplace(key, draft[key], value) &&
-    (key !== "name" || !e || blankField(draft, key) || resumeIsTheirs(draft, values));
+  const acceptResumeValue = (row) => {
+    g(row.key, row.resume);
+    setResumeRows((rows) => rows.filter((item) => item.key !== row.key));
+  };
+  const keepExistingValue = (row) =>
+    setResumeRows((rows) => rows.filter((item) => item.key !== row.key));
+  // A short warning under name, phone, email and technology: an incomplete
+  // value, one another person holds, or one the resume disagrees with.
+  const identityWarnings = (e && e.identity_warnings) || {};
+  function fieldWarning(key) {
+    const value = String(l[key] ?? "").trim();
+    if (key === "phone" && value && !indianMobile(value)) return "Not a full 10-digit mobile number";
+    if (key === "email" && value && !resumeEmail(value)) return "Not a valid email";
+    if (
+      identityWarnings[key] &&
+      value === String(draftOpened.current[key] ?? "").trim()
+    ) {
+      return identityWarnings[key];
+    }
+    const row = resumeRows.find((item) => item.key === key);
+    return row ? `Resume: ${row.resume}` : "";
+  }
+  const warnClass = (key) => (fieldWarning(key) ? " cand-input--warn" : "");
+  const warningNote = (key) =>
+    fieldWarning(key) ? (
+      <span className="cand-field-warning" data-field-warning={key}>
+        {fieldWarning(key)}
+      </span>
+    ) : null;
   function p(C, prev) {
     const Y = Number(C.expected_payment) || 0;
     // The amount is a stale default, not an agreed charge, when it equals the
@@ -3160,41 +3150,44 @@ export function CandidateEditModal({
           candidateId={e?.id}
           savedResume={latestResumeOf(e)}
           onServerChange={onServerChange}
-          // A reading fills only an empty field. This used to overwrite an
-          // existing candidate's name, technology, phone and email with
-          // whatever the resume said, valid or not.
-          onExtracted={(data) => {
-            const values = resumeReadingValues(data);
-            return fillFromResume(values, (draft, key, value) =>
-              readingMayReplace(draft, key, value, values),
-            );
-          }}
-          // What the server saved replaced only a blank, invalid or cut-short
-          // stored value: the form takes it unless the person has changed that
-          // field since opening the form. The reading also completes a field
-          // the form holds blank, invalid or cut short -- except one the server
-          // would not fill (another candidate's number, say).
-          onAutofilled={(filledNow, { reading, skipped } = {}) => {
-            const saved = resumeReadingValues(filledNow);
-            const values = resumeReadingValues(reading);
-            for (const key of Object.keys(skipped || {})) delete values[key];
-            for (const key of Object.keys(saved)) {
-              if (saved[key]) values[key] = saved[key];
-            }
-            const report = fillFromResume(
-              values,
-              (draft, key, value) =>
-                (Boolean(saved[key]) &&
-                  (blankField(draft, key) || draft[key] === draftOpened.current[key])) ||
-                readingMayReplace(draft, key, value, values),
-            );
-            // "Kept" is for what the person typed, not for a saved value.
-            report.kept = report.kept.filter(
-              (key) => draftNow.current[key] !== draftOpened.current[key],
-            );
-            return report;
-          }}
+          onReading={applyResumeReading}
         />
+        {resumeRows.length > 0 && (
+          <div className="cand-resume-compare" role="group" aria-label="Resume differences">
+            <span className="cand-resume-compare-title">
+              The resume differs. Accept or keep each value.
+            </span>
+            {resumeRows.map((row) => (
+              <div className="cand-resume-compare-row" key={row.key} data-compare={row.key}>
+                <span className="cand-resume-compare-field">{RESUME_FIELD_LABELS[row.key]}</span>
+                <span className="cand-resume-compare-values">
+                  <span className="cand-resume-compare-existing">{row.existing || "empty"}</span>
+                  <span aria-hidden="true"> → </span>
+                  <strong className="cand-resume-compare-resume">{row.resume}</strong>
+                  <span className="cand-resume-compare-reason">{row.reason}</span>
+                </span>
+                <span className="cand-resume-compare-actions">
+                  <button
+                    type="button"
+                    className="cand-btn cand-btn--xs cand-btn--primary"
+                    onClick={() => acceptResumeValue(row)}
+                    aria-label={`Accept the resume's ${RESUME_FIELD_LABELS[row.key].toLowerCase()}`}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    className="cand-btn cand-btn--xs cand-btn--ghost"
+                    onClick={() => keepExistingValue(row)}
+                    aria-label={`Keep the existing ${RESUME_FIELD_LABELS[row.key].toLowerCase()}`}
+                  >
+                    Keep
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="cand-modal-body">
           <div className="cand-panel cand-panel--left">
             <h4 className="cand-panel-title">CANDIDATE DETAILS</h4>
@@ -3202,12 +3195,13 @@ export function CandidateEditModal({
               <span className="cand-field-label">Candidate name *</span>
               <input
                 ref={v}
-                className="cand-input"
+                className={`cand-input${warnClass("name")}`}
                 value={l.name}
                 onChange={(C) => g("name", C.target.value)}
                 placeholder="e.g. NIKHIL"
                 required={true}
               />
+              {warningNote("name")}
             </label>
             <label className="cand-field">
               <span className="cand-field-label">Stage</span>
@@ -3226,7 +3220,7 @@ export function CandidateEditModal({
             <label className="cand-field">
               <span className="cand-field-label">Technology</span>
               <select
-                className="cand-input"
+                className={`cand-input${warnClass("technology")}`}
                 value={H8.includes(l.technology) ? l.technology : "_other_"}
                 onChange={(C) => {
                   if (C.target.value === "_other_") {
@@ -3253,11 +3247,12 @@ export function CandidateEditModal({
                   style={{ marginTop: "4px" }}
                 />
               )}
+              {warningNote("technology")}
             </label>
             <label className="cand-field">
               <span className="cand-field-label">Phone</span>
               <input
-                className="cand-input"
+                className={`cand-input${warnClass("phone")}`}
                 type="tel"
                 value={l.phone}
                 onChange={(C) =>
@@ -3265,11 +3260,12 @@ export function CandidateEditModal({
                 }
                 placeholder="9876543210"
               />
+              {warningNote("phone")}
             </label>
             <label className="cand-field">
               <span className="cand-field-label">Email</span>
               <input
-                className="cand-input"
+                className={`cand-input${warnClass("email")}`}
                 type="email"
                 data-candidate-email-field="true"
                 value={l.email}
@@ -3277,6 +3273,7 @@ export function CandidateEditModal({
                 placeholder="candidate@gmail.com"
                 autoComplete="email"
               />
+              {warningNote("email")}
             </label>
             <label
               className="cand-field"

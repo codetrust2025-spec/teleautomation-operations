@@ -7,12 +7,13 @@ were already right, and nothing filled a gap on its own.
 
 The rule here is narrower and safer:
 
-* only a field that is **blank or unusable** is filled; a valid value is never
-  replaced, and a blank from the resume never replaces anything. A phone is
-  usable only as a full 10-digit Indian mobile; a name cut short ("Linga
-  Srinava" for "Srinivasarao Linga") is completed from the resume when the
-  resume's phone or email confirms it is the same person, while the same name
-  in another order or spelling ("Linga Srinavasarao") is kept as it is;
+* only an **empty** field (or template filler such as "xyz@gmail.com") is
+  filled. Whatever else the record holds -- a cut-short name, an incomplete
+  number, a different email -- is the person's to replace: the edit form shows
+  it beside the resume's value to accept or keep (11 Oct). A blank from the
+  resume never replaces anything;
+* a resume whose phone differs from the candidate's valid one fills nothing,
+  but may still be compared field by field (`compare_only`);
 * only a **complete** reading is used: a name needs two words of two letters
   or more, a phone ten digits;
 * only an **AI reading** at or above `MIN_CONFIDENCE` is trusted. A regex or OCR
@@ -229,6 +230,21 @@ def usable(field: str, value: Any, *, normalise_phone, canonical_technology) -> 
     return bool(text)
 
 
+def _fillable(field: str, value: Any, *, canonical_technology) -> bool:
+    """Empty, or a placeholder rather than real data."""
+    text = _clean(value)
+    if not text:
+        return True
+    if field == "name":
+        return text.lower() in _PLACEHOLDER_NAMES
+    if field == "email":
+        local, _, domain = text.lower().partition("@")
+        return local in _PLACEHOLDER_LOCALS or domain in _JUNK_EMAIL_DOMAINS
+    if field == "technology":
+        return canonical_technology(text) in {"", "Unspecified"}
+    return False
+
+
 def plan_autofill(
     candidate: dict[str, Any],
     extraction: dict[str, Any],
@@ -270,16 +286,12 @@ def plan_autofill(
     current_phone = valid_phone(candidate.get("phone"), normalise_phone)
     resume_phone = valid_phone(extraction.get("phone"), normalise_phone)
     if current_phone and resume_phone and current_phone != resume_phone:
-        return {"fill": {}, "skipped": {}, "refused": "the phone number on the resume differs from this candidate's"}
+        # Nothing is filled from it, but the form may still compare it, field
+        # by field, for the person to accept or keep.
+        return {"fill": {}, "skipped": {}, "refused": "",
+                "compare_only": "the phone number on the resume differs from this candidate's"}
 
-    # The resume is confirmed to be this person's by a phone or email they share;
-    # only then may a cut-short name be completed from it.
     found_complete = complete_name(found_name)
-    current_email = valid_email(candidate.get("email"))
-    confirmed = bool(
-        (current_phone and current_phone == resume_phone)
-        or (current_email and current_email == valid_email(extraction.get("email")))
-    )
 
     others = list(others)
     taken_emails = {valid_email(o.get("email")) for o in others} - {""}
@@ -287,15 +299,11 @@ def plan_autofill(
     known = {canonical_technology(t) for t in known_technologies} - {"", "Unspecified"}
 
     for field in FIELDS:
-        if usable(field, candidate.get(field), normalise_phone=normalise_phone, canonical_technology=canonical_technology):
-            if (
-                field == "name"
-                and found_complete
-                and confirmed
-                and partial_name(_clean(candidate.get("name")), found_complete)
-            ):
-                fill[field] = found_complete
-            continue  # a valid value is never replaced
+        # Only an empty field (or template filler) is filled. Anything the record
+        # holds -- even a cut-short name or an incomplete number -- is the
+        # person's to replace: the form compares it with the resume instead.
+        if not _fillable(field, candidate.get(field), canonical_technology=canonical_technology):
+            continue
         if field == "email":
             email = valid_email(extraction.get("email"))
             if not email:

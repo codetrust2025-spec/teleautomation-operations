@@ -66,13 +66,20 @@ def test_a_blank_on_the_resume_leaves_a_gap_a_gap_with_the_reason():
     assert result["skipped"]["email"] == "no valid email on the resume"
 
 
-@pytest.mark.parametrize("bad", ["abc", "no-at-sign.example.test", "x@y", "a b@example.test"])
-def test_an_unusable_existing_email_is_replaced(bad):
-    assert plan({**COMPLETE, "email": bad})["fill"] == {"email": "asha.rao@example.test"}
+# 11 Oct: nothing the record holds is replaced on upload, even an invalid value:
+# the edit form shows it beside the resume's for the person to accept or keep.
+@pytest.mark.parametrize("bad", ["no-at-sign.example.test", "x@y", "a b@example.test"])
+def test_an_invalid_saved_email_is_not_replaced_on_upload(bad):
+    assert plan({**COMPLETE, "email": bad})["fill"] == {}
 
 
-def test_an_unusable_existing_phone_is_replaced():
-    assert plan({**COMPLETE, "phone": "12345"})["fill"] == {"phone": "9000000901"}
+@pytest.mark.parametrize("filler", ["xyz@example.test", "abc", "test@example.com"])
+def test_template_filler_in_the_email_is_replaced(filler):
+    assert plan({**COMPLETE, "email": filler})["fill"] == {"email": "asha.rao@example.test"}
+
+
+def test_an_incomplete_saved_phone_is_not_replaced_on_upload():
+    assert plan({**COMPLETE, "phone": "12345"})["fill"] == {}
 
 
 def test_a_placeholder_name_is_replaced():
@@ -170,7 +177,9 @@ def test_a_resume_with_a_different_phone_than_the_candidates_is_ignored_entirely
     candidate = {"name": "Asha Rao", "email": "", "phone": "9000000902", "technology": ""}
     result = plan(candidate, reading(phone="9000000999", email="asha.rao@example.test"))
     assert result["fill"] == {}
-    assert "differs from this candidate's" in result["refused"]
+    # Nothing is filled from it; the form may still compare it field by field.
+    assert result["refused"] == ""
+    assert "differs from this candidate's" in result["compare_only"]
 
 
 def test_a_resume_with_the_same_phone_in_another_format_is_accepted():
@@ -358,9 +367,9 @@ FULL = {"candidate_name": "Raghavendrarao Kolla", "phone": "+919000000777",
 STORED = {"name": "Kolla Raghava", "email": "raghav.k@example.test", "phone": "9000000777", "technology": "React JS"}
 
 
-def test_a_name_cut_short_is_completed_when_the_phone_confirms_the_person():
+def test_a_name_cut_short_is_left_for_the_form_to_compare():
     result = plan(STORED, reading(**FULL))
-    assert result["fill"] == {"name": "Raghavendrarao Kolla"}
+    assert result["fill"] == {}
     assert result["refused"] == ""
 
 
@@ -380,9 +389,9 @@ def test_a_short_real_name_is_not_taken_for_a_cut_short_one():
 
 
 @pytest.mark.parametrize("partial_phone", ["90000", "900000077", "90000 0077", "+91 90000 00"])
-def test_a_partial_phone_is_replaced_by_the_resumes_full_number(partial_phone):
+def test_a_partial_phone_is_left_for_the_form_to_compare(partial_phone):
     result = plan({**STORED, "name": "Raghavendrarao Kolla", "phone": partial_phone}, reading(**FULL))
-    assert result["fill"] == {"phone": "9000000777"}
+    assert result["fill"] == {}
 
 
 def test_an_incomplete_name_on_the_resume_is_never_written():

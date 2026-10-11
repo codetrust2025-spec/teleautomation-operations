@@ -504,7 +504,28 @@ async def candidates_get(cid: str, request: Request):
     if not row:
         return {"status": "error", "message": "Candidate not found"}
     assert_candidate_row_access(request, row)
+    # The edit form warns at the field: a phone or email another person holds.
+    row = {**row, "identity_warnings": candidate_store.identity_warnings({**row, "id": cid})}
     return {"status": "ok", "candidate": row}
+
+
+def _phone_taken_by_another_person(candidate_store, *, phone, name, service_type, row, exclude_ids=()):
+    """The refusal when a profile candidate is given a phone another person's
+    profile records carry, or None. The phone groups a person's records and
+    payments: shared, the table showed one person with the other's payments."""
+    if candidate_store._normalise_service_type(service_type, row) == "round_wise":
+        return None
+    holders = candidate_store.phone_holders(phone, name=name, exclude_ids=exclude_ids)
+    if not holders:
+        return None
+    return {
+        "status": "error",
+        "message": (
+            f"{phone} is already the phone of {candidate_store._holders_text(holders)}. "
+            "A phone links a candidate's records and payments, so it cannot be given to another person."
+        ),
+        "phone_taken": True,
+    }
 @router.post("/candidates")
 async def candidates_create(request: Request, body: dict):
     from core.dashboard_access import prepare_candidate_body
@@ -513,6 +534,15 @@ async def candidates_create(request: Request, body: dict):
     body = prepare_candidate_body(request, body)
     if not (body.get("name") or "").strip():
         return {"status": "error", "message": "Name is required"}
+    taken = _phone_taken_by_another_person(
+        candidate_store,
+        phone=str(body.get("phone") or "").strip(),
+        name=str(body.get("name") or ""),
+        service_type=body.get("service_type"),
+        row=body,
+    )
+    if taken:
+        return taken
     try:
         body["ctc_percentage"] = candidate_store.validate_profile_ctc_percentage(body)
         row = candidate_store.create_candidate(body)
@@ -541,6 +571,20 @@ async def candidates_update(cid: str, request: Request, body: dict):
     )
     if problem:
         return {"status": "error", **problem}
+    if "phone" in body and (
+        candidate_store.candidate_phone_identity(body.get("phone"))
+        != candidate_store.candidate_phone_identity(existing.get("phone"))
+    ):
+        taken = _phone_taken_by_another_person(
+            candidate_store,
+            phone=str(body.get("phone") or "").strip(),
+            name=str(body.get("name") or existing.get("name") or ""),
+            service_type=body.get("service_type") or existing.get("service_type"),
+            row={**existing, **body},
+            exclude_ids={cid},
+        )
+        if taken:
+            return taken
     try:
         prepared = prepare_candidate_body(request, body)
         prepared["ctc_percentage"] = candidate_store.validate_profile_ctc_percentage(

@@ -2286,15 +2286,54 @@ def _slim_list_row(row: dict) -> dict:
     return slim
 
 
+class _PhoneNames(dict):
+    """Phones seen under each name, plus `people`: for each phone, the distinct
+    people (one name each, first seen first) whose rows carry it."""
+
+    people: dict[str, list[str]]
+
+
+def _same_candidate_name(a: str, b: str) -> bool:
+    """Do two names belong to one person? Aliases and spelling variants do
+    ("Perla Abhilash" / "Abilash Perla", "Vekateshwarlu" / "Venkateshwarlu")."""
+    from features.resume_autofill import same_person
+
+    first, second = canonical_candidate_name(a), canonical_candidate_name(b)
+    if not first or not second:
+        return False
+    return first.lower() == second.lower() or same_person(first, second)
+
+
 def _phones_by_name_key(rows: list[dict]) -> dict[str, set[str]]:
     """Every distinct phone identity seen under each normalised name."""
-    phones: dict[str, set[str]] = {}
+    phones = _PhoneNames()
+    people: dict[str, list[str]] = {}
     for row in rows:
         name = " ".join((row.get("name") or "").strip().lower().split())
         phone = candidate_phone_identity(row.get("phone"))
         if name and phone:
             phones.setdefault(name, set()).add(phone)
+            holders = people.setdefault(phone, [])
+            if not any(_same_candidate_name(name, other) for other in holders):
+                holders.append(name)
+    phones.people = people
     return phones
+
+
+def _person_on_phone(phone: str, name: str, phones_by_name: dict) -> str:
+    """"" for the first person holding a phone, "#n" for another person on it.
+
+    11 Oct: a Save gave Srinivasarao Linga the number 13 Farhana rows carry; the
+    table then showed one "Srinivasarao Linga" with Farhana's proof and payment
+    (2 proofs, Rs 40,000) and Farhana vanished. Different people on one phone
+    stay different profiles; one person's spellings still group together."""
+    holders = (getattr(phones_by_name, "people", None) or {}).get(phone) or []
+    if len(holders) < 2 or not name:
+        return ""
+    for index, holder in enumerate(holders):
+        if _same_candidate_name(name, holder):
+            return f"#{index}" if index else ""
+    return ""
 
 
 def _profile_group_key(row: dict, phones_by_name: dict[str, set[str]]) -> str:
@@ -2310,12 +2349,13 @@ def _profile_group_key(row: dict, phones_by_name: dict[str, set[str]]) -> str:
     name = " ".join((row.get("name") or "").strip().lower().split())
     phone = candidate_phone_identity(row.get("phone"))
     if phone:
-        return f"phone:{phone}"
+        return f"phone:{phone}{_person_on_phone(phone, name, phones_by_name)}"
     if not name:
         return ""
     known = phones_by_name.get(name) or set()
     if len(known) == 1:
-        return f"phone:{next(iter(known))}"
+        only = next(iter(known))
+        return f"phone:{only}{_person_on_phone(only, name, phones_by_name)}"
     return f"name:{name}"
 
 
@@ -4803,6 +4843,71 @@ def get_candidate(cid: str) -> dict | None:
         if r.get("id") == cid:
             return _annotate_evidenced_elsewhere(_with_computed(r), raw_rows)
     return None
+
+
+def phone_holders(phone: str | None, *, name: str, exclude_ids=()) -> list[dict]:
+    """Other people whose profile records carry this phone: [{"name", "records"}].
+
+    A phone groups a person's profile records and their payments, so it may not
+    be shared by two people. Round-wise bookings are not grouped by phone and
+    are left out; so is anyone with the same name (aliases, spellings)."""
+    key = candidate_phone_identity(phone)
+    if not key:
+        return []
+    skip = {str(item) for item in exclude_ids}
+    counts: dict[str, int] = {}
+    for row in _load().get("candidates") or []:
+        if str(row.get("id")) in skip:
+            continue
+        if _normalise_service_type(row.get("service_type"), row) == "round_wise":
+            continue
+        if candidate_phone_identity(row.get("phone")) != key:
+            continue
+        other = _clean_str(row.get("name"))
+        if other and _same_candidate_name(name, other):
+            continue
+        label = canonical_candidate_name(other) or "a record with no name"
+        counts[label] = counts.get(label, 0) + 1
+    return [{"name": label, "records": count} for label, count in counts.items()]
+
+
+def email_holders(email: str | None, *, name: str, exclude_ids=()) -> list[dict]:
+    """Other people whose records carry this email: [{"name", "records"}]."""
+    wanted = _clean_str(email).lower()
+    if not wanted or "@" not in wanted:
+        return []
+    skip = {str(item) for item in exclude_ids}
+    counts: dict[str, int] = {}
+    for row in _load().get("candidates") or []:
+        if str(row.get("id")) in skip or _clean_str(row.get("email")).lower() != wanted:
+            continue
+        other = _clean_str(row.get("name"))
+        if other and _same_candidate_name(name, other):
+            continue
+        label = canonical_candidate_name(other) or "a record with no name"
+        counts[label] = counts.get(label, 0) + 1
+    return [{"name": label, "records": count} for label, count in counts.items()]
+
+
+def _holders_text(holders: list[dict]) -> str:
+    return ", ".join(
+        f"{h['name']} ({h['records']} records)" if h["records"] > 1 else h["name"] for h in holders
+    )
+
+
+def identity_warnings(row: dict) -> dict[str, str]:
+    """Field warnings for the edit form: a phone or email another person holds."""
+    warnings: dict[str, str] = {}
+    name = _clean_str(row.get("name"))
+    ids = {str(row.get("id"))}
+    if _normalise_service_type(row.get("service_type"), row) != "round_wise":
+        holders = phone_holders(row.get("phone"), name=name, exclude_ids=ids)
+        if holders:
+            warnings["phone"] = f"Also the phone of {_holders_text(holders)}"
+    holders = email_holders(row.get("email"), name=name, exclude_ids=ids)
+    if holders:
+        warnings["email"] = f"Also the email of {_holders_text(holders)}"
+    return warnings
 
 
 def get_candidate_detail(cid: str) -> dict | None:
