@@ -1623,6 +1623,11 @@ export function ResumeAutoFill({
   const [saved, setSaved] = w.useState(savedResume);
   // A new candidate's resume is read, not saved: there is no row to file it on.
   const [readOnlyFile, setReadOnlyFile] = w.useState(null);
+  // A reading the server would not apply because it could not tell the resume
+  // is this candidate's (a short saved name -- "Teja" for "Tejaswi Rao" -- and
+  // a different phone). Nothing is filled from it; the person may confirm it is
+  // the same candidate and compare it field by field.
+  const [heldReading, setHeldReading] = w.useState(null);
   const inputRef = w.useRef(null);
   // The AI node reading the resume, and how long it took.
   const { analysis, begin: beginAnalysis } = useAiAnalysis(ve);
@@ -1635,6 +1640,7 @@ export function ResumeAutoFill({
     setError("");
     setNotes([]);
     setReadOnlyFile(null);
+    setHeldReading(null);
     let run = beginAnalysis();
     let serverAnalysis = null;
     let outcome = { ok: false, failureLabel: "Could not read" };
@@ -1672,8 +1678,12 @@ export function ResumeAutoFill({
           judged = true;
           const next = [];
           if (res.autofill.refused) {
-            // Probably someone else's resume: nothing is filled or offered.
+            // Possibly someone else's resume: nothing is filled. The comparison
+            // is offered only once the person confirms it is the same candidate.
             next.push({ tone: "warn", text: `Not filled automatically: ${res.autofill.refused}.` });
+            if (res.ai_extraction && res.ai_extraction.is_resume !== false) {
+              setHeldReading(res.ai_extraction);
+            }
           } else {
             // Empty fields the server filled are mirrored into the form; every
             // other difference is offered field by field to accept or keep.
@@ -1903,6 +1913,27 @@ export function ResumeAutoFill({
           className={`cand-resume-note cand-resume-note--${error.startsWith("Partial") ? "warn" : "error"}`}
         >
           {error}
+        </div>
+      )}
+      {heldReading && (
+        <div className="cand-resume-confirm">
+          <span className="cand-resume-confirm-text">
+            {heldReading.candidate_name
+              ? `The resume names ${heldReading.candidate_name}. `
+              : ""}
+            If it is this candidate's, compare it field by field: nothing
+            changes until you accept a value and save.
+          </span>
+          <button
+            type="button"
+            className="cand-btn cand-btn--xs cand-btn--ghost"
+            onClick={() => {
+              onReading?.({ reading: heldReading, filled: {}, skipped: {}, mode: "compare" });
+              setHeldReading(null);
+            }}
+          >
+            Same person — compare fields
+          </button>
         </div>
       )}
       {notes.map((note) => (

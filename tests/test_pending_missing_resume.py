@@ -70,8 +70,8 @@ def test_profile_whose_resume_files_are_all_lost_is_listed(store):
 
 
 def test_profile_with_a_resume_on_another_slot_row_is_not_listed(store):
-    store["candidates"] += [row("c1", "Manu Sample", phone="9000000622"),
-                            row("c2", "Manu Sample", phone="9000000622", resumes=[resume("c2", "cv")])]
+    store["candidates"] += [row("c1", "Varun Sample", phone="9000000622"),
+                            row("c2", "Varun Sample", phone="9000000622", resumes=[resume("c2", "cv")])]
     assert resume_tasks(pending(store)) == []
 
 
@@ -99,9 +99,9 @@ def test_the_required_details_tick_follows_the_same_rule(store):
     assert "resume" not in round_wise["completion_missing"]
     lost = cs._with_computed(row("f2", "Ravi Kolla", resumes=[resume("f2", "x", present=False)]))
     assert "resume" in lost["completion_missing"]
-    store["candidates"] += [row("g1", "Manu Sample", phone="9000000633"),
-                            row("g2", "Manu Sample", phone="9000000633", resumes=[resume("g2", "cv")],
+    store["candidates"] += [row("g1", "Varun Sample", phone="9000000633"),
+                            row("g2", "Varun Sample", phone="9000000633", resumes=[resume("g2", "cv")],
                                 updated_at="2026-01-01T00:00:00+00:00")]
     [shown] = [m for m in cs._collapse_profile_candidates([cs._with_computed(r) for r in store["candidates"]])
-               if m["name"] == "Manu Sample"]
+               if m["name"] == "Varun Sample"]
     assert shown["details_complete"] is True

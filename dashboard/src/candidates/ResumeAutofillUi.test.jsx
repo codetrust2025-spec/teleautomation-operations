@@ -559,3 +559,73 @@ describe("one-word names (11 Oct: a one-word name's resume was refused as someon
     expect(row("name")).toBeNull();
   });
 });
+
+describe("a resume the server will not apply, confirmed as the same person (11 Oct; invented values)", () => {
+  // Saved under a short name with another phone; the resume gives the full name.
+  const SHORT_NAME = { ...CANDIDATE, id: "cand-short-1", name: "Teja", phone: "9000000501", email: "", technology: "ETL Test Engineer" };
+  const READ = {
+    is_resume: true, candidate_name: "Tejaswi Fakename", phone: "+91 90000 00599", email: "tejaswi.f@example.test",
+    technology: "Informatica PowerCenter", confidence_score: 85, extraction_source: "pdf_text_ai",
+  };
+  const refused = { status: "ok", resume: { id: "r1" }, candidate: SHORT_NAME, ai_extraction: READ,
+    autofill: { filled: {}, skipped: {}, refused: "the name on the resume does not match this candidate" } };
+  const confirmButton = () => screen.queryByRole("button", { name: "Same person — compare fields" });
+
+  it("fills nothing and shows no comparison until the person confirms", async () => {
+    mockResumeUpload(refused);
+    const { container } = renderModal(SHORT_NAME);
+    await uploadResume(container);
+    expect(await screen.findByText(/Not filled automatically: the name on the resume does not match this candidate/)).toBeInTheDocument();
+    expect(screen.getByText(/The resume names Tejaswi Fakename\./)).toBeInTheDocument();
+    expect(confirmButton()).toBeInTheDocument();
+    expect(document.querySelector(".cand-resume-compare")).toBeNull();
+    expect(field("Candidate name *")).toHaveValue("Teja");
+    expect(field("Email")).toHaveValue("");
+  });
+
+  it("once confirmed, offers name, phone, email and technology to accept or keep -- still changing nothing", async () => {
+    mockResumeUpload(refused);
+    const { container } = renderModal(SHORT_NAME);
+    await uploadResume(container);
+    fireEvent.click(await screen.findByRole("button", { name: "Same person — compare fields" }));
+    expect(row("name").textContent).toContain("Teja → Tejaswi Fakename");
+    expect(row("phone").textContent).toContain("9000000501 → 9000000599");
+    expect(row("email").textContent).toContain("empty → tejaswi.f@example.test");
+    expect(row("technology").textContent).toContain("ETL Test Engineer → Informatica PowerCenter");
+    expect(confirmButton()).toBeNull();
+    expect(field("Candidate name *")).toHaveValue("Teja");
+    expect(field("Email")).toHaveValue("");
+  });
+
+  it("saves exactly what was accepted, on the same candidate", async () => {
+    mockResumeUpload(refused);
+    const onSave = vi.fn(async () => {});
+    const { container } = render(
+      <ConfirmProvider>
+        <CandidateEditModal initial={SHORT_NAME} onClose={vi.fn()} onSave={onSave} isAdmin={true} />
+      </ConfirmProvider>,
+    );
+    await uploadResume(container);
+    fireEvent.click(await screen.findByRole("button", { name: "Same person — compare fields" }));
+    accept("name");
+    accept("email");
+    keep("phone");
+    keep("technology");
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const sent = onSave.mock.calls[0][0];
+    expect([sent.name, sent.phone, sent.email, sent.technology]).toEqual(
+      ["Tejaswi Fakename", "9000000501", "tejaswi.f@example.test", "ETL Test Engineer"]);
+    expect(sent.payment).toBe(SHORT_NAME.payment);
+  });
+
+  it("a file that is not a resume offers nothing to compare", async () => {
+    mockResumeUpload({ status: "error", message: "This file does not look like a resume, so it was not saved.",
+      ai_extraction: { is_resume: false } });
+    const { container } = renderModal(SHORT_NAME);
+    await uploadResume(container);
+    await readingDone();
+    expect(confirmButton()).toBeNull();
+    expect(document.querySelector(".cand-resume-compare")).toBeNull();
+  });
+});
