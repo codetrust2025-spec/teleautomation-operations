@@ -41,6 +41,7 @@ OFFICE_NETWORK_REQUIRED = "OFFICE_NETWORK_REQUIRED"
 INTERVIEW_NOT_FINISHED = "INTERVIEW_NOT_FINISHED"
 INTERVIEW_OUTCOME_PENDING = "INTERVIEW_OUTCOME_PENDING"
 DAILY_TASKS_PENDING = "DAILY_TASKS_PENDING"
+ATTENDANCE_SHUTDOWN = "ATTENDANCE_SHUTDOWN"
 
 
 class CheckoutBlocked(RuntimeError):
@@ -194,9 +195,18 @@ def status(
     identity = _identity_or_refuse(profile)
     with get_connection() as conn:
         row = _checkout_row(conn, identity["account_id"], current.date())
+        control = attendance.shutdown_state(conn, identity["account_id"])
     checked_out_at = row.get("checked_out_at") if row else None
-    blockers = [] if checked_out_at else checkout_blockers(
-        now=current, attendance_row=row, network=network)
+    if checked_out_at:
+        blockers = []
+    elif control["active"]:
+        blockers = [_blocker(
+            ATTENDANCE_SHUTDOWN,
+            "Attendance processing is shut down globally."
+            if control["scope"] == "GLOBAL" else "Attendance processing is shut down for this handler.",
+        )]
+    else:
+        blockers = checkout_blockers(now=current, attendance_row=row, network=network)
     return attendance._json_safe({
         "status": "ok",
         "checkout_date": current.date(),
@@ -206,6 +216,7 @@ def status(
         "attendance_marked": bool(row),
         "can_check_out": checked_out_at is None and not blockers,
         "blockers": blockers,
+        "shutdown": control,
     })
 
 
@@ -228,6 +239,13 @@ def check_out(
         row = _checkout_row(conn, identity["account_id"], current.date())
         if row and row.get("checked_out_at"):
             return attendance._json_safe({"status": "already_checked_out", "checkout": row})
+        control = attendance.shutdown_state(conn, identity["account_id"])
+        if control["active"]:
+            raise CheckoutBlocked([_blocker(
+                ATTENDANCE_SHUTDOWN,
+                "Attendance processing is shut down globally."
+                if control["scope"] == "GLOBAL" else "Attendance processing is shut down for this handler.",
+            )])
         blockers = checkout_blockers(now=current, attendance_row=row, network=network)
         if blockers:
             # The caller renders these; raising the first one alone would send

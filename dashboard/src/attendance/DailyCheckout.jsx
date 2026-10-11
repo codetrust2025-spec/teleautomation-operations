@@ -22,6 +22,7 @@ const REASON_ACTIONS = {
   DAILY_TASKS_PENDING: 'Clear these on the Pending Works tab.',
   ATTENDANCE_NOT_MARKED: 'Mark attendance first.',
   OFFICE_NETWORK_REQUIRED: 'Reconnect to the office network.',
+  ATTENDANCE_SHUTDOWN: 'An attendance administrator must reactivate processing.',
 }
 
 function timeOfDay(value) {

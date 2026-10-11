@@ -70,6 +70,7 @@ describe('attendance and earnings panel', () => {
           attendance_ratio: 100, eligibility_amount: 40000,
         }],
       }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ global: { active: false }, handlers: {}, audit_events: [] }) })
     render(<AttendancePanel />)
     expect(await screen.findByRole('heading', { name: 'All Users Attendance' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Your verified attendance' })).not.toBeInTheDocument()
@@ -78,7 +79,7 @@ describe('attendance and earnings panel', () => {
     expect(await screen.findByText('venu-login')).toBeInTheDocument()
     expect(screen.getByText('Configured')).toBeInTheDocument()
     expect(screen.queryByText(/password123|hash|token/i)).not.toBeInTheDocument()
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(5))
   })
 
   it('opens a selected handler history by stable account ID', async () => {
@@ -97,6 +98,7 @@ describe('attendance and earnings panel', () => {
           attendance_ratio: 100, eligibility_amount: 40000,
         }],
       }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ global: { active: false }, handlers: {}, audit_events: [] }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({
         profile: { display_name: 'Thrilok', account_id: 'handler:referrer-thrilok' },
         eligibility: { period_start: '2026-09-01', period_end: '2026-09-01' },
@@ -109,9 +111,32 @@ describe('attendance and earnings panel', () => {
     render(<AttendancePanel />)
     fireEvent.click(await screen.findByRole('button', { name: 'Thrilok' }))
     expect(await screen.findByRole('heading', { name: 'Thrilok attendance history' })).toBeInTheDocument()
-    expect(fetch.mock.calls[4][0]).toContain(
+    expect(fetch.mock.calls[5][0]).toContain(
       '/attendance/admin/history?account_id=handler%3Areferrer-thrilok',
     )
     expect(screen.getAllByText('VERIFIED').length).toBeGreaterThan(0)
+  })
+
+  it('shows global shutdown as the effective control without hiding individual state', async () => {
+    authValue = { role: 'admin', displayName: 'Operations Admin' }
+    fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ holidays: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recommendations: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ users: [], findings: null }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        period_start: '2026-09-01', period_end: '2026-09-01',
+        users: [{ account_id: 'handler:venu', username: 'venu', display_name: 'Venu', eligibility_amount: null }],
+      }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        global: { active: true, scope: 'GLOBAL' },
+        handlers: { 'handler:venu': { active: true, scope: 'GLOBAL', handler_active: false } },
+        audit_events: [{ action: 'SHUTDOWN', scope: 'GLOBAL' }],
+      }) })
+
+    render(<AttendancePanel />)
+    expect(await screen.findByRole('button', { name: 'Reactivate global' })).toBeInTheDocument()
+    expect(screen.getByText('Shutdown by global control')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Shutdown' })).toBeDisabled()
+    expect(screen.getByText(/Audit trail: 1 recorded shutdown transitions/)).toBeInTheDocument()
   })
 })

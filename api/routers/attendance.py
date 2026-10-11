@@ -28,6 +28,12 @@ class RecommendationReviewBody(BaseModel):
     note: str = Field(default="", max_length=500)
 
 
+class ShutdownBody(BaseModel):
+    scope: str = Field(pattern="^(GLOBAL|HANDLER)$")
+    account_id: str | None = Field(default=None, max_length=200)
+    reason: str = Field(default="", max_length=500)
+
+
 def _profile(request: Request) -> dict:
     profile = auth.operator_profile_from_cookies(dict(request.cookies))
     if not profile.get("username"):
@@ -212,6 +218,36 @@ async def attendance_admin_overview(request: Request):
     _payroll_admin(request)
     profiles = await asyncio.to_thread(_attendance_handler_profiles)
     return await _call(attendance.admin_overview, profiles)
+
+
+@router.get("/admin/shutdowns")
+async def attendance_shutdowns(request: Request):
+    _payroll_admin(request)
+    profiles = await asyncio.to_thread(_attendance_handler_profiles)
+    return await _call(attendance.shutdown_controls, profiles)
+
+
+async def _shutdown_transition(request: Request, body: ShutdownBody, action: str):
+    actor = _payroll_admin(request)
+    profiles = await asyncio.to_thread(_attendance_handler_profiles)
+    if body.scope == "HANDLER" and not any(row["account_id"] == body.account_id for row in profiles):
+        raise HTTPException(status_code=404, detail="Handler account not found")
+    try:
+        state = await _call(attendance.set_shutdown, body.scope, action, actor,
+                            account_id=body.account_id, reason=body.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "shutdown": state}
+
+
+@router.post("/admin/shutdown")
+async def attendance_shutdown(request: Request, body: ShutdownBody):
+    return await _shutdown_transition(request, body, "SHUTDOWN")
+
+
+@router.post("/admin/reactivate")
+async def attendance_reactivate(request: Request, body: ShutdownBody):
+    return await _shutdown_transition(request, body, "REACTIVATE")
 
 
 @router.get("/admin/history")

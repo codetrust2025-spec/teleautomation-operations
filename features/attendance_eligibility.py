@@ -80,6 +80,93 @@ def is_employee_identity(identity: dict[str, Any]) -> bool:
     )
 
 
+def _shutdown_state_from_events(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Resolve an effective state from newest-first immutable event rows."""
+    values = list(rows)
+    latest_global = next((row for row in values if row.get("scope") == "GLOBAL"), None)
+    latest_handler = next((row for row in values if row.get("scope") == "HANDLER"), None)
+    global_active = bool(latest_global and latest_global.get("action") == "SHUTDOWN")
+    handler_active = bool(latest_handler and latest_handler.get("action") == "SHUTDOWN")
+    event = latest_global if global_active else latest_handler if handler_active else None
+    return {"active": bool(global_active or handler_active),
+            "scope": "GLOBAL" if global_active else "HANDLER" if handler_active else None,
+            "global_active": global_active, "handler_active": handler_active,
+            "event": event}
+
+
+def shutdown_state(conn, account_id: str) -> dict[str, Any]:
+    """Current effective control, derived from immutable shutdown events."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, scope, target_account_id, action, reason,
+                      actor_account_id, actor_username, occurred_at
+               FROM operations_attendance_shutdown_events
+               WHERE scope='GLOBAL' OR target_account_id=%s
+               ORDER BY occurred_at DESC, id DESC""",
+            (account_id,),
+        )
+        fields = {str(column[0]) for column in (getattr(cur, "description", None) or [])}
+        fetched = (cur.fetchall() if hasattr(cur, "fetchall") else [cur.fetchone()]) \
+            if {"scope", "action"}.issubset(fields) else []
+        # Lightweight unit-test cursors sometimes do not model query metadata.
+        # A real database cursor always does; database/query failures still
+        # propagate rather than silently treating a shutdown as inactive.
+        rows = [_as_dict(cur, row) for row in fetched if row is not None]
+    return _shutdown_state_from_events(rows)
+
+
+def set_shutdown(scope: str, action: str, actor_profile: dict[str, Any], *,
+                 account_id: str | None = None, reason: str = "") -> dict[str, Any]:
+    """Append a shutdown/reactivation audit event; never mutate history."""
+    _require_database()
+    scope, action = str(scope or "").upper(), str(action or "").upper()
+    target = str(account_id or "").strip() or None
+    if scope not in {"GLOBAL", "HANDLER"} or action not in {"SHUTDOWN", "REACTIVATE"}:
+        raise ValueError("Invalid attendance shutdown transition")
+    if (scope == "GLOBAL") != (target is None):
+        raise ValueError("Global shutdown has no handler; individual shutdown requires a handler")
+    actor = account_identity(actor_profile)
+    with get_connection() as conn, conn.cursor() as cur:
+        # Serialize only transitions for this control. It makes a double-click
+        # or retry a no-op rather than a second historical transition.
+        lock_key = f"attendance-shutdown:{scope}:{target or '*'}"
+        cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
+        before = shutdown_state(conn, target or "")
+        locally_active = before["global_active"] if scope == "GLOBAL" else before["handler_active"]
+        desired_active = action == "SHUTDOWN"
+        if locally_active == desired_active:
+            return _json_safe({**before, "changed": False})
+        cur.execute(
+            """INSERT INTO operations_attendance_shutdown_events(
+                   id, scope, target_account_id, action, reason,
+                   actor_account_id, actor_username, audit_metadata)
+               VALUES(%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
+            (str(uuid.uuid4()), scope, target, action, str(reason or "")[:500],
+             actor["account_id"], actor["username"],
+             json.dumps({"source": "attendance_admin_control"})),
+        )
+        state = {**shutdown_state(conn, target or ""), "changed": True}
+    return _json_safe(state)
+
+
+def shutdown_controls(profiles: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    _require_database()
+    identities = _handler_profiles(profiles)
+    with get_connection() as conn:
+        global_state = shutdown_state(conn, "")
+        states = {row["account_id"]: shutdown_state(conn, row["account_id"]) for row in identities}
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, scope, target_account_id, action, reason,
+                          actor_account_id, actor_username, occurred_at
+                   FROM operations_attendance_shutdown_events
+                   ORDER BY occurred_at DESC, id DESC LIMIT 100"""
+            )
+            events = [_as_dict(cur, row) for row in cur.fetchall()]
+    return _json_safe({"status": "ok", "global": global_state,
+                       "handlers": states, "audit_events": events})
+
+
 def configured_effective_date(default: date) -> date:
     raw = str(os.environ.get("OPERATIONS_ATTENDANCE_EFFECTIVE_DATE") or "").strip()
     if not raw:
@@ -375,7 +462,12 @@ def status(profile: dict[str, Any], *, now: datetime | None = None) -> dict[str,
             already_marked=attendance is not None,
         )
         employee_attendance = is_employee_identity(identity)
-        if employee_attendance:
+        control = shutdown_state(conn, identity["account_id"]) if employee_attendance else None
+        if employee_attendance and control["active"]:
+            eligibility = None
+            decision = {**decision, "eligible": False, "working_day": False,
+                        "reason": "ATTENDANCE_SHUTDOWN", "shutdown": control}
+        elif employee_attendance:
             eligibility = _reconcile_eligibility(conn, identity, current, policy)
         else:
             eligibility = None
@@ -411,6 +503,7 @@ def status(profile: dict[str, Any], *, now: datetime | None = None) -> dict[str,
         "eligibility": eligibility,
         "records": records,
         "employee_attendance": employee_attendance,
+        "shutdown": control,
     })
 
 
@@ -464,6 +557,7 @@ def admin_overview(
 
         summaries = []
         for identity in identities:
+            control = shutdown_state(conn, identity["account_id"])
             account_rows = rows_by_account.get(identity["account_id"], [])
             today_row = next(
                 (row for row in account_rows if row["attendance_date"] == current.date()),
@@ -483,6 +577,9 @@ def admin_overview(
                 holiday_dates=holidays,
                 already_marked=today_row is not None,
             )
+            if control["active"]:
+                ratio, amount = None, None
+                decision = {**decision, "reason": "ATTENDANCE_SHUTDOWN"}
             summaries.append({
                 "account_id": identity["account_id"],
                 "username": identity["username"],
@@ -502,6 +599,7 @@ def admin_overview(
                 "required_working_days": required,
                 "attendance_ratio": ratio,
                 "eligibility_amount": amount,
+                "shutdown": control,
             })
 
     return _json_safe({
@@ -526,7 +624,8 @@ def admin_history(
         raise ValueError("Attendance history is only available for handler accounts")
     with get_connection() as conn:
         policy = _policy(conn)
-        calculation = _eligibility_calculation(conn, identity, current, policy)
+        control = shutdown_state(conn, identity["account_id"])
+        calculation = None if control["active"] else _eligibility_calculation(conn, identity, current, policy)
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT attendance_date, marked_at, status, office_network_verified
@@ -547,8 +646,9 @@ def admin_history(
     return _json_safe({
         "status": "ok",
         "profile": identity,
-        "eligibility": _eligibility_response(calculation),
+        "eligibility": _eligibility_response(calculation) if calculation else None,
         "records": records,
+        "shutdown": control,
     })
 
 
@@ -565,6 +665,13 @@ def mark_attendance(
         raise PermissionError("Attendance is only available to handler accounts.")
     with get_connection() as conn:
         policy = _policy(conn)
+        control = shutdown_state(conn, identity["account_id"])
+        if control["active"]:
+            raise PermissionError(
+                "Attendance processing is shut down globally."
+                if control["scope"] == "GLOBAL"
+                else "Attendance processing is shut down for this handler."
+            )
         holidays = _holidays(conn, current.date(), current.date())
         existing = _attendance_row(conn, identity["account_id"], current.date())
         decision = popup_decision(

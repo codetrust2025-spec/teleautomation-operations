@@ -51,6 +51,7 @@ export function AttendancePanel() {
   const [findings, setFindings] = useState(null)
   const [overview, setOverview] = useState([])
   const [overviewPeriod, setOverviewPeriod] = useState(null)
+  const [shutdowns, setShutdowns] = useState({ global: { active: false }, handlers: {}, audit_events: [] })
   const [selectedHistory, setSelectedHistory] = useState(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [holidayDate, setHolidayDate] = useState('')
@@ -76,6 +77,10 @@ export function AttendancePanel() {
       setFindings(userPayload.findings || null)
       setOverview(overviewPayload.users || [])
       setOverviewPeriod({ start: overviewPayload.period_start, end: overviewPayload.period_end })
+      // This is deliberately independent of the existing attendance summary:
+      // a failed control read must never hide historical attendance data.
+      Promise.resolve(fetch(`${API}/attendance/admin/shutdowns`, { credentials: 'include' }))
+        .then(json).then(setShutdowns).catch(() => {})
       setAdminError('')
     } catch (requestError) {
       setAdminError(requestError.message)
@@ -150,6 +155,22 @@ export function AttendancePanel() {
     }
   }
 
+  const transitionShutdown = async (scope, accountId, action) => {
+    setBusy(true)
+    try {
+      const endpoint = action === 'SHUTDOWN'
+        ? `${API}/attendance/admin/shutdown`
+        : `${API}/attendance/admin/reactivate`
+      await json(await fetch(endpoint, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, account_id: accountId || null, reason: '' }),
+      }))
+      await Promise.all([loadAdmin(), attendance.refresh()])
+    } catch (requestError) {
+      setAdminError(requestError.message)
+    } finally { setBusy(false) }
+  }
+
   const eligibility = attendance.data?.eligibility
   const popup = attendance.data?.popup
   const ratioLabel = ratio(eligibility?.attendance_ratio)
@@ -187,6 +208,16 @@ export function AttendancePanel() {
 
       {isAdmin && <>
         <section className="attendance-section">
+          <div className="attendance-section__head"><div><h3>Attendance processing control</h3><p>Shutdown pauses new attendance and eligibility processing without changing historical records. Global shutdown overrides individual reactivation.</p></div></div>
+          <div className="attendance-list">
+            <div className="attendance-list__row"><span><strong>Global shutdown</strong><small>{shutdowns.global?.active ? 'Shutdown — all handlers are paused' : 'Active — all handlers may process attendance'}</small></span><button type="button" disabled={busy} onClick={() => transitionShutdown('GLOBAL', null, shutdowns.global?.active ? 'REACTIVATE' : 'SHUTDOWN')}>{shutdowns.global?.active ? 'Reactivate global' : 'Shutdown all handlers'}</button></div>
+          </div>
+          <div className="attendance-table-wrap"><table className="attendance-table"><thead><tr><th>Handler</th><th>Processing status</th><th>Control</th></tr></thead><tbody>
+            {overview.map(row => { const state = shutdowns.handlers?.[row.account_id] || {}; const label = state.active ? (state.scope === 'GLOBAL' ? 'Shutdown by global control' : 'Shutdown') : 'Active'; return <tr key={`shutdown:${row.account_id}`}><td>{row.display_name}<small className="attendance-cell-note">{row.username}</small></td><td>{label}</td><td><button type="button" disabled={busy || state.scope === 'GLOBAL'} onClick={() => transitionShutdown('HANDLER', row.account_id, state.handler_active ? 'REACTIVATE' : 'SHUTDOWN')}>{state.handler_active ? 'Reactivate' : 'Shutdown'}</button></td></tr> })}
+          </tbody></table></div>
+          {shutdowns.audit_events?.length > 0 && <p className="attendance-findings">Audit trail: {shutdowns.audit_events.length} recorded shutdown transitions. Latest: {shutdowns.audit_events[0].action} {shutdowns.audit_events[0].scope.toLowerCase()}.</p>}
+        </section>
+        <section className="attendance-section">
           <div className="attendance-section__head"><div><h3>All Users Attendance</h3><p>{overviewPeriod ? `${formatDate(overviewPeriod.start)} – ${formatDate(overviewPeriod.end)}` : 'Current evaluation period'} · Handler accounts only</p></div><span className="attendance-count">{overview.length} handlers</span></div>
           {adminError && <p className="attendance-error" role="alert">{adminError}</p>}
           <div className="attendance-table-wrap"><table className="attendance-table"><thead><tr><th>Name</th><th>Today status</th><th>Marked time</th><th>Working days</th><th>Attendance %</th><th>Office verified</th><th>Eligibility</th></tr></thead><tbody>
@@ -198,7 +229,7 @@ export function AttendancePanel() {
               <td>{row.attended_working_days} / {row.required_working_days}</td>
               <td>{ratio(row.attendance_ratio)}</td>
               <td>{row.office_network_verified == null ? '—' : row.office_network_verified ? 'Verified' : 'Not verified'}</td>
-              <td>{money.format(row.eligibility_amount)}</td>
+              <td>{row.eligibility_amount == null ? 'Paused' : money.format(row.eligibility_amount)}</td>
             </tr>)}
           </tbody></table></div>
         </section>
