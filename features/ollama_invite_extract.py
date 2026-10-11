@@ -675,41 +675,42 @@ def validate_invite_extraction(extracted: dict[str, Any]) -> dict[str, Any]:
     return extracted
 
 
-def _fix_past_year(date_str: str) -> str:
-    """If the extracted date is in the past, fix the year to current/next year.
+#: How far ahead a date may be moved into next year: "5 Jan" read in late
+#: December, never more. Moving any past date a year forward is what booked a
+#: 16 Sep 2026 interview, uploaded on 11 Oct, for 16 Sep 2027.
+NEXT_YEAR_WINDOW_DAYS = 60
 
-    Vision models sometimes return wrong years (e.g., 2023 instead of 2026)
-    because their training data is from that era.
+
+def _fix_past_year(date_str: str, *, today: Any = None) -> str:
+    """Correct a year a model got wrong, without moving a real past date.
+
+    Vision models sometimes return an old year (2023 for 2026). Such a date is
+    moved to this year; a date that is past in this year too stays in the past
+    (an interview being recorded late), unless it falls within the first
+    weeks of next year -- the late-December "5 Jan" case.
     """
     if not date_str:
         return date_str
     try:
-        from datetime import datetime, date
+        from datetime import date
         parts = date_str.split("-")
         if len(parts) != 3:
             return date_str
         y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
         extracted_date = date(y, m, d)
-        today = date.today()
-
-        # If date is more than 7 days in the past, the year is likely wrong
-        if (today - extracted_date).days > 7:
-            # Try current year first
-            try:
-                corrected = date(today.year, m, d)
-                if (today - corrected).days <= 7:
-                    # Current year, within a week — accept it
-                    return corrected.isoformat()
-                elif corrected > today:
-                    # Current year, in the future — accept it
-                    return corrected.isoformat()
-                else:
-                    # Still in the past with current year, try next year
-                    corrected = date(today.year + 1, m, d)
-                    return corrected.isoformat()
-            except ValueError:
-                return date_str
-        return date_str
+        today = today or date.today()
+        if (today - extracted_date).days <= 7:
+            return date_str
+        try:
+            this_year = date(today.year, m, d)
+            next_year = date(today.year + 1, m, d)
+        except ValueError:
+            return date_str
+        if (today - this_year).days <= 7:
+            return this_year.isoformat()
+        if (next_year - today).days <= NEXT_YEAR_WINDOW_DAYS:
+            return next_year.isoformat()
+        return this_year.isoformat()
     except (ValueError, TypeError):
         return date_str
 
