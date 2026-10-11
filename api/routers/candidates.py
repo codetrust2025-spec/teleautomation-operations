@@ -528,8 +528,21 @@ async def candidates_update(cid: str, request: Request, body: dict):
     if not existing:
         return {"status": "error", "message": "Candidate not found"}
     assert_candidate_row_access(request, existing)
+    body = dict(body or {})
+    allow_shorter_name = bool(body.pop("allow_shorter_name", False))
+    # A saved 10-digit phone or full name is not replaced by a cut-short one
+    # ("77995", "Linga Srinava") without the person confirming the name.
+    from features.resume_autofill import identity_overwrite_problem
+
+    problem = identity_overwrite_problem(
+        existing, body,
+        normalise_phone=candidate_store.candidate_phone_identity,
+        allow_shorter_name=allow_shorter_name,
+    )
+    if problem:
+        return {"status": "error", **problem}
     try:
-        prepared = prepare_candidate_body(request, body or {})
+        prepared = prepare_candidate_body(request, body)
         prepared["ctc_percentage"] = candidate_store.validate_profile_ctc_percentage(
             prepared,
             existing=existing,

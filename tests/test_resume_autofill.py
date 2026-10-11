@@ -409,3 +409,81 @@ def test_react_dot_js_is_the_rosters_react_js():
 def test_partial_name(current, complete, partial):
     assert ra.partial_name(current, complete) is partial
 
+
+
+# --- a save never replaces a full phone or name with a cut-short one -------------------
+
+def overwrite(stored, incoming, **kw):
+    return ra.identity_overwrite_problem(stored, incoming, normalise_phone=cs.candidate_phone_identity, **kw)
+
+
+SAVED = {"name": "Raghavendrarao Kolla", "phone": "9000000777"}
+
+
+@pytest.mark.parametrize("phone", ["77995", "900000077", "90000 0077", "12345678"])
+def test_a_cut_short_phone_never_replaces_a_saved_number(phone):
+    problem = overwrite(SAVED, {"phone": phone})
+    assert problem["invalid_phone"] is True
+    assert "not a full 10-digit mobile number" in problem["message"]
+
+
+@pytest.mark.parametrize("phone", ["9000000777", "+91 90000 00777", "09000000777", "9000000888", ""])
+def test_the_same_number_another_full_one_or_a_cleared_one_is_saved(phone):
+    assert overwrite(SAVED, {"phone": phone}) == {}
+
+
+def test_a_legacy_incomplete_number_left_as_it_is_can_still_be_saved():
+    assert overwrite({**SAVED, "phone": "900000077"}, {"phone": "900000077"}) == {}
+
+
+def test_a_name_with_a_word_cut_short_needs_confirmation():
+    problem = overwrite(SAVED, {"name": "Kolla Raghava"})
+    assert problem["shorter_name"] is True
+    assert problem["message"] == "“Kolla Raghava” looks like the saved name “Raghavendrarao Kolla” cut short."
+    assert overwrite(SAVED, {"name": "Kolla Raghava"}, allow_shorter_name=True) == {}
+
+
+@pytest.mark.parametrize("name", [
+    "Raghavendrarao Kolla", "Kolla Raghavendrarao", "Kolla Ragavendrarao",  # same name, order, spelling
+    "Raghavendrarao", "Someone Else", "Raghavendrarao Kolla Reddy",          # a word dropped, another person, a word added
+])
+def test_other_name_changes_are_saved(name):
+    assert overwrite(SAVED, {"name": name}) == {}
+
+
+def test_a_single_word_saved_name_is_never_guarded():
+    assert overwrite({"name": "Raghavendrarao", "phone": ""}, {"name": "Ragha"}) == {}
+
+
+def test_a_save_without_phone_or_name_is_not_checked():
+    assert overwrite(SAVED, {"stage": "completed"}) == {}
+
+
+def test_the_save_route_refuses_a_cut_short_phone_and_asks_before_a_shorter_name(monkeypatch):
+    import asyncio
+
+    from api.routers import candidates as route
+    from core import dashboard_access
+
+    saved = {"id": "c1", "name": "Raghavendrarao Kolla", "phone": "9000000777"}
+    writes = []
+    monkeypatch.setattr(cs, "get_candidate", lambda cid: dict(saved))
+    monkeypatch.setattr(dashboard_access, "assert_candidate_row_access", lambda request, row: None)
+    monkeypatch.setattr(dashboard_access, "prepare_candidate_body", lambda request, body: dict(body))
+    monkeypatch.setattr(cs, "validate_profile_ctc_percentage", lambda prepared, existing=None: prepared.get("ctc_percentage"))
+    monkeypatch.setattr(cs, "update_candidate", lambda cid, patch: writes.append(patch) or {**saved, **patch})
+
+    def save(body):
+        return asyncio.run(route.candidates_update("c1", None, body))
+
+    refused = save({"name": "Raghavendrarao Kolla", "phone": "77995"})
+    assert (refused["status"], refused["invalid_phone"]) == ("error", True)
+    asked = save({"name": "Kolla Raghava", "phone": "9000000777"})
+    assert (asked["status"], asked["shorter_name"]) == ("error", True)
+    assert writes == []
+
+    confirmed = save({"name": "Kolla Raghava", "phone": "9000000777", "allow_shorter_name": True})
+    assert confirmed["status"] == "ok"
+    assert writes[0]["name"] == "Kolla Raghava"
+    assert "allow_shorter_name" not in writes[0]          # the confirmation is not stored
+    assert save({"name": "Kolla Raghavendrarao", "phone": "+91 90000 00777"})["status"] == "ok"

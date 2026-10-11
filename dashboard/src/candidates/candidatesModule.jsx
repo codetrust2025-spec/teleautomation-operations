@@ -1598,6 +1598,7 @@ export function ResumeAutoFill({
   savedResume = null,
   onExtracted,
   onAutofilled,
+  onServerChange,
 }) {
   const [busy, setBusy] = w.useState(false);
   // A reading left for the person to apply (see above).
@@ -1649,6 +1650,9 @@ export function ResumeAutoFill({
         }
         if (candidateId && res.status === "ok" && res.resume?.id) {
           setSaved(res.resume);
+          // The candidate changed on the server (a resume, perhaps a completed
+          // name): the list behind the form shows it without waiting for Save.
+          onServerChange?.();
         }
         if (candidateId && res.autofill) {
           judged = true;
@@ -2687,6 +2691,7 @@ export function CandidateEditModal({
   lockReference: a = false,
   isAdmin: i = false,
   referenceOptions: refOpts = [],
+  onServerChange,
 }) {
   const { confirm: confirmModal } = nc();
   const [l, c] = w.useState(() => {
@@ -3021,6 +3026,15 @@ export function CandidateEditModal({
       x("Name is required");
       return;
     }
+    // A phone typed or changed here must be a full 10-digit mobile: a cut-short
+    // one ("77995") would replace the saved number. A saved number left as it
+    // is can always be saved again.
+    const phoneChanged =
+      String(l.phone ?? "").trim() !== String(draftOpened.current.phone ?? "").trim();
+    if (String(l.phone ?? "").trim() && (!e || phoneChanged) && !indianMobile(l.phone)) {
+      x("Enter the full 10-digit mobile number.");
+      return;
+    }
     const isDropped = l.stage === "dropped";
     if (!isDropped) {
       if (!l.technology || !l.technology.trim()) {
@@ -3094,7 +3108,22 @@ export function CandidateEditModal({
         slots_group_posted: !!l.slots_group_posted,
         logged_date: e ? undefined : l.date || "",
       };
-      await r(J);
+      try {
+        await r(J);
+      } catch (failure) {
+        // The server keeps a full saved name from being replaced by itself cut
+        // short ("Linga Srinava") unless the person confirms it.
+        if (!failure?.shorterName) throw failure;
+        const shorten = await confirmModal({
+          title: "Save a shorter name?",
+          message: `${failure.message} Save it anyway?`,
+          confirmLabel: "Save shorter name",
+          cancelLabel: "Keep editing",
+          variant: "warn",
+        });
+        if (!shorten) throw new Error(failure.message);
+        await r({ ...J, allow_shorter_name: true });
+      }
     } catch (J) {
       x(J.message || "Save failed");
     } finally {
@@ -3130,6 +3159,7 @@ export function CandidateEditModal({
         <ResumeAutoFill
           candidateId={e?.id}
           savedResume={latestResumeOf(e)}
+          onServerChange={onServerChange}
           // A reading fills only an empty field. This used to overwrite an
           // existing candidate's name, technology, phone and email with
           // whatever the resume said, valid or not.
@@ -6843,7 +6873,9 @@ function CandidatesPanelImpl() {
       })
     ).json();
     if (Xe.status !== "ok") {
-      throw new Error(Xe.message || "Save failed");
+      const failure = new Error(Xe.message || "Save failed");
+      failure.shorterName = Boolean(Xe.shorter_name);
+      throw failure;
     }
     Oe();
     fe();
@@ -7346,6 +7378,7 @@ function CandidatesPanelImpl() {
             .filter(Boolean)}
           onClose={Oe}
           onSave={Re}
+          onServerChange={fe}
         />
       )}
       {ce && (

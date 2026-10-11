@@ -428,3 +428,86 @@ describe("complete names and 10-digit phones (11 Oct: \"Linga Srinava\" / \"7799
     expect(field("Phone")).toHaveValue("9000000777");
   });
 });
+
+describe("after Save and reopen, the complete values stay; a save never cuts them short", () => {
+  const READ = {
+    is_resume: true, candidate_name: "Raghavendrarao Kolla", phone: "+919000000777",
+    email: "raghav.k@example.test", technology: "React.js", confidence_score: 85, extraction_source: "pdf_text_ai",
+  };
+  const ROW = {
+    ...CANDIDATE, name: "Kolla Raghava", phone: "9000000777", email: "raghav.k@example.test", technology: "React JS",
+    follow_up: "Balance after the offer",
+  };
+  const dialogButton = (label) =>
+    Array.from(document.querySelectorAll(".cm-btn")).find((b) => b.textContent.trim() === label);
+
+  function openModal(row, onSave = vi.fn(async () => {}), onServerChange = vi.fn()) {
+    const view = render(
+      <ConfirmProvider>
+        <CandidateEditModal initial={row} onClose={vi.fn()} onSave={onSave} onServerChange={onServerChange} isAdmin={true} />
+      </ConfirmProvider>,
+    );
+    return { ...view, onSave, onServerChange };
+  }
+  const save = () => fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+
+  it("the completed name, the 10-digit phone, the email and the technology are what Save sends and what reopens", async () => {
+    mockResumeUpload({ status: "ok", resume: { id: "r1" }, candidate: ROW, ai_extraction: READ,
+      autofill: { filled: { name: "Raghavendrarao Kolla" }, skipped: {}, refused: "" } });
+    const { container, onSave, onServerChange, unmount } = openModal(ROW);
+    await uploadResume(container);
+    await waitFor(() => expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla"));
+    expect(onServerChange).toHaveBeenCalled();          // the list behind the form is reloaded
+    save();
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const sent = onSave.mock.calls[0][0];
+    expect([sent.name, sent.phone, sent.email, sent.technology]).toEqual(
+      ["Raghavendrarao Kolla", "9000000777", "raghav.k@example.test", "React JS"]);
+    unmount();
+
+    // Reopened from what was saved: the same four values, and another upload changes nothing.
+    mockResumeUpload({ status: "ok", resume: { id: "r1" }, candidate: ROW, ai_extraction: READ,
+      autofill: { filled: {}, skipped: {}, refused: "" } });
+    const reopened = openModal({ ...ROW, ...sent });
+    expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla");
+    expect(field("Phone")).toHaveValue("9000000777");
+    expect(field("Email")).toHaveValue("raghav.k@example.test");
+    expect(field("Technology")).toHaveValue("React JS");
+    await uploadResume(reopened.container);
+    await readingDone();
+    expect(field("Candidate name *")).toHaveValue("Raghavendrarao Kolla");
+    expect(screen.queryByText(/Filled from this resume/)).toBeNull();
+  });
+
+  it("a cut-short phone typed in the form is not saved", async () => {
+    const { onSave } = openModal({ ...ROW, name: "Raghavendrarao Kolla" });
+    fireEvent.change(field("Phone"), { target: { value: "900000077" } });
+    save();
+    expect(await screen.findByText("Enter the full 10-digit mobile number.")).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("a saved incomplete number left as it is can still be saved", async () => {
+    const { onSave } = openModal({ ...ROW, name: "Raghavendrarao Kolla", phone: "900000077" });
+    save();
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+  });
+
+  it("a name the server finds cut short is saved only after the person confirms it", async () => {
+    const refusal = Object.assign(new Error("“Kolla Raghava” looks like the saved name “Raghavendrarao Kolla” cut short."), { shorterName: true });
+    const onSave = vi.fn(async (payload) => { if (!payload.allow_shorter_name) throw refusal; });
+    openModal({ ...ROW, name: "Kolla Raghava" }, onSave);
+
+    save();
+    expect(await screen.findByText("Save a shorter name?")).toBeInTheDocument();
+    fireEvent.click(dialogButton("Keep editing"));
+    expect(await screen.findByText(refusal.message)).toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    save();
+    await screen.findByText("Save a shorter name?");
+    fireEvent.click(dialogButton("Save shorter name"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(3));
+    expect(onSave.mock.calls[2][0]).toMatchObject({ name: "Kolla Raghava", allow_shorter_name: true });
+  });
+});

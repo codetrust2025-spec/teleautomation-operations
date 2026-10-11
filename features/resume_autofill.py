@@ -126,9 +126,21 @@ def partial_name(current: str, complete: str) -> bool:
     a word of the complete name or a cut-short one, and something is missing:
     a word is cut short, or whole words are absent. The same name in another
     order or spelling is not partial."""
+    partial, _shortened = _partial_shape(current, complete)
+    return partial
+
+
+def shortened_name(current: str, complete: str) -> bool:
+    """`current` is the complete name with a word cut short ("Linga Srinava" of
+    "Srinivasarao Linga"). Leaving a whole word out does not count."""
+    partial, shortened = _partial_shape(current, complete)
+    return partial and shortened
+
+
+def _partial_shape(current: str, complete: str) -> tuple[bool, bool]:
     tc, tf = _tokens(current), _tokens(complete)
     if not tc or not complete_name(complete) or equivalent_names(current, complete):
-        return False
+        return False, False
     remaining = list(tf)
     shortened = False
     for token in tc:
@@ -136,10 +148,54 @@ def partial_name(current: str, complete: str) -> bool:
         if match is None:
             match = next((other for other in remaining if _cut_short(token, other)), None)
             if match is None:
-                return False
+                return False, False
             shortened = True
         remaining.remove(match)
-    return shortened or bool(remaining)
+    return shortened or bool(remaining), shortened
+
+
+def _phone_digits(value: Any) -> str:
+    digits = re.sub(r"\D", "", _clean(value))
+    if len(digits) == 12 and digits.startswith("91"):
+        return digits[2:]
+    return digits[1:] if len(digits) == 11 and digits.startswith("0") else digits
+
+
+def identity_overwrite_problem(
+    stored: dict[str, Any],
+    incoming: dict[str, Any],
+    *,
+    normalise_phone,
+    allow_shorter_name: bool = False,
+) -> dict[str, Any]:
+    """Why a save may not replace the saved phone or name, or {} when it may.
+
+    * The phone changes only to a full 10-digit mobile (or is cleared): "77995"
+      never replaces a saved number.
+    * A full saved name is not replaced by itself with a word cut short ("Linga
+      Srinava" for "Srinivasarao Linga") unless the person confirms it
+      (`allow_shorter_name`). Dropping or changing whole words is not affected.
+    """
+    if "phone" in incoming:
+        new_phone = _clean(incoming.get("phone"))
+        if (
+            new_phone
+            and _phone_digits(new_phone) != _phone_digits(stored.get("phone"))
+            and not valid_phone(new_phone, normalise_phone)
+        ):
+            return {
+                "message": f"{new_phone} is not a full 10-digit mobile number. The saved number was not changed.",
+                "invalid_phone": True,
+            }
+    if "name" in incoming and not allow_shorter_name:
+        new_name = " ".join(_clean(incoming.get("name")).split())
+        saved_name = " ".join(_clean(stored.get("name")).split())
+        if complete_name(saved_name) and shortened_name(new_name, saved_name):
+            return {
+                "message": f"“{new_name}” looks like the saved name “{saved_name}” cut short.",
+                "shorter_name": True,
+            }
+    return {}
 
 
 def valid_email(value: str) -> str:
