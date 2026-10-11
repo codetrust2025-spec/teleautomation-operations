@@ -242,6 +242,13 @@ const STATUS_BY_STATE = {
 
 const NOT_REVIEWED = { key: "legacy", label: "Not reviewed", tone: "muted" };
 
+// Older proof records predate persisted reason codes. These are safe, precise
+// explanations of their state — they do not imply an approval or alter history.
+const FALLBACK_REASON_BY_STATE = {
+  INCOMPLETE_PAYMENT_EVIDENCE:
+    "A configured receiver UPI, phone, or account identifier must be visible; a receiver name alone is not sufficient.",
+};
+
 /** What a reviewer should read off a proof card: status, amount, reference. */
 export function proofPresentation(proof) {
   const state = String(proof?.verification_state || "").trim().toUpperCase();
@@ -253,6 +260,14 @@ export function proofPresentation(proof) {
   const utr = String(proof?.utr_number || proof?.utr || "").trim();
   const txn = String(proof?.transaction_id || "").trim();
   const ref = String(proof?.reference_number || "").trim();
+  const storedReasonText = [
+    ...(Array.isArray(proof?.deterministic_reasons) ? proof.deterministic_reasons : []),
+    ...(Array.isArray(proof?.rejection_reasons) ? proof.rejection_reasons : []),
+  ]
+    .map((reason) => String(reason || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  const reasonText = storedReasonText || FALLBACK_REASON_BY_STATE[state] || "";
   // Some stored records hold the provider's transaction id in the UTR field.
   const looksLikeTxnId = (value) => /^T\d{12,}$/i.test(value);
   let reference = { label: "UTR", value: "" };
@@ -266,6 +281,7 @@ export function proofPresentation(proof) {
     amount,
     amountText: amount > 0 ? `₹${amount.toLocaleString("en-IN")}` : "Amount not read",
     reference,
+    reasonText,
   };
 }
 

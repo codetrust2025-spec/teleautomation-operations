@@ -1115,7 +1115,9 @@ export function PaymentProofUploader({
                 color: aiResult.deterministic_verified ? "#22c55e" : "#f59e0b",
               }}
             >
-              {aiResult.deterministic_verified ? "Verified" : "Needs review"}
+              {aiResult.deterministic_verified
+                ? "Verified"
+                : (aiResult.deterministic_reasons || []).join(" ") || "Needs review"}
             </strong>
           </div>
         </div>
@@ -1233,6 +1235,9 @@ export function PaymentProofUploader({
                     <dd>{Nx(b.uploaded_at) || "—"}</dd>
                   </div>
                 </dl>
+                {pres.reasonText && (
+                  <div className="cand-proof-reason">{pres.reasonText}</div>
+                )}
                 {f === b.id ? (
                   <div className="cand-proof-note-edit">
                     <input
