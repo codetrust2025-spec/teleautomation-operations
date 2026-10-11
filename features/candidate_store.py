@@ -2612,6 +2612,7 @@ PENDING_WORK_LABELS = {
     "payment_evidenced_elsewhere": "Same payment evidenced on another booking",
     "missing_follow_up": "Add follow-up remark",
     "missing_phone": "Add phone number",
+    "interview_date_far_ahead": "Check interview date",
 }
 
 PENDING_WORK_PRIORITY = {
@@ -2623,6 +2624,7 @@ PENDING_WORK_PRIORITY = {
     "payment_due": 30,
     "missing_follow_up": 35,
     "missing_phone": 50,
+    "interview_date_far_ahead": 15,
 }
 
 
@@ -2978,6 +2980,15 @@ def _pending_works_core(rows: list[dict]) -> dict:
     works: list[dict] = []
     for row in merged_profiles + round_rows:
         works.extend(_collect_pending_works_for_row(row))
+    # Per slot row, not per person: each wrong date is its own fix. Listed, never
+    # corrected here -- the right date is not known.
+    for row in rows:
+        if slot_still_stands(row) and interview_date_problem(row.get("date")):
+            works.append(_pending_work_item(
+                kind="interview_date_far_ahead", row=row,
+                detail=f"Booked for {_normalize_iso_date(_clean_str(row.get('date')))}: more than "
+                       f"{INTERVIEW_DATE_MAX_DAYS_AHEAD} days ahead, probably a wrong year.",
+            ))
     works.sort(
         key=lambda item: (
             item["priority"],
@@ -4286,6 +4297,42 @@ def _filter_interview_rows(
     return rows
 
 
+#: An interview further ahead than this is taken to be a mistyped year. On
+#: 11 Oct three confirmed slots sat in 2027 (8-14 months ahead of when they were
+#: logged): attendance cannot be recorded on a future slot, and a standing one
+#: counts toward the second-slot payment lock. Nothing books that far out.
+INTERVIEW_DATE_MAX_DAYS_AHEAD = 180
+
+
+def interview_date_problem(value: Any, *, today: Any = None) -> str | None:
+    """Why this interview date cannot be saved, or None. Only the far future is
+    refused here; an unparseable or past date is left to the existing checks."""
+    from datetime import date, timedelta
+
+    try:
+        day = date.fromisoformat(_normalize_iso_date(_clean_str(value)))
+    except ValueError:
+        return None
+    today = today or date.today()
+    if day > today + timedelta(days=INTERVIEW_DATE_MAX_DAYS_AHEAD):
+        return (
+            f"The interview date {day.strftime('%d %b %Y')} is more than "
+            f"{INTERVIEW_DATE_MAX_DAYS_AHEAD} days ahead. Check the year."
+        )
+    return None
+
+
+def _refuse_far_future_date(new_value: Any, old_value: Any = "") -> None:
+    """Refuse a new or changed date that is too far ahead; a date already on
+    record is left alone, so an old row can still be edited."""
+    new_day = _normalize_iso_date(_clean_str(new_value))
+    if not new_day or new_day == _normalize_iso_date(_clean_str(old_value)):
+        return
+    problem = interview_date_problem(new_day)
+    if problem:
+        raise ValueError(problem)
+
+
 def _interview_slot_is_future(row: dict) -> bool:
     from datetime import date
 
@@ -5255,6 +5302,7 @@ def create_candidate(record: dict, *, allow_slot_without_rules: bool = False) ->
                 f"An active profile already exists for phone {row.get('phone') or row.get('name')}. "
                 f"Open and update {duplicate.get('name') or 'the existing candidate'} instead."
             )
+    _refuse_far_future_date(row.get("date"))
     if not is_dropped and row.get("slot_confirmed") and not allow_slot_without_rules:
         reason = slot_confirm_block_reason(row)
         if reason:
@@ -5298,6 +5346,7 @@ def create_interview_slot(
     day = _clean_str(date)[:10]
     if len(day) != 10:
         raise ValueError("Interview date is required (YYYY-MM-DD)")
+    _refuse_far_future_date(day)
     slot_time = _clean_str(time)
     _validate_interview_slot_times(slot_time, time_end)
     attendee = normalise_interview_attendee_name(interview_attendee) if interview_attendee else infer_interview_attendee(technology, name)
@@ -5446,6 +5495,7 @@ def assign_interview_slot(
     day = _clean_str(date)[:10]
     if len(day) != 10:
         raise ValueError("Interview date is required (YYYY-MM-DD)")
+    _refuse_far_future_date(day)
     slot_time = _clean_str(time)
     _validate_interview_slot_times(slot_time, time_end)
 
@@ -5563,6 +5613,7 @@ def update_interview_slot(
     day = _clean_str(date)[:10]
     if len(day) != 10:
         raise ValueError("Interview date is required (YYYY-MM-DD)")
+    _refuse_far_future_date(day)
     slot_time = _clean_str(time)
     _validate_interview_slot_times(slot_time, time_end)
     patch: dict = {
@@ -5797,6 +5848,7 @@ def reschedule_confirmed_interview_slot_by_name(
         day = (target.get("date") or "")[:10]
     if len(day) != 10:
         raise ValueError("Include the new date (e.g. tomorrow) or use submit-slot with an invite screenshot.")
+    _refuse_far_future_date(day, target.get("date"))
 
     slot_end = _default_slot_time_end(slot_time, time_end)
     _validate_interview_slot_times(slot_time, slot_end)
@@ -6339,6 +6391,7 @@ def _import_confirmed_interview_slot(
     day = _clean_str(date)[:10]
     if len(day) != 10:
         raise ValueError("Interview date is required (YYYY-MM-DD)")
+    _refuse_far_future_date(day)
     slot_time = _clean_str(time)
     slot_end = _default_slot_time_end(slot_time, time_end)
     _validate_interview_slot_times(slot_time, slot_end)
@@ -7066,6 +7119,7 @@ def update_candidate(
                         typed = int(allowed_patch.get("payment") or 0)
                         allowed_patch["payment"] = max(typed, recorded)
             preview = _normalise(allowed_patch, existing=r)
+            _refuse_far_future_date(preview.get("date"), r.get("date"))
             is_dropped = preview.get("stage") == "dropped"
             phone_key = candidate_phone_identity(preview.get("phone"))
             name_key = _normalise_candidate_name_key(preview.get("name") or "")
