@@ -13,6 +13,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   describeReconnectTargets,
+  expiringSoon,
+  grantDaysRemaining,
+  grantExpiresAt,
   needsReconnect,
   reconnectRequiredMailboxes,
 } from './mailboxStatus.js'
@@ -147,5 +150,25 @@ describe('describeReconnectTargets', () => {
   it('renders nothing for an empty list rather than a zero', () => {
     expect(describeReconnectTargets([])).toBe('')
     expect(describeReconnectTargets(undefined)).toBe('')
+  })
+})
+
+describe('after the OAuth app is published (11 Oct audit)', () => {
+  const NOW = Date.parse('2026-10-20T09:00:00Z')
+  const working = {
+    connection_status: 'CONNECTED', monitoring_enabled: true,
+    authorized_at: '2026-10-14T09:00:00Z', grant_expires_at: null, grant_expires: false,
+  }
+
+  it('has no deadline and is never listed as expiring', () => {
+    expect(grantExpiresAt(working)).toBeNull()
+    expect(grantDaysRemaining(working, NOW)).toBeNull()
+    expect(expiringSoon(working, { now: NOW })).toBe(false)
+  })
+
+  it('still counts down while grants expire', () => {
+    const testing = { ...working, grant_expires: true, grant_expires_at: '2026-10-21T09:00:00Z' }
+    expect(grantExpiresAt(testing)).toBe(Date.parse('2026-10-21T09:00:00Z'))
+    expect(expiringSoon(testing, { now: NOW })).toBe(true)
   })
 })

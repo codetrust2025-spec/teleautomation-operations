@@ -130,6 +130,8 @@ export function grantAgeDays(mailbox, now = Date.now()) {
  * seventh day is living on borrowed time until something actually uses it.
  */
 export function grantDaysRemaining(mailbox, now = Date.now()) {
+  // The server says grants stopped expiring once one outlived the Testing week.
+  if (mailbox?.grant_expires === false) return null
   const age = grantAgeDays(mailbox, now)
   return age === null ? null : GMAIL_GRANT_DAYS - age
 }
@@ -188,6 +190,7 @@ const DAY = 24 * HOUR
  * blanking.
  */
 export function grantExpiresAt(mailbox) {
+  if (mailbox?.grant_expires === false) return null
   const sent = Date.parse(mailbox?.grant_expires_at || '')
   if (Number.isFinite(sent)) return sent
   const authorised = Date.parse(mailbox?.authorized_at || '')

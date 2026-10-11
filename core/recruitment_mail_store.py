@@ -11,7 +11,7 @@ import re
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from core.db.connection import get_connection, use_postgres
@@ -360,6 +360,27 @@ def terminal_mailbox_ids(rows) -> set[str]:
 GMAIL_GRANT_DAYS = 7
 
 
+def _annotate_grant_expiry(rows: list[dict[str, Any]]) -> None:
+    """Say whether grants still expire, and drop the deadline once they do not.
+
+    Testing mode lets no mailbox sync past its seventh day after consent: up to
+    11 Oct the longest gap across 24 mailboxes was 7.0 days. A sync more than a
+    day beyond that is something Google allows only once the app is published,
+    so from then on there is no deadline to count down to, and a working
+    mailbox must not keep reappearing as "expiring" every week.
+    """
+    limit = timedelta(days=GMAIL_GRANT_DAYS + 1)
+    published = any(
+        row.get("authorized_at") and row.get("last_successful_sync_at")
+        and row["last_successful_sync_at"] - row["authorized_at"] > limit
+        for row in rows
+    )
+    for row in rows:
+        row["grant_expires"] = not published
+        if published:
+            row["grant_expires_at"] = None
+
+
 def _mailbox_health_rows(cur) -> list[dict[str, Any]]:
     cur.execute(
         """SELECT m.id,m.candidate_id,
@@ -401,6 +422,7 @@ def _mailbox_health_rows(cur) -> list[dict[str, Any]]:
     terminal = terminal_mailbox_ids(rows)
     for row in rows:
         row["monitoring_excluded"] = str(row.get("id")) in terminal
+    _annotate_grant_expiry(rows)
     return rows
 
 
