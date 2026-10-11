@@ -123,10 +123,18 @@ function evidenceProblem(proof) {
   return BROKEN_EVIDENCE_STATES[proof?.file_availability] || "";
 }
 
-function ProofThumb({ proof, apiBase, onOpen }) {
+// Where a proof's file is: a stored proof's path on this server, or a blob,
+// data or absolute URL as it is.
+function proofFileUrl(proof) {
+  const url = String(proof?.url || "");
+  return /^(blob:|data:|https?:)/.test(url) ? url : `${ve}${url}`;
+}
+
+function ProofThumb({ proof, apiBase, onOpen, onUnavailable }) {
   // A screenshot whose file is gone (the files from before the 25 Aug server
   // move were never carried over) must say so, not show the browser's broken
   // image icon: the record, the amount and the status are still true.
+  // `onUnavailable` tells the row, which then offers no View or Download.
   const [failed, setFailed] = w.useState(false);
   const src = `${apiBase}${proof.url}`;
   w.useEffect(() => setFailed(false), [src]);
@@ -153,7 +161,10 @@ function ProofThumb({ proof, apiBase, onOpen }) {
         src={src}
         alt={proof.note || "payment proof"}
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => {
+          setFailed(true);
+          onUnavailable?.();
+        }}
       />
     </button>
   );
@@ -843,6 +854,13 @@ export function PaymentProofUploader({
     [duplicateProofs],
   );
   const visibleProofs = showDuplicates ? t : uniqueProofs;
+  // Proofs whose screenshot could not be loaded: no View or Download for them.
+  const [unloadable, setUnloadable] = w.useState(() => new Set());
+  const markUnloadable = w.useCallback(
+    (id) =>
+      setUnloadable((prev) => (prev.has(id) ? prev : new Set(prev).add(id))),
+    [],
+  );
   return (
     <div className="cand-proofs">
       <div className="cand-proofs-header">
@@ -1186,7 +1204,12 @@ export function PaymentProofUploader({
               key={b.id}
               data-proof-id={b.id}
             >
-              <ProofThumb proof={b} apiBase={ve} onOpen={() => d(b)} />
+              <ProofThumb
+                proof={b}
+                apiBase={ve}
+                onOpen={() => d(b)}
+                onUnavailable={() => markUnloadable(b.id)}
+              />
               <div className="cand-proof-meta">
                 <div className="cand-proof-headline">
                   <strong className="cand-proof-amount">{pres.amountText}</strong>
@@ -1285,15 +1308,28 @@ export function PaymentProofUploader({
                 )}
               </div>
               <div className="cand-proof-actions">
-                {!isEvidenceBroken(b) && (
-                  <button
-                    type="button"
-                    className="cand-btn cand-btn--ghost cand-btn--xs cand-proof-view"
-                    onClick={() => d(b)}
-                    aria-label={`View proof${pres.amount ? ` of ${pres.amountText}` : ""}`}
-                  >
-                    View
-                  </button>
+                {/* View and Download only when the file is there to show. */}
+                {!isEvidenceBroken(b) && !unloadable.has(b.id) && b.url && (
+                  <s.Fragment>
+                    <button
+                      type="button"
+                      className="cand-btn cand-btn--ghost cand-btn--xs cand-proof-view"
+                      onClick={() => d(b)}
+                      aria-label={`View proof${pres.amount ? ` of ${pres.amountText}` : ""}`}
+                    >
+                      View
+                    </button>
+                    {/* The stored screenshot itself; the server sends it as an
+                        attachment under the name it was uploaded with. */}
+                    <a
+                      className="cand-btn cand-btn--ghost cand-btn--xs cand-proof-download"
+                      href={proofFileUrl(b)}
+                      download={b.original_name || b.filename || "payment-proof"}
+                      aria-label={`Download proof${pres.amount ? ` of ${pres.amountText}` : ""}`}
+                    >
+                      Download
+                    </a>
+                  </s.Fragment>
                 )}
                 <button
                   type="button"
@@ -1657,6 +1693,12 @@ export function ResumeAutoFill({
     candidateId && saved?.id
       ? `${ve}/candidates/${candidateId}/resumes/${saved.id}/preview`
       : "";
+  const downloadUrl =
+    candidateId && saved?.id
+      ? `${ve}/candidates/${candidateId}/resumes/${saved.id}`
+      : "";
+  const savedFileName =
+    (saved && (saved.original_name || saved.filename)) || "resume.pdf";
   return (
     <div className="cand-resume-bar">
       <div className="cand-resume-bar-row">
@@ -1700,6 +1742,16 @@ export function ResumeAutoFill({
               aria-label={`View resume ${savedName}`}
             >
               View
+            </a>
+            {/* The stored file itself, under the name it was uploaded with
+                (the server sends it as an attachment with that name). */}
+            <a
+              className="cand-btn cand-btn--ghost cand-btn--xs cand-resume-download"
+              href={downloadUrl}
+              download={savedFileName}
+              aria-label={`Download resume ${savedName}`}
+            >
+              Download
             </a>
           </div>
         ) : (

@@ -138,12 +138,35 @@ describe("payment proofs are compact rows with a View button", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("a proof whose file is gone has no View, and keeps its repair actions", () => {
+  it("Download, beside View, saves the stored screenshot under its uploaded name", () => {
+    renderModal(PAID);
+    const row = document.querySelector('[data-proof-id="p1"]');
+    const download = within(row).getByRole("link", { name: "Download proof of ₹20,000" });
+    expect(download.getAttribute("href")).toMatch(/\/candidates\/cand-cp-1\/attachments\/payment_proof\/p1$/);
+    expect(download).toHaveAttribute("download", "p1.jpg");
+    expect(download.previousElementSibling).toBe(within(row).getByRole("button", { name: "View proof of ₹20,000" }));
+    fireEvent.click(download);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(document.querySelector(".cand-proof-lightbox")).toBeNull();
+  });
+
+  it("a proof whose file is gone has no View or Download, and keeps its repair actions", () => {
     renderModal({ ...PAID, payment_proofs: [proof("p9", { file_availability: "MISSING_FILE" })] });
     const row = document.querySelector('[data-proof-id="p9"]');
     expect(within(row).queryByRole("button", { name: /View proof/ })).toBeNull();
+    expect(within(row).queryByRole("link", { name: /Download proof/ })).toBeNull();
     expect(within(row).getByRole("button", { name: "Re-upload proof" })).toBeInTheDocument();
     expect(within(row).getByText("Screenshot unavailable")).toBeInTheDocument();
+  });
+
+  it("a screenshot that does not load loses its View and Download; delete stays", () => {
+    renderModal(PAID);
+    const row = document.querySelector('[data-proof-id="p1"]');
+    fireEvent.error(row.querySelector("img"));
+    expect(within(row).getByText("Screenshot unavailable")).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /View proof/ })).toBeNull();
+    expect(within(row).queryByRole("link", { name: /Download proof/ })).toBeNull();
+    expect(within(row).getByRole("button", { name: "Delete proof of ₹20,000" })).toBeInTheDocument();
   });
 });
 

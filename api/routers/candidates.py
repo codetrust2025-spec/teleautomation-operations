@@ -14,6 +14,7 @@ from core.operations_api_helpers import (
     operations_actor as _ops_by,
     resolve_resume_hit as _resolve_resume_hit,
     resume_file_response as _resume_file_response,
+    stored_file_response as _stored_file_response,
     viewer_reference as _viewer_reference,
 )
 
@@ -699,11 +700,7 @@ async def candidates_serve_proof(cid: str, pid: str, request: Request):
     if hit is None:
         return {"status": "error", "message": "Proof not found"}
     path, entry = hit
-    return FileResponse(
-        path,
-        media_type=entry.get("mime_type") or "application/octet-stream",
-        filename=entry.get("original_name") or entry.get("filename"),
-    )
+    return _stored_file_response(path, entry, fallback="payment-proof")
 @router.get("/candidates/{cid}/attachments/{attachment_type}/{attachment_id}")
 async def candidates_serve_typed_attachment(
     cid: str, attachment_type: str, attachment_id: str, request: Request
@@ -723,11 +720,7 @@ async def candidates_serve_typed_attachment(
     if hit is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
     path, entry = hit
-    return FileResponse(
-        path,
-        media_type=entry.get("mime_type") or "application/octet-stream",
-        filename=entry.get("original_name") or entry.get("filename"),
-    )
+    return _stored_file_response(path, entry, fallback="payment-proof")
 @router.post("/candidates/{cid}/profile-photo")
 async def candidates_upload_profile_photo(
     request: Request,

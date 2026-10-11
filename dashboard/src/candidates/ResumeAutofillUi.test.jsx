@@ -115,10 +115,20 @@ describe("Upload and View are separate", () => {
     expect(view.getAttribute("rel")).toContain("noopener");
   });
 
-  it("View sends nothing and changes nothing", () => {
+  it("Download, beside View, saves the stored file under its uploaded name", () => {
+    renderModal({ resumes: [{ ...SAVED, note: "Latest CV" }] });
+    const download = screen.getByRole("link", { name: /Download resume/ });
+    // The file itself (served as an attachment), not the preview page.
+    expect(download.getAttribute("href")).toMatch(/\/candidates\/cand-rs-1\/resumes\/r0$/);
+    expect(download).toHaveAttribute("download", "Asha_Rao_Resume.pdf");
+    expect(download.previousElementSibling).toBe(screen.getByRole("link", { name: /View resume/ }));
+  });
+
+  it("View and Download send nothing and change nothing", () => {
     vi.stubGlobal("fetch", vi.fn());
     renderModal({ resumes: [SAVED] });
     fireEvent.click(screen.getByRole("link", { name: /View resume/ }));
+    fireEvent.click(screen.getByRole("link", { name: /Download resume/ }));
     expect(fetch).not.toHaveBeenCalled();
     expect(field("Email")).toHaveValue("");
   });
@@ -132,6 +142,7 @@ describe("Upload and View are separate", () => {
   it("offers no View when there is no saved resume", () => {
     renderModal({ resumes: [] });
     expect(screen.queryByRole("link", { name: /View resume/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Download resume/ })).toBeNull();
     expect(screen.getByText(/Upload to auto-fill name, phone, email and technology/)).toBeInTheDocument();
   });
 
@@ -144,6 +155,9 @@ describe("Upload and View are separate", () => {
     await uploadResume(container, "Fresh.pdf");
     expect(await screen.findByText("Fresh.pdf")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View resume/ }).getAttribute("href")).toMatch(/resumes\/r2\/preview$/);
+    const download = screen.getByRole("link", { name: /Download resume/ });
+    expect(download.getAttribute("href")).toMatch(/resumes\/r2$/);
+    expect(download).toHaveAttribute("download", "Fresh.pdf");
   });
 });
 
@@ -283,9 +297,10 @@ describe("a new candidate: the reading fills the empty fields by itself", () => 
     expect(field("Technology")).toHaveValue("ServiceNow");
     expect(screen.getByText("Filled from this resume: name, technology, phone, email.")).toBeInTheDocument();
     expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/public/slots/extract-resume-ai"))).toBe(true);
-    // Read, not saved: a new candidate has no row to file it on, so no View.
+    // Read, not saved: a new candidate has no row to file it on, so no View or Download.
     expect(screen.getByText("Asha.pdf")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /View resume/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Download resume/ })).toBeNull();
   });
 
   it("keeps what was typed while the resume was being read", async () => {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse
@@ -43,16 +44,51 @@ def is_data_room_admin(request: Request) -> bool:
     return auth.is_admin_profile(auth.operator_profile_from_cookies(dict(request.cookies)))
 
 
+_EXTENSION_FOR_MIME = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+}
+_HAS_EXTENSION = re.compile(r"\.[A-Za-z0-9]{2,5}$")
+
+
+def download_filename(entry: dict, fallback: str) -> str:
+    """The name a stored file is saved under: the name it was uploaded with,
+    without any folder part or control characters, and with an extension that
+    matches its type when the uploaded name has none (so it opens as what it is)."""
+    name = str(entry.get("original_name") or entry.get("filename") or "")
+    name = re.split(r"[\\/]", name)[-1]
+    name = "".join(ch for ch in name if ch.isprintable()).strip().strip(".")
+    name = name or fallback
+    if not _HAS_EXTENSION.search(name):
+        stored = os.path.splitext(str(entry.get("filename") or ""))[1]
+        extension = _EXTENSION_FOR_MIME.get(str(entry.get("mime_type") or "").lower().strip())
+        if not extension and _HAS_EXTENSION.search(stored):
+            extension = stored
+        name += extension or ""
+    return name
+
+
+def stored_file_response(
+    path: str, entry: dict, *, fallback: str, inline: bool = False
+) -> FileResponse:
+    """A stored resume or proof, saved (attachment) or shown in the browser
+    (inline) under its own name. Starlette writes the header, so a name with
+    non-ASCII characters or quotes is encoded rather than breaking it."""
+    return FileResponse(
+        path,
+        media_type=entry.get("mime_type") or "application/octet-stream",
+        filename=download_filename(entry, fallback),
+        content_disposition_type="inline" if inline else "attachment",
+    )
+
+
 def resume_file_response(path: str, entry: dict, *, inline: bool = False) -> FileResponse:
-    mime = entry.get("mime_type") or "application/octet-stream"
-    name = entry.get("original_name") or entry.get("filename") or "resume"
-    if inline:
-        return FileResponse(
-            path,
-            media_type=mime,
-            headers={"Content-Disposition": f'inline; filename="{name}"'},
-        )
-    return FileResponse(path, media_type=mime, filename=name)
+    return stored_file_response(path, entry, fallback="resume", inline=inline)
 
 
 def resolve_resume_hit(candidate_id: str, resume_id: str):
