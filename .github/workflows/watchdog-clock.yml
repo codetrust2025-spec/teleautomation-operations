@@ -1,0 +1,64 @@
+# A dependable 30-minute clock for the private off-server watchdog
+# (codetrust2025-spec/teleautomation-ops-watch).
+#
+# Why this exists: that watchdog runs on GitHub's `schedule`, which is
+# best-effort. Its "every 30 minutes" cron ran 3-6 times a day (17 runs from
+# 8 to 11 Oct), so an alert could reach the owner's inbox hours late.
+#
+# How it works, at no cost and with no server change:
+#   * each run of this workflow waits 30 minutes on the `watchdog-clock`
+#     environment's wait timer -- no runner is held while it waits, and this
+#     repository is public, so its Actions minutes are free;
+#   * it then starts the private watchdog by force-pushing an empty commit to
+#     that repository's `tick` branch (main + one commit), with a deploy key that
+#     can write to that one repository only (environment secret, main only);
+#   * and dispatches its own next run. The hourly schedule restarts the chain
+#     if it ever stops; the concurrency group keeps it to one chain.
+# The watchdog itself, its secrets and its (private) alert issues are unchanged.
+name: watchdog-clock
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "23 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: watchdog-clock
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    environment: watchdog-clock
+    timeout-minutes: 5
+    steps:
+      - name: Start the private watchdog
+        env:
+          TICK_KEY: ${{ secrets.WATCHDOG_TICK_DEPLOY_KEY }}
+        run: |
+          set -eu
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$TICK_KEY" > ~/.ssh/tick && chmod 0600 ~/.ssh/tick
+          # GitHub's published ed25519 host key (api.github.com/meta), pinned.
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/tick -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          git init -q tick && cd tick
+          git remote add origin git@github.com:codetrust2025-spec/teleautomation-ops-watch.git
+          git fetch -q --depth 1 origin main
+          git checkout -q -B tick FETCH_HEAD
+          git -c user.name=watchdog-clock -c user.email=watchdog-clock@users.noreply.github.com \
+            commit -q --allow-empty -m "tick $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -q -f origin tick
+          echo "watchdog started"
+      - name: Schedule the next tick
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run watchdog-clock.yml -R "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}"
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/tick

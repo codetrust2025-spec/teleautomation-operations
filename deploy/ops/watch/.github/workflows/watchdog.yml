@@ -1,9 +1,15 @@
 # Off-server watchdog for TeleAutomation production. Source of truth:
-# teleautomation-operations/deploy/ops/watch (published here by publish_watch.sh).
+# teleautomation-operations/deploy/ops/watch (copied here unchanged; keep the two identical).
 name: watchdog
 on:
+  # Started every 30 minutes by the public clock in teleautomation-operations
+  # (.github/workflows/watchdog-clock.yml), which force-pushes `tick` = main + one
+  # empty commit. GitHub's own schedule ran this only 3-6 times a day; it stays
+  # as a fallback should the clock ever stop.
+  push:
+    branches: [tick]
   schedule:
-    - cron: "7,37 * * * *"   # every 30 minutes (GitHub may start it a few minutes late)
+    - cron: "7 */3 * * *"
   workflow_dispatch: {}
 permissions:
   issues: write
