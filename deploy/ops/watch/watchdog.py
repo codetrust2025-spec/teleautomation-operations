@@ -89,6 +89,12 @@ def plan_actions(active: list[dict], open_issues: list[dict], *, now: float, men
             continue
         updated = parse_time(issue.get("updated_at")) or 0
         if now - updated >= REMIND_AFTER_SEC:
+            # The summary moves on ("22 of 22" became "19 of 19") while the title kept
+            # the first one, and so did the subject of every email. Retitled only with
+            # a reminder: an edit resets `updated_at`, which is the reminder clock.
+            title = f"{TITLE_PREFIX}{alert['key']} — {alert['summary']}"[:250]
+            if issue.get("title") != title:
+                actions.append({"op": "retitle", "number": issue["number"], "title": title})
             actions.append({"op": "comment", "number": issue["number"],
                             "body": f"{mention} still failing: {alert['summary']}"})
     active_keys = {a["key"] for a in active}
@@ -140,6 +146,8 @@ def execute(repo: str, actions: list[dict]) -> None:
     for a in actions:
         if a["op"] == "create":
             gh(f"repos/{repo}/issues", "--method", "POST", payload={"title": a["title"], "body": a["body"], "labels": [LABEL]})
+        elif a["op"] == "retitle":
+            gh(f"repos/{repo}/issues/{a['number']}", "--method", "PATCH", payload={"title": a["title"]})
         elif a["op"] == "comment":
             gh(f"repos/{repo}/issues/{a['number']}/comments", "--method", "POST", payload={"body": a["body"]})
         elif a["op"] == "close":

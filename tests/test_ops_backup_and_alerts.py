@@ -299,7 +299,7 @@ def test_server_alerts_are_passed_through_once_each():
 
 def issue(number, key, updated_hours_ago=1):
     stamp = datetime.fromtimestamp(NOW - updated_hours_ago * 3600, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {"number": number, "title": f"[ops-alert] {key} — summary", "updated_at": stamp}
+    return {"number": number, "title": f"[ops-alert] {key} — {key} broke", "updated_at": stamp}
 
 
 def alert(key):
@@ -316,6 +316,17 @@ def test_an_ongoing_alert_is_silent_until_a_day_has_passed():
     assert watchdog.plan_actions([alert("x")], [issue(5, "x", 3)], now=NOW, mention="@o") == []
     actions = watchdog.plan_actions([alert("x")], [issue(5, "x", 25)], now=NOW, mention="@o")
     assert [(a["op"], a["number"]) for a in actions] == [("comment", 5)]
+
+
+def test_a_reminder_brings_a_stale_title_up_to_date_first():
+    """11 Oct: issue #1 still read "22 of 22" in every email; the check said 19 of 19."""
+    stale = {**issue(5, "x", 25), "title": "[ops-alert] x — 22 of 22 broke"}
+    actions = watchdog.plan_actions([alert("x")], [stale], now=NOW, mention="@o")
+    assert [(a["op"], a["number"]) for a in actions] == [("retitle", 5), ("comment", 5)]
+    assert actions[0]["title"] == "[ops-alert] x — x broke"
+    # Not before a reminder is due: an edit would reset the reminder clock.
+    recent = {**issue(5, "x", 3), "title": "[ops-alert] x — 22 of 22 broke"}
+    assert watchdog.plan_actions([alert("x")], [recent], now=NOW, mention="@o") == []
 
 
 def test_a_recovered_alert_closes_its_issue():
