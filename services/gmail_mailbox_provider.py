@@ -156,6 +156,23 @@ class GmailAuthorizationExpired(RuntimeError):
     """
 
 
+def reconciliation_days(since:Any=None,*,now:datetime|None=None)->int:
+    """How far back to list when the history cursor has expired.
+
+    Thirty days, or back to two days before the last successful sync when that
+    is longer ago (at most a year). Every mailbox stopped syncing on 29 Sep when
+    its Testing-mode grant expired; a fixed 30-day window would have silently
+    dropped the first days of that gap for any mailbox reconnected after 29 Oct.
+    Messages already ingested are skipped by the staging table, so a wider window
+    re-reads nothing twice.
+    """
+    if isinstance(since,str):
+        try:since=datetime.fromisoformat(since.replace("Z","+00:00"))
+        except ValueError:since=None
+    if not isinstance(since,datetime):return 30
+    if since.tzinfo is None:since=since.replace(tzinfo=timezone.utc)
+    gap=((now or datetime.now(timezone.utc))-since).days+2
+    return max(30,min(365,gap))
 class GmailMailboxProvider(MailboxProvider):
     def __init__(self, credential_ciphertext: str, on_credentials_refreshed=None):
         self.credentials=decrypt_credentials(credential_ciphertext); self._status="CONNECTED"; self._cursor=None
@@ -221,7 +238,7 @@ class GmailMailboxProvider(MailboxProvider):
     def stop_watch(self)->None:
         self._request("stop",method="POST",payload={})
     def get_connection_status(self)->str:return self._status
-    def fetch_new_messages(self,cursor:str|None,*,batch_size:int)->tuple[list[dict[str,Any]],str|None]:
+    def fetch_new_messages(self,cursor:str|None,*,batch_size:int,since:Any=None)->tuple[list[dict[str,Any]],str|None]:
         if cursor:
             try:
                 ids=[];page_token=None;latest=str(cursor)
@@ -243,18 +260,18 @@ class GmailMailboxProvider(MailboxProvider):
                 # by fully enumerating the reconciliation window before taking
                 # a fresh cursor.  The worker durably stages these IDs first.
                 if exc.code!=404:raise
-                refs=self._list_recent_messages(batch_size=batch_size)
+                refs=self._list_recent_messages(batch_size=batch_size,since=since)
                 profile=self.verify_connection()
                 self._status="CONNECTED"
                 return refs,str(profile.get("historyId") or "")
             return ([{"id":x} for x in dict.fromkeys(ids)],latest)
-        refs=self._list_recent_messages(batch_size=batch_size)
+        refs=self._list_recent_messages(batch_size=batch_size,since=since)
         profile=self.verify_connection(); return refs,str(profile.get("historyId") or "")
-    def _list_recent_messages(self,*,batch_size:int)->list[dict[str,Any]]:
+    def _list_recent_messages(self,*,batch_size:int,since:Any=None)->list[dict[str,Any]]:
         maximum=max(1,int(os.getenv("AI_MAIL_RECONCILIATION_MAX_MESSAGES","5000")))
         messages=[];page_token=None
         while len(messages)<maximum:
-            params={"maxResults":min(100,max(1,batch_size),maximum-len(messages)),"q":"newer_than:30d"}
+            params={"maxResults":min(100,max(1,batch_size),maximum-len(messages)),"q":f"newer_than:{reconciliation_days(since)}d"}
             if page_token:params["pageToken"]=page_token
             data=self._request("messages?"+urllib.parse.urlencode(params))
             messages.extend(data.get("messages",[]));page_token=data.get("nextPageToken")

@@ -142,3 +142,30 @@ def test_expired_cursor_reconciliation_drains_recent_message_pages(monkeypatch):
     refs,cursor=provider.fetch_new_messages('expired',batch_size=1)
     assert refs==[{'id':'m1'},{'id':'m2'}]
     assert cursor=='fresh'
+
+
+def test_expired_cursor_lists_back_to_the_last_successful_sync(monkeypatch):
+    """11 Oct: every mailbox stopped on 29 Sep. A fixed 30-day re-list would
+    have dropped the start of that gap for a reconnect after 29 Oct."""
+    import urllib.error
+    from datetime import datetime, timedelta, timezone
+    from services.gmail_mailbox_provider import reconciliation_days
+    now = datetime(2026, 11, 15, 9, 0, tzinfo=timezone.utc)
+    assert reconciliation_days(None, now=now) == 30
+    assert reconciliation_days(now - timedelta(days=5), now=now) == 30
+    assert reconciliation_days(datetime(2026, 9, 29, 14, 47, tzinfo=timezone.utc), now=now) == 48
+    assert reconciliation_days("2026-09-29T14:47:00+00:00", now=now) == 48
+    assert reconciliation_days(now - timedelta(days=900), now=now) == 365
+    provider=GmailMailboxProvider.__new__(GmailMailboxProvider)
+    provider._status='CONNECTED';provider.credentials={};queries=[]
+    def request(path,**_kwargs):
+        if path.startswith('history?'):
+            raise urllib.error.HTTPError('gmail',404,'expired',{},None)
+        if path.startswith('messages?'):
+            queries.append(path);return {'messages':[{'id':'m1'}]}
+        raise AssertionError(path)
+    provider._request=request
+    provider.verify_connection=lambda:{'historyId':'fresh'}
+    since = datetime.now(timezone.utc) - timedelta(days=60)
+    provider.fetch_new_messages('expired',batch_size=10,since=since)
+    assert 'newer_than%3A62d' in queries[0]
