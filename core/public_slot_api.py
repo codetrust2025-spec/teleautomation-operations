@@ -1020,17 +1020,22 @@ def install_public_slot_routes(app) -> None:
         if pending_payment_proofs and not re_service_booking:
             from features.pending_slot_payment import verified_total
 
-            required_amount = cs.public_booking_payment_requirement(
+            requirement = cs.public_booking_payment_requirement(
                 service_type=normalized_service_type,
                 name=name,
                 phone=normalized_phone,
                 candidate_id=candidate_id.strip(),
                 interview_round=normalized_round,
-            )["amount_due"]
+            )
+            required_amount = requirement["amount_due"]
             paid_total = verified_total(
                 [entry for _path, entry in pending_payment_proofs]
             )
-            if required_amount > 0 and paid_total < required_amount:
+            # A profile candidate's first interview may be booked with part of
+            # the balance still pending: the screenshots are recorded, not
+            # required to clear it. A later booking needs the balance cleared.
+            first_profile_slot = normalized_service_type != "round_wise" and requirement.get("first_slot")
+            if required_amount > 0 and paid_total < required_amount and not first_profile_slot:
                 # Round-wise is priced by the referrer and client; the tariff
                 # enforced here is only the floor, so it is named as one.
                 shortfall = (

@@ -491,7 +491,24 @@ class TestPaymentRequirementEndpoints:
         data = response.json()
         assert data["status"] == "ok"
         assert data["amount_due"] == 20000
-        assert data["needs_payment"] is True
+        # The first interview may be booked with the balance pending: shown, not required.
+        assert data["needs_payment"] is False
+        assert data["first_slot"] is True
+        assert data["message"] == "₹20,000 payment pending."
+
+    def test_profile_service_later_slot_needs_the_balance_cleared(self, monkeypatch, tmp_path):
+        candidate = {
+            "id": "c1", "name": "Aniket", "stage": "in_progress", "service_type": "profile_service",
+            "expected_payment": 20000, "payment": 10000, "task": "in_progress",
+            "slot_confirmed": True, "date": "2026-10-01", "time": "10:00", "time_end": "11:00",
+        }
+        client = _client(monkeypatch, tmp_path, candidates=[candidate])
+        data = client.get("/public/slots/payment-requirement?service_type=profile_service&name=Aniket").json()
+        assert data["amount_due"] == 10000
+        assert data["payment_required"] is True
+        assert data["booking_blocked"] is True
+        assert data["first_slot"] is False
+        assert data["message"] == "₹10,000 payment pending. Clear the balance to book another interview slot."
 
     def test_waived_candidate_shows_no_payment_needed(self, monkeypatch, tmp_path):
         # Add a candidate with re-service grant

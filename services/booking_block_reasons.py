@@ -380,6 +380,7 @@ _BY_REASON_CODE: dict[str, tuple[str, str]] = {
 # plainly, keeping the amount, which is the part a person needs.
 _OWNER_MISSING = "Assign an owner"
 _PAYMENT_SHORT = "Record at least"
+_PAYMENT_PENDING = "payment pending. Clear the balance"
 _SCREENSHOT_MISSING = "Confirm the slot screenshot"
 _DATE_MISSING = "Set the interview date"
 _AMOUNT = re.compile(r"₹[\d,]+")
@@ -403,6 +404,13 @@ def _requirements(detail: Any) -> tuple[str, str]:
         return (
             "The candidate hasn't paid enough yet for a booking, so {result}.",
             f"{record}, {_THEN_RETRY}",
+        )
+    if _PAYMENT_PENDING in instruction:
+        amount = _AMOUNT.search(instruction)
+        owed = amount.group(0) if amount else "the balance"
+        return (
+            f"The candidate has {owed} payment pending and this is not their first interview, so {{result}}.",
+            f"Record verified payment of {owed}, {_THEN_RETRY}",
         )
     if instruction.startswith(_SCREENSHOT_MISSING):
         return (

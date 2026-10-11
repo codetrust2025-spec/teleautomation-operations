@@ -48,6 +48,7 @@ import os
 import re
 import time
 import uuid
+from functools import lru_cache
 from pathlib import Path
 from datetime import date as _date, datetime, timedelta, timezone
 from threading import Lock, RLock
@@ -1566,13 +1567,24 @@ def slot_confirm_block_reason(row: dict) -> str | None:
     ref = (row.get("reference") or "").strip()
     if not ref or ref.lower() == "unknown":
         return "Assign an owner (reference) before confirming the interview slot."
-    received = int(row.get("payment") or 0)
-    need = minimum_payment_for_slot(row)
-    if received < need:
-        return (
-            f"Record at least ₹{need:,} received before confirming the slot "
-            f"(currently ₹{received:,})."
-        )
+    if _normalise_service_type(row.get("service_type"), row) == "round_wise":
+        received = int(row.get("payment") or 0)
+        need = minimum_payment_for_slot(row)
+        if received < need:
+            return (
+                f"Record at least ₹{need:,} received before confirming the slot "
+                f"(currently ₹{received:,})."
+            )
+    elif not is_free_service_candidate(row.get("name") or ""):
+        # Profile service: the first interview may be confirmed with the balance
+        # pending; a later one only once it is cleared. This used to ask for
+        # Rs 10,000 before any slot, the first included.
+        owed = row.get("balance_due")
+        if owed is None:
+            owed = max(0, effective_expected_payment(row) - int(row.get("payment") or 0))
+        lock = booking_payment_lock(row.get("name") or "", due=int(owed or 0))
+        if lock["blocked"]:
+            return lock["message"]
     if not (row.get("date") or "").strip():
         return "Set the interview date before confirming the slot."
     return None
@@ -3513,11 +3525,13 @@ def assert_slot_persisted(candidate_id: str, *, date: str, time: str, time_end: 
 class PaymentDueError(ValueError):
     """Raised when a candidate with dues must upload payment proof before booking."""
 
-    def __init__(self, *, name: str, balance_due: int, needs_proof: bool = True):
+    def __init__(self, *, name: str, balance_due: int, needs_proof: bool = True, message: str = ""):
         self.name = name
         self.balance_due = balance_due
         self.needs_proof = needs_proof
-        if needs_proof:
+        if message:
+            msg = message
+        elif needs_proof:
             msg = (
                 f"₹{balance_due:,} payment is pending for {name}. "
                 "Upload your payment screenshot first, then book the interview slot."
@@ -3778,6 +3792,63 @@ def merged_balance_due_for_name(name: str, rows: list[dict] | None = None) -> in
     return balance
 
 
+def payment_pending_booking_message(due: int) -> str:
+    """What a later booking is told while money is owed (owner's wording, 11 Oct)."""
+    return f"₹{int(due):,} payment pending. Clear the balance to book another interview slot."
+
+
+@lru_cache(maxsize=4096)
+def _booking_name_key(name: str) -> str:
+    return _normalise_candidate_name_key(canonical_candidate_name(name))
+
+
+def profile_booked_slot_count(name: str) -> int:
+    """Interviews this profile candidate has booked that stand or took place.
+
+    Read from the stored rows, so a row being confirmed right now is not yet
+    counted. A cancelled, released or superseded booking does not count."""
+    key = _booking_name_key(_clean_str(name))
+    if not key:
+        return 0
+    count = 0
+    for row in _load().get("candidates") or []:
+        if not isinstance(row, dict):
+            continue
+        if _normalise_service_type(row.get("service_type"), row) == "round_wise":
+            continue
+        if _booking_name_key(_clean_str(row.get("name"))) != key:
+            continue
+        if slot_still_stands(row):
+            count += 1
+    return count
+
+
+def booking_payment_lock(name: str, *, due: int | None = None) -> dict:
+    """The one payment rule for booking a profile candidate's interview slot.
+
+    * First slot: may be booked with a balance pending; the amount is shown as
+      a reminder.
+    * Second and later slots: refused while anything is outstanding, and
+      allowed again as soon as verified payments bring the balance to 0.
+
+    Used by the public booking form and /bookings/confirm, the dashboard's
+    booking API, slot confirmation and booking from interview emails, so no
+    path books around it. Round-wise rounds keep their per-round tariff rule.
+    """
+    owed = max(0, int(merged_balance_due_for_name(name) if due is None else due or 0))
+    prior = profile_booked_slot_count(name)
+    first = prior == 0
+    blocked = (not first) and owed > 0
+    return {
+        "balance_due": owed,
+        "prior_slots": prior,
+        "first_slot": first,
+        "blocked": blocked,
+        "message": payment_pending_booking_message(owed) if blocked else "",
+        "reminder": f"₹{owed:,} payment pending." if first and owed > 0 else "",
+    }
+
+
 def public_booking_payment_requirement(
     *,
     service_type: str,
@@ -3825,11 +3896,19 @@ def public_booking_payment_requirement(
             "re_service": False,
         }
     amount = max(0, int(merged_balance_due_for_name(name) or 0)) if _clean_str(name) else 0
+    # The first interview may be booked with the balance pending (shown as a
+    # reminder); a later one needs the balance cleared first.
+    lock = booking_payment_lock(name, due=amount) if _clean_str(name) else {
+        "first_slot": True, "blocked": False, "message": "", "reminder": "",
+    }
     return {
         "service_type": normalized_service,
-        "payment_required": amount > 0,
+        "payment_required": bool(lock["blocked"]),
         "amount_due": amount,
         "re_service": False,
+        "first_slot": bool(lock["first_slot"]),
+        "booking_blocked": bool(lock["blocked"]),
+        "message": lock["message"] or lock["reminder"],
     }
 
 
@@ -3850,6 +3929,13 @@ def slot_booking_payment_block_reason(
     due = merged_balance_due_for_name(name)
     if due <= 0 and not require_payment_proof:
         return None
+    if not require_payment_proof:
+        lock = booking_payment_lock(name, due=due)
+        if lock["first_slot"]:
+            # The first interview may be booked with the balance still pending.
+            return None
+        if not payment_proof_id:
+            return lock["message"]
     canon = canonical_candidate_name(_clean_str(name))
     if not payment_proof_id:
         if require_payment_proof and due <= 0:
@@ -6220,7 +6306,10 @@ def _import_confirmed_interview_slot(
         due = merged_balance_due_for_name(canon)
         if is_round_wise and due <= 0:
             due = baseline_for_service("round_wise")
-        raise PaymentDueError(name=canon, balance_due=due, needs_proof=not payment_proof_id)
+        raise PaymentDueError(
+            name=canon, balance_due=due, needs_proof=not payment_proof_id,
+            message="" if is_round_wise else pay_block,
+        )
 
     day = _clean_str(date)[:10]
     if len(day) != 10:
@@ -6801,6 +6890,7 @@ def interview_slot_picker_rows(
     for r in rows:
         canon = canonical_candidate_name((r.get("name") or "").strip())
         due = merged_balance_due_for_name(canon)
+        lock = booking_payment_lock(canon, due=due)
         out.append({
             "id": r.get("id"),
             "name": canon,
@@ -6810,8 +6900,12 @@ def interview_slot_picker_rows(
             "time": r.get("time") or "",
             "service_type": r.get("service_type") or "",
             "balance_due": due,
-            "needs_payment_proof": due > 0,
-            "payment_blocked": False,
+            # A proof is needed only where the lock applies: a later slot with a
+            # balance. The first slot shows the balance as a reminder.
+            "needs_payment_proof": bool(lock["blocked"]),
+            "payment_blocked": bool(lock["blocked"]),
+            "first_slot": bool(lock["first_slot"]),
+            "payment_message": lock["message"] or lock["reminder"],
         })
     out.sort(key=lambda r: (r.get("name") or "").lower())
     return out

@@ -96,7 +96,7 @@ describe("the form", () => {
     expect(labels()).toEqual([
       "Candidate name *", "Stage", "Technology", "Phone", "Email", "Reference", "Date", "% on CTC *",
       "Service type", "Channel", "Additional services",
-      "Expected ₹", "Received ₹", "Follow-up / Remark", "Payment proofs",
+      "Expected ₹", "Received ₹", "Payment proofs",
     ]);
   });
 

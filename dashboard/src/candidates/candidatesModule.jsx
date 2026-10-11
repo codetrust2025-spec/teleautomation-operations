@@ -2259,9 +2259,12 @@ function W8(e) {
   if (!t || t.toLowerCase() === "unknown") {
     return "Assign an owner (reference) before confirming the interview slot.";
   }
+  // A round-wise round still needs its tariff recorded. Profile service is the
+  // server's rule (first slot with the balance pending, later slots once it is
+  // cleared), which needs the candidate's booking history this form lacks.
   const r = Number(e.payment) || 0;
   const n = b_(e);
-  if (r < n) {
+  if (e.service_type === "round_wise" && r < n) {
     return `Record at least ${$n(n)} received (currently ${$n(r)}).`;
   } else if ((e.date || "").trim()) {
     return null;
@@ -2842,7 +2845,6 @@ export function CandidateEditModal({
     if (isUnevidenced) return "unevidenced";
     return k >= T ? "paid" : "partial";
   }, [k, T, isUnevidenced]);
-  const b = S > 0;
   const A = W8(l);
   const O = !A;
   const L = b_(l);
@@ -2893,13 +2895,10 @@ export function CandidateEditModal({
           return;
         }
       }
-      if (b && !l.follow_up.trim()) {
-        x(
-          `₹${S.toLocaleString("en-IN")} balance pending — add a short follow-up / remark before saving.`,
-        );
-        return;
-      }
-      if (l.slot_confirmed && A && !i) {
+      // Only when this save confirms the slot: an interview already booked is
+      // not re-judged on every edit (that blocked saving a confirmed candidate
+      // with less than Rs 10,000 recorded).
+      if (l.slot_confirmed && !(e && e.slot_confirmed) && A && !i) {
         x(A);
         return;
       }
@@ -2936,7 +2935,10 @@ export function CandidateEditModal({
           l.expected_payment === ""
             ? os(l.service_type, l.consultancy, l.interview_scope)
             : Number(l.expected_payment),
-        follow_up: b ? l.follow_up.trim() : "",
+        // The Follow-up / Remark field is gone (11 Oct). A remark saved before
+        // is kept: it is not sent, so it is not replaced -- this used to send ""
+        // once the balance was cleared, erasing it.
+        follow_up: undefined,
         slot_confirmed: !!l.slot_confirmed,
         slots_group_posted: !!l.slots_group_posted,
         logged_date: e ? undefined : l.date || "",
@@ -3536,24 +3538,6 @@ export function CandidateEditModal({
                 </span>
               )}
             </div>
-            {b && (
-              <label className="cand-field cand-field--required">
-                <span className="cand-field-label">
-                  Follow-up / Remark
-                  <span className="cand-field-required-tag">
-                    balance {$n(S)}
-                  </span>
-                </span>
-                <textarea
-                  className="cand-input cand-input--textarea"
-                  rows={2}
-                  value={l.follow_up}
-                  onChange={(C) => g("follow_up", C.target.value)}
-                  placeholder="Why is balance pending?"
-                  required={true}
-                />
-              </label>
-            )}
             <div className="cand-field">
               <PaymentProofUploader
                 candidateId={e == null ? undefined : e.id}

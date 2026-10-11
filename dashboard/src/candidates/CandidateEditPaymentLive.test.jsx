@@ -187,9 +187,10 @@ describe("candidate edit form — live proof-derived received total", () => {
     expect(document.querySelector(".cand-pay-status--unpaid")).toBeNull();
   });
 
-  it("drops the follow-up remark requirement once outstanding reaches zero", async () => {
+  it("asks for no follow-up remark, with a balance or without (11 Oct)", async () => {
     const { container } = renderModal();
-    expect(screen.getByPlaceholderText("Why is balance pending?")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Why is balance pending?")).toBeNull();
+    expect(screen.queryByText("Follow-up / Remark")).toBeNull();
 
     await uploadProof(container, (file) => ({
       status: "ok",

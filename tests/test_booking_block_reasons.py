@@ -92,7 +92,9 @@ def _requirement_instructions() -> dict[str, str]:
     return {
         "screenshot": candidate_store.slot_confirm_block_reason(_candidate(slots_group_posted=False)),
         "owner": candidate_store.slot_confirm_block_reason(_candidate(reference="")),
-        "payment": candidate_store.slot_confirm_block_reason(_candidate()),
+        # A profile candidate's first slot no longer waits for money (11 Oct);
+        # a round-wise round still needs its tariff recorded.
+        "payment": candidate_store.slot_confirm_block_reason(_candidate(service_type="round_wise", expected_payment=5000)),
         "date": candidate_store.slot_confirm_block_reason(_candidate(date="", **paid)),
         "other": "Something the check says in future.",
     }
@@ -534,3 +536,11 @@ def test_every_alert_read_carries_its_explanation():
     assert rows[0]["booking_block_reason_code"] == "ROUND_NOT_FOUND"
     # A row with nothing blocked comes back as it went in.
     assert "booking_block" not in rows[1]
+
+
+def test_a_later_slot_with_a_balance_says_how_much_is_pending():
+    instruction = candidate_store.payment_pending_booking_message(20000)
+    assert instruction == "₹20,000 payment pending. Clear the balance to book another interview slot."
+    explanation = reasons.explain("PAYMENT_NOT_CLEARED", "PAYMENT_VALIDATION_FAILED", detail=instruction)
+    assert "₹20,000 payment pending" in explanation["reason"]
+    assert explanation["action"] == f"Record verified payment of ₹20,000, {reasons._THEN_RETRY}"

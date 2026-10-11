@@ -581,6 +581,14 @@ export function SubmitSlotPage() {
   const paymentRequired = roundWise
     ? (paymentRequirement?.payment_required ?? true)
     : Boolean(selected?.needs_payment_proof)
+  // Profile service (11 Oct): the first interview may be booked with a balance
+  // pending, which is shown as a reminder; a later one only once the balance is
+  // cleared. The server decides which (payment_blocked / first_slot).
+  const profileBalance = roundWise ? 0 : Number(selected?.balance_due) || 0
+  const profileLocked = !roundWise && Boolean(selected?.payment_blocked ?? selected?.needs_payment_proof)
+  const profileReminder = !roundWise && !profileLocked && profileBalance > 0
+  const pendingText = `\u20b9${profileBalance.toLocaleString('en-IN')} payment pending.`
+  const lockedText = `${pendingText} Clear the balance to book another interview slot.`
   // Never computed here — every figure comes from the backend.
   const paymentAmountDue = roundWise
     ? (paymentRequirement?.amount_due ?? paymentTotals?.amount_due ?? null)
@@ -1289,7 +1297,7 @@ export function SubmitSlotPage() {
                   refused, or the sequence is asking for one. Otherwise this is
                   an ordinary field, and a verified payment gets the same green
                   result the invite does. */}
-              {paymentRequired && (
+              {(paymentRequired || profileReminder) && (
                 <div className={`sbs-pay-card${paymentRejected.length || missingField === 'payment' ? ' sbs-pay-card--warn' : ''}`}>
                   <div ref={paymentRef} className="sbs-pay-head">
                     <span>{roundWise ? 'Payment' : 'Payment due'}</span>
@@ -1301,6 +1309,14 @@ export function SubmitSlotPage() {
                       )}
                     </span>
                   </div>
+                  {/* Why the card is here: a later slot waits for the balance; the
+                      first may be booked now, with the balance as a reminder. */}
+                  {profileLocked && !paymentComplete && (
+                    <span className="sbs-hint sbs-hint--warn" role="status">{lockedText}</span>
+                  )}
+                  {profileReminder && !paymentComplete && (
+                    <span className="sbs-hint" role="status">{pendingText} You can book this first interview now.</span>
+                  )}
                   {/* The same flow as the invite below: upload, the node reading
                       it, then the result. Nothing waits to be saved. */}
                   {!paymentComplete && (
@@ -1320,7 +1336,7 @@ export function SubmitSlotPage() {
                       {!paymentUploadReady && (
                         <span className="sbs-hint">{roundWise ? 'Enter the client name and phone number first.' : 'Enter the client name first.'}</span>
                       )}
-                      {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{roundWise ? 'Attach the payment screenshot.' : 'Attach a payment screenshot that covers the amount due.'}</span>}
+                      {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{roundWise ? 'Attach the payment screenshot.' : profileLocked ? lockedText : 'Attach a payment screenshot that covers the amount due.'}</span>}
                     </>
                   )}
                   {/* The node reading the screenshots, while they are read. */}

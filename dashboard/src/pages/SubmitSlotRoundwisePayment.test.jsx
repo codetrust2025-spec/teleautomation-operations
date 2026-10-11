@@ -145,7 +145,7 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
 
     // Profile-service candidate with balance_due > 0 shows payment card
     expect(await screen.findByText(/payment due/i)).toBeTruthy()
-    expect(screen.getByText(/₹20,000/)).toBeTruthy()
+    expect(screen.getAllByText(/₹20,000/).length).toBeGreaterThan(0)
   })
 
   it('waiver/no-payment path still works (re-service eligible)', async () => {

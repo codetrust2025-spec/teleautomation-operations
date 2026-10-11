@@ -342,6 +342,26 @@ async def candidates_interviews_slots_create(request: Request, body: dict):
                         f"{booked.get('time') or ''}. Nothing new was created."
                     ),
                 }
+            # The same payment rule as the booking form: a profile candidate's
+            # first interview may be booked with the balance pending, a later
+            # one only once it is cleared. This route used to book around it.
+            lock = None
+            if candidate_store._normalise_service_type(
+                existing.get("service_type"), existing
+            ) != "round_wise" and not candidate_store.find_re_service_grant(
+                name=existing.get("name") or "",
+                phone=existing.get("phone") or "",
+                interview_round=interview_round,
+                candidate_id=candidate_id,
+            ):
+                lock = candidate_store.booking_payment_lock(existing.get("name") or "")
+                if lock["blocked"]:
+                    return {
+                        "status": "error",
+                        "message": lock["message"],
+                        "payment_blocked": True,
+                        "balance_due": lock["balance_due"],
+                    }
             row = candidate_store.assign_interview_slot(
                 candidate_id=candidate_id,
                 date=date,
@@ -352,7 +372,10 @@ async def candidates_interviews_slots_create(request: Request, body: dict):
             )
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
-    return {"status": "ok", "candidate": row}
+    result = {"status": "ok", "candidate": row}
+    if lock and lock.get("reminder"):
+        result["payment_reminder"] = lock["reminder"]
+    return result
 @router.patch("/candidates/interviews/slots/{cid}")
 async def candidates_interviews_slots_update(cid: str, request: Request, body: dict):
     from core.dashboard_access import assert_candidate_row_access
