@@ -457,6 +457,8 @@ export function SubmitSlotPage() {
   const [tab, setTab] = useState('book')
   const [candidates, setCandidates] = useState([])
   const [booked, setBooked] = useState([])
+  // Signed out, the server gives initials and times only (11 Oct).
+  const [bookedDetailsWithheld, setBookedDetailsWithheld] = useState(false)
   const awaitingSlots = useMemo(() => booked.filter(needsStatusUpdate), [booked])
   const upcomingSlots = useMemo(() => booked.filter(slot => !needsStatusUpdate(slot)), [booked])
   const [loading, setLoading] = useState(true)
@@ -696,7 +698,10 @@ export function SubmitSlotPage() {
       const cData = await cRes.json()
       const bData = await bRes.json()
       if (cData.status === 'ok') setCandidates(dedupeCandidates(cData.candidates || []))
-      if (bData.status === 'ok') setBooked(bData.slots || [])
+      if (bData.status === 'ok') {
+        setBooked(bData.slots || [])
+        setBookedDetailsWithheld(Boolean(bData.details_withheld))
+      }
     } catch { setError('Could not load — check your connection.') }
     finally { setLoading(false) }
   }, [])
@@ -1117,6 +1122,9 @@ export function SubmitSlotPage() {
                       an assessment is a confirmed slot too, and it sits here
                       beside them. The wording has to cover both. */}
                   <p className="sbs-step-sub">{upcomingSlots.length > 0 ? `${upcomingSlots.length} slot${upcomingSlots.length !== 1 ? 's' : ''} scheduled` : booked.length > 0 ? 'No upcoming slots.' : 'No confirmed slots yet.'}</p>
+                  {bookedDetailsWithheld && booked.length > 0 && (
+                    <p className="sbs-step-sub sbs-step-sub--note">Names, clients and technologies are shown to signed-in staff only.</p>
+                  )}
                 </div>
               </div>
               {booked.length === 0 ? (

@@ -182,6 +182,27 @@ def _pending_proof_ids(*values: str) -> list[str]:
 #: Fields of a slot-picker row that never leave the building on a public route.
 _PUBLIC_PICKER_WITHHELD = frozenset({"phone", "email"})
 
+# Confirmed slots as an anonymous visitor sees them (11 Oct): when, which round
+# and how it was booked -- not who, nor for which client or technology. The list
+# used to give anyone with the link every candidate's full name, client company
+# and technology. A signed-in operator (the dashboard's badge, a handler on the
+# booking page) still gets the full list.
+_ANONYMOUS_BOOKED_WITHHELD = frozenset({"company", "technology"})
+
+
+def _initials(name: str) -> str:
+    """"Abilash Perla" -> "A. P."; nothing more of the name is given out."""
+    letters = [part[0].upper() for part in re.split(r"[\s._-]+", str(name or "").strip()) if part[:1].isalpha()]
+    return " ".join(f"{letter}." for letter in letters[:3])
+
+
+def _anonymous_booked_view(snapshot: dict) -> dict:
+    slots = [
+        {**{k: v for k, v in slot.items() if k not in _ANONYMOUS_BOOKED_WITHHELD}, "name": _initials(slot.get("name"))}
+        for slot in snapshot.get("slots") or []
+    ]
+    return {**snapshot, "slots": slots, "details_withheld": True}
+
 
 def install_public_slot_routes(app) -> None:
     from features import candidate_store as cs
@@ -202,8 +223,12 @@ def install_public_slot_routes(app) -> None:
         )
 
     @app.get("/public/slots/booked")
-    async def public_slot_booked(days: int = 60):
+    async def public_slot_booked(request: Request, days: int = 60):
+        from core.dashboard_auth_vps import username_from_request_cookies
+
         snap = cs.public_booked_interview_slots(days=days)
+        if not username_from_request_cookies(request.cookies):
+            snap = _anonymous_booked_view(snap)
         return JSONResponse(
             {"status": "ok", **snap},
             headers={"Cache-Control": "no-store, max-age=0"},
