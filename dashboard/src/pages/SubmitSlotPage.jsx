@@ -58,24 +58,30 @@ function to24h(val) {
 }
 
 
-/** Fix dates where AI/OCR returned wrong year (e.g. 2023 instead of 2026) */
-function fixPastYear(dateStr) {
+/**
+ * Correct a year the AI/OCR got wrong (2023 for 2026) without moving a real
+ * past date. A date past in this year too stays past -- an interview recorded
+ * late -- unless it falls in the first weeks of next year ("5 Jan" read in late
+ * December). Moving every past date a year forward booked a 16 Sep 2026
+ * interview, uploaded on 11 Oct, for 16 Sep 2027.
+ */
+const NEXT_YEAR_WINDOW_DAYS = 60
+export function fixPastYear(dateStr, now = new Date()) {
   if (!dateStr) return dateStr
-  try {
-    const d = new Date(dateStr + 'T00:00:00')
-    const today = new Date(); today.setHours(0,0,0,0)
-    const diffDays = (today - d) / (1000*60*60*24)
-    if (diffDays > 7) {
-      // Date is more than 7 days in the past — likely wrong year
-      const corrected = new Date(today.getFullYear(), d.getMonth(), d.getDate())
-      if ((today - corrected) / (1000*60*60*24) <= 7) return corrected.toISOString().slice(0,10)
-      if (corrected > today) return corrected.toISOString().slice(0,10)
-      // Still in past with current year, try next year
-      const next = new Date(today.getFullYear() + 1, d.getMonth(), d.getDate())
-      return next.toISOString().slice(0,10)
-    }
-    return dateStr
-  } catch { return dateStr }
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr))
+  if (!m) return dateStr
+  const DAY = 24 * 60 * 60 * 1000
+  const iso = (y, mo, d) => `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  const dayNumber = (y, mo, d) => Date.UTC(y, mo - 1, d) / DAY
+  const valid = (y, mo, d) => new Date(Date.UTC(y, mo - 1, d)).getUTCDate() === d
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const ty = now.getFullYear()
+  const today = dayNumber(ty, now.getMonth() + 1, now.getDate())
+  if (today - dayNumber(y, mo, d) <= 7) return dateStr
+  if (!valid(ty, mo, d) || !valid(ty + 1, mo, d)) return dateStr
+  if (today - dayNumber(ty, mo, d) <= 7) return iso(ty, mo, d)
+  if (dayNumber(ty + 1, mo, d) - today <= NEXT_YEAR_WINDOW_DAYS) return iso(ty + 1, mo, d)
+  return iso(ty, mo, d)
 }
 
 /** De-duplicate chip values case-insensitively, removing empties */
