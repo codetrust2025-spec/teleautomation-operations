@@ -19101,6 +19101,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   color: var(--text-dim, #94a3b8);
 }
 .cand-resume-confirm-text { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+/* Why a payment proof was not verified. */
+.cand-modal--compact .cand-proof-reason { margin: 2px 0 4px; font-size: 11.5px; line-height: 1.35; color: #fbbf24; overflow-wrap: anywhere; }
 .cand-resume-note--ok { color: #4ade80; }
 .cand-resume-note--warn { color: #fbbf24; }
 .cand-resume-note--error { color: #f87171; }

@@ -4129,6 +4129,8 @@ def public_add_payment_proof_for_name(
             "company_payment_verified": bool(engine_result.get("company_payment_verified")),
             "booking_eligible": bool(engine_result.get("booking_eligible")),
             "verification_state": engine_result.get("verification_state") or "",
+            # Why it was not verified, so the proof card can say so (11 Oct).
+            "verification_reason_codes": list(engine_result.get("reason_codes") or []),
             "receiver_name": engine_result.get("receiver_name") or "",
             "receiver_upi_id": engine_result.get("receiver_upi_id") or "",
             "receiver_phone": engine_result.get("receiver_phone") or "",
@@ -6750,6 +6752,7 @@ def finalize_public_booking_payment(
                         ),
                         "booking_eligible": bool(verification.get("booking_eligible")),
                         "verification_state": verification.get("verification_state") or "",
+                        "verification_reason_codes": list(verification.get("reason_codes") or []),
                         "receiver_name": verification.get("receiver_name") or "",
                         "receiver_upi_id": verification.get("receiver_upi_id") or "",
                         "receiver_phone": verification.get("receiver_phone") or "",

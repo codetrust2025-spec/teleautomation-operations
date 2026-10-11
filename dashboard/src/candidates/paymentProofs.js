@@ -242,6 +242,46 @@ const STATUS_BY_STATE = {
 
 const NOT_REVIEWED = { key: "legacy", label: "Not reviewed", tone: "muted" };
 
+// Why a proof was not verified, in the words a reviewer acts on (11 Oct). The
+// codes come from the verification engine; a proof saved before they were
+// stored falls back to what its state alone says.
+const REASON_TEXT = {
+  UNKNOWN_RECEIVER: "Paid to an account that is not a registered company or referrer account.",
+  STABLE_RECEIVER_IDENTIFIER_REQUIRED: "The receiver's UPI ID, phone or account could not be read or checked.",
+  AMBIGUOUS_RECEIVER: "The receiver matches more than one registered account.",
+  RECEIVER_IDENTIFIER_CONFLICT: "The receiver's name and UPI ID point to different accounts.",
+  RECEIVER_ACCOUNT_INACTIVE: "The receiving account is marked inactive.",
+  RECEIVER_ACCOUNT_UNVERIFIED: "The receiving account is not verified yet.",
+  TRANSACTION_REFERENCE_MISSING: "No UTR or transaction ID could be read.",
+  TRANSACTION_FAILED: "The screenshot shows a failed payment.",
+  TRANSACTION_STATUS_UNCONFIRMED: "The screenshot does not show the payment as successful.",
+  AMOUNT_UNREADABLE: "The amount could not be read.",
+  AMOUNT_INSUFFICIENT: "The amount is less than what is due.",
+  AMOUNT_SOURCE_MISMATCH: "The amount read differs from another figure on the screenshot.",
+  AMOUNT_EXTRACTION_REVIEW_REQUIRED: "The amount needs checking against the screenshot.",
+  LOW_EXTRACTION_CONFIDENCE: "The screenshot was read with low confidence.",
+  NOT_PAYMENT_RECEIPT: "This does not look like a payment receipt.",
+  EXTRACTION_FAILED: "The screenshot could not be read.",
+  DUPLICATE_PAYMENT: "This payment is already recorded on another proof.",
+};
+const REASON_BY_STATE = {
+  UNKNOWN_RECEIVER: ["UNKNOWN_RECEIVER"],
+  INCOMPLETE_PAYMENT_EVIDENCE: ["STABLE_RECEIVER_IDENTIFIER_REQUIRED"],
+  DUPLICATE_PAYMENT: ["DUPLICATE_PAYMENT"],
+  EXTRACTION_FAILED: ["EXTRACTION_FAILED"],
+  FAILED_PAYMENT: ["TRANSACTION_FAILED"],
+  AMOUNT_EXTRACTION_REVIEW_REQUIRED: ["AMOUNT_EXTRACTION_REVIEW_REQUIRED"],
+};
+
+/** Plain reasons a proof was not verified; [] for a verified or unread one. */
+export function proofReasons(proof) {
+  const state = String(proof?.verification_state || "").trim().toUpperCase();
+  if (!state || state.startsWith("VERIFIED_")) return [];
+  const stored = Array.isArray(proof?.verification_reason_codes) ? proof.verification_reason_codes : [];
+  const codes = stored.length ? stored : REASON_BY_STATE[state] || [];
+  return [...new Set(codes.map((code) => REASON_TEXT[String(code).toUpperCase()]).filter(Boolean))];
+}
+
 /** What a reviewer should read off a proof card: status, amount, reference. */
 export function proofPresentation(proof) {
   const state = String(proof?.verification_state || "").trim().toUpperCase();
@@ -266,6 +306,7 @@ export function proofPresentation(proof) {
     amount,
     amountText: amount > 0 ? `₹${amount.toLocaleString("en-IN")}` : "Amount not read",
     reference,
+    reasons: proofReasons(proof),
   };
 }
 

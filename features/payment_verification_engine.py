@@ -157,7 +157,22 @@ def _norm_text(value: Any) -> str:
 
 
 def _norm_upi(value: Any) -> str:
-    return "".join(str(value or "").lower().split())
+    """The handle, lower-cased and without spaces; words after it are dropped.
+
+    The reader sometimes keeps the app's caption with the handle --
+    "....1111@ybl on PhonePe" (11 Oct, a Rs 5,000 payment to the company).
+    Joining every word made the provider "yblonphonepe", so the visible digits
+    could never be checked against the company's registered "...1111@ybl" and
+    the receipt fell to "incomplete evidence". The provider is the first word
+    after the "@"; the part before it is kept as it was, mask and all.
+    """
+    text = str(value or "").lower().strip()
+    local, at, rest = text.partition("@")
+    if not at:
+        return "".join(text.split())
+    provider = re.match(r"\s*([a-z][a-z0-9.\-]*)", rest)
+    domain = provider.group(1).rstrip(".-") if provider else "".join(rest.split())
+    return "".join(local.split()) + "@" + domain
 
 
 def _valid_upi(value: Any) -> bool:

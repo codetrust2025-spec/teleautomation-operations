@@ -1223,6 +1223,9 @@ export function PaymentProofUploader({
                     </span>
                   )}
                 </div>
+                {pres.reasons.length > 0 && (
+                  <p className="cand-proof-reason">{pres.reasons.join(" ")}</p>
+                )}
                 <dl className="cand-proof-facts">
                   <div>
                     <dt>{pres.reference.label}</dt>
