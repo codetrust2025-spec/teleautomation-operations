@@ -58,7 +58,11 @@ def checkout_db(monkeypatch):
     try:
         root = Path(__file__).resolve().parents[1] / "core" / "migrations"
         with connect() as conn, conn.cursor() as cur:
-            for name in ("028_attendance_earnings_eligibility.sql", "036_daily_checkout.sql"):
+            for name in (
+                "028_attendance_earnings_eligibility.sql",
+                "036_daily_checkout.sql",
+                "037_attendance_shutdown_audit.sql",
+            ):
                 cur.execute((root / name).read_text(encoding="utf-8"))
         monkeypatch.setattr(attendance, "get_connection", connect)
         monkeypatch.setattr(checkout, "get_connection", connect)
@@ -99,6 +103,17 @@ def stored(connect, when: datetime):
         return cur.fetchone()
 
 
+def shutdown(connect, *, scope: str, action: str, target: str | None = None):
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO operations_attendance_shutdown_events(
+                   id, scope, target_account_id, action, reason,
+                   actor_account_id, actor_username)
+               VALUES(%s,%s,%s,%s,'test','admin:tests','tests')""",
+            (str(uuid.uuid4()), scope, target, action),
+        )
+
+
 EVENING = attendance._now().replace(hour=19, minute=5, second=0, microsecond=0)
 
 
@@ -110,6 +125,28 @@ class TestTheFirstCheckOutIsTheOne:
 
         assert result["status"] == "checked_out"
         assert stored(checkout_db, EVENING)[0] == EVENING
+
+
+class TestAttendanceShutdown:
+    def test_global_shutdown_blocks_checkout_without_changing_the_attendance_row(self, checkout_db):
+        mark(checkout_db, EVENING)
+        shutdown(checkout_db, scope="GLOBAL", action="SHUTDOWN")
+
+        with pytest.raises(checkout.CheckoutBlocked) as exc:
+            checkout.check_out(HANDLER, ALLOWED, now=EVENING)
+
+        assert exc.value.blockers[0]["kind"] == checkout.ATTENDANCE_SHUTDOWN
+        assert stored(checkout_db, EVENING)[0] is None
+
+    def test_handler_reactivation_cannot_override_an_active_global_shutdown(self, checkout_db):
+        shutdown(checkout_db, scope="HANDLER", action="SHUTDOWN", target="handler:handler-one")
+        shutdown(checkout_db, scope="HANDLER", action="REACTIVATE", target="handler:handler-one")
+        shutdown(checkout_db, scope="GLOBAL", action="SHUTDOWN")
+
+        with checkout_db() as conn:
+            state = attendance.shutdown_state(conn, "handler:handler-one")
+        assert state["active"] is True
+        assert state["scope"] == "GLOBAL"
 
     def test_a_second_press_changes_nothing(self, checkout_db):
         mark(checkout_db, EVENING)
