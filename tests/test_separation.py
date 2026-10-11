@@ -4,7 +4,9 @@ import main
 
 
 def route_paths():
-    return {route.path for route in main.app.routes}
+    from core.dashboard_auth_vps import _api_route_paths
+
+    return set(_api_route_paths(main.app))
 
 
 def test_business_owns_core_routes():

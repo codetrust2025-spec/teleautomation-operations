@@ -99,6 +99,29 @@ _API_ROOTS = frozenset({
 _DISCOVERED_API_ROOTS: set[str] = set()
 
 
+def _api_route_paths(app: Any) -> list[str]:
+    """The full path of every API route, routers added by include_router included.
+
+    FastAPI 0.142+ keeps an included router as a single wrapper entry in
+    `app.routes` rather than copying its routes in, so a walk that keeps only
+    APIRoute entries would see the routes declared on `app` itself and none of
+    the included ones -- and the discovered roots would shrink without a sound.
+    `iter_route_contexts` flattens both shapes, with the include prefix applied.
+    """
+    from fastapi.routing import APIRoute
+
+    routes = list(getattr(app, "routes", []))
+    try:
+        from fastapi.routing import iter_route_contexts
+    except ImportError:  # older FastAPI copies included routes into app.routes
+        return [route.path for route in routes if isinstance(route, APIRoute)]
+    return [
+        context.path
+        for context in iter_route_contexts(routes)
+        if isinstance(context.original_route, APIRoute) and context.path
+    ]
+
+
 def register_api_roots(app: Any) -> frozenset[str]:
     """Record the first path segment of every route the app registers.
 
@@ -106,13 +129,9 @@ def register_api_roots(app: Any) -> frozenset[str]:
     stay public: this only decides which roots are *API* roots, and
     is_public_path is still consulted first.
     """
-    from fastapi.routing import APIRoute
-
     discovered: set[str] = set()
-    for route in getattr(app, "routes", []):
-        if not isinstance(route, APIRoute):
-            continue
-        stripped = route.path.strip("/")
+    for path in _api_route_paths(app):
+        stripped = path.strip("/")
         if not stripped:
             continue
         first = stripped.split("/")[0]
