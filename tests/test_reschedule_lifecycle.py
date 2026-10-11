@@ -32,6 +32,13 @@ from core import recruitment_mail_store as ms
 from features import candidate_store as cs
 from services import interview_auto_booking as booking
 
+
+@pytest.fixture(autouse=True)
+def _dates_in_2099_stay_bookable(monkeypatch):
+    """These fixtures use 2099 as an always-future day. The 180-day limit on a
+    new interview date is exercised in tests/test_interview_date_far_ahead.py."""
+    monkeypatch.setattr(cs, "INTERVIEW_DATE_MAX_DAYS_AHEAD", 10 ** 6)
+
 from tests.test_interview_auto_booking import (  # noqa: F401 - shared harness
     CAPGEMINI_ATS_UID, execute, install_store_fakes, result, slot_writer,
 )

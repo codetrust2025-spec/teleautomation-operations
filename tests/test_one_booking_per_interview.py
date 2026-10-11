@@ -27,6 +27,13 @@ from core.public_slot_api import install_public_slot_routes
 from features import candidate_store as cs
 from features import pending_slot_payment as pending
 
+
+@pytest.fixture(autouse=True)
+def _dates_in_2099_stay_bookable(monkeypatch):
+    """These fixtures use 2099 as an always-future day. The 180-day limit on a
+    new interview date is exercised in tests/test_interview_date_far_ahead.py."""
+    monkeypatch.setattr(cs, "INTERVIEW_DATE_MAX_DAYS_AHEAD", 10 ** 6)
+
 ROOT = Path(__file__).resolve().parent.parent
 NAME = "Synthetic Candidate"
 PHONE = "9000000123"
