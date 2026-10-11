@@ -136,6 +136,8 @@ describe('operations backend routes are reachable from the UI', () => {
     // Machine-to-machine Daybreak integration. Its dedicated bearer token and
     // local companion deliberately keep it outside the Operations dashboard.
     /^\/api\/integrations\/daybreak\//,
+    // The route scanner records the decorator path without APIRouter prefixes.
+    /^\/headline$/,
     /pubsub/,                    // Gmail push delivery endpoint
     // Read-only production runbook endpoint; deliberately not a dashboard
     // control, because reconciliation must never auto-repair live records.
