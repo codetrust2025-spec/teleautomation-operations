@@ -68,6 +68,14 @@ export function PendingWorksTab({ onOpenCandidate }) {
   // The last count this tab told the rest of the shell about. null until the
   // first read, so arriving at a number is not itself announced as a change.
   const announced = useRef(null);
+  // Missing Resume is fixed here, not in the editor: pick the file, it is
+  // uploaded to that candidate, and the list is read again. One upload per
+  // task at a time -- a second pick while one is running is ignored -- and a
+  // refusal ("not a resume") stays on the row. The server stores the same file
+  // only once.
+  const [uploads, setUploads] = useState({});
+  const uploading = useRef(new Set());
+  const fileInputs = useRef({});
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -119,6 +127,39 @@ export function PendingWorksTab({ onOpenCandidate }) {
       window.removeEventListener("teleautomation:pending-work-changed", refresh);
       document.removeEventListener("visibilitychange", onVisible);
     };
+  }, [load]);
+
+  const uploadResume = useCallback(async (task, file) => {
+    const key = task.id || `${task.candidate_id}-${task.kind}`;
+    if (!file || !task.candidate_id || uploading.current.has(key)) return;
+    uploading.current.add(key);
+    setUploads((prev) => ({ ...prev, [key]: { state: "uploading" } }));
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch(
+        `${API}/candidates/${encodeURIComponent(task.candidate_id)}/resumes`,
+        { method: "POST", body, credentials: "include" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status !== "ok") {
+        throw new Error(data.message || "The resume was not uploaded.");
+      }
+      setUploads((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      await load({ silent: true });
+      publishPendingWorkChanged();
+    } catch (err) {
+      setUploads((prev) => ({
+        ...prev,
+        [key]: { state: "error", message: err.message || "The resume was not uploaded." },
+      }));
+    } finally {
+      uploading.current.delete(key);
+    }
   }, [load]);
 
   /** One row per candidate, with their gaps listed under them. */
@@ -182,7 +223,7 @@ export function PendingWorksTab({ onOpenCandidate }) {
     return (
       <div className="cand-pending-empty">
         <p className="cand-pending-empty__title">No pending work</p>
-        <p>Every active candidate has a reference, a resume and a phone number.</p>
+        <p>Every active candidate has a reference and a phone number, and every Profile service candidate a resume.</p>
       </div>
     );
   }
@@ -293,13 +334,44 @@ export function PendingWorksTab({ onOpenCandidate }) {
                       </span>
                     </td>
                     <td data-label="Action">
-                      <button
-                        type="button"
-                        className="cand-pending-action cand-pending-action--row"
-                        onClick={() => openCandidate(task)}
-                      >
-                        {ACTIONS[task.kind] || DEFAULT_ACTION}
-                      </button>
+                      {task.kind === "missing_resume" ? (
+                        <>
+                          <input
+                            type="file"
+                            hidden
+                            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            ref={(node) => { fileInputs.current[taskKey] = node; }}
+                            onChange={(ev) => {
+                              const file = ev.target.files && ev.target.files[0];
+                              ev.target.value = "";
+                              uploadResume(task, file);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="cand-pending-action cand-pending-action--row"
+                            disabled={uploads[taskKey]?.state === "uploading"}
+                            aria-busy={uploads[taskKey]?.state === "uploading" || undefined}
+                            aria-label={`Upload resume for ${task.candidate_name || "this candidate"}`}
+                            onClick={() => fileInputs.current[taskKey]?.click()}
+                          >
+                            {uploads[taskKey]?.state === "uploading" ? "Uploading…" : ACTIONS.missing_resume}
+                          </button>
+                          {uploads[taskKey]?.state === "error" && (
+                            <span className="cand-pending__upload-error" role="alert">
+                              {uploads[taskKey].message}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cand-pending-action cand-pending-action--row"
+                          onClick={() => openCandidate(task)}
+                        >
+                          {ACTIONS[task.kind] || DEFAULT_ACTION}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

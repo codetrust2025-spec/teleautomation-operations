@@ -332,3 +332,71 @@ describe("a pending item says which row it is about and why", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('Upload Resume, done in place (11 Oct)', () => {
+  const ONE = { status: 'ok', count: 2, candidate_count: 2, by_kind: { missing_resume: 1, missing_payment_proof: 1 },
+    works: [work('Asha Fakename', 'missing_resume', 20), { ...work('Ravi Kolla', 'missing_payment_proof', 25), label: 'Upload payment proof' }] }
+  const NONE = { status: 'ok', count: 1, candidate_count: 1, by_kind: { missing_payment_proof: 1 },
+    works: [{ ...work('Ravi Kolla', 'missing_payment_proof', 25), label: 'Upload payment proof' }] }
+
+  /** Pending works answers `lists` in turn; a resume upload waits for `release`. */
+  function server({ upload = { status: 'ok', resume: { id: 'cv1' } } } = {}) {
+    const lists = [ONE, NONE]
+    const control = { uploads: [], release: null }
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (String(url).includes('/resumes')) {
+        control.uploads.push({ url: String(url), body: options.body })
+        return new Promise((resolve) => {
+          control.release = () => resolve({ ok: upload.status === 'ok', json: () => Promise.resolve(upload) })
+        })
+      }
+      const payload = lists.length > 1 ? lists.shift() : lists[0]
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) })
+    }))
+    return control
+  }
+  const pick = (name) => {
+    const input = screen.getByRole('button', { name: `Upload resume for ${name}` }).parentElement.querySelector('input[type="file"]')
+    fireEvent.change(input, { target: { files: [new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' })] } })
+  }
+
+  it('uploads the picked file to that candidate, then the task is gone', async () => {
+    const control = server()
+    const onOpen = vi.fn()
+    render(<PendingWorksTab onOpenCandidate={onOpen} />)
+    await screen.findByRole('button', { name: 'Upload resume for Asha Fakename' })
+    pick('Asha Fakename')
+    await waitFor(() => expect(control.uploads).toHaveLength(1))
+    expect(control.uploads[0].url).toMatch(/\/candidates\/id-Asha%20Fakename\/resumes$/)
+    expect(control.uploads[0].body.get('file').name).toBe('cv.pdf')
+    expect(onOpen).not.toHaveBeenCalled()
+    await act(async () => control.release())
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Upload resume for Asha Fakename/ })).toBeNull())
+    // The payment-proof task is still there, and still opens the editor.
+    expect(screen.getByText('Upload Proof')).toBeInTheDocument()
+  })
+
+  it('cannot upload twice while one upload is running', async () => {
+    const control = server()
+    render(<PendingWorksTab />)
+    const button = await screen.findByRole('button', { name: 'Upload resume for Asha Fakename' })
+    pick('Asha Fakename')
+    await waitFor(() => expect(button).toBeDisabled())
+    expect(button.textContent).toBe('Uploading…')
+    pick('Asha Fakename')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(control.uploads).toHaveLength(1)
+    await act(async () => control.release())
+  })
+
+  it('a refused file says why and keeps the task', async () => {
+    const control = server({ upload: { status: 'error', message: 'This file does not look like a resume, so it was not saved.' } })
+    render(<PendingWorksTab />)
+    await screen.findByRole('button', { name: 'Upload resume for Asha Fakename' })
+    pick('Asha Fakename')
+    await waitFor(() => expect(control.uploads).toHaveLength(1))
+    await act(async () => control.release())
+    expect(await screen.findByRole('alert')).toHaveTextContent('This file does not look like a resume, so it was not saved.')
+    expect(screen.getByRole('button', { name: 'Upload resume for Asha Fakename' })).not.toBeDisabled()
+  })
+})

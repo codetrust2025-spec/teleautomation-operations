@@ -230,3 +230,14 @@
      Works card read "Stage: High". Each cell here says what it holds. */
   .cand-page .cand-pending .cand-pending-table tbody td[data-label]::before { content: attr(data-label); }
 }
+
+/* Upload Resume, done in place: a refusal stays under its button. */
+.cand-pending__upload-error {
+  display: block;
+  max-width: 240px;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #f87171;
+  overflow-wrap: anywhere;
+}

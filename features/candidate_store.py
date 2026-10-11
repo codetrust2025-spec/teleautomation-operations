@@ -2077,7 +2077,9 @@ def _with_computed(row: dict) -> dict:
         "date": _clean_str(enriched.get("date")),
         "phone": _clean_str(enriched.get("phone")),
         "reference": _clean_str(enriched.get("reference")),
-        "resume": bool(resumes),
+        # Profile service only, and only a resume whose file is stored: a
+        # round-wise booking needs none, and a record of a lost file is not one.
+        "resume": bool(enriched.get("active_resume")) if service_type != "round_wise" else True,
         # Once money is recorded, at least one payment proof is required
         # before the row can be considered fully complete.
         "payment_proof": bool(payment_proofs) if received > 0 else True,
@@ -2438,6 +2440,7 @@ def _collapse_profile_candidates(rows: list[dict], *, month: str | None = None) 
         # every slot row. The count used to add up each row's records -- lost
         # files and copies included -- and showed "10 resumes".
         _set_active_resume(merged, group, len(all_resumes))
+        _refresh_resume_completion(merged)
         # Merge each typed collection independently across legacy profile clones.
         all_proofs = {}
         slot_proofs = {}
@@ -2741,6 +2744,7 @@ def _merge_profile_rows_for_pending(rows: list[dict]) -> dict:
         "expected_payment": expected,
         "balance_due": max(0, expected - payment),
         "resume_count": 1 if active_resume(rows) else 0,
+        "active_resume": active_resume(rows),
         "resume_history_count": len(merged_resumes),
         "resumes": merged_resumes,
         "phone": phone or rep.get("phone"),
@@ -2866,7 +2870,12 @@ def _collect_pending_works_for_row(row: dict) -> list[dict]:
     if not ref or ref.lower() == "unknown":
         works.append(_pending_work_item(kind="missing_reference", row=row))
     service_type = _normalise_service_type(row.get("service_type"), row)
-    if service_type != "round_wise" and int(row.get("resume_count") or len(row.get("resumes") or [])) == 0:
+    # Missing Resume: Profile service only, and only when no resume is stored
+    # and openable. This read `resume_count or len(resumes)`, so a candidate
+    # whose files were all lost (resume_count 0) fell back to counting the lost
+    # records and was never flagged. Round-wise bookings need no resume and are
+    # never flagged or counted.
+    if service_type != "round_wise" and not _has_active_resume(row):
         works.append(_pending_work_item(kind="missing_resume", row=row))
     # Payment balance is enforced at slot booking — do not surface as pending work.
     # A recorded amount with no proof behind it is different: money is claimed
@@ -2900,6 +2909,22 @@ def _collect_pending_works_for_row(row: dict) -> list[dict]:
     if not (row.get("phone") or "").strip():
         works.append(_pending_work_item(kind="missing_phone", row=row))
     return works
+
+
+def _has_active_resume(row: dict) -> bool:
+    """A resume is stored and openable for this (possibly merged) row."""
+    if "active_resume" in row:
+        return bool(row.get("active_resume"))
+    return active_resume([row]) is not None
+
+
+def _refresh_resume_completion(row: dict) -> None:
+    """Re-judge the resume part of "all required details" for a merged row."""
+    missing = [field for field in (row.get("completion_missing") or []) if field != "resume"]
+    if _normalise_service_type(row.get("service_type"), row) != "round_wise" and not row.get("active_resume"):
+        missing.append("resume")
+    row["completion_missing"] = missing
+    row["details_complete"] = not missing
 
 
 def _row_holding_lost_proof(row: dict, lost: list[dict]) -> dict:
