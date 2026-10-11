@@ -6,7 +6,7 @@
  * - The table is fixed-layout. Its headers carried no width, so all ten
  *   columns came out equal; a <colgroup> now gives each one its share, and it
  *   has to stay one <col> per <th> in the same order.
- * - The ⋮ column has a real "Actions" heading.
+ * - No Actions column: a row click opens Edit (12 Oct), so Notes is the last column.
  * - Reset puts back the period, date, search, candidate, attendee, level,
  *   profile and status tab together, and reloads the counters and the table
  *   even when nothing was set.
@@ -142,17 +142,18 @@ describe('company', () => {
 })
 
 describe('columns', () => {
-  it('names the menu column Actions', async () => {
+  it('has no Actions column: Notes is the last heading', async () => {
     await renderPanel()
-    const heads = [...document.querySelectorAll('.ops-interview-table thead th')]
-    expect(heads.at(-1).textContent).toBe('Actions')
+    const heads = [...document.querySelectorAll('.ops-interview-table thead th')].map(th => th.textContent)
+    expect(heads.at(-1)).toBe('Notes')
+    expect(heads).not.toContain('Actions')
   })
 
   it('gives every column a <col>, in the order of the headers', async () => {
     await renderPanel()
     const cols = [...document.querySelectorAll('.ops-interview-table colgroup col')].map(c => c.className.replace('ops-col ops-col--', ''))
     const heads = [...document.querySelectorAll('.ops-interview-table thead th')].map(th => th.textContent)
-    expect(cols).toEqual(['date', 'time', 'candidate', 'company', 'tech', 'round', 'attendee', 'attendance', 'screenshot', 'notes', 'actions'])
+    expect(cols).toEqual(['date', 'time', 'candidate', 'company', 'tech', 'round', 'attendee', 'attendance', 'screenshot', 'notes'])
     expect(cols).toHaveLength(heads.length)
   })
 
@@ -160,8 +161,8 @@ describe('columns', () => {
     await renderPanel()
     fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Bhavana' } })
     await waitFor(() => expect(rosterCalls().at(-1).searchParams.get('attendee')).toBe('Bhavana'))
-    await waitFor(() => expect(document.querySelectorAll('.ops-interview-table thead th')).toHaveLength(10))
-    expect(document.querySelectorAll('.ops-interview-table colgroup col')).toHaveLength(10)
+    await waitFor(() => expect(document.querySelectorAll('.ops-interview-table thead th')).toHaveLength(9))
+    expect(document.querySelectorAll('.ops-interview-table colgroup col')).toHaveLength(9)
     expect(document.querySelector('col.ops-col--attendee')).toBeNull()
   })
 
@@ -170,9 +171,9 @@ describe('columns', () => {
     const pct = col => Number.parseFloat(width(col))
     expect(pct('notes')).toBeLessThan(pct('candidate'))
     expect(pct('round')).toBeLessThan(pct('time'))
-    // The thumbnail is 72px plus padding and the menu button 28px: fixed sizes.
+    // The thumbnail is 72px plus padding: a fixed size. There is no Actions column.
     expect(width('screenshot')).toBe('88px')
-    expect(width('actions')).toBe('64px')
+    expect(width('actions')).toBeUndefined()
     for (const col of ['date', 'time', 'candidate', 'company', 'tech', 'round', 'attendee', 'attendance', 'notes']) {
       expect(width(col), `${col} has no width`).toMatch(/%$/)
     }
@@ -206,11 +207,10 @@ describe('booking source', () => {
 })
 
 describe('icons', () => {
-  it('draws the row menu, search and refresh marks as icons, not font glyphs', async () => {
+  it('draws the search and refresh marks as icons, and has no row menu at all', async () => {
     await renderPanel()
-    const trigger = screen.getByRole('button', { name: 'Actions for Asha Rao' })
-    expect(trigger.querySelector('svg.ta-icon--more-vertical')).not.toBeNull()
-    expect(trigger.textContent).toBe('')
+    expect(screen.queryByRole('button', { name: 'Actions for Asha Rao' })).toBeNull()
+    expect(document.querySelector('svg.ta-icon--more-vertical')).toBeNull()
     expect(document.querySelector('.ops-roster-search__icon svg.ta-icon--search')).not.toBeNull()
     expect(screen.getByRole('button', { name: /Refresh/ }).querySelector('svg.ta-icon--refresh')).not.toBeNull()
     expect(ROSTER).not.toContain('>⋮<')

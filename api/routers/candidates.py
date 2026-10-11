@@ -393,7 +393,9 @@ async def candidates_interviews_slots_update(cid: str, request: Request, body: d
             date=b.get("date") or "",
             time=b.get("time") or "",
             time_end=b.get("time_end") or "",
-            notes=b.get("notes") or "",
+            # Only when sent: the Daily Ops edit never sends it, and "" here
+            # used to clear the candidate's own notes on every slot edit.
+            notes=(b.get("notes") or "") if "notes" in b else None,
             interview_round=b.get("interview_round") or "",
             technology=b.get("technology"),
         )

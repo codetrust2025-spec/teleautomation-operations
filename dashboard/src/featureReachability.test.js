@@ -199,4 +199,11 @@ describe('operations backend routes are reachable from the UI', () => {
 // writing it in the literal — exactly like the existing `/api/referrers/...`
 // payment-account aliases already folded into this baseline. One real route
 // family, one new entry; the feature is reachable.
-const BASELINE_UNREFERENCED = 25
+//
+// Raised 25 → 26 on 2026-10-12, when Daily Ops rows began opening Edit directly
+// and attendance moved into that dialog. `PATCH /candidates/{id}/interview-attendee`
+// lost its last caller, the "Edit attendee" dialog mode -- which nothing had
+// opened since the row menu was cut down to Edit alone (#316). The attendee is
+// still set, through the attendance request, whenever an outcome is recorded;
+// the route is still served.
+const BASELINE_UNREFERENCED = 26

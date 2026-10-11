@@ -66,11 +66,8 @@ async function renderPanel() {
   await act(async () => { await Promise.resolve() })
 }
 
-/** What the cell shows besides the dropdown's own options. */
-function visibleTextOutsideTheDropdown(cell) {
-  const copy = cell.cloneNode(true)
-  copy.querySelectorAll('select').forEach(select => select.remove())
-  return copy.textContent.trim()
+function attendanceCell(name) {
+  return screen.getByText(name).closest('tr').querySelector('td[data-label="Status"]')
 }
 
 describe('the Attendance column', () => {
@@ -79,22 +76,20 @@ describe('the Attendance column', () => {
     ['Vikram Devi', 'attended', 'Attended'],
     ['Meera Iyer', 'not_attended', 'Not attended'],
     ['Ravi Kumar', 're_service', 'Re-Service'],
-  ])('shows %s\'s status once, in the dropdown', async (name, value, label) => {
+  ])('shows %s\'s status once, read-only (changed in Edit)', async (name, value, label) => {
     await renderPanel()
-    const select = screen.getByLabelText(`Attendance for ${name}`)
-    expect(select.value).toBe(value)
-    expect(select.selectedOptions[0].textContent).toBe(label)
-
-    const cell = select.closest('td')
-    expect(visibleTextOutsideTheDropdown(cell), 'text repeated under the dropdown').toBe('')
+    const cell = attendanceCell(name)
+    expect(cell.textContent.trim()).toBe(label)
+    expect(cell.querySelector('select, input, button')).toBeNull()
     expect(cell.querySelector('.ops-status-pill')).toBeNull()
-    // The form holds the dropdown and nothing else.
-    expect([...cell.querySelector('.ops-interview-attendance-form').children].map(el => el.tagName)).toEqual(['SELECT'])
+    const status = cell.querySelector('.ops-attendance-status')
+    expect(status.getAttribute('aria-label')).toBe(`Attendance: ${label}`)
+    expect(value === '' ? 'pending' : value).toBeTruthy()
   })
 
   it('still colours the row by its status', async () => {
     await renderPanel()
-    const rowOf = name => screen.getByLabelText(`Attendance for ${name}`).closest('tr')
+    const rowOf = name => screen.getByText(name).closest('tr')
     expect(rowOf('Vikram Devi').className).toContain('ops-interview-row--done')
     expect(rowOf('Meera Iyer').className).toContain('ops-interview-row--missed')
   })

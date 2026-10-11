@@ -30,6 +30,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 vi.mock('./PendingWorksStrip.jsx', () => ({ PendingWorksStrip: () => null }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
+import { openRowEdit, saveButton, setAttendance, setNote } from './rowEditTestHelpers.js'
 
 const NOW = '2026-09-28T06:00:00Z'
 let calls
@@ -86,16 +87,15 @@ async function renderPanel() {
   await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 }
 
-/** Set the row's attendance status to Attended, which opens the modal. */
+/** Open the row's Edit dialog and set its attendance to Attended (12 Oct: the
+ *  row has no dropdown any more; attendance is changed in Edit). */
 function openAttendedModal(name = 'Asha Rao') {
-  fireEvent.change(screen.getByLabelText(`Attendance for ${name}`), { target: { value: 'attended' } })
+  openRowEdit(name)
+  setAttendance('attended')
 }
 
 function submitButton() {
-  // The modal footer's submit is labelled with the target status ("Attended").
-  // Scope to the dialog's footer so the KPI tab of the same name is excluded.
-  const dialog = document.querySelector('.ops-slot-modal')
-  return within(dialog).getByRole('button', { name: 'Attended' })
+  return saveButton()
 }
 
 function pick(triggerName, optionText) {
@@ -146,13 +146,15 @@ describe('the removed Interview result field', () => {
     expect(screen.queryByText('Interview result')).toBeNull()
   })
 
-  it('leaves exactly two dropdowns in the modal: attendee and feedback', async () => {
+  it('adds exactly two custom dropdowns for Attended: attendee and feedback', async () => {
     await renderPanel()
     openAttendedModal()
 
     const dialog = document.querySelector('.ops-slot-modal')
-    const comboboxes = within(dialog).getAllByRole('combobox').map(c => c.getAttribute('aria-label'))
-    expect(comboboxes).toEqual([
+    const custom = within(dialog).getAllByRole('combobox')
+      .filter(c => c.getAttribute('aria-haspopup') === 'listbox')
+      .map(c => c.getAttribute('aria-label'))
+    expect(custom).toEqual([
       'Attendee (who attended the interview?)', 'Interview feedback',
     ])
   })
@@ -169,7 +171,7 @@ describe('the Attended button', () => {
     pick('Interview feedback', 'Good')
     expect(submitButton()).toBeDisabled()
 
-    fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'cleared the round' } })
+    setNote('cleared the round')
     expect(submitButton()).toBeEnabled()
   })
 
@@ -185,7 +187,7 @@ describe('saving', () => {
     await renderPanel()
     openAttendedModal()
     pick('Interview feedback', 'Excellent')
-    fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'strong hire' } })
+    setNote('strong hire')
 
     await act(async () => { fireEvent.click(submitButton()) })
 
@@ -212,7 +214,7 @@ describe('the footer', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Interview feedback' }))
     expect(screen.getByRole('listbox', { name: 'Interview feedback' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Attended' })).toBeInTheDocument()
+    expect(submitButton()).toBeInTheDocument()
     // The menu is not inside the scrolling modal body — it is a child of <body>.
     const menu = screen.getByRole('listbox', { name: 'Interview feedback' })
     expect(dialog.contains(menu)).toBe(false)

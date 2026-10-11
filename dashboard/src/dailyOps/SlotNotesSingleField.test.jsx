@@ -101,8 +101,8 @@ async function renderPanel() {
 }
 
 function openEditSlot(name) {
-  fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }))
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }))
+  // A row click opens Edit directly (12 Oct: no Actions menu any more).
+  fireEvent.click(screen.getAllByText(name)[0].closest('tr').querySelector('td[data-label="Date"]'))
 }
 
 function slotDialog() {
@@ -176,18 +176,20 @@ describe('saving an edited note', () => {
     expect(attendancePosts[0]).toMatchObject({ status: 'attended', remark: 'Cleared L2; strong on APIs' })
     expect(attendancePosts[0]).not.toHaveProperty('feedback')
     expect(attendancePosts[0]).not.toHaveProperty('attendee')
-    // The slot PATCH carries slot fields only — never a `notes` field.
-    const lastPatch = slotPatches[slotPatches.length - 1]
-    expect(lastPatch).not.toHaveProperty('notes')
-    expect(lastPatch).not.toHaveProperty('noteRemark')
+    // A note alone does not rewrite the slot.
+    expect(slotPatches).toHaveLength(0)
   })
 
   it('does not call the attendance endpoint when the note is unchanged', async () => {
     await renderPanel()
     openEditSlot('Asha Rao')
+    fireEvent.change(screen.getByLabelText('Start time'), { target: { value: '10:30' } })
     await act(async () => { fireEvent.click(saveButton()) })
-    // Slot PATCH still happens (date/time/round/tech), but no remark write.
-    await waitFor(() => expect(slotPatches.length).toBeGreaterThan(0))
+    // The slot PATCH carries slot fields only — never a `notes` field — and no remark write.
+    await waitFor(() => expect(slotPatches.length).toBe(1))
+    expect(slotPatches[0]).not.toHaveProperty('notes')
+    expect(slotPatches[0]).not.toHaveProperty('noteRemark')
+    expect(slotPatches[0]).not.toHaveProperty('slotChanged')
     expect(attendancePosts.length).toBe(0)
   })
 })

@@ -26,6 +26,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 vi.mock('./PendingWorksStrip.jsx', () => ({ PendingWorksStrip: () => null }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
+import { openRowEdit, setAttendance, setNote } from './rowEditTestHelpers.js'
 import {
   INTERVIEW_STATUSES,
   STATUS_OPTIONS,
@@ -278,10 +279,17 @@ describe('filtering by a status', () => {
   })
 })
 
-describe('the row dropdown', () => {
+describe('the Edit dialog\'s Attendance select', () => {
+  // 12 Oct: the row only shows the status; it is set in the row's Edit dialog.
+  const editSelect = () => {
+    fireEvent.click(document.querySelector('.ops-interview-row td[data-label="Date"]'))
+    return document.querySelector('form.ops-slot-modal select[aria-label="Attendance"]')
+  }
+
   it('offers all six statuses', async () => {
     await renderPanel()
-    const select = document.querySelector('.ops-interview-row select')
+    expect(document.querySelector('.ops-interview-row select')).toBeNull()
+    const select = editSelect()
     expect(select).not.toBeNull()
     const labels = [...select.options].map(o => o.textContent)
     for (const status of INTERVIEW_STATUSES) expect(labels).toContain(status.label)
@@ -289,8 +297,7 @@ describe('the row dropdown', () => {
 
   it('offers Cancelled as a settable value', async () => {
     await renderPanel()
-    const select = document.querySelector('.ops-interview-row select')
-    expect([...select.options].map(o => o.value)).toContain('cancelled')
+    expect([...editSelect().options].map(o => o.value)).toContain('cancelled')
   })
 })
 
@@ -344,22 +351,15 @@ describe('changing a row refreshes the counters', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Today' }))
     await waitFor(() => expect(tab('Cancelled').textContent).toMatch(/Cancelled\s*1/))
 
-    const select = document.querySelector('.ops-interview-row select')
-    fireEvent.change(select, { target: { value: 'cancelled' } })
-
-    // Choosing a status opens the confirm modal rather than saving silently.
+    // The status is set in the row's Edit dialog, with the note it needs.
+    openRowEdit('Pending Priya')
     const form = await waitFor(() => {
       const node = document.querySelector('form.ops-slot-modal')
-      if (!node) throw new Error('the confirm modal did not open')
+      if (!node) throw new Error('the Edit dialog did not open')
       return node
     })
-    // A note is required before a status change saves, so fill it the way the
-    // operator would rather than submitting an incomplete form.
-    // The remark input carries no `type`, so select it by class: in this mode
-    // the form renders only the attendee select and this one input.
-    const note = form.querySelector('input.cand-input')
-    expect(note).not.toBeNull()
-    fireEvent.change(note, { target: { value: 'Candidate cancelled the interview.' } })
+    setAttendance('cancelled')
+    setNote('Candidate cancelled the interview.')
 
     // What the API will report once the change has landed.
     // Chandra was already cancelled; Priya joins her, so two rows are.
@@ -389,13 +389,14 @@ describe('changing a row refreshes the counters', () => {
     expect(tab('Pending').textContent).toMatch(/Pending\s*1/)
     expect(rowNames().some(text => text.includes('Pending Priya'))).toBe(true)
 
-    fireEvent.change(document.querySelector('.ops-interview-row select'), { target: { value: 'cancelled' } })
+    openRowEdit('Pending Priya')
     const form = await waitFor(() => {
       const node = document.querySelector('form.ops-slot-modal')
-      if (!node) throw new Error('the confirm modal did not open')
+      if (!node) throw new Error('the Edit dialog did not open')
       return node
     })
-    fireEvent.change(form.querySelector('input.cand-input'), { target: { value: 'Candidate cancelled.' } })
+    setAttendance('cancelled')
+    setNote('Candidate cancelled.')
     await act(async () => { fireEvent.submit(form) })
 
     expect(rowNames().some(text => text.includes('Pending Priya'))).toBe(false)

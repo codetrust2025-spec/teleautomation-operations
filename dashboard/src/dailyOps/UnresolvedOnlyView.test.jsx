@@ -10,7 +10,7 @@
  * off the list.
  */
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../context/AuthContext.jsx', () => ({
@@ -24,6 +24,7 @@ vi.mock('./PendingWorksStrip.jsx', () => ({
 }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
+import { editDialog, openRowEdit, pick, saveButton, setAttendance, setNote } from './rowEditTestHelpers.js'
 
 const NOW = '2026-09-27T06:00:00Z'
 const TODAY = '2026-09-27'
@@ -201,11 +202,12 @@ describe('the list', () => {
     expect(screen.getByText('Mon, 4 May')).toBeInTheDocument()
   })
 
-  it('keeps the status dropdown on every row', async () => {
+  it('offers every status in the row\'s Edit dialog', async () => {
     await renderPanel()
     await openUnresolved()
 
-    const select = screen.getByLabelText('Attendance for Asha Rao')
+    openRowEdit('Asha Rao')
+    const select = within(editDialog()).getByLabelText('Attendance')
     expect([...select.options].map(option => option.textContent)).toEqual([
       'Pending', 'Attended', 'Not attended', 'Cancelled', 'Rescheduled', 'Awaiting new slot', 'Re-Service',
     ])
@@ -223,9 +225,10 @@ describe('the list', () => {
     await renderPanel()
     await openUnresolved()
 
-    fireEvent.change(screen.getByLabelText('Attendance for Asha Rao'), { target: { value: 'cancelled' } })
-    fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'client called it off' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancelled' })) })
+    openRowEdit('Asha Rao')
+    setAttendance('cancelled')
+    setNote('client called it off')
+    await act(async () => { fireEvent.click(saveButton()) })
 
     await waitFor(() => expect(screen.queryByText('Asha Rao')).toBeNull())
     expect(posted[0].body.status).toBe('cancelled')
@@ -244,20 +247,13 @@ describe('the list', () => {
 })
 
 describe('a recorded outcome lands immediately', () => {
-  /** Pick an option in a DarkSelect custom dropdown by its trigger aria-label. */
-  function pickFromDarkSelect(triggerName, optionText) {
-    const trigger = screen.getByRole('combobox', { name: triggerName })
-    fireEvent.click(trigger)
-    const option = screen.getByRole('option', { name: optionText })
-    fireEvent.mouseDown(option)
-  }
-
-  /** Attended needs an attendee, feedback and a note before it saves. */
+  /** Attended needs an attendee, feedback and a note before it saves (in Edit). */
   async function markAttended(name) {
-    fireEvent.change(screen.getByLabelText(`Attendance for ${name}`), { target: { value: 'attended' } })
-    pickFromDarkSelect('Interview feedback', 'Good')
-    fireEvent.change(screen.getByLabelText(/Note \/ remark/), { target: { value: 'went ahead, cleared' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Attended', hidden: false })) })
+    openRowEdit(name)
+    setAttendance('attended')
+    pick('Interview feedback', 'Good')
+    setNote('went ahead, cleared')
+    await act(async () => { fireEvent.click(saveButton()) })
   }
 
   function pendingCard() {
@@ -294,15 +290,15 @@ describe('a recorded outcome lands immediately', () => {
     expect(pendingCard().textContent).toBe('Pending1')
   })
 
-  it('keeps the row and shows the error when the update fails', async () => {
+  it('keeps the row and shows the error in the open dialog when the update fails', async () => {
     postFails = true
     await renderPanel()
     await openUnresolved()
 
     await markAttended('Asha Rao')
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Update failed')
-    expect(screen.getByText('Asha Rao')).toBeInTheDocument()
+    await waitFor(() => expect(editDialog()).toHaveTextContent('Update failed'))
+    expect(document.querySelector('tbody').textContent).toContain('Asha Rao')
     expect(pendingCard().textContent).toBe('Pending2')
   })
 

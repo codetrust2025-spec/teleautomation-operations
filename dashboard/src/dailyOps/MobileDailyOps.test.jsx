@@ -136,14 +136,16 @@ afterEach(() => {
 })
 
 describe('the status reads once', () => {
-  it('leaves the dropdown as the only place the status is written', async () => {
+  it('leaves the read-only label as the only place the status is written', async () => {
     await renderPanel()
     await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 
-    // The dropdown alone says the status. The pill that sat under it read
-    // "Pending" twice and is no longer rendered at all; the phone rule that
-    // hid it stays as a guard.
-    expect(screen.getByLabelText('Attendance for Asha Rao').value).toBe('')
+    // The label alone says the status (12 Oct: it is changed in Edit, not on
+    // the row). The pill that once sat under the old dropdown is not rendered;
+    // the phone rule that hid it stays as a guard.
+    const cell = screen.getByText('Asha Rao').closest('tr').querySelector('td[data-label="Status"]')
+    expect(cell.textContent.trim()).toBe('Pending')
+    expect(cell.querySelector('select')).toBeNull()
     expect(document.querySelector('.ops-interview-attendance-form .ops-status-pill')).toBeNull()
     const hidden = declaring('.ops-interview-attendance-form .ops-status-pill', 'display')
     expect(hidden.length, 'no rule hides the duplicate pill').toBeGreaterThan(0)

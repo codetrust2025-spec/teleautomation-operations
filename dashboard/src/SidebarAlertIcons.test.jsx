@@ -129,11 +129,11 @@ describe('the count refreshes on a status change', () => {
   })
 
   it('announces from every roster mutation path', () => {
-    // Four of them: attendance, attendee, slot and the row actions. Each
-    // changes what is pending.
+    // Two of them since 12 Oct: the Edit dialog's one Save (slot, attendance
+    // outcome and note together) and Remove slot. Each changes what is pending.
     expect(roster).toContain('import { publishPendingWorkChanged }')
-    // Four call sites plus the wrapper's own definition.
-    expect((roster.match(/notifyRosterChanged\(\)/g) || []).length).toBe(5)
+    // Two call sites plus the wrapper's own definition.
+    expect((roster.match(/notifyRosterChanged\(\)/g) || []).length).toBe(3)
     // And exactly one direct call to the prop — the one inside the wrapper.
     // A second would be a path that mutates without telling the sidebar.
     expect((roster.match(/onRosterMutate\?\.\(\)/g) || []).length).toBe(1)
