@@ -360,6 +360,22 @@ def terminal_mailbox_ids(rows) -> set[str]:
 GMAIL_GRANT_DAYS = 7
 
 
+def _relabel_legacy_expiry_errors(rows: list[dict[str, Any]]) -> None:
+    """Show an expired grant recorded before 9 Sep under its real name.
+
+    Until 29b60d9 the worker raised a plain RuntimeError for an expired or
+    revoked grant, so a mailbox that failed then -- and has not synced since,
+    e.g. because its candidate finished -- still reads "RuntimeError" while
+    saying "Gmail authorization expired or was revoked". Read-time only.
+    """
+    for row in rows:
+        message = str(row.get("last_error_message") or "").lower()
+        if row.get("last_error_code") == "RuntimeError" and "authorization" in message and (
+            "expired" in message or "revoked" in message
+        ):
+            row["last_error_code"] = "GmailAuthorizationExpired"
+
+
 def _annotate_grant_expiry(rows: list[dict[str, Any]]) -> None:
     """Say whether grants still expire, and drop the deadline once they do not.
 
@@ -422,6 +438,7 @@ def _mailbox_health_rows(cur) -> list[dict[str, Any]]:
     terminal = terminal_mailbox_ids(rows)
     for row in rows:
         row["monitoring_excluded"] = str(row.get("id")) in terminal
+    _relabel_legacy_expiry_errors(rows)
     _annotate_grant_expiry(rows)
     return rows
 

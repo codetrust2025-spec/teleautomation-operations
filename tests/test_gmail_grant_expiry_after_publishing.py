@@ -42,3 +42,14 @@ def test_a_sync_just_past_the_week_is_not_enough():
     rows = [mailbox(7.9)]
     store._annotate_grant_expiry(rows)
     assert rows[0]["grant_expires"] is True
+
+
+def test_an_expiry_recorded_before_9_sep_reads_as_one():
+    """The one "RuntimeError" left on 11 Oct was an expired grant from 1 Sep."""
+    rows = [
+        {"last_error_code": "RuntimeError", "last_error_message": "Gmail authorization expired or was revoked. Reconnect Gmail."},
+        {"last_error_code": "RuntimeError", "last_error_message": "Unexpected response from Gmail"},
+        {"last_error_code": "GmailAuthorizationExpired", "last_error_message": "Gmail authorization has expired"},
+    ]
+    store._relabel_legacy_expiry_errors(rows)
+    assert [r["last_error_code"] for r in rows] == ["GmailAuthorizationExpired", "RuntimeError", "GmailAuthorizationExpired"]
