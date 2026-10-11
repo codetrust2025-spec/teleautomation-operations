@@ -561,7 +561,7 @@ async def candidates_update(cid: str, request: Request, body: dict):
     body = dict(body or {})
     allow_shorter_name = bool(body.pop("allow_shorter_name", False))
     # A saved 10-digit phone or full name is not replaced by a cut-short one
-    # ("77995", "Linga Srinava") without the person confirming the name.
+    # ("77995", "Kolla Raghava") without the person confirming the name.
     from features.resume_autofill import identity_overwrite_problem
 
     problem = identity_overwrite_problem(

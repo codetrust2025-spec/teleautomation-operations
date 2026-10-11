@@ -1416,7 +1416,7 @@ export function PaymentProofUploader({
   );
 }
 // ---- Values read from a resume: complete ones only --------------------------
-// 11 Oct: a form holding "Linga Srinava" and "77995" kept them after the resume
+// 11 Oct: a form holding "Kolla Raghava" and "77995" kept them after the resume
 // was read, because a cut-short name counted as a name and a typed number as a
 // correction. A reading now fills a field that is blank, holds no valid value,
 // or holds the name cut short; it never fills from an incomplete reading, and
@@ -1459,7 +1459,7 @@ function wordSimilarity(a, b) {
   return 1 - row[b.length] / Math.max(a.length, b.length, 1);
 }
 const closeWord = (a, b) => a === b || wordSimilarity(a, b) >= 0.8;
-// `word` is `full` cut short ("srinava" of "srinivasarao"); four letters at
+// `word` is `full` cut short ("raghava" of "raghavendrarao"); four letters at
 // least, so a short real name ("Ram" beside "Ramesh") is not taken for one.
 const cutShort = (word, full) =>
   word.length >= 4 &&
@@ -1502,10 +1502,33 @@ function technologyOption(value) {
   return H8.find((option) => key(option) === key(raw)) || raw;
 }
 /** A reading's four fields, each complete or "" (incomplete values are dropped). */
+// Words of resume section headings: a line holding one is never a person's name
+// (11 Oct: "SUMMARY OF QUALIFICATIONS" was read as a candidate's name). Mirrors
+// features/resume_autofill.person_name.
+const RESUME_HEADING_WORDS = new Set(
+  ("summary qualification qualifications resume curriculum vitae cv biodata objective objectives " +
+    "profile professional experience experiences education educational skills skill declaration " +
+    "contact details projects project certifications certification achievements employment career " +
+    "responsibilities overview personal technical academic work history competencies expertise " +
+    "strengths hobbies languages references address email mobile phone gmail").split(" "),
+);
+/** A person's name as written -- one word or more, never a heading -- or "". */
+export function personName(value) {
+  const text = String(value ?? "").trim().split(/\s+/).join(" ");
+  if (!text || /[^A-Za-z\s.\-']/.test(text)) return "";
+  const words = text.match(/[A-Za-z]+/g) || [];
+  if (!words.some((word) => word.length >= 2) || words.length > 6) return "";
+  if (words.some((word) => RESUME_HEADING_WORDS.has(word.toLowerCase()))) return "";
+  if (["unknown", "candidate", "na", "none", "test", "unnamed"].includes(text.toLowerCase())) return "";
+  return text === text.toUpperCase()
+    ? text.toLowerCase().replace(/(^|[\s.\-'])([a-z])/g, (_, lead, letter) => lead + letter.toUpperCase())
+    : text;
+}
 export function resumeReadingValues(reading) {
   const data = reading || {};
   return {
-    name: completeName(data.candidate_name ?? data.name),
+    // One word is a whole name: most candidates here are known by one.
+    name: personName(data.candidate_name ?? data.name),
     technology: technologyOption(data.technology),
     phone: indianMobile(data.phone),
     email: resumeEmail(data.email),
@@ -1517,7 +1540,7 @@ const resumeBlank = (value) => !String(value ?? "").trim();
 function sameResumeValue(key, current, value) {
   if (key === "phone") return indianMobile(current) === value;
   if (key === "email") return resumeEmail(current) === value;
-  if (key === "name") return completeName(current) !== "" && equivalentNames(current, value);
+  if (key === "name") return nameWords(current).length > 0 && equivalentNames(current, value);
   return String(current ?? "").trim().toLowerCase() === String(value).toLowerCase();
 }
 // Why the form's value and the resume's differ, in a word or two.
@@ -3102,7 +3125,7 @@ export function CandidateEditModal({
         await r(J);
       } catch (failure) {
         // The server keeps a full saved name from being replaced by itself cut
-        // short ("Linga Srinava") unless the person confirms it.
+        // short ("Kolla Raghava") unless the person confirms it.
         if (!failure?.shorterName) throw failure;
         const shorten = await confirmModal({
           title: "Save a shorter name?",

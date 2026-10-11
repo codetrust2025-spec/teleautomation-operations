@@ -82,6 +82,37 @@ def same_person(a: str, b: str) -> bool:
     return matched / len(short) >= 0.5 and matched >= 1
 
 
+#: Words of resume section headings. A line containing one is never a person's
+#: name: on 11 Oct "SUMMARY OF QUALIFICATIONS" was taken for a candidate's name and
+#: the resume refused as someone else's.
+_HEADING_WORDS = frozenset({
+    "summary", "qualification", "qualifications", "resume", "curriculum", "vitae", "cv", "biodata",
+    "objective", "objectives", "profile", "professional", "experience", "experiences", "education",
+    "educational", "skills", "skill", "declaration", "contact", "details", "projects", "project",
+    "certifications", "certification", "achievements", "employment", "career", "responsibilities",
+    "overview", "personal", "technical", "academic", "work", "history", "competencies", "expertise",
+    "strengths", "hobbies", "languages", "references", "address", "email", "mobile", "phone", "gmail",
+})
+
+
+def person_name(value: Any) -> str:
+    """A person's name as the resume writes it -- one word or more (initials may
+    be added), letters only, not a placeholder or a section heading -- in title
+    case when written in capitals; "" otherwise. One word is a whole name: most
+    candidates here are known by one ("Ravina")."""
+    text = " ".join(_clean(value).split())
+    if not text or text.lower() in _PLACEHOLDER_NAMES:
+        return ""
+    if re.search(r"[^A-Za-z\s.\-']", text):
+        return ""
+    words = re.findall(r"[A-Za-z]+", text)
+    if not any(len(word) >= 2 for word in words) or len(words) > 6:
+        return ""
+    if any(word.lower() in _HEADING_WORDS for word in words):
+        return ""
+    return text.title() if text.isupper() else text
+
+
 def complete_name(value: Any) -> str:
     """A full name -- at least two words of two letters or more (initials may be
     added) and not a placeholder -- or "" when the value is not one."""
@@ -100,7 +131,7 @@ def _close(a: str, b: str) -> bool:
 
 def equivalent_names(a: str, b: str) -> bool:
     """The same words, in any order, spelling variants aside:
-    "Linga Srinavasarao" and "Srinivasarao Linga" are one name."""
+    "Kolla Ragavendrarao" and "Raghavendrarao Kolla" are one name."""
     ta, tb = _tokens(a), _tokens(b)
     if not ta or len(ta) != len(tb):
         return False
@@ -114,7 +145,7 @@ def equivalent_names(a: str, b: str) -> bool:
 
 
 def _cut_short(token: str, full: str) -> bool:
-    """`token` is `full` cut short: "srinava" of "srinivasarao". Four letters at
+    """`token` is `full` cut short: "raghava" of "raghavendrarao". Four letters at
     least, so a short real name ("Ram" beside "Ramesh") is not taken for one."""
     if len(token) < 4 or len(token) >= len(full):
         return False
@@ -132,8 +163,8 @@ def partial_name(current: str, complete: str) -> bool:
 
 
 def shortened_name(current: str, complete: str) -> bool:
-    """`current` is the complete name with a word cut short ("Linga Srinava" of
-    "Srinivasarao Linga"). Leaving a whole word out does not count."""
+    """`current` is the complete name with a word cut short ("Kolla Raghava" of
+    "Raghavendrarao Kolla"). Leaving a whole word out does not count."""
     partial, shortened = _partial_shape(current, complete)
     return partial and shortened
 
@@ -173,8 +204,8 @@ def identity_overwrite_problem(
 
     * The phone changes only to a full 10-digit mobile (or is cleared): "77995"
       never replaces a saved number.
-    * A full saved name is not replaced by itself with a word cut short ("Linga
-      Srinava" for "Srinivasarao Linga") unless the person confirms it
+    * A full saved name is not replaced by itself with a word cut short ("Kolla
+      Raghava" for "Raghavendrarao Kolla") unless the person confirms it
       (`allow_shorter_name`). Dropping or changing whole words is not affected.
     """
     if "phone" in incoming:
@@ -271,11 +302,16 @@ def plan_autofill(
         return {"fill": {}, "skipped": {}, "refused": f"confidence {confidence} is below {MIN_CONFIDENCE}"}
 
     current_name = _clean(candidate.get("name"))
-    found_name = _clean(extraction.get("candidate_name"))
+    found_name = person_name(extraction.get("candidate_name"))
     name_known = usable("name", current_name, normalise_phone=normalise_phone, canonical_technology=canonical_technology)
-    if name_known and found_name and not same_person(current_name, found_name):
+    current_phone = valid_phone(candidate.get("phone"), normalise_phone)
+    resume_phone = valid_phone(extraction.get("phone"), normalise_phone)
+    # The candidate's own 10-digit number on the resume says it is theirs, even
+    # when the name was read badly; the name is then not needed to confirm it.
+    phone_confirms = bool(current_phone and current_phone == resume_phone)
+    if name_known and found_name and not same_person(current_name, found_name) and not phone_confirms:
         return {"fill": {}, "skipped": {}, "refused": "the name on the resume does not match this candidate"}
-    if name_known and not found_name:
+    if name_known and not found_name and not phone_confirms:
         # Nothing to confirm the resume is theirs: fill only what cannot be
         # someone else's -- which is nothing identifying.
         return {"fill": {}, "skipped": {}, "refused": "the resume gave no name to confirm it is this candidate's"}
@@ -283,15 +319,12 @@ def plan_autofill(
     # A resume whose own phone number differs from a candidate's valid one is
     # not evidence about that candidate: a copied template, or someone else's
     # contact block. Nothing it says about them is trusted.
-    current_phone = valid_phone(candidate.get("phone"), normalise_phone)
-    resume_phone = valid_phone(extraction.get("phone"), normalise_phone)
     if current_phone and resume_phone and current_phone != resume_phone:
         # Nothing is filled from it, but the form may still compare it, field
         # by field, for the person to accept or keep.
         return {"fill": {}, "skipped": {}, "refused": "",
                 "compare_only": "the phone number on the resume differs from this candidate's"}
 
-    found_complete = complete_name(found_name)
 
     others = list(others)
     taken_emails = {valid_email(o.get("email")) for o in others} - {""}
@@ -329,10 +362,10 @@ def plan_autofill(
             else:
                 fill[field] = tech
         elif field == "name":
-            if found_complete:
-                fill[field] = found_complete
-            elif found_name:
-                skipped[field] = "the name on the resume is incomplete"
+            if found_name:
+                fill[field] = found_name
+            elif _clean(extraction.get("candidate_name")):
+                skipped[field] = "the name on the resume is not a person's name"
             else:
                 skipped[field] = "no name on the resume"
     return {"fill": fill, "skipped": skipped, "refused": ""}

@@ -358,7 +358,7 @@ def test_a_file_that_is_not_a_resume_is_still_refused_and_fills_nothing(api, sto
     assert store.get_candidate("c1")["email"] == ""
 
 
-# --- complete names and phones (11 Oct: "Linga Srinava" / "77995" were kept) ----------
+# --- complete names and phones (11 Oct: "Kolla Raghava" / "77995" were kept) ----------
 # Invented values in the shape of the case: the resume says "Raghavendrarao Kolla",
 # the record holds the name cut short, in another order, or with a spelling variant.
 
@@ -394,10 +394,10 @@ def test_a_partial_phone_is_left_for_the_form_to_compare(partial_phone):
     assert result["fill"] == {}
 
 
-def test_an_incomplete_name_on_the_resume_is_never_written():
-    result = plan({**STORED, "name": ""}, reading(**{**FULL, "candidate_name": "Raghavendrarao K"}))
+def test_a_section_heading_on_the_resume_is_never_written_as_a_name():
+    result = plan({**STORED, "name": ""}, reading(**{**FULL, "candidate_name": "Summary Of Qualifications"}))
     assert "name" not in result["fill"]
-    assert result["skipped"]["name"] == "the name on the resume is incomplete"
+    assert result["skipped"]["name"] == "the name on the resume is not a person's name"
 
 
 def test_react_dot_js_is_the_rosters_react_js():
@@ -496,3 +496,41 @@ def test_the_save_route_refuses_a_cut_short_phone_and_asks_before_a_shorter_name
     assert writes[0]["name"] == "Kolla Raghava"
     assert "allow_shorter_name" not in writes[0]          # the confirmation is not stored
     assert save({"name": "Kolla Raghavendrarao", "phone": "+91 90000 00777"})["status"] == "ok"
+
+
+# --- one-word names and a matching phone (11 Oct: a one-word name's resume refused) ---
+# The resume's first line is the one-word name in capitals; the reader took the
+# section heading below it for the name, and the resume was refused as someone
+# else's although its phone was the candidate's own. Invented values.
+
+ONE_WORD = {"name": "Asha", "phone": "9000000611", "email": "", "technology": "Full Stack"}
+ONE_WORD_READ = {"candidate_name": "ASHA", "phone": "+91-9000000611", "email": "asha.v59@example.test", "technology": "React JS"}
+
+
+def test_a_one_word_name_is_the_same_person_and_the_missing_email_is_filled():
+    result = plan(ONE_WORD, reading(**ONE_WORD_READ))
+    assert result["refused"] == ""
+    assert result["fill"] == {"email": "asha.v59@example.test"}   # Full Stack, a valid value, is kept
+
+
+def test_the_candidates_own_phone_confirms_the_resume_when_the_name_was_misread():
+    result = plan(ONE_WORD, reading(**{**ONE_WORD_READ, "candidate_name": "Summary Of Qualifications"}))
+    assert result["refused"] == ""
+    assert result["fill"] == {"email": "asha.v59@example.test"}
+    result = plan(ONE_WORD, reading(**{**ONE_WORD_READ, "candidate_name": ""}))
+    assert result["fill"] == {"email": "asha.v59@example.test"}
+
+
+def test_a_different_name_without_the_candidates_phone_is_still_refused():
+    result = plan(ONE_WORD, reading(**{**ONE_WORD_READ, "candidate_name": "Ravi Kumar", "phone": "9000000622"}))
+    assert result["fill"] == {}
+    assert result["refused"] == "the name on the resume does not match this candidate"
+
+
+@pytest.mark.parametrize(("raw", "name"), [
+    ("RAVINA", "Ravina"), ("Asha", "Asha"), ("K. Ravi Kumar", "K. Ravi Kumar"), ("RAGHAVENDRARAO KOLLA", "Raghavendrarao Kolla"),
+    ("Summary Of Qualifications", ""), ("PROFESSIONAL SUMMARY", ""), ("Curriculum Vitae", ""), ("Gmail", ""),
+    ("Unknown", ""), ("asha.v59@example.test", ""), ("9000000611", ""), ("", ""),
+])
+def test_person_name(raw, name):
+    assert ra.person_name(raw) == name

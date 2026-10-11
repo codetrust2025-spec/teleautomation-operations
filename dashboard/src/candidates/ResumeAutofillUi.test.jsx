@@ -362,14 +362,13 @@ describe("a new candidate: a confident reading fills the empty fields", () => {
     expect(field("Phone")).toHaveValue("9000000999");
   });
 
-  it("does not use an incomplete name or phone from the reading", async () => {
+  it("does not use an incomplete phone; a name is used as the resume writes it", async () => {
     mockResumeUpload(reading({ candidate_name: "Asha R", phone: "+91 90000" }));
     const { container } = renderModal(null);
     await uploadResume(container);
     await waitFor(() => expect(field("Email")).toHaveValue("asha.rao@example.test"));
-    expect(field("Candidate name *")).toHaveValue("");
+    expect(field("Candidate name *")).toHaveValue("Asha R");
     expect(field("Phone")).toHaveValue("");
-    expect(row("name")).toBeNull();
     expect(row("phone")).toBeNull();
   });
 
@@ -518,5 +517,45 @@ describe("after Save and reopen, the complete values stay; a save never cuts the
     fireEvent.click(dialogButton("Save shorter name"));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(3));
     expect(onSave.mock.calls[2][0]).toMatchObject({ name: "Kolla Raghava", allow_shorter_name: true });
+  });
+});
+
+describe("one-word names (11 Oct: a one-word name's resume was refused as someone else's; invented values)", () => {
+  const READ = {
+    is_resume: true, candidate_name: "ASHA", phone: "+91-9000000611", email: "asha.v59@example.test",
+    technology: "React JS", confidence_score: 85, extraction_source: "pdf_text_ai",
+  };
+  const ROW = { name: "Asha", phone: "9000000611", email: "", technology: "Full Stack" };
+
+  it("fills the empty email, offers nothing for the same one-word name or phone, and offers the other technology", async () => {
+    mockResumeUpload({ status: "ok", resume: { id: "r1" }, candidate: ROW, ai_extraction: READ,
+      autofill: { filled: { email: "asha.v59@example.test" }, skipped: {}, refused: "" } });
+    const { container } = renderModal(ROW);
+    await uploadResume(container);
+    await waitFor(() => expect(field("Email")).toHaveValue("asha.v59@example.test"));
+    expect(screen.getByText("Filled from this resume: email. Existing details were kept.")).toBeInTheDocument();
+    expect(screen.queryByText(/does not match this candidate/)).toBeNull();
+    expect(row("name")).toBeNull();
+    expect(row("phone")).toBeNull();
+    expect(row("technology").textContent).toContain("Full Stack → React JS");
+    expect(field("Candidate name *")).toHaveValue("Asha");
+    expect(field("Phone")).toHaveValue("9000000611");
+  });
+
+  it("a new candidate takes a one-word name, written in capitals on the resume", async () => {
+    mockResumeUpload({ status: "ok", success: true, data: READ });
+    const { container } = renderModal(null);
+    await uploadResume(container);
+    await waitFor(() => expect(field("Candidate name *")).toHaveValue("Asha"));
+    expect(field("Email")).toHaveValue("asha.v59@example.test");
+  });
+
+  it("a section heading is never taken for the name", async () => {
+    mockResumeUpload({ status: "ok", success: true, data: { ...READ, candidate_name: "SUMMARY OF QUALIFICATIONS" } });
+    const { container } = renderModal(null);
+    await uploadResume(container);
+    await waitFor(() => expect(field("Email")).toHaveValue("asha.v59@example.test"));
+    expect(field("Candidate name *")).toHaveValue("");
+    expect(row("name")).toBeNull();
   });
 });

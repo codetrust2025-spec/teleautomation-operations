@@ -2323,9 +2323,9 @@ def _phones_by_name_key(rows: list[dict]) -> dict[str, set[str]]:
 def _person_on_phone(phone: str, name: str, phones_by_name: dict) -> str:
     """"" for the first person holding a phone, "#n" for another person on it.
 
-    11 Oct: a Save gave Srinivasarao Linga the number 13 Farhana rows carry; the
-    table then showed one "Srinivasarao Linga" with Farhana's proof and payment
-    (2 proofs, Rs 40,000) and Farhana vanished. Different people on one phone
+    11 Oct: a Save gave a candidate the number 13 rows of another person carry; the
+    table then showed one row under the first name, with the other's proof and payment
+    (2 proofs, Rs 40,000), and the other person vanished. Different people on one phone
     stay different profiles; one person's spellings still group together."""
     holders = (getattr(phones_by_name, "people", None) or {}).get(phone) or []
     if len(holders) < 2 or not name:

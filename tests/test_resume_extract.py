@@ -95,10 +95,10 @@ def test_a_name_not_on_the_page_is_not_passed_on(monkeypatch):
     assert result["candidate_name"] == "Raghavendrarao Kolla"
 
 
-def test_an_incomplete_value_with_nothing_better_on_the_page_is_left_empty(monkeypatch):
+def test_a_name_is_kept_as_the_page_writes_it_and_an_incomplete_phone_is_left_empty(monkeypatch):
     page = PAGE.replace("Raghavendrarao Kolla\n", "Raghavendrarao K\n").replace("+919000000777", "+91 90000")
     result = _read_with_model(monkeypatch, page, {**MODEL, "candidate_name": "Raghavendrarao K", "phone": "+91 90000"})
-    assert result["candidate_name"] == ""
+    assert result["candidate_name"] == "Raghavendrarao K"
     assert result["phone"] == ""
     assert result["email"] == "raghav.k@example.test"
 
@@ -134,3 +134,37 @@ def test_the_reported_resume_gives_all_four_fields_complete(monkeypatch, reply):
     assert result["phone"] == expect["phone"]
     assert result["email"] == expect["email"]
     assert cs.canonical_technology(result["technology"]) == expect["technology"]
+
+
+# --- a one-word name heading and letters spaced out (11 Oct report) --------------------
+# The PDF's first line is the name in capitals; the email in its text layer has
+# spaces inside it. The reader dropped the one-word name, took the heading below
+# for the name, and could not find the email on the page. Invented values.
+SPACED = """ASHA
+Gmail: Mobile : +
+a sha.v59 @ ex ample.te st 91-9000000611
+SUMMARY OF QUALIFICATIONS
+6 years
+Overall, o f experience in web technolog ies with React.js and Java
+"""
+
+
+def test_the_one_word_heading_is_the_name_not_the_section_below_it():
+    assert resume_extract._extract_name_from_text(SPACED) == "Asha"
+    assert resume_extract._extract_name_from_text("SUMMARY OF QUALIFICATIONS\nAsha Rao\n") == "Asha Rao"
+
+
+def test_an_email_with_spaced_letters_is_read_from_the_page():
+    result = resume_extract._regex_extract_from_text(SPACED)
+    assert (result["candidate_name"], result["phone"], result["email"]) == ("Asha", "9000000611", "asha.v59@example.test")
+
+
+def test_the_models_one_word_name_and_email_are_kept(monkeypatch):
+    result = _read_with_model(monkeypatch, SPACED, {**MODEL, "candidate_name": "ASHA", "phone": "9000000611",
+                                                    "email": "asha.v59@example.test", "technology": "React JS"})
+    assert (result["candidate_name"], result["phone"], result["email"]) == ("Asha", "9000000611", "asha.v59@example.test")
+
+
+def test_a_section_heading_from_the_model_is_never_the_name(monkeypatch):
+    result = _read_with_model(monkeypatch, SPACED, {**MODEL, "candidate_name": "Summary Of Qualifications", "phone": "9000000611"})
+    assert result["candidate_name"] == "Asha"

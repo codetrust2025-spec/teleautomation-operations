@@ -199,10 +199,15 @@ def _indian_mobile(value: Any) -> str:
 
 
 def _complete_name(value: Any) -> str:
-    """At least two words of two letters or more, or ""."""
-    text = " ".join(str(value or "").split())
-    words = _NAME_WORD.findall(text)
-    return text if sum(1 for word in words if len(word) >= 2) >= 2 else ""
+    """A person's name (one word or more, never a section heading), or ""."""
+    from features.resume_autofill import person_name
+
+    return person_name(value)
+
+
+def _unspaced(text: str) -> str:
+    """Text without whitespace: some PDFs space letters out ("p ujitha @ gm ail.co m")."""
+    return re.sub(r"\s+", "", text or "")
 
 
 def _on_page_name(name: str, text: str) -> bool:
@@ -216,7 +221,7 @@ def _settle_contact_fields(result: dict[str, Any], text: str, fallback: dict[str
     """Keep the name, phone and email the model read only when each is complete
     and -- when the resume has a text layer -- actually written in it. Otherwise
     take the plain-text reading's value if that one is, or leave the field
-    empty: a cut-short "Linga Srinava" or "77995" is never passed on."""
+    empty: a cut-short "Kolla Raghava" or "77995" is never passed on."""
     text = text or ""
     digits = re.sub(r"\D", "", text)
     lowered = text.lower()
@@ -236,9 +241,10 @@ def _settle_contact_fields(result: dict[str, Any], text: str, fallback: dict[str
             break
 
     email = ""
+    squeezed = _unspaced(lowered)
     for candidate in (result.get("email"), fallback.get("email")):
         address = str(candidate or "").strip().lower()
-        if _EMAIL_SHAPE.match(address) and (not text or address in lowered):
+        if _EMAIL_SHAPE.match(address) and (not text or address in lowered or address in squeezed):
             email = address
             break
 
@@ -371,8 +377,10 @@ def _extract_name_from_text(text: str) -> str:
         r'noida|gurugram|gurgaon|kolkata|ahmedabad)',
         re.IGNORECASE,
     )
+    from features.resume_autofill import person_name
+
     lines = text.splitlines()
-    for line in lines[:20]:  # Only look in first 20 lines
+    for line_number, line in enumerate(lines[:20], start=1):  # Only look in first 20 lines
         stripped = line.strip()
         if not stripped:
             continue
@@ -387,9 +395,15 @@ def _extract_name_from_text(text: str) -> str:
             continue
         if skip_patterns.search(stripped):
             continue
-        # Must be 2-5 words, no digits, no special chars except spaces and hyphens
+        # A section heading ("SUMMARY OF QUALIFICATIONS") is never the name.
+        if not person_name(stripped):
+            continue
+        # 1-5 words, no digits, no special chars except spaces and hyphens. A
+        # single word ("RAVINA") counts only near the top, where the name is.
         words = stripped.split()
-        if not (2 <= len(words) <= 5):
+        if not (1 <= len(words) <= 5):
+            continue
+        if len(words) == 1 and (line_number > 3 or len(words[0]) < 3):
             continue
         if re.search(r'[^A-Za-z\s\-\.]', stripped):
             continue
@@ -425,6 +439,14 @@ def _regex_extract_from_text(text: str) -> dict[str, Any]:
     email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
     if email_match:
         result["email"] = email_match.group(0)
+    else:
+        # A PDF that spaces letters out ("p ujitha.v59 @ gm ail.co m"): read each
+        # line without its spaces, the domain ending at its last letters.
+        for line in text.splitlines()[:40]:
+            spaced = re.search(r"[a-z0-9._%+\-]+@[a-z0-9\-]+(?:\.[a-z]{2,})+", _unspaced(line), re.IGNORECASE)
+            if spaced:
+                result["email"] = spaced.group(0).lower()
+                break
 
     # Common technologies — extended with QA/Automation stack
     tech_keywords = [
