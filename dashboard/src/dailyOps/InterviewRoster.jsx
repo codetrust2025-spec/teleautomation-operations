@@ -11,6 +11,7 @@ import { publishPendingWorkChanged } from './PendingWorksProvider.jsx'
 import { STATUS_OPTIONS, countStatusRows, emptyStatusCounts, matchesStatusFilter, statusLabel, statusTone } from './interviewStatuses.js'
 import { DarkSelect } from './DarkSelect.jsx'
 import { Icon } from '../components/ui/Icon.jsx'
+import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
@@ -354,6 +355,7 @@ export function InterviewRoster({
   dashboardCandidate = '',
   dashboardCandidateTypeFilter = '',
   dashboardStatusFilter = '',
+  dashboardSortOrder = DEFAULT_ROSTER_SORT,
   upcomingOnly = false,
   // The global Pending view: every interview still waiting for an outcome, at
   // any date. It replaces the date range rather than narrowing it.
@@ -837,7 +839,7 @@ export function InterviewRoster({
             </tr>
           </thead>
           <tbody>
-            {rows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)).map(row => {
+            {sortRosterRows(rows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)), dashboardSortOrder).map(row => {
               const status = resolvedStatus(row)
               const bookingSource = bookingSourceMeta(row)
               return (

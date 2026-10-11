@@ -3,6 +3,7 @@ import { API } from '../config.js'
 import { STATUS_TABS } from './interviewStatuses.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { InterviewRoster } from './InterviewRoster.jsx'
+import { ROSTER_SORT_OPTIONS, readRosterSort, saveRosterSort } from './rosterSort.js'
 import { PendingWorksStrip } from './PendingWorksStrip.jsx'
 import { ALL_TIME_RANGE, PRESETS, detectPresetFromRange, resolvePresetRange } from './dateRangePresets.js'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
@@ -134,6 +135,10 @@ export function DailyOpsPanel({
   const [candidateSearch, setCandidateSearch] = useState('')
   const [candidateFilter, setCandidateFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  // Sort By is a view preference, kept across reloads in this browser; Reset
+  // leaves it alone, as it clears filters rather than the way they are read.
+  const [sortOrder, setSortOrder] = useState(readRosterSort)
+  const changeSortOrder = value => { setSortOrder(value); saveRosterSort(value) }
   // One list of every interview still waiting for an outcome, however old.
   // It answers "what have we not closed?", which no date range can: the
   // forgotten ones are precisely the ones outside every range worth picking.
@@ -447,6 +452,14 @@ export function DailyOpsPanel({
           <option value="">All profiles</option>
           {technologyOptions.map(t => <option key={t} value={t}>{t}</option>)}
         </select></label>
+        <label className="ops-roster-control ops-roster-control--sort"><span>Sort by</span><select
+          className="cand-input ops-ctrl-select"
+          value={sortOrder}
+          onChange={e => changeSortOrder(e.target.value)}
+          aria-label="Sort by"
+        >
+          {ROSTER_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select></label>
         <div className="ops-roster-controls__actions">
           {/* Reset is always here: period, date, search, candidate, attendee,
               level, profile and the status tab, all at once. "Clear" only
@@ -490,6 +503,7 @@ export function DailyOpsPanel({
           dashboardCandidate={candidateFilter}
           dashboardCandidateSearch={candidateSearch}
           dashboardStatusFilter={statusFilter}
+          dashboardSortOrder={sortOrder}
           upcomingOnly={upcomingOnly && !unresolvedOnly}
           unresolvedOnly={unresolvedOnly}
           onRosterCountsChange={setRosterCounts}
