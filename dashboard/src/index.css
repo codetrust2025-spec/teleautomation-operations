@@ -16924,6 +16924,9 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-required { color: #f87171; margin-left: 0.1rem; }
 .sbs-hint { font-size: 0.65rem; color: var(--text-muted,#a8b4c4); line-height: 1.25; }
 .sbs-hint--warn { color: #f87171; font-weight: 500; }
+/* An invite addressed to someone else: confirm it is for this client. */
+.sbs-name-check { display: flex; align-items: flex-start; gap: 6px; }
+.sbs-name-check input { margin-top: 2px; flex: none; }
 .sbs-input {
   width: 100%;
   padding: 0.7rem 0.75rem;

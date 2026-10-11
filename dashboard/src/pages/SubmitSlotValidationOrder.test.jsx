@@ -124,7 +124,9 @@ describe('the browser no longer decides', () => {
 describe('validation runs top to bottom', () => {
   it('checks the fields in the order they appear on the form', () => {
     expect(steps()).toEqual([
-      'name', 'phone', 'technology', 'invite', 'company', 'round', 'payment',
+      // invite_name (11 Oct): an invite addressed to someone else must be
+      // confirmed as this client's before anything below it is judged.
+      'name', 'invite_name', 'phone', 'technology', 'invite', 'company', 'round', 'payment',
     ])
   })
 
@@ -196,7 +198,7 @@ describe('the rules themselves are unchanged', () => {
 
 describe('every field in the sequence can actually be reached', () => {
   it('each ref is attached to something in the markup', () => {
-    const refFor = { name: 'nameRef', phone: 'phoneRef', technology: 'technologyRef',
+    const refFor = { name: 'nameRef', invite_name: 'nameRef', phone: 'phoneRef', technology: 'technologyRef',
                      company: 'companyRef', round: 'roundRef', payment: 'paymentRef', invite: 'inviteRef' }
     for (const key of steps()) {
       expect(page).toContain(`ref={${refFor[key]}}`)

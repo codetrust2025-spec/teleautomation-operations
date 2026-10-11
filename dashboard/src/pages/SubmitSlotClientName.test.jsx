@@ -11,7 +11,7 @@
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { SubmitSlotPage, matchClientFromInvite } from './SubmitSlotPage.jsx'
+import { SubmitSlotPage, inviteNamesAnotherClient, matchClientFromInvite } from './SubmitSlotPage.jsx'
 
 afterEach(() => {
   cleanup()
@@ -176,5 +176,39 @@ describe('round-wise', () => {
     expect(typed.closest('label').querySelector('.sbs-hint').textContent)
       .toBe('The invite names “Ira Testwala”. Type the client name to confirm.')
     expect(calls.confirms).toHaveLength(0)
+  })
+})
+
+describe('an invite addressed to someone other than the chosen client (11 Oct)', () => {
+  // On 11 Oct an invite addressed to one candidate was booked under another, with
+  // nothing on the form saying the two names disagreed. Invented names.
+  const check = () => document.querySelector('.sbs-name-check')
+
+  it('says so, and books only once the person ticks that it is for this client', async () => {
+    const { confirm, calls } = await openForm('Lata Fakename', { typed: 'Ravi K Sample' })
+    expect(check().textContent).toContain('The invite is addressed to “Lata Fakename”, not Ravi K Sample.')
+    fireEvent.click(confirm)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(calls.confirms).toHaveLength(0)
+    fireEvent.click(check().querySelector('input[type="checkbox"]'))
+    fireEvent.click(confirm)
+    await waitFor(() => expect(calls.confirms).toHaveLength(1))
+    expect(calls.confirms[0].get('name')).toBe('Ravi K Sample')
+  })
+
+  it('stays quiet when the invite uses part of the same name', async () => {
+    await openForm('Ira Testwala', { typed: 'Ira' })
+    expect(check()).toBeNull()
+  })
+
+  it.each([
+    ['Lata Fakename', 'Kiran Sample', true],
+    ['Lata Fakename', 'Lata', false],
+    ['Ravikanth Fakename', 'Ravu', true],
+    ['Venkat Rao', 'Venkatesh Rao', false],
+    ['', 'Ira Testwala', false],
+    ['Ira Testwala', '', false],
+  ])('%s vs %s -> %s', (read, client, expected) => {
+    expect(inviteNamesAnotherClient(read, client)).toBe(expected)
   })
 })

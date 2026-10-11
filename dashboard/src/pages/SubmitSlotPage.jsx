@@ -287,6 +287,20 @@ export function matchClientFromInvite(readName, candidates) {
   return { name: '', reason: 'no_match' }
 }
 
+/**
+ * Whether the invite plainly names someone other than the chosen client: no word of one name is a word, or the
+ * start of a word, of the other. "Asha" for "Asha Fakename" is the same person; an invite addressed to
+ * one candidate and booked under another client is not. On 11 Oct one was, silently: a name already in the box
+ * is never replaced by the invite's, and nothing said the two disagreed.
+ */
+export function inviteNamesAnotherClient(readName, clientName) {
+  const words = value => String(value || '').toLocaleLowerCase().normalize('NFKD').replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3)
+  const read = words(readName)
+  const own = words(clientName)
+  if (!read.length || !own.length) return false
+  return !read.some(r => own.some(o => r.startsWith(o) || o.startsWith(r)))
+}
+
 function dedupeCandidates(rows) {
   const byName = new Map()
   for (const row of rows || []) {
@@ -529,6 +543,10 @@ export function SubmitSlotPage() {
   // typed or picked; otherwise the read name is offered for confirmation.
   const [nameFromInvite, setNameFromInvite] = useState(false)
   const [inviteNameHint, setInviteNameHint] = useState('')
+  // The name the invite is addressed to, kept whatever the box holds, and whether
+  // the person booking has confirmed the invite is for the client they chose.
+  const [inviteReadName, setInviteReadName] = useState('')
+  const [inviteNameChecked, setInviteNameChecked] = useState(false)
   const nameTypedRef = useRef(false)
   const nameValueRef = useRef('')
   const candidatesRef = useRef([])
@@ -729,6 +747,8 @@ export function SubmitSlotPage() {
 
   const applyInviteClient = useCallback(readName => {
     const read = String(readName || '').trim()
+    setInviteReadName(read)
+    setInviteNameChecked(false)
     if (!read || nameTypedRef.current || nameValueRef.current.trim()) {
       setInviteNameHint('')
       return
@@ -749,6 +769,7 @@ export function SubmitSlotPage() {
 
   const typeClientName = value => {
     nameTypedRef.current = Boolean(String(value || '').trim())
+    setInviteNameChecked(false)
     setNameFromInvite(false)
     setName(value)
     resetPaymentProofs()
@@ -760,6 +781,7 @@ export function SubmitSlotPage() {
     setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setCompany('')
     setCompanyFromInvite(false); companyTypedRef.current = false
     setNameFromInvite(false); setInviteNameHint(''); nameTypedRef.current = false
+    setInviteReadName(''); setInviteNameChecked(false)
     setSessionFile(null); setSessionPreview('')
     setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
     resetInviteAnalysis()
@@ -897,6 +919,7 @@ export function SubmitSlotPage() {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
     setInviteNameHint('')   // a name already in the box stays: a payment may already be filed under it
+    setInviteReadName(''); setInviteNameChecked(false)
     applyInviteCompany('')
     resetInviteAnalysis()
     if (file) { setSlotPreview(URL.createObjectURL(file)); await parseScreenshot(file) }
@@ -1031,6 +1054,8 @@ export function SubmitSlotPage() {
     // so validating it earlier would judge an amount that is not settled yet.
     const steps = [
       { key: 'name', ref: nameRef, fallbackRef: nameFieldRef, ok: !!effectiveName },
+      { key: 'invite_name', ref: nameRef, fallbackRef: nameFieldRef,
+        ok: !inviteNamesAnotherClient(inviteReadName, effectiveName) || inviteNameChecked },
       { key: 'phone', ref: phoneRef,
         ok: serviceType !== 'round_wise' || !!roundWisePhone.trim() },
       { key: 'technology', ref: technologyRef,
@@ -1267,6 +1292,17 @@ export function SubmitSlotPage() {
                           ? `The invite names “${inviteNameHint}”. Type the client name to confirm.`
                           : `The invite names “${inviteNameHint}”. Pick the client to confirm.`}</span>
                       : <span className="sbs-hint">{serviceType === "round_wise" ? "Type the client name for this round." : "Pick from the list or type a new client name."}</span>}
+                {inviteNamesAnotherClient(inviteReadName, name) && (
+                  <span className="sbs-hint sbs-hint--warn sbs-name-check" role={missingField === 'invite_name' ? 'alert' : undefined}>
+                    <input
+                      type="checkbox"
+                      checked={inviteNameChecked}
+                      onChange={e => setInviteNameChecked(e.target.checked)}
+                      aria-label={`The invite is for ${name}`}
+                    />
+                    {` The invite is addressed to “${inviteReadName}”, not ${name}. Tick only if it really is for ${name}.`}
+                  </span>
+                )}
               </label>
 
               {serviceType === "round_wise" && (
