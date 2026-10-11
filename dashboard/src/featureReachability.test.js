@@ -133,6 +133,9 @@ describe('operations backend routes are reachable from the UI', () => {
     // Opened from a message by the Gmail account holder, never fetched by the
     // dashboard: a signed, expiring link that redirects to Google's consent screen.
     /^\/api\/candidate-mailboxes\/reconnect\/\{token\}$/,
+    // Machine-to-machine Daybreak integration. Its dedicated bearer token and
+    // local companion deliberately keep it outside the Operations dashboard.
+    /^\/api\/integrations\/daybreak\//,
     /pubsub/,                    // Gmail push delivery endpoint
     // Read-only production runbook endpoint; deliberately not a dashboard
     // control, because reconciliation must never auto-repair live records.
