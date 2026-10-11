@@ -129,9 +129,7 @@ def install_dashboard_auth(app: FastAPI) -> None:
             return {"status": "ok", "verified": True}
         if not password:
             return _json({"detail": "Password required"}, status=400)
-        import secrets
-
-        if secrets.compare_digest(password, expected_pass):
+        if auth.admin_password_matches(password, expected_pass):
             return {"status": "ok", "verified": True}
         return _json({"detail": "Incorrect password"}, status=401)
 

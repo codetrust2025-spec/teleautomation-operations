@@ -143,6 +143,15 @@ def register_api_roots(app: Any) -> frozenset[str]:
     return frozenset(discovered)
 
 
+def admin_password_matches(password: str, expected: str | None = None) -> bool:
+    """Whether `password` is the admin's. The expected value is the deployment's
+    password or, after a change from the dashboard, the stored hash of the new
+    one -- never kept as typed."""
+    if expected is None:
+        expected = get_credentials()[1]
+    return bool(expected) and verify_password(str(password or ""), expected)
+
+
 def api_roots() -> frozenset[str]:
     """Every first path segment that belongs to the API rather than the SPA."""
     return frozenset(_API_ROOTS | _DISCOVERED_API_ROOTS)
@@ -194,7 +203,9 @@ def _load_admin_credentials_override() -> dict[str, str] | None:
     if not isinstance(raw, dict):
         return None
     username = str(raw.get("username") or "").strip()
-    password = str(raw.get("password") or "")
+    # A hash since 11 Oct; a file written before then holds the password itself
+    # and is still honoured until the next change replaces it.
+    password = str(raw.get("password_hash") or raw.get("password") or "")
     environment_fingerprint = str(raw.get("environment_password_sha256") or "")
     if not username or not password or not environment_fingerprint:
         return None
@@ -215,7 +226,7 @@ def _persist_admin_credentials_override(
     tmp = f"{path}.{secrets.token_hex(8)}.tmp"
     payload = {
         "username": username,
-        "password": password,
+        "password_hash": hash_password(password),
         "environment_password_sha256": _environment_password_fingerprint(environment_password),
         "updated_at": int(time.time()),
     }
@@ -627,7 +638,7 @@ def change_operator_password(username: str, current_password: str, new_password:
             pass
         return None
     expected_user, expected_pass = get_credentials()
-    if not secrets.compare_digest(user, expected_user) or not secrets.compare_digest(cur, expected_pass):
+    if not secrets.compare_digest(user, expected_user) or not admin_password_matches(cur, expected_pass):
         return "Current password is incorrect"
     environment_user, environment_pass = _environment_credentials()
     if not secrets.compare_digest(environment_user, expected_user):
@@ -701,7 +712,7 @@ def resolve_operator_login(username: str, password: str) -> dict[str, Any] | Non
     if (
         expected_pass
         and secrets.compare_digest(user, expected_user)
-        and secrets.compare_digest(pwd, expected_pass)
+        and admin_password_matches(pwd, expected_pass)
     ):
         return _complete_profile({"username": expected_user, "role": "admin", "reference": None})
     handler = _handler_accounts().get(user.lower())

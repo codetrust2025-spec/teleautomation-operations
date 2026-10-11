@@ -183,9 +183,8 @@ function CopyChip({ label, text, copyKey, activeKey, onCopy, variant = 'icon' })
 
 // A password is never shown in clear here — not the admin's, not anyone's. The
 // dots are a fixed-width placeholder so every Password cell lines up whether or
-// not the value exists; the real value only ever leaves via the copy button
-// (admin, where the server still returns it) and the clipboard. Handlers'
-// passwords are hashed and not returned, so their cell says so plainly.
+// not the value exists. Every stored password is a hash and none is returned
+// (the admin's too, since 11 Oct), so the cell says so plainly.
 function MaskedPassword({ hasValue }) {
   return hasValue
     ? <code className="dr-creds-pass" aria-label="Password hidden">••••••••</code>

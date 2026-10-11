@@ -204,9 +204,38 @@ def _migrate_offer_letter_rows(data: dict) -> bool:
     return True
 
 
+def _hash_admin_password_copy(data: dict) -> bool:
+    """Replace a password kept as typed on the admin row with its hash.
+
+    The row is a copy for this page; login never reads it. It held the admin
+    password as typed -- on the data volume and in every backup of it -- while
+    handler rows already held hashes (11 Oct audit). Returns True if changed."""
+    from core.password_hashing import hash_password, is_hashed
+
+    admin = data.get("admin")
+    if not isinstance(admin, dict):
+        return False
+    stored = str(admin.get("password") or "")
+    if not stored or is_hashed(stored):
+        return False
+    data["admin"] = {**admin, "password": hash_password(stored)}
+    return True
+
+
+def hash_stored_admin_password() -> bool:
+    """Run once at startup so the copy does not wait for someone to open the page."""
+    data = _load()
+    if not _hash_admin_password_copy(data):
+        return False
+    _save(data)
+    return True
+
+
 def get_credentials() -> dict:
     data = _load()
-    if _migrate_offer_letter_rows(data):
+    changed = _migrate_offer_letter_rows(data)
+    changed = _hash_admin_password_copy(data) or changed
+    if changed:
         _save(data)
     admin = data.get("admin")
     handlers = list(data.get("handlers") or [])
@@ -217,7 +246,11 @@ def get_credentials() -> dict:
     return {
         "site_url": (data.get("site_url") or "").strip(),
         "vps_host": (data.get("vps_host") or "").strip(),
-        "admin": dict(admin) if isinstance(admin, dict) else None,
+        # Like the handlers': a hash, of no use to the page, so not sent.
+        "admin": (
+            {key: value for key, value in admin.items() if key != "password"}
+            if isinstance(admin, dict) else None
+        ),
         # The stored password is a hash and of no use to a caller; withholding
         # it keeps the secret off the wire and out of anything that logs a
         # response body.
@@ -234,6 +267,13 @@ def get_credentials() -> dict:
     }
 
 
+
+
+def _hashed_or_empty(password: str | None) -> str:
+    from core.password_hashing import hash_password, is_hashed
+
+    value = (password or "").strip()
+    return value if not value or is_hashed(value) else hash_password(value)
 
 
 def save_credentials(
@@ -258,7 +298,7 @@ def save_credentials(
         "vps_host": (vps_host or "").strip(),
         "admin": {
             "username": (admin_username or "admin").strip(),
-            "password": (admin_password or "").strip(),
+            "password": _hashed_or_empty(admin_password),
             "role": "admin",
             "reference": "Full dashboard",
         },
@@ -496,7 +536,7 @@ def sync_admin_login_copy(updates: dict) -> tuple[dict | None, str | None]:
     if "username" in updates:
         admin["username"] = str(updates.get("username") or admin.get("username") or "admin").strip()
     if "password" in updates and str(updates.get("password") or "").strip():
-        admin["password"] = str(updates.get("password") or "").strip()
+        admin["password"] = _hashed_or_empty(str(updates.get("password") or ""))
     if "reference" in updates:
         admin["reference"] = str(updates.get("reference") or "Full dashboard").strip()
     data["admin"] = admin

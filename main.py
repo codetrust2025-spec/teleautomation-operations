@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
@@ -184,6 +185,12 @@ async def startup() -> None:
 
     apply_migrations()
     ensure_schema()
+    try:
+        from features.data_room_credentials_store import hash_stored_admin_password
+
+        hash_stored_admin_password()
+    except Exception:  # noqa: BLE001 - never block startup on this copy
+        logging.getLogger(__name__).exception("Could not hash the Data Room admin password copy")
     # Started here rather than on first WebSocket connect: the tailer delivers
     # events written by any process, and it needs the loop registered before a
     # publisher runs, not after a browser happens to arrive.
