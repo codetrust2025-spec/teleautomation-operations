@@ -254,7 +254,7 @@ class RecruitmentMailWorker:
                 refs=provider.fetch_messages_by_date(job['range_start'],job['range_end']);cursor=mailbox.get('provider_history_id') or mailbox.get('sync_cursor')
                 ingestion_by_message={}
             else:
-                refs,cursor=provider.fetch_new_messages(mailbox.get('provider_history_id') or mailbox.get('sync_cursor'),batch_size=batch)
+                refs,cursor=provider.fetch_new_messages(mailbox.get('provider_history_id') or mailbox.get('sync_cursor'),batch_size=batch,since=mailbox.get('last_successful_sync_at'))
                 # This transaction is the loss-prevention boundary: all IDs are
                 # durable before the Gmail cursor can move beyond them.
                 store.stage_gmail_messages_and_advance_cursor(mailbox['id'],refs,cursor)

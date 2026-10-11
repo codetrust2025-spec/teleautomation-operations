@@ -160,7 +160,7 @@ class _Fake:
     def __init__(self, _cipher, on_credentials_refreshed=None):
         self.on_credentials_refreshed = on_credentials_refreshed
 
-    def fetch_new_messages(self, cursor, *, batch_size):
+    def fetch_new_messages(self, cursor, *, batch_size, since=None):
         raise _Fake.failure
 
     def fetch_messages_by_date(self, start, end, *, limit=500):
