@@ -85,13 +85,18 @@ function tomorrowIso() {
   return addDaysIso(todayIso(), 1)
 }
 
-function formatDayLabel(iso) {
+/** "Mon, 12 Oct"; the year is added when it is not this year ("Thu, 16 Sept 2027").
+ *  Without it a 2027 interview read as "16 Sept" and Latest to Oldest looked
+ *  as if it put September above October (11 Oct). */
+export function formatDayLabel(iso) {
   if (!iso) return '—'
   try {
-    return new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('en-IN', {
+    const day = iso.slice(0, 10)
+    return new Date(`${day}T12:00:00`).toLocaleDateString('en-IN', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
+      ...(day.slice(0, 4) !== todayIso().slice(0, 4) ? { year: 'numeric' } : {}),
       timeZone: 'Asia/Kolkata',
     })
   } catch {

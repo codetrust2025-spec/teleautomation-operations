@@ -1,11 +1,13 @@
 /**
  * Sort By for the Daily Ops interview roster.
  *
- * Every order is read from fields the roster rows already carry; nothing is
- * requested for it and nothing is written except the choice itself, kept in
- * this browser so it survives a reload. Within any order, ties fall back to
- * the default: newest date first, and on one date the day's schedule earliest
- * first. A missing value (no date, no readable time, no round...) goes last.
+ * Every order is read from fields the roster rows already carry -- the ISO
+ * date and the time, never the label shown -- nothing is requested for it and
+ * nothing is written except the choice itself, kept in this browser so it
+ * survives a reload. Latest to Oldest (the default) runs date then time, both
+ * newest first; Oldest to Latest both oldest first. Within any other order,
+ * ties fall back to the default. A missing value (no date, no readable time,
+ * no round...) goes last.
  * Alphabetical orders by candidate, company, technology or attendee name are
  * deliberately not offered.
  */
@@ -104,9 +106,9 @@ function by(a, b, direction = 1) {
   return (a < b ? -1 : 1) * direction
 }
 
-/** The default order: newest date first, each date earliest first. */
+/** The default order: newest date first and, on one date, latest time first. */
 function defaultOrder(a, b) {
-  return by(dateKey(a), dateKey(b), -1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1)
+  return by(dateKey(a), dateKey(b), -1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), -1)
 }
 
 const COMPARE = {

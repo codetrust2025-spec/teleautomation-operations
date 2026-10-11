@@ -19,6 +19,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 vi.mock('./PendingWorksStrip.jsx', () => ({ PendingWorksStrip: () => null }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
+import { formatDayLabel } from './InterviewRoster.jsx'
 import {
   DEFAULT_ROSTER_SORT, ROSTER_SORT_OPTIONS, ROSTER_SORT_STORAGE_KEY, minutesOfDay, readRosterSort, saveRosterSort, sortRosterRows,
 } from './rosterSort.js'
@@ -39,12 +40,12 @@ const SERVED = [
 describe('sortRosterRows', () => {
   const names = rows => rows.map(r => r.id).join('')
 
-  it('runs Latest to Oldest by default, each date earliest first', () => {
+  it('runs Latest to Oldest by default: date, then time, both newest first', () => {
     expect(DEFAULT_ROSTER_SORT).toBe('date_desc')
-    expect(names(sortRosterRows(SERVED))).toBe('dbca')
+    expect(names(sortRosterRows(SERVED))).toBe('bdca')
   })
 
-  it('runs Oldest to Latest when asked, each date still earliest first', () => {
+  it('runs Oldest to Latest when asked: date, then time, both oldest first', () => {
     expect(names(sortRosterRows(SERVED, 'date_asc'))).toBe('acdb')
   })
 
@@ -126,7 +127,7 @@ describe('Sort By on the Daily Ops roster', () => {
       'Recently Updated', 'Recently Created', 'Screenshot Available First', 'Missing Company First', 'Missing Round First',
     ])
     expect(sortBox().closest('.ops-roster-controls__filters')).not.toBeNull()
-    expect(shown()).toEqual(['Dev', 'Bala', 'Chitra', 'Asha'])
+    expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
   })
 
   it('switches order without asking the server again, and keeps the choice through a reload', async () => {
@@ -201,5 +202,36 @@ describe('the other orders (11 Oct, second request)', () => {
 
   it('an unknown saved value falls back to the default order', () => {
     expect(ids('by_candidate_name')).toBe(ids('date_desc'))
+  })
+})
+
+describe('Latest to Oldest reads the real date, and the label shows the year (11 Oct bug)', () => {
+  // Production showed "Thu, 16 Sept" and "Sat, 19 Jun" above "Mon, 12 Oct": they
+  // were 2027 rows, newest by date, but the label left the year out.
+  const rows = [
+    row('oct', 'Oct Fakename', '2026-10-12', '11:00'),
+    row('sep', 'Sep Fakename', '2026-09-16', '14:00'),
+    row('jun27', 'Jun Fakename', '2027-06-19', '14:00'),
+    row('sep27', 'Sep27 Fakename', '2027-09-16', '14:00'),
+    row('dec', 'Dec Fakename', '2026-12-10', '16:00'),
+  ]
+  const ids = order => sortRosterRows(rows, order).map(r => r.id)
+
+  it('orders by the ISO date, years included', () => {
+    expect(ids('date_desc')).toEqual(['sep27', 'jun27', 'dec', 'oct', 'sep'])
+    expect(ids('date_asc')).toEqual(['sep', 'oct', 'dec', 'jun27', 'sep27'])
+  })
+
+  it('on one date: latest time first by default, earliest first oldest-first', () => {
+    const day = [row('m', 'M', '2026-10-12', '11:00 AM'), row('e', 'E', '2026-10-12', '17:30'), row('n', 'N', '2026-10-12', '2:30 PM')]
+    expect(sortRosterRows(day, 'date_desc').map(r => r.id)).toEqual(['e', 'n', 'm'])
+    expect(sortRosterRows(day, 'date_asc').map(r => r.id)).toEqual(['m', 'n', 'e'])
+  })
+
+  it('shows the year on a date outside this year, and not on one inside it', () => {
+    const year = new Date().getFullYear()
+    expect(formatDayLabel(`${year + 1}-06-19`)).toContain(String(year + 1))
+    expect(formatDayLabel(`${year - 1}-09-16`)).toContain(String(year - 1))
+    expect(formatDayLabel(`${year}-10-12`)).not.toContain(String(year))
   })
 })
