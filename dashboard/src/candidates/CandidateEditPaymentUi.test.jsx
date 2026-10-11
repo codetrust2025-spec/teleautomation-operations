@@ -215,6 +215,21 @@ describe("3. A proof card shows amount, status, date and UTR", () => {
     expect(within(card).getByText("Receiver not recognised")).toBeInTheDocument();
   });
 
+  it("shows the stored deterministic reason instead of only a generic review label", () => {
+    const reason = "A configured receiver UPI, phone, or account identifier must be visible.";
+    renderModal({
+      ...PROFILE,
+      payment_proofs: [verifiedProof("p-reason", {
+        verification_state: "INCOMPLETE_PAYMENT_EVIDENCE",
+        deterministic_reasons: [reason],
+      })],
+      proof_count: 1,
+    });
+    const card = document.querySelector('[data-proof-id="p-reason"]');
+    expect(within(card).getByText("Needs review")).toBeInTheDocument();
+    expect(within(card).getByText(reason)).toBeInTheDocument();
+  });
+
   it("for a legacy proof nobody reviewed", () => {
     renderModal({
       ...PROFILE,

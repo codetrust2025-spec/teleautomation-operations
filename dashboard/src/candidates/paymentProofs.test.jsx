@@ -282,6 +282,20 @@ describe("proofPresentation", () => {
   it("never invents an amount", () => {
     expect(proofPresentation({ verification_state: "UNKNOWN_RECEIVER" }).amountText).toBe("Amount not read");
   });
+
+  it("keeps a deterministic rejection explanation with the proof", () => {
+    const proof = proofPresentation({
+      verification_state: "INCOMPLETE_PAYMENT_EVIDENCE",
+      deterministic_reasons: ["A configured receiver UPI, phone, or account identifier must be visible."],
+    });
+    expect(proof.status.label).toBe("Needs review");
+    expect(proof.reasonText).toBe("A configured receiver UPI, phone, or account identifier must be visible.");
+  });
+
+  it("explains legacy incomplete payment evidence without modifying it", () => {
+    const proof = proofPresentation({ verification_state: "INCOMPLETE_PAYMENT_EVIDENCE" });
+    expect(proof.reasonText).toMatch(/receiver UPI, phone, or account identifier/i);
+  });
 });
 
 describe("dedupeProofsForDisplay", () => {

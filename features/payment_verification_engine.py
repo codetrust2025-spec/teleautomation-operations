@@ -160,6 +160,24 @@ def _norm_upi(value: Any) -> str:
     return "".join(str(value or "").lower().split())
 
 
+_UPI_PROVIDER_LABEL_RE = re.compile(
+    r"\s+on\s+(?:phonepe|google\s*pay|gpay|paytm|bhim|amazon\s*pay)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_recognized_upi_provider_label(value: Any) -> str:
+    """Remove an app's display label from an extracted UPI identifier.
+
+    Payment apps commonly render a payee as ``••••1111@ybl on PhonePe``.
+    ``on PhonePe`` describes the app, not the VPA; retaining it turns an
+    otherwise checkable masked identifier into a different, invalid string.
+    This is deliberately limited to known presentation labels and does not
+    relax any name, domain, visible-suffix, or registry checks.
+    """
+    return _UPI_PROVIDER_LABEL_RE.sub("", str(value or "")).strip()
+
+
 def _valid_upi(value: Any) -> bool:
     normalized = _norm_upi(value)
     return bool(re.fullmatch(r"[a-z0-9._-]{2,}@[a-z][a-z0-9.-]{1,}", normalized))
@@ -668,7 +686,9 @@ def classify_receiver(
     refused because the extracted receiver string was not literally present in
     the registry, even though the referrer's own account was.
     """
-    upi = _norm_upi(extraction.get("receiver_upi_id"))
+    upi = _norm_upi(
+        _strip_recognized_upi_provider_label(extraction.get("receiver_upi_id"))
+    )
     upi_masked = _is_masked_identifier(upi)
     masked_upi = upi if upi_masked else ""
     if upi_masked:

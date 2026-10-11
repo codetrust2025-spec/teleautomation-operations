@@ -28,6 +28,7 @@ from features import payment_verification_engine as eng
 
 # Read from `docker logs`, not from the image.
 PRODUCTION_RECEIVER_UPI = ".....1111@ybl"
+PRODUCTION_RECEIVER_UPI_WITH_PROVIDER_LABEL = "....1111@ybl on PhonePe"
 PRODUCTION_SENDER_UPI = ".....2761@okaxis"
 REGISTERED = ("raviarvind1111@ybl",)
 
@@ -40,6 +41,11 @@ class TestTheDottedMaskIsRecognised:
         assert eng._masked_upi_alias_match(PRODUCTION_RECEIVER_UPI, REGISTERED) == (
             "raviarvind1111@ybl"
         )
+
+    def test_provider_label_is_removed_before_matching_the_mask(self):
+        assert eng._strip_recognized_upi_provider_label(
+            PRODUCTION_RECEIVER_UPI_WITH_PROVIDER_LABEL
+        ) == "....1111@ybl"
 
     @pytest.mark.parametrize("mask", ["••••1111@ybl", "XXXXXX1111@ybl", "****1111@ybl",
                                       "####1111@ybl", "····1111@ybl"])
@@ -97,6 +103,29 @@ class TestTheWholeReceiptNowClassifies:
         assert result["receiver_type"] == "company"
         assert result["receiver_match"] == "masked_upi_alias"
         assert result["receiver_match_score"] == 100
+
+    def test_google_pay_shape_with_phonepe_label_resolves_without_conflict(self, registry):
+        """Sowmya's exact stored receiver field must not be rejected as name-only."""
+        result = eng.classify_receiver({
+            "receiver_name": "J RAVINDER",
+            "receiver_upi_id": PRODUCTION_RECEIVER_UPI_WITH_PROVIDER_LABEL,
+            "receiver_account": "",
+            "receiver_phone_number": "",
+        })
+        assert result["receiver_identifier_conflict"] is False
+        assert result["receiver_type"] == "company"
+        assert result["receiver_match"] == "masked_upi_alias"
+        assert result["receiver_match_score"] == 100
+
+    @pytest.mark.parametrize("masked", ["....9999@ybl on PhonePe", "....1111@okaxis on PhonePe"])
+    def test_provider_label_does_not_weaken_domain_or_suffix_checks(self, registry, masked):
+        result = eng.classify_receiver({
+            "receiver_name": "J RAVINDER",
+            "receiver_upi_id": masked,
+            "receiver_account": "",
+            "receiver_phone_number": "",
+        })
+        assert result["receiver_match"] != "masked_upi_alias"
 
     def test_an_unregistered_dotted_mask_is_still_refused(self, registry):
         """Recognising dots as a mask must not make every dotted handle pass."""

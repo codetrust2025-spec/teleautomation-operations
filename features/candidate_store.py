@@ -8193,6 +8193,7 @@ def _store_typed_attachment(
             "receiver_type", "ledger_entry_id", "ledger_action",
             "ledger_status", "source_module", "booking_eligible",
             "verification_state", "payment_id", "evidence_id",
+            "reason_codes", "deterministic_reasons",
             "entitlement_id", "payment_scope",
             "booking_id", "source_endpoint", "upload_context",
             "pending_proof_id",
