@@ -379,7 +379,7 @@ describe('the candidate line', () => {
     // One table renders it now that Awaiting outcome is gone.
     expect((ROSTER.match(/ops-interview-identity/g) || []).length).toBe(1)
     const identity = ROSTER.indexOf('ops-interview-identity')
-    expect(ROSTER.slice(identity, identity + 260)).toMatch(/<strong>\{row\.name\}<\/strong>/)
+    expect(ROSTER.slice(identity, identity + 260)).toMatch(/<strong(?: title=\{row\.name\})?>\{row\.name\}<\/strong>/)
     expect(ROSTER.slice(identity, identity + 260)).toMatch(/ops-interview-phone/)
   })
 

@@ -138,9 +138,11 @@ describe('Notes and Actions', () => {
     expect(cell).toMatch(/text-align:\s*left/)
   })
 
-  it('narrows Notes so the menu sits close to the row it belongs to', () => {
+  it('keeps Notes narrower than Candidate', () => {
+    // No row menu to sit beside since 12 Oct; Notes took some of the width
+    // Attendance gave up when its dropdown became a pill.
     const width = col => new RegExp(`col\\.ops-col--${col}\\{width:([^}]+)\\}`).exec(CSS)?.[1]
-    expect(width('notes')).toBe('10%')
+    expect(width('notes')).toBe('11%')
     expect(Number.parseFloat(width('notes'))).toBeLessThan(Number.parseFloat(width('candidate')))
   })
 

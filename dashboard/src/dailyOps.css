@@ -2005,16 +2005,16 @@
    now renders. Percentages scale with the table; the screenshot thumbnail and
    the menu are fixed sizes, so their columns are too. Phones lay the rows out
    as cards and never read these. */
-.ops-dash-table--v3 col.ops-col--date{width:7%}
+.ops-dash-table--v3 col.ops-col--date{width:8%}
 .ops-dash-table--v3 col.ops-col--time{width:11%}
-.ops-dash-table--v3 col.ops-col--candidate{width:14%}
-.ops-dash-table--v3 col.ops-col--company{width:11%}
+.ops-dash-table--v3 col.ops-col--candidate{width:16%}
+.ops-dash-table--v3 col.ops-col--company{width:12%}
 .ops-dash-table--v3 col.ops-col--tech{width:10%}
-.ops-dash-table--v3 col.ops-col--round{width:6%}
+.ops-dash-table--v3 col.ops-col--round{width:7%}
 .ops-dash-table--v3 col.ops-col--attendee{width:7%}
-.ops-dash-table--v3 col.ops-col--attendance{width:14%}
+.ops-dash-table--v3 col.ops-col--attendance{width:9%}
 .ops-dash-table--v3 col.ops-col--screenshot{width:88px}
-.ops-dash-table--v3 col.ops-col--notes{width:10%}
+.ops-dash-table--v3 col.ops-col--notes{width:11%}
 /* Attendance on the row is read-only (12 Oct): it is changed in the row's Edit
    dialog, alongside the note it needs. One tone per status, as the row colour. */
 .ops-attendance-status{display:inline-flex;align-items:center;min-height:24px;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.55);color:#e2e8f0;font-size:11.5px;font-weight:600;line-height:1.2;white-space:nowrap}
@@ -2150,6 +2150,67 @@
 .ops-slot-modal .ops-slot-notes-input:disabled{
   opacity:.6;
   cursor:not-allowed;
+}
+
+/* ---- Daily Ops table, 12 Oct audit -------------------------------------
+   At 1672px every cell read at 11px (10px on a 1024px laptop) and ordinary
+   names were cut short ("Evoke Technolo..."). Desktop rows read at 12-13px
+   now; a name or company wraps to a second line before it is cut, and the
+   full text is in its tooltip. Attendance holds only a pill since 12 Oct,
+   so its width went to Candidate, Company and Notes (the <col> rules). */
+@media (min-width: 901px) {
+  .ops-dash-table--v3 thead th { font-size: 11px; letter-spacing: .05em; }
+  .ops-dash-table--v3 tbody td { font-size: 12px; line-height: 1.35; padding-top: 6px; padding-bottom: 6px; }
+  .ops-dash-table--v3 tbody td .ops-interview-phone { font-size: 11px; }
+  .ops-dash-table--v3 tbody td[data-label="Candidate"] strong,
+  .ops-dash-table--v3 tbody td .ops-interview-company__name,
+  .ops-dash-table--v3 tbody td .ops-interview-company__role {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    white-space: normal; overflow: hidden; overflow-wrap: break-word; text-overflow: clip;
+  }
+  .ops-dash-table--v3 tbody td .ops-interview-company__role { font-size: 11px; }
+  .ops-dash-table--v3 tbody td.ops-interview-time { white-space: normal; }
+}
+/* With the sidebar open a 1024px window leaves the table about 700px -- less
+   than the phone cards get at 800px -- and ten columns overlapped there:
+   dates ran into the time, headings into each other, "Screening" broke into
+   letters. With less room than that the table keeps its width and scrolls inside
+   its frame instead (940px); a date with a year wraps rather than spilling. */
+@media (min-width: 901px) {
+  /* !important and the extra class beat the cards wrapper's own
+     `min-width:0!important`, which is meant for the phone layout. */
+  .ta-table-responsive--cards .ops-interview-table.ops-dash-table--v3 { min-width: 940px !important; }
+  .ops-dash-table--v3 tbody td.ops-interview-date { white-space: normal; }
+  /* One-word values ("Screening", "Bhavana") never split mid-word. */
+  .ops-dash-table--v3 tbody td[data-label="Round"],
+  .ops-dash-table--v3 tbody td[data-label="Attendee"] { padding-left: 4px; padding-right: 4px; word-break: normal; overflow-wrap: normal; }
+}
+@media (min-width: 901px) and (max-width: 1180px) {
+  .ops-dash-table--v3 thead th { font-size: 10.5px; letter-spacing: .03em; }
+}
+@media (min-width: 1181px) {
+  .ops-dash-table--v3 tbody td { font-size: 13px; }
+  .ops-dash-table--v3 tbody td .ops-interview-phone { font-size: 12px; }
+}
+/* A row that opens Edit answers the pointer: its cells brighten while the
+   status stripe and tone stay. The tint is an inset shadow, laid over each
+   cell's own background rather than replacing it. Pressing deepens it, which
+   is also the feedback a touch screen gets. */
+@media (min-width: 901px) and (hover: hover) {
+  .ops-dash-table--v3 tbody tr.ops-interview-row--actionable > td { transition: box-shadow .12s ease; }
+  .ops-dash-table--v3 tbody tr.ops-interview-row--actionable:hover > td { box-shadow: inset 0 0 0 9999px rgba(148, 163, 184, .09); }
+}
+@media (min-width: 901px) {
+  .ops-dash-table--v3 tbody tr.ops-interview-row--actionable:active > td { box-shadow: inset 0 0 0 9999px rgba(148, 163, 184, .15); }
+}
+@media (max-width: 900px) {
+  .ops-dash-table--v3 tbody tr.ops-interview-row--actionable:active { box-shadow: inset 0 0 0 9999px rgba(148, 163, 184, .10); }
+}
+/* Two standing bookings for one person at one date and start time. */
+.ops-same-slot {
+  display: inline-flex; align-items: center; margin: 3px 0 0; padding: 1px 7px;
+  border: 1px solid rgba(251, 146, 60, .5); border-radius: 999px; background: rgba(251, 146, 60, .14);
+  color: #fdba74; font-size: 10.5px; font-weight: 700; line-height: 1.4; white-space: nowrap;
 }
 
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────

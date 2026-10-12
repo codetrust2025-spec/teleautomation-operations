@@ -11,7 +11,7 @@ import { publishPendingWorkChanged } from './PendingWorksProvider.jsx'
 import { STATUS_OPTIONS, canonicalStatus, countStatusRows, emptyStatusCounts, matchesStatusFilter, statusLabel, statusTone } from './interviewStatuses.js'
 import { DarkSelect } from './DarkSelect.jsx'
 import { Icon } from '../components/ui/Icon.jsx'
-import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
+import { DEFAULT_ROSTER_SORT, minutesOfDay, sortRosterRows } from './rosterSort.js'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
@@ -184,6 +184,21 @@ function rowEventHitsInteractive(event, rowEl) {
   return !!hit && (!rowEl || rowEl.contains(hit))
 }
 
+/** One person's booking at one date and start time, or '' when it cannot be told.
+ *  The person is the phone number where there is one, else the name. */
+export function sameSlotKey(row) {
+  const phone = String(row?.phone || '').replace(/\D/g, '').slice(-10)
+  const person = phone || String(row?.name || '').trim().toLowerCase()
+  const day = String(row?.date || '').slice(0, 10)
+  const start = minutesOfDay(row?.time)
+  if (!person || day.length !== 10 || start === null) return ''
+  return `${person}|${day}|${start}`
+}
+
+// A cancelled or moved booking no longer holds its slot, so it is no second
+// booking of it.
+const RELEASED_STATUSES = new Set(['cancelled', 'rescheduled', 'released_for_reschedule'])
+
 function SlotEditModal({ row, busy, onClose, onSave, onRemove }) {
   const [attendee, setAttendee] = useState(row.interview_attendee_resolved || row.interview_attendee || 'Bhavana')
   const [feedback, setFeedback] = useState(row.interview_feedback || '')
@@ -306,6 +321,20 @@ export function InterviewRoster({
   const setDay = isDashboard ? (onDashboardDayChange ?? setLocalDay) : setLocalDay
 
   const [rows, setRows] = useState([])
+  // Two standing bookings for one person at the same date and start are worth
+  // a second look. On 12 Oct one invite had been submitted twice, three
+  // minutes apart, and the roster showed two identical rows with nothing to
+  // tell anyone. Nothing is changed here: both rows are marked, and an
+  // operator decides.
+  const sameSlotCounts = useMemo(() => {
+    const counts = new Map()
+    for (const row of rows) {
+      if (RELEASED_STATUSES.has(canonicalStatus(resolvedStatus(row)))) continue
+      const key = sameSlotKey(row)
+      if (key) counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    return counts
+  }, [rows])
   // A counter per status, from the same list the tabs read. Naming three of
   // them here left the dashboard showing 0 for Cancelled, Rescheduled and
   // Re-Service in the window before the global summary arrives -- and for good
@@ -763,7 +792,7 @@ export function InterviewRoster({
                         squeezed onto their line. `display:contents` keeps this
                         wrapper out of the desktop's layout entirely. */}
                     <span className="ops-interview-identity">
-                      <strong>{row.name}</strong>
+                      <strong title={row.name}>{row.name}</strong>
                       {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
                     </span>
                     {/* Every row said "Candidate booked" on a line of its own.
@@ -783,6 +812,17 @@ export function InterviewRoster({
                         {bookingSource.tone === 'auto' && <span className="ops-booking-source__text" aria-hidden="true">AI</span>}
                       </span>
                     )}
+                    {(() => {
+                      const twins = RELEASED_STATUSES.has(canonicalStatus(status)) ? 0 : sameSlotCounts.get(sameSlotKey(row)) || 0
+                      return twins > 1 && (
+                        <span
+                          className="ops-same-slot"
+                          title={`${twins} bookings for this candidate start at this date and time. Check that one is not a duplicate.`}
+                        >
+                          Same slot ×{twins}
+                        </span>
+                      )
+                    })()}
                     {/* An assessment holds a roster slot like an interview
                         but is a test the candidate sits alone, inside a
                         window. The row has to say which it is. */}

@@ -4637,8 +4637,15 @@ def interview_global_summary(
         filter_round=filter_round,
         filter_technology=filter_technology,
     )
-    if upcoming_only or unresolved_only:
+    if unresolved_only:
         rows = _filter_upcoming_only_rows(rows)
+    elif upcoming_only:
+        # The roster's own Upcoming rule (interview_monitor): pending sittings
+        # whose time has not passed, IST-aware. Read by date alone, a sitting
+        # from earlier today stayed in this summary after the table had
+        # dropped it, and the "Bookings by candidate" pie said 6 above a table
+        # of 5 (12 Oct).
+        rows, _past_their_time = _split_pending_interviews_by_slot_phase(rows)
     # The Candidate dropdown is built from by_candidate, so that list is taken
     # before the candidate selection narrows the rows: choosing one person
     # must not remove everyone else from the list it was chosen from. Every
