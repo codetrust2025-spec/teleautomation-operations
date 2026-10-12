@@ -76,3 +76,11 @@ def test_daybreak_headline_rejects_extra_or_oversized_candidate_input(monkeypatc
     bad = payload()
     bad["facts"]["skills"] = ["x" * 61]
     assert c.post("/api/integrations/daybreak/headline", headers=headers, json=bad).status_code == 422
+
+
+def test_daybreak_machine_route_bypasses_dashboard_cookie_gate_only():
+    """The route authenticates with its own bearer token, never a dashboard cookie."""
+    from core import dashboard_auth_vps as dashboard_auth
+
+    assert dashboard_auth.is_public_path("/api/integrations/daybreak/headline") is True
+    assert dashboard_auth.is_public_path("/api/integrations/daybreak/other") is False
