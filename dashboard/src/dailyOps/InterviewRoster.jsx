@@ -359,6 +359,11 @@ export function InterviewRoster({
   // not about the data: if the row is still coming back a minute later then
   // something else is true and the screen should show it rather than hide it.
   const resolvedHere = useRef(new Map())
+  // What the roster last told the sidebar. The five-second refresh used to
+  // announce every load, changed or not, and each announcement made the
+  // Pending Works and Slot Booking badges re-read the server: three requests
+  // every five seconds for one open Daily Ops tab.
+  const lastAnnounced = useRef('')
   const pendingOnlyView = unresolvedOnly || upcomingOnly
 
   /** Rows the operator resolved a moment ago and the server has not caught up on. */
@@ -397,6 +402,13 @@ export function InterviewRoster({
     // window. This view counts every unresolved interview ever, which is a
     // different and much larger number, so it asks the badge to re-read its
     // own rather than handing it one that would be wrong.
+    const announcement = [
+      unresolvedOnly ? 'unresolved' : 'pending',
+      totalPending,
+      visible.map(row => `${row.id}:${row.interview_attendance_status || ''}:${row.date || ''}:${row.time || ''}`).join(','),
+    ].join('|')
+    if (announcement === lastAnnounced.current) return
+    lastAnnounced.current = announcement
     if (unresolvedOnly) publishPendingWorkChanged()
     else publishPendingWorkChanged(totalPending)
   }, [unresolvedOnly, upcomingOnly, pendingOnlyView])

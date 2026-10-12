@@ -77,3 +77,21 @@ describe('roster refresh', () => {
     await waitFor(() => expect(rosterReads).toBeGreaterThan(whileHidden))
   })
 })
+
+describe('what the refresh tells the sidebar', () => {
+  it('announces a change once, not on every five-second refresh', async () => {
+    const announced = []
+    const listen = event => announced.push(event.detail)
+    window.addEventListener('teleautomation:pending-work-changed', listen)
+    try {
+      render(<DailyOpsPanel />)
+      await waitFor(() => expect(announced.length).toBeGreaterThan(0))
+      const afterFirst = announced.length
+      await act(async () => { await vi.advanceTimersByTimeAsync(20000) })
+      expect(rosterReads).toBeGreaterThan(3)
+      expect(announced.length).toBe(afterFirst)
+    } finally {
+      window.removeEventListener('teleautomation:pending-work-changed', listen)
+    }
+  })
+})
