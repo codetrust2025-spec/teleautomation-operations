@@ -49,6 +49,8 @@ _PUBLIC_EXACT = frozenset({
     # compares GMAIL_PUBSUB_VERIFICATION_TOKEN with hmac.compare_digest before
     # doing anything, exactly as /webhooks/whatsapp above does.
     "/api/gmail/pubsub/push",
+    # Daybreak uses its own mandatory bearer credential; it has no dashboard session.
+    "/api/integrations/daybreak/headline",
     # Where Google sends the account holder back after consent. A reconnect link
     # is opened by the Gmail account holder, who has no dashboard session. The
     # callback is not open: it rejects any `state` this service did not sign
