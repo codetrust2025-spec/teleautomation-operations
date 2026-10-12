@@ -1,10 +1,10 @@
-"""Confirmed slots give an anonymous visitor times, not people (11 Oct audit).
+"""Confirmed slots for an anonymous visitor: names, times, no client or technology.
 
 GET /public/slots/booked is public: the booking page and the dashboard badge
-both read it. It returned every booked candidate's full name, client company
-and technology to anyone with the link. Signed out, it now gives initials,
-date, time, round and how the slot was booked; signed in, the full list.
-Names are invented.
+both read it. Since the 11 Oct audit a signed-out caller does not get the
+client company or technology. Names were cut to initials then; since 12 Oct,
+on the owner's request, they are shown in full to everyone. Signed in, the
+full list. Names are invented.
 """
 from __future__ import annotations
 
@@ -37,16 +37,16 @@ def client(monkeypatch):
     return TestClient(main.app)
 
 
-def test_signed_out_gets_initials_and_times_only(client):
+def test_signed_out_gets_full_names_and_times_but_no_client_or_technology(client):
     client.cookies.clear()
     body = client.get("/public/slots/booked").json()
     [slot] = body["slots"]
     assert body["details_withheld"] is True
-    assert slot["name"] == "A. F."
+    assert slot["name"] == "Asha Fakename"
     assert "company" not in slot and "technology" not in slot
-    assert (slot["date"], slot["time"], slot["time_end"], slot["interview_round"], slot["slot_phase"]) == \
-        ("2026-10-20", "10:00", "10:30", "L1", "upcoming")
-    assert "Fakename" not in str(body) and "Example Client" not in str(body)
+    assert (slot["date"], slot["time"], slot["time_end"], slot["interview_round"], slot["slot_phase"]) == (
+        "2026-10-20", "10:00", "10:30", "L1", "upcoming")
+    assert "Example Client" not in str(body) and "React JS" not in str(body)
     assert body["count"] == 1 and body["upcoming_count"] == 1
 
 
@@ -62,11 +62,10 @@ def test_a_signed_in_operator_still_gets_the_full_list(client):
 def test_a_forged_cookie_is_treated_as_signed_out(client):
     client.cookies.clear()
     client.cookies.set(auth.SESSION_COOKIE, "not-a-real-token")
-    assert client.get("/public/slots/booked").json()["slots"][0]["name"] == "A. F."
+    slot = client.get("/public/slots/booked").json()["slots"][0]
+    assert slot["name"] == "Asha Fakename"
+    assert "company" not in slot and "technology" not in slot
 
 
-@pytest.mark.parametrize("name, initials", [
-    ("Asha Fakename", "A. F."), ("ravi", "R."), ("K. Venu Gopal Rao", "K. V. G."), ("", ""), ("  ", ""),
-])
-def test_initials(name, initials):
-    assert public_slot_api._initials(name) == initials
+def test_no_name_is_cut_to_initials_any_more():
+    assert not hasattr(public_slot_api, "_initials")

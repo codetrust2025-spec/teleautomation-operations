@@ -503,7 +503,8 @@ export function SubmitSlotPage() {
   const [tab, setTab] = useState('book')
   const [candidates, setCandidates] = useState([])
   const [booked, setBooked] = useState([])
-  // Signed out, the server gives initials and times only (11 Oct).
+  // Signed out, the server leaves out the client and technology (names are
+  // shown in full to everyone since 12 Oct).
   const [bookedDetailsWithheld, setBookedDetailsWithheld] = useState(false)
   const awaitingSlots = useMemo(() => booked.filter(needsStatusUpdate), [booked])
   const upcomingSlots = useMemo(() => booked.filter(slot => !needsStatusUpdate(slot)), [booked])
@@ -1229,7 +1230,7 @@ export function SubmitSlotPage() {
                       beside them. The wording has to cover both. */}
                   <p className="sbs-step-sub">{upcomingSlots.length > 0 ? `${upcomingSlots.length} slot${upcomingSlots.length !== 1 ? 's' : ''} scheduled` : booked.length > 0 ? 'No upcoming slots.' : 'No confirmed slots yet.'}</p>
                   {bookedDetailsWithheld && booked.length > 0 && (
-                    <p className="sbs-step-sub sbs-step-sub--note">Names, clients and technologies are shown to signed-in staff only.</p>
+                    <p className="sbs-step-sub sbs-step-sub--note">Clients and technologies are shown to signed-in staff only.</p>
                   )}
                 </div>
               </div>
