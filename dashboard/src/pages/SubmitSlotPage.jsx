@@ -1528,6 +1528,30 @@ export function SubmitSlotPage() {
               {error && <p className="sbs-alert sbs-alert--error" role="alert">{error}</p>}
               {success && <div className="sbs-alert sbs-alert--success sbs-success-anim"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{flexShrink:0}}><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg><span>{success}</span></div>}
 
+              {!confirmReady && !busy && !success && !aiBlocked && (
+                <div className="sbs-confirm-pending-hint" role="status">
+                  {!slotFile
+                    ? 'Attach interview invite screenshot to continue'
+                    : parsing
+                    ? 'Reading interview invite...'
+                    : isPastDate
+                    ? 'Selected slot date has expired — choose a future date'
+                    : !bookingSlot
+                    ? 'Interview date and time are required'
+                    : needsPaymentProof
+                    ? (roundWise ? 'Attach payment screenshot to continue' : 'Clear pending payment to continue')
+                    : paymentAnalysing
+                    ? 'Verifying payment proof...'
+                    : !effectiveName
+                    ? 'Enter client name'
+                    : !company.trim()
+                    ? 'Enter company name'
+                    : !interviewRound
+                    ? 'Select interview round'
+                    : 'Please complete all required fields to confirm booking'}
+                </div>
+              )}
+
               <button type="submit" className="sbs-cta sbs-cta--ready" disabled={busy || !confirmReady}>
                 {busy ? <Spinner size={18} /> : parsing ? 'Reading invite...' : 'Confirm booking'}
               </button>

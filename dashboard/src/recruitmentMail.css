@@ -602,9 +602,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
-  min-height: 48px;
-  padding: 8px 10px;
+  gap: 5px 8px;
+  min-height: 40px;
+  padding: 6px 10px;
   border: 1px solid #314b6b;
   border-radius: 8px;
   background: rgba(7, 20, 35, 0.82);
@@ -1080,7 +1080,7 @@
 .sot-mailbox-table td,
 .sot-review-table th,
 .sot-review-table td {
-  padding: 13px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid #1b2d44;
   text-align: left;
   vertical-align: middle;
@@ -1100,7 +1100,7 @@
   background: rgb(27 53 84 / 26%);
 }
 .sot-candidate {
-  gap: 11px;
+  gap: 10px;
 }
 .sot-candidate strong,
 .sot-candidate small,
@@ -1108,9 +1108,14 @@
 .sot-review-table td small {
   display: block;
 }
+.sot-candidate strong {
+  font-size: 13px;
+  color: #f1f5f9;
+}
 .sot-candidate small,
 .sot-review-table td small {
-  margin-top: 3px;
+  margin-top: 2px;
+  font-size: 11px;
   color: var(--sot-muted);
 }
 .sot-status-badge {
@@ -1133,6 +1138,12 @@
 .sot-status-badge.is-connected {
   color: var(--sot-green);
   background: rgb(48 209 132 / 10%);
+}
+.sot-status-badge.is-paused,
+.sot-status-badge.is-pending {
+  color: var(--sot-amber, #f59e0b);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 .sot-status-badge.is-sync_queued,
 .sot-status-badge.is-syncing {
@@ -1165,12 +1176,15 @@
 .sot-status-badge.is-reconnect_required {
   color: var(--sot-red);
   background: rgb(255 91 97 / 11%);
+  border: 1px solid rgba(239, 68, 68, 0.25);
 }
 .sot-review-count {
   color: var(--sot-amber);
 }
 .sot-row-actions,
 .sot-review-actions {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 .sot-outline-button,
@@ -1227,18 +1241,27 @@
 }
 /* An expired Gmail's one action, in its row's Actions cell beside the menu
    (12 Oct): no warning row beneath it. */
-.sot-row-actions { justify-content: flex-end; }
+.sot-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .sot-reconnect-button {
   border: 1px solid #825157;
   border-radius: 7px;
-  padding: 6px 10px;
+  padding: 5px 10px;
+  height: 28px;
+  box-sizing: border-box;
   background: #182132;
   color: #ff8589;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
 }
 .sot-reconnect-button:hover:not(:disabled) { border-color: #ff8589; background: rgb(97 27 31 / 30%); }
 .sot-reconnect-button:disabled { opacity: .6; cursor: wait; }
@@ -1860,14 +1883,15 @@
 .mail-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 12.5px;
+  table-layout: fixed;
 }
 .mail-table th,
 .mail-table td {
-  padding: 12px;
+  padding: 10px 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 .mail-table th {
   position: sticky;
@@ -1877,22 +1901,51 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 .mail-table tr.is-unread {
   background: rgba(124, 58, 237, 0.07);
 }
 .mail-table td small {
   display: block;
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--muted, #94a3b8);
+  font-size: 11px;
+}
+.mail-table td:last-child {
+  white-space: nowrap;
 }
 .mail-table td button {
-  margin: 0 5px 5px 0;
-  border: 0;
-  background: transparent;
-  color: #8b5cf6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 3px 0 0;
+  padding: 4px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
   cursor: pointer;
   font-size: 11px;
+  font-weight: 550;
+  line-height: 1.2;
+  transition: all 0.12s ease;
+}
+.mail-table td button:hover {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.45);
+  color: #c4b5fd;
+}
+@media (min-width: 641px) {
+  .mail-table th:nth-child(1), .mail-table td:nth-child(1) { width: 14%; }
+  .mail-table th:nth-child(2), .mail-table td:nth-child(2) { width: 11%; }
+  .mail-table th:nth-child(3), .mail-table td:nth-child(3) { width: 15%; }
+  .mail-table th:nth-child(4), .mail-table td:nth-child(4) { width: 22%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mail-table th:nth-child(5), .mail-table td:nth-child(5) { width: 6.5%; text-align: center; }
+  .mail-table th:nth-child(6), .mail-table td:nth-child(6) { width: 9%; white-space: nowrap; }
+  .mail-table th:nth-child(7), .mail-table td:nth-child(7) { width: 7.5%; white-space: nowrap; }
+  .mail-table th:nth-child(8), .mail-table td:nth-child(8) { width: 7%; }
+  .mail-table th:nth-child(9), .mail-table td:nth-child(9) { width: 13%; text-align: right; }
 }
 .mail-priority {
   display: inline-flex;
@@ -2195,6 +2248,17 @@
 .mail-summary--compact {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
+.mail-summary--compact button {
+  padding: 10px 14px;
+  border-radius: 10px;
+}
+.mail-summary--compact strong {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.mail-summary--compact span {
+  font-size: 11.5px;
+}
 /* Search, candidate, alert type, booking result. Declared for the four
    controls the screen actually renders: a template one short leaves the last
    control wrapping onto a row of its own, which is what the two-column
@@ -2240,6 +2304,10 @@
   color: #94a3b8;
   font-size: 11px;
   line-height: 1.35;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The email is the thing being judged, so it gets the room.

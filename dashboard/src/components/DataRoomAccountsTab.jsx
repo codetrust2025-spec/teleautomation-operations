@@ -43,8 +43,9 @@ function accountStatus(row) {
 }
 
 function isPrimary(row) {
+  if (row.primary === true || row.is_primary === true) return true
   const label = String(row.label || '').toLowerCase()
-  return label.includes('current') || label.includes('2026')
+  return label.includes('primary') || label.includes('current') || label.includes('2026')
 }
 
 // What an operator actually has to type.

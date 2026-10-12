@@ -16576,11 +16576,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   position: relative;
   z-index: 1;
   width: 100%;
-  /* Deliberately the original width. The problem to fix here is vertical -
-     see the touch-target and spacing rules below. `width: 100%` governs
-     underneath, so this is a ceiling and never a floor: a phone still renders
-     a full-width card. */
-  max-width: 450px;
+  /* Balanced width for desktop readability while keeping full-width on mobile. */
+  max-width: 500px;
   background: rgba(15,17,23,0.85);
   border: 1px solid rgba(148,163,184,0.1);
   border-radius: 0.75rem;
@@ -16809,7 +16806,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-slot-card__company {
   display: block; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 0.72rem; font-weight: 600; color: var(--text, #e2e8f0);
+  font-size: 0.78rem; font-weight: 600; color: var(--text, #e2e8f0);
 }
 .sbs-slot-card__data-line {
   display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem;
@@ -16817,7 +16814,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 }
 .sbs-slot-card__tech {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 0.68rem; color: var(--text-muted,#a8b4c4);
+  font-size: 0.72rem; color: #94a3b8;
 }
 .sbs-source-icon {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
@@ -16919,11 +16916,22 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   white-space: nowrap;
 }
 /* Fields */
-.sbs-field { display: flex; flex-direction: column; gap: 0.4rem; }
-.sbs-label { font-size: 0.7rem; font-weight: 600; color: var(--text,#eef2f7); letter-spacing: 0.01em; }
-.sbs-required { color: #f87171; margin-left: 0.1rem; }
-.sbs-hint { font-size: 0.65rem; color: var(--text-muted,#a8b4c4); line-height: 1.25; }
+.sbs-field { display: flex; flex-direction: column; gap: 0.45rem; }
+.sbs-label { font-size: 0.78rem; font-weight: 600; color: #f1f5f9; letter-spacing: 0.01em; }
+.sbs-required { color: #ef4444; font-weight: 700; margin-left: 0.15rem; }
+.sbs-hint { font-size: 0.72rem; color: #94a3b8; line-height: 1.35; }
 .sbs-hint--warn { color: #f87171; font-weight: 500; }
+.sbs-confirm-pending-hint {
+  font-size: 0.75rem;
+  font-weight: 550;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  text-align: center;
+  margin-top: 0.15rem;
+}
 /* An invite addressed to someone else: confirm it is for this client. */
 .sbs-name-check { display: flex; align-items: flex-start; gap: 6px; }
 .sbs-name-check input { margin-top: 2px; flex: none; }
@@ -16941,9 +16949,10 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   font-size: 0.8125rem;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.sbs-input:focus { border-color: rgba(99,102,241,0.45); }
+.sbs-input::placeholder { color: #64748b; opacity: 1; }
+.sbs-input:focus { border-color: rgba(99,102,241,0.55); box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
 /* A field the browser has autofilled -- Client name, most often -- is repainted
  * by the browser's own stylesheet in a light blue with dark text, which put a
  * white box in the middle of the dark form. The inset shadow restores the
@@ -18905,36 +18914,48 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
     grid-template-areas: "head head" "value sub";
     align-items: baseline;
     column-gap: 10px;
-    row-gap: 4px;
+    row-gap: 3px;
     min-height: 0;
-    padding: 10px 14px;
-    border-radius: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
   }
   .dr-page .dr-tab-stat-header { grid-area: head; }
-  .dr-page .dr-tab-stat-value { grid-area: value; font-size: 1.35rem; }
+  .dr-page .dr-tab-stat-value { grid-area: value; font-size: 1.25rem; font-weight: 700; }
   .dr-page .dr-tab-stat-sub {
     grid-area: sub;
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.75rem;
+    color: #94a3b8;
   }
 
   /* Tables: tighter rows. */
-  .dr-page .dr-tab-table thead th { padding: 9px 12px; }
-  .dr-page .dr-tab-table tbody td { padding: 9px 12px; }
+  .dr-page .dr-tab-table thead th { padding: 8px 12px; }
+  .dr-page .dr-tab-table tbody td { padding: 8px 12px; }
 
   /* Accounts: set widths so the name is not squeezed into three lines while
-     the actions take a quarter of the row. */
+     the actions take a quarter of the row. Type width 100px prevents Telegram wrap. */
   .dr-page .dr-acct-table { table-layout: fixed; }
-  .dr-page .dr-acct-th--type { width: 76px; }
-  .dr-page .dr-acct-th--user { width: 22%; }
+  .dr-page .dr-acct-th--type { width: 100px; }
+  .dr-page .dr-acct-th--user { width: 21%; }
   .dr-page .dr-acct-th--pass { width: 136px; }
-  .dr-page .dr-acct-th--status { width: 78px; }
+  .dr-page .dr-acct-th--status { width: 88px; }
   .dr-page .dr-acct-th--used { width: 92px; }
-  .dr-page .dr-acct-th--actions { width: 204px; text-align: right; }
+  .dr-page .dr-acct-th--actions { width: 216px; text-align: right; }
   .dr-page .dr-acct-table td:last-child { text-align: right; }
-  .dr-page .dr-acct-table .dr-acct-actions { justify-content: flex-end; gap: 6px; flex-wrap: nowrap; }
+  .dr-page .dr-acct-table .dr-acct-actions { justify-content: flex-end; gap: 6px; flex-wrap: nowrap; align-items: center; }
+  .dr-page .dr-acct-table .dr-acct-actions .cand-btn,
+  .dr-page .dr-acct-table .dr-acct-actions .dr-copy-btn {
+    height: 28px;
+    min-height: 28px;
+    line-height: 26px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
   .dr-page .dr-acct-name { overflow-wrap: anywhere; }
   .dr-page .dr-acct-primary-badge { margin: 2px 0 0; display: table; }
   .dr-page .dr-acct-cred-cell { gap: 6px; min-width: 0; }
