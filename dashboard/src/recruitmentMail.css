@@ -1225,26 +1225,23 @@
 .sot-action-menu button.danger {
   color: #ff8589;
 }
-.sot-reconnect-row td {
-  padding: 7px 16px 12px;
-  background: rgb(97 27 31 / 18%);
-}
-.sot-reconnect-row td,
-.sot-reconnect-row button {
-  color: #ff8589;
-}
-.sot-reconnect-row td {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.sot-reconnect-row button {
+/* An expired Gmail's one action, in its row's Actions cell beside the menu
+   (12 Oct): no warning row beneath it. */
+.sot-row-actions { justify-content: flex-end; }
+.sot-reconnect-button {
   border: 1px solid #825157;
   border-radius: 7px;
   padding: 6px 10px;
   background: #182132;
+  color: #ff8589;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
 }
+.sot-reconnect-button:hover:not(:disabled) { border-color: #ff8589; background: rgb(97 27 31 / 30%); }
+.sot-reconnect-button:disabled { opacity: .6; cursor: wait; }
 .sot-empty {
   padding: 28px !important;
   text-align: center !important;
@@ -1637,16 +1634,6 @@
     color: var(--sot-muted);
     font-size: 11px;
     font-weight: 600;
-  }
-  .sot-mailbox-table .sot-reconnect-row {
-    margin-top: -13px;
-    border-top: 0;
-  }
-  .sot-mailbox-table .sot-reconnect-row td {
-    display: flex;
-  }
-  .sot-mailbox-table .sot-reconnect-row td::before {
-    content: none;
   }
   .sot-advanced-content {
     grid-template-columns: 1fr;
@@ -3149,24 +3136,18 @@
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"] { grid-area: sync; padding-top: 0; padding-bottom: 0; font-size: 11px; color: var(--sot-muted, #8da0bd); }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"] .sot-sync-progress { white-space: normal; font-size: 11px; }
   .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row > td[data-label="Last Sync"]::before { display: inline; content: "Last sync "; font-size: 11px; font-weight: 600; }
-  /* An expired Gmail: its badge already says Reconnect Required, so the
-     warning sentence and its red band go, and the row's one Reconnect Gmail
-     button is laid over the card's last 36px -- the badge's row -- instead
-     of adding a second block beneath. Still one control for the action. */
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row:has(+ tr.sot-reconnect-row) { margin-bottom: 0; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row { position: relative; margin: -36px 0 8px; border: 0; background: transparent; pointer-events: none; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    box-sizing: border-box;
-    height: 36px;
-    padding: 0 12px;
-    border: 0;
-    background: transparent;
+  /* An expired Gmail: its badge says Reconnect Required, and the row's own
+     Actions cell -- Reconnect Gmail beside the menu -- moves onto the badge's
+     line, so the card keeps its four lines and gains no block beneath. */
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row:has(.sot-reconnect-button) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "candidate candidate"
+      "gmail gmail"
+      "sync sync"
+      "status actions";
   }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > span { display: none; }
-  .sot-mailboxes-page .sot-mailbox-table tr.sot-reconnect-row td > button { pointer-events: auto; min-height: 30px; padding: 4px 10px; font-size: 12px; }
+  .sot-mailboxes-page .sot-mailbox-table tr.sot-mailbox-row .sot-reconnect-button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
 
   /* Pending Gmail and Reconnect: the same card shape -- name with its key
      fact, the address, then the rest with a small inline caption. Rows that

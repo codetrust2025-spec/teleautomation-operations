@@ -356,8 +356,8 @@ export function SearchInput({ value, onChange }) {
 }
 
 export function ActionMenu({ row, busy, onAction }) {
-  // Reconnect is not offered here: a row that needs it shows the warning
-  // row directly beneath, with the same button on it. Two clicks apart,
+  // Reconnect is not offered here: a row that needs it carries its own
+  // button beside this menu, in the same Actions cell. Two clicks apart,
   // same action, same condition -- the visible one is the one to keep.
   const selectAction = (event, action) => {
     event.currentTarget.closest("details")?.removeAttribute("open");
@@ -444,22 +444,24 @@ export function MailboxRow({ row, busy, onAction }) {
         </td>
         <td data-label="Actions">
           <div className="sot-row-actions">
+            {/* An expired Gmail is said once, by the Reconnect Required badge;
+                its one action sits here in the row's own Actions cell. The
+                red warning row that repeated it under every expired mailbox
+                is gone (12 Oct). */}
+            {row.uiStatus === "RECONNECT_REQUIRED" && (
+              <button
+                type="button"
+                className="sot-reconnect-button"
+                disabled={busy}
+                onClick={() => onAction("reconnect", row)}
+              >
+                Reconnect Gmail
+              </button>
+            )}
             <ActionMenu row={row} busy={busy} onAction={onAction} />
           </div>
         </td>
       </tr>
-      {row.uiStatus === "RECONNECT_REQUIRED" && (
-        <tr className="sot-reconnect-row">
-          <td colSpan={5}>
-            <span>
-              ⚠ Gmail connection expired. Reconnect to continue monitoring.
-            </span>
-            <button disabled={busy} onClick={() => onAction("reconnect", row)}>
-              Reconnect Gmail
-            </button>
-          </td>
-        </tr>
-      )}
     </>
   );
 }

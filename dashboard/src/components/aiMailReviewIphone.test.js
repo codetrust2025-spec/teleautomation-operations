@@ -100,19 +100,17 @@ describe('AI Mail Review on a phone', () => {
       .toMatch(/white-space:\s*normal/)
   })
 
-  it('folds an expired Gmail into one bottom row: badge and its one Reconnect button', () => {
-    // The badge already says Reconnect Required, so the warning sentence and
-    // its red band go on a phone, and the row's single Reconnect Gmail button
-    // is laid over the badge's row instead of adding a block beneath.
+  it('folds an expired Gmail into one bottom row: badge, then its Reconnect button and menu', () => {
+    // The badge says Reconnect Required; the row's own Actions cell --
+    // Reconnect Gmail beside the menu -- moves onto the badge's line, so the
+    // card gains no block beneath (12 Oct: there is no warning row at all).
     const T = `${P} .sot-mailbox-table`
-    expect(rule(`${T} tr.sot-mailbox-row:has(+ tr.sot-reconnect-row)`)).toMatch(/margin-bottom:\s*0/)
-    const row = rule(`${T} tr.sot-reconnect-row`)
-    expect(row).toMatch(/margin:\s*-36px 0 8px/)
-    expect(row).toMatch(/background:\s*transparent/)
-    expect(row).toMatch(/pointer-events:\s*none/)
-    expect(rule(`${T} tr.sot-reconnect-row td`)).toMatch(/height:\s*36px/)
-    expect(rule(`${T} tr.sot-reconnect-row td > span`)).toMatch(/display:\s*none/)
-    expect(rule(`${T} tr.sot-reconnect-row td > button`)).toMatch(/pointer-events:\s*auto/)
+    const card = rule(`${T} tr.sot-mailbox-row:has(.sot-reconnect-button)`)
+    expect(card).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/)
+    expect(card).toContain('"status actions"')
+    expect(card).toContain('"candidate candidate"')
+    expect(rule(`${T} tr.sot-mailbox-row .sot-reconnect-button`)).toMatch(/min-height:\s*30px/)
+    expect(PHONE).not.toContain('sot-reconnect-row')
     // The badge's row is the 36px the overlay covers, centred on it.
     const status = rule(`${T} tr.sot-mailbox-row > td[data-label="Status"]`)
     expect(status).toMatch(/min-height:\s*36px/)

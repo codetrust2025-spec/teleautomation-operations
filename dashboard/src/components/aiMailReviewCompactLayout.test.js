@@ -275,14 +275,20 @@ describe('the counts, tabs and controls share one row', () => {
 
 
 describe('one control per action', () => {
-  it('offers Reconnect Gmail once per row, on the warning rather than in the menu', () => {
-    // Both appeared only when uiStatus is RECONNECT_REQUIRED and both called
-    // onAction('reconnect', row): the same action on the same row, two
-    // clicks apart. The banner sits next to the sentence explaining why, so
-    // it is the one that stayed.
+  it('offers Reconnect Gmail once per row, in its Actions cell rather than in the menu', () => {
+    // Shown only when uiStatus is RECONNECT_REQUIRED and calling
+    // onAction('reconnect', row). Since 12 Oct it sits beside the menu in
+    // the row's own Actions cell; the red warning row beneath, which said
+    // again what the Reconnect Required badge says, is gone.
     expect(panel.match(/Reconnect Gmail/g) || []).toHaveLength(1)
     const menu = panel.slice(panel.indexOf('export function ActionMenu'))
     expect(menu.slice(0, menu.indexOf('</details>'))).not.toContain('Reconnect Gmail')
+    const row = panel.slice(panel.indexOf('export function MailboxRow'), panel.indexOf('export function MailboxTable'))
+    const actions = row.slice(row.indexOf('<td data-label="Actions">'))
+    expect(actions.indexOf('Reconnect Gmail')).toBeGreaterThan(-1)
+    expect(actions.indexOf('Reconnect Gmail')).toBeLessThan(actions.indexOf('</td>'))
+    expect(panel).not.toContain('sot-reconnect-row')
+    expect(panel).not.toContain('Gmail connection expired. Reconnect to continue monitoring.')
   })
 
   it('keeps the row actions that are not offered anywhere else', () => {
