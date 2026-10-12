@@ -7249,7 +7249,8 @@ function CandidatesPanelImpl() {
                           {pR(ge.logged_date || ge.created_at || ge.date)}
                           {interviewLabel(ge) && (
                             <span className="cand-date-interview" title={`Interview ${interviewLabel(ge, true)}`}>
-                              Interview {interviewLabel(ge)}
+                              <span className="cand-date-interview__label">Interview</span>{" "}
+                              {interviewLabel(ge)}
                             </span>
                           )}
                         </td>

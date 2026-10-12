@@ -114,6 +114,14 @@ describe("the stylesheet", () => {
     expect(block).toMatch(/@media \(min-width: 1181px\) \{\n  \.cand-page--candidates \.cand-table tbody td \{ font-size: 13px; \}/);
   });
 
+  it("keeps a stage on one line in sentence case, Update readable, notes bright, buttons visible", () => {
+    expect(block).toMatch(/\.cand-th--stage \{ width: 132px; \}/);
+    expect(block).toMatch(/\.cand-cell-stage \.cand-badge \{\n    font-size: 11px; letter-spacing: \.01em; text-transform: none; white-space: nowrap;/);
+    expect(block).toMatch(/\.cand-resume-chip__cta \{\n    font-size: 12px; letter-spacing: 0; text-transform: none;/);
+    expect(block).toMatch(/\.cand-cell-note \.cand-note__text \{ color: #cbd5e1; \}/);
+    expect(block).toMatch(/td\.cand-cell-actions \.cand-btn \{\n    color: #e2e8f0; border: 1px solid/);
+  });
+
   it("tints a row under the pointer, as Daily Ops does", () => {
     expect(block).toMatch(/@media \(min-width: 600px\) and \(hover: hover\)[\s\S]*tr\.cand-row:hover > td \{ box-shadow: inset/);
   });

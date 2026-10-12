@@ -19008,21 +19008,54 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   display: block; margin-top: 3px; font-family: inherit; font-size: 11px; font-weight: 600;
   color: #a5b4fc; white-space: normal;
 }
+.cand-date-interview__label {
+  display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8;
+}
 @media (min-width: 600px) {
   .cand-page--candidates > .cand-table-wrap .cand-table { min-width: 940px; }
-  .cand-page--candidates .cand-th--stage { width: 108px; }
-  .cand-page--candidates .cand-th--date { width: 120px; }
+  .cand-page--candidates .cand-th--stage { width: 132px; }
+  .cand-page--candidates .cand-th--date { width: 112px; }
+  .cand-page--candidates .cand-th--resume { width: 150px; }
+  /* Stage reads like Daily Ops' attendance pills: sentence case, one line
+     ("Closed / Completed" broke over two in capitals). */
+  .cand-page--candidates .cand-table .cand-cell-stage .cand-badge {
+    font-size: 11px; letter-spacing: .01em; text-transform: none; white-space: nowrap;
+  }
+  /* Resume: View, download and Update fit the column at a readable size
+     ("UPDATE" in 10px capitals was cut off). */
+  .cand-page--candidates .cand-resume-cell-react .cand-resume-chip { font-size: 12px; min-height: 28px; }
+  .cand-page--candidates .cand-resume-chip--active .cand-resume-chip__cta {
+    font-size: 12px; letter-spacing: 0; text-transform: none;
+  }
+  /* Notes and follow-ups were dim (3.5:1); "Show more" was 11px. */
+  .cand-page--candidates .cand-table .cand-cell-note .cand-note__text { color: #cbd5e1; }
+  .cand-page--candidates .cand-table .cand-note__toggle { font-size: 12px; }
+  /* Row buttons: brighter icons with a visible edge, delete in red. */
+  .cand-page--candidates .cand-table td.cand-cell-actions .cand-btn {
+    color: #e2e8f0; border: 1px solid rgba(148, 163, 184, .35);
+  }
+  .cand-page--candidates .cand-table td.cand-cell-actions .cand-btn--danger-ghost { color: #fca5a5; }
+  .cand-page--candidates .cand-table .cand-date-interview { white-space: nowrap; }
   .cand-page--candidates .cand-table tbody td { font-size: 12px; line-height: 1.35; }
   .cand-page--candidates .cand-table thead th { font-size: 11px; letter-spacing: .05em; }
   .cand-page--candidates .cand-table .cand-name { font-size: 13px; font-weight: 600; }
   .cand-page--candidates .cand-table .cand-badge { font-size: 10.5px; padding: 2px 7px; }
   .cand-page--candidates .cand-table .cand-pay-pill { font-size: 11px; }
   .cand-page--candidates .cand-table .cand-pay-proofs { font-size: 11px; }
+  /* A long pill or proof chip wraps inside the Payment column instead of
+     running past it ("⚠ Recorded — proof missing", "1 proof awaiting review"). */
+  .cand-page--candidates .cand-table .cand-pay-pill { white-space: normal; max-width: 100%; }
+  .cand-page--candidates .cand-table .cand-pay-proofs { max-width: 100%; flex-wrap: wrap; white-space: normal; row-gap: 2px; }
   .cand-page--candidates .cand-table .cand-phone-num { font-size: 12px; letter-spacing: .02em; }
   .cand-page--candidates .cand-table .cand-cell-note,
   .cand-page--candidates .cand-table .cand-cell-followup { font-size: 12px; }
   .cand-page--candidates .cand-table td.cand-cell-date { white-space: normal; }
   .cand-page--candidates .cand-table td.cand-cell-actions .cand-btn--xs { min-width: 30px; min-height: 30px; }
+}
+/* A narrow desktop gives the table a little more room to scroll in, so Name
+   keeps about 190px beside the fixed columns. */
+@media (min-width: 600px) and (max-width: 1180px) {
+  .cand-page--candidates > .cand-table-wrap .cand-table { min-width: 980px; }
 }
 @media (min-width: 1181px) {
   .cand-page--candidates .cand-table tbody td { font-size: 13px; }
