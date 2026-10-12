@@ -378,7 +378,7 @@ export function DataRoomAccountsTab({ accounts = [], onReload }) {
       {/* Tip bar */}
       <div className="dr-tip-bar">
         <span className="dr-tip-icon">ℹ</span>
-        <span>Tip: Use quick actions (Copy, Copy all) to speed up access. Keep the CURRENT account as primary.</span>
+        <span>Tip: Use quick actions (Copy, Copy all) to speed up access. Accounts named with &ldquo;current&rdquo; or &ldquo;primary&rdquo; are marked as the primary account.</span>
       </div>
 
       {modal && (
