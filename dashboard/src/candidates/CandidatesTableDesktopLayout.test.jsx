@@ -76,7 +76,9 @@ describe("phone and referrer under the name", () => {
     await renderTable();
     for (const [id, phone, ref] of [["r1", "9000000811", "Karthik"], ["r2", "9000000812", "Bhavana"], ["r3", "9000000804", "Karthik"]]) {
       const meta = rowById(id).querySelector(".cand-cell-name .cand-name-meta");
-      expect(meta.textContent).toContain(phone);
+      // Shown grouped for reading (12 Oct); the WhatsApp link keeps the number.
+      expect(meta.querySelector(".cand-phone-num").textContent).toBe(`${phone.slice(0, 5)} ${phone.slice(5)}`);
+      expect(meta.querySelector("a.cand-phone-trigger").getAttribute("href")).toBe(`https://wa.me/91${phone}`);
       expect(meta.querySelector(".cand-name-meta__ref").textContent).toBe(ref);
     }
   });

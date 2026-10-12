@@ -2083,6 +2083,16 @@ export function ResumeCell({ candidate, onRefresh }) {
   );
 }
 
+/** "90000 00998" / "+91 90000 00998" for reading; anything else as stored. */
+export function formatPhoneDisplay(raw) {
+  const text = String(raw || "").trim();
+  const digits = text.replace(/\D/g, "");
+  if (digits.length === 10) return `${digits.slice(0, 5)} ${digits.slice(5)}`;
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+  }
+  return text;
+}
 function _Component23({
   phone: e,
   defaultCountry: t = "91",
@@ -2166,13 +2176,13 @@ function _Component23({
         target="_blank"
         rel="noopener noreferrer"
         className="cand-phone-trigger"
-        title="Open WhatsApp chat"
+        title={`Open WhatsApp chat with ${n}`}
         onClick={(p) => p.stopPropagation()}
       >
         <span className="cand-phone-icon" aria-hidden={true}>
           <Icon name="phone" size={12} />
         </span>
-        <span className="cand-phone-num">{n}</span>
+        <span className="cand-phone-num">{formatPhoneDisplay(n)}</span>
       </a>
       {l && (
         <span className="cand-phone-toast" role="status">
@@ -6025,34 +6035,69 @@ function Ax(e) {
     return "₹0";
   }
 }
+/** Where a row's payment proofs stand, read from each proof's own state:
+ *  verified, waiting for a review (receiver not recognised, evidence
+ *  incomplete, still being read), or not accepted. Older proofs carry no
+ *  state and count only toward the total. Display only: nothing recorded
+ *  changes. */
+export function proofReviewSummary(proofs) {
+  const summary = { total: proofs.length, verified: 0, awaiting: 0, notAccepted: 0 };
+  for (const proof of proofs) {
+    const key = proofPresentation(proof).status.key;
+    if (key === "verified") summary.verified += 1;
+    else if (key === "review" || key === "pending") summary.awaiting += 1;
+    else if (key === "failed" || key === "duplicate" || key === "rejected") summary.notAccepted += 1;
+  }
+  return summary;
+}
 export function _Component27({ row: e, onViewProofs: t }) {
   const r = Number(e.expected_payment) || 20000;
   const n = Number(e.payment) || 0;
   const a = Math.max(0, r - n);
   const i =
     e.payment_status || (n <= 0 ? "unpaid" : n >= r ? "paid" : "partial");
-  const l = normalizePaymentProofs(e).length;
+  const proofs = normalizePaymentProofs(e);
+  const l = proofs.length;
+  const review = proofReviewSummary(proofs);
+  // A "Paid ✓ 1 proof" beside a screenshot nobody has verified read as
+  // checked money; a proof waiting on a ₹0 row was not shown at all (12 Oct).
+  const proofState = review.awaiting
+    ? { tone: "awaiting", text: "awaiting review" }
+    : review.notAccepted
+      ? { tone: "rejected", text: "not accepted" }
+      : review.verified && review.verified === l
+        ? { tone: "verified", text: "verified" }
+        : null;
+  const proofWord = `${l} payment screenshot${l === 1 ? "" : "s"}`;
   const c =
     l > 0 ? (
       <button
         type="button"
-        className="cand-pay-proofs cand-pay-proofs--btn"
+        className={`cand-pay-proofs cand-pay-proofs--btn${proofState ? ` cand-pay-proofs--${proofState.tone}` : ""}`}
         onClick={(o) => {
           o.stopPropagation();
           if (t != null) {
             t(e);
           }
         }}
-        title={`View ${l} payment screenshot${l === 1 ? "" : "s"}`}
-        aria-label={`View ${l} payment screenshot${l === 1 ? "" : "s"}`}
+        title={`View ${proofWord}${proofState ? ` (${proofState.text})` : ""}`}
+        aria-label={`View ${proofWord}${proofState ? `, ${proofState.text}` : ""}`}
       >
         <Icon name="paperclip" size={12} />
         <span className="cand-pay-proofs-count">
           {l} {l === 1 ? "proof" : "proofs"}
         </span>
+        {proofState && (
+          <span className="cand-pay-proofs-state">
+            {proofState.tone === "verified" ? "✓ verified" : proofState.text}
+          </span>
+        )}
         <span className="cand-pay-proofs-cta">View</span>
       </button>
     ) : null;
+  // Recorded above what the booking expects: the L2 row that holds ₹10,000
+  // against ₹5,000. Shown, not corrected -- someone has to say which it is.
+  const over = Number(e.expected_payment) > 0 && n > r ? n - r : 0;
   const isUnevidenced =
     Boolean(e.payment_unevidenced) || (n > 0 && l === 0);
   if (n <= 0) {
@@ -6069,6 +6114,7 @@ export function _Component27({ row: e, onViewProofs: t }) {
           >
             {Ax(r)} due
           </span>
+          {c}
         </span>
       </div>
     );
@@ -6115,6 +6161,14 @@ export function _Component27({ row: e, onViewProofs: t }) {
         <span className="cand-pay-amount">{Cx(n)}</span>
         <span className="cand-pay-pillrow">
           <span className="cand-pay-pill cand-pay-pill--paid">Paid</span>
+          {over > 0 && (
+            <span
+              className="cand-pay-pill cand-pay-pill--over"
+              title={`Recorded ${Cx(n)} against ${Cx(r)} expected for this row. Check it is not counted twice.`}
+            >
+              {Ax(over)} above expected
+            </span>
+          )}
           {c}
         </span>
       </div>
@@ -6190,6 +6244,28 @@ export function deleteRowMessage(row) {
   return `This permanently removes this ${kind} row${when}${money}${proofText}.${siblings} It cannot be undone.`;
 }
 
+/** "L2 · 17 Sept" for a row that holds an interview (year added outside this
+ *  year); "" for a row that does not. Two rows of one name -- an L1 and an L2,
+ *  logged the same day -- read as duplicates without it (12 Oct). */
+export function interviewLabel(row, long = false) {
+  const day = String(row?.date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
+  if (!(row?.interview_round || row?.time || row?.slot_confirmed)) return "";
+  let label = day;
+  try {
+    label = new Date(`${day}T12:00:00`).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      ...(long || day.slice(0, 4) !== String(new Date().getFullYear()) ? { year: "numeric" } : {}),
+      timeZone: "Asia/Kolkata",
+    });
+  } catch {
+    label = day;
+  }
+  const round = String(row?.interview_round || "").trim();
+  const time = long && row?.time ? ` at ${row.time}` : "";
+  return `${round ? `${round} · ` : ""}${label}${time}`;
+}
 function pR(e) {
   if (!e) {
     return "—";
@@ -7169,8 +7245,13 @@ function CandidatesPanelImpl() {
                         <td className="cand-cell-pay">
                           <_Component27 row={ge} onViewProofs={Z} />
                         </td>
-                        <td className="cand-cell-mono">
+                        <td className="cand-cell-mono cand-cell-date">
                           {pR(ge.logged_date || ge.created_at || ge.date)}
+                          {interviewLabel(ge) && (
+                            <span className="cand-date-interview" title={`Interview ${interviewLabel(ge, true)}`}>
+                              Interview {interviewLabel(ge)}
+                            </span>
+                          )}
                         </td>
                         <td
                           className="cand-cell-mono cand-cell-phone"
