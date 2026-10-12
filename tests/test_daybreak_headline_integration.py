@@ -84,3 +84,8 @@ def test_daybreak_machine_route_bypasses_dashboard_cookie_gate_only():
 
     assert dashboard_auth.is_public_path("/api/integrations/daybreak/headline") is True
     assert dashboard_auth.is_public_path("/api/integrations/daybreak/other") is False
+
+def test_daybreak_prompt_requires_grounded_terms():
+    text = integration._prompt(integration.DaybreakHeadlineRequest.model_validate(payload()))
+    assert "Every non-neutral word must appear verbatim in the approved facts" in text
+    assert "experienced, strong, expertise" in text

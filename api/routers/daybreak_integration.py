@@ -65,7 +65,9 @@ def _prompt(request: DaybreakHeadlineRequest) -> str:
         "Write one professional Naukri resume headline. Return JSON only. "
         "Use only the approved facts below. Do not add companies, projects, "
         "certifications, locations, salaries, seniority labels, achievements, "
-        "or technologies that are not present. Do not include a name, quote, "
+        "or technologies that are not present. Every non-neutral word must appear "
+        "verbatim in the approved facts; do not add generic claim words such as "
+        "experienced, strong, expertise, expert, skilled, or skills. Do not include a name, quote, "
         "markdown, URL, email, phone number, or first-person wording. "
         f"The headline must be 30 to {request.max_length} characters.\n"
         "APPROVED_FACTS=" + json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
