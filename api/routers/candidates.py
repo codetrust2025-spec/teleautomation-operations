@@ -370,6 +370,10 @@ async def candidates_interviews_slots_create(request: Request, body: dict):
                 notes=notes,
                 interview_round=interview_round,
             )
+    except candidate_store.DuplicateBookingError as exc:
+        # The booking's own check (one rule for every path) found this
+        # interview already held: answer with it, as the check above does.
+        return {"status": "ok", "candidate": exc.existing, "already_booked": True, "message": str(exc)}
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
     result = {"status": "ok", "candidate": row}

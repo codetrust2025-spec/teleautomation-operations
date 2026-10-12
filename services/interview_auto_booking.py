@@ -1448,17 +1448,27 @@ def _execute_auto_booking(
                 # interviewer resource calendar; lifecycle identity is the only
                 # duplicate boundary here.
                 conflict_status = "NOT_REQUIRED"
-                booking = _persisted(lambda: candidate_store.assign_interview_slot(
-                    candidate_id=str(candidate["id"]), date=schedule["date"], time=schedule["time"],
-                    time_end=schedule["time_end"], interview_round=interview_round,
-                    notes=(
-                        f"Manually approved from reviewed interview email by {manual_reviewer}."
-                        if manual_reviewer else
-                        "Automatically booked from validated interview email (AI Mail Monitoring)."
-                    ),
-                    interview_booking_source="candidate_booked" if manual_reviewer else "ai_auto_booked",
-                    **_booking_metadata(result, message, schedule),
-                ))
+                try:
+                    booking = _persisted(lambda: candidate_store.assign_interview_slot(
+                        candidate_id=str(candidate["id"]), date=schedule["date"], time=schedule["time"],
+                        time_end=schedule["time_end"], interview_round=interview_round,
+                        notes=(
+                            f"Manually approved from reviewed interview email by {manual_reviewer}."
+                            if manual_reviewer else
+                            "Automatically booked from validated interview email (AI Mail Monitoring)."
+                        ),
+                        interview_booking_source="candidate_booked" if manual_reviewer else "ai_auto_booked",
+                        **_booking_metadata(result, message, schedule),
+                    ))
+                except candidate_store.DuplicateBookingError as exc:
+                    # The one rule every booking path shares (12 Oct): this
+                    # person already holds this interview -- booked by another
+                    # path, with nothing on it naming this invite's event.
+                    raise BookingValidationError(
+                        "DUPLICATE_BOOKING", "This candidate already has the same interview booking.",
+                        payment_status="PASSED", duplicate_status="DUPLICATE",
+                        booking_id=str(exc.existing.get("id") or ""),
+                    ) from exc
             booking_status, event_type = (
                 ("Approved & Booked", "slot_manually_booked")
                 if manual_reviewer else ("Auto Booked", "slot_auto_booked")
@@ -1467,17 +1477,26 @@ def _execute_auto_booking(
         elif booking is None and classification == "interview_rescheduled":
             target = _resolve_existing_slot(slots, result=result, message=message, classification=classification)
             previous = dict(target)
-            booking = _persisted(lambda: candidate_store.update_interview_slot(
-                candidate_id=str(target["id"]), date=schedule["date"], time=schedule["time"],
-                time_end=schedule["time_end"], interview_round=interview_round,
-                notes=(
-                    f"Reschedule manually approved from reviewed email by {manual_reviewer}."
-                    if manual_reviewer else
-                    "Rescheduled from validated interview email (AI Mail Monitoring)."
-                ),
-                interview_booking_source="candidate_booked" if manual_reviewer else "ai_auto_booked",
-                **_booking_metadata(result, message, schedule),
-            ))
+            try:
+                booking = _persisted(lambda: candidate_store.update_interview_slot(
+                    candidate_id=str(target["id"]), date=schedule["date"], time=schedule["time"],
+                    time_end=schedule["time_end"], interview_round=interview_round,
+                    notes=(
+                        f"Reschedule manually approved from reviewed email by {manual_reviewer}."
+                        if manual_reviewer else
+                        "Rescheduled from validated interview email (AI Mail Monitoring)."
+                    ),
+                    interview_booking_source="candidate_booked" if manual_reviewer else "ai_auto_booked",
+                    **_booking_metadata(result, message, schedule),
+                ))
+            except candidate_store.DuplicateBookingError as exc:
+                # The new time is an interview this person already holds: moving
+                # this booking there would hold it twice (the shared rule, 12 Oct).
+                raise BookingValidationError(
+                    "DUPLICATE_BOOKING", str(exc),
+                    payment_status="PASSED", duplicate_status="DUPLICATE",
+                    booking_id=str(exc.existing.get("id") or ""),
+                ) from exc
             duplicate_status, conflict_status = "PASSED", "NOT_REQUIRED"
             booking_status, event_type = "Rescheduled", "interview_rescheduled"
         elif booking is None:

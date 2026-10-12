@@ -23,7 +23,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
   useConfirm: () => ({ confirm: vi.fn(async () => true) }),
 }))
 
-import { InterviewRoster, sameSlotKey } from './InterviewRoster.jsx'
+import { InterviewRoster } from './InterviewRoster.jsx'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(here, '..', 'dailyOps.css'), 'utf-8').replace(/\r\n/g, '\n')
@@ -65,14 +65,18 @@ afterEach(() => {
 const rowsOf = name => screen.getAllByText(name, { selector: 'strong' }).map(el => el.closest('tr'))
 const badgeIn = tr => tr.querySelector('.ops-same-slot')
 
-describe('same slot booked twice', () => {
-  it('marks both rows of one person booked twice at one date and time, and no other row', async () => {
+describe('one interview booked twice', () => {
+  // The server decides, by the one rule every booking path uses, and marks the
+  // rows of a duplicate with duplicate_count / duplicate_rank. The roster only
+  // shows it: a different company, round or invitation at one hour is a
+  // genuine second interview and the server leaves it unmarked.
+  it('flags every row the server marks as one interview held twice, and no other row', async () => {
     interviews = [
-      row('a1', 'Asha Fakename'),
-      row('a2', 'Asha Fakename', { interview_company: 'Example Co' }),
-      row('b1', 'Bala Fakename', { phone: '9000000222' }),                  // same time, another person
-      row('c1', 'Chitra Fakename', { phone: '9000000333', time: '16:00' }),
-      row('c2', 'Chitra Fakename', { phone: '9000000333', time: '17:00' }),  // same person, another time
+      row('a1', 'Asha Fakename', { duplicate_count: 2, duplicate_rank: 1 }),
+      row('a2', 'Asha Fakename', { duplicate_count: 2, duplicate_rank: 2, duplicate_of: 'a1' }),
+      row('b1', 'Bala Fakename', { phone: '9000000222' }),
+      row('c1', 'Chitra Fakename', { phone: '9000000333', interview_company: 'First Client' }),
+      row('c2', 'Chitra Fakename', { phone: '9000000333', interview_company: 'Second Client' }),   // same hour, different interview
     ]
     render(<InterviewRoster />)
     await screen.findAllByText('Asha Fakename', { selector: 'strong' })
@@ -80,32 +84,23 @@ describe('same slot booked twice', () => {
     const twins = rowsOf('Asha Fakename')
     expect(twins).toHaveLength(2)
     for (const tr of twins) {
-      expect(badgeIn(tr)).not.toBeNull()
-      expect(badgeIn(tr).textContent).toBe('Same slot ×2')
-      expect(badgeIn(tr).getAttribute('title')).toMatch(/Check that one is not a duplicate/)
+      expect(badgeIn(tr).textContent).toBe('Duplicate ×2')
+      expect(badgeIn(tr).getAttribute('title')).toMatch(/booked 2 times \(the same invitation\)/)
     }
     for (const tr of [...rowsOf('Bala Fakename'), ...rowsOf('Chitra Fakename')]) {
       expect(badgeIn(tr)).toBeNull()
     }
   })
 
-  it('does not count a cancelled or moved booking as a second one', async () => {
+  it('shows two genuinely different interviews at one hour as two plain rows', async () => {
     interviews = [
-      row('a1', 'Asha Fakename'),
-      row('a2', 'Asha Fakename', { interview_attendance_status: 'cancelled' }),
-      row('a3', 'Asha Fakename', { interview_attendance_status: 'rescheduled' }),
+      row('c1', 'Chitra Fakename', { interview_round: 'L1' }),
+      row('c2', 'Chitra Fakename', { interview_round: 'HR' }),
     ]
     render(<InterviewRoster />)
-    await screen.findAllByText('Asha Fakename', { selector: 'strong' })
-    expect(document.querySelectorAll('.ops-same-slot')).toHaveLength(0)
-  })
-
-  it('matches the person by phone, else by name, and the start by clock time', () => {
-    expect(sameSlotKey(row('x', 'Asha', { phone: '+91 90000 00111', time: '4:00 PM' })))
-      .toBe(sameSlotKey(row('y', 'Asha', { phone: '9000000111', time: '16:00' })))
-    expect(sameSlotKey(row('x', 'Asha Fakename', { phone: '' }))).toBe(sameSlotKey(row('y', ' asha fakename ', { phone: '' })))
-    expect(sameSlotKey(row('x', 'Asha', { time: '' }))).toBe('')
-    expect(sameSlotKey(row('x', 'Asha', { date: '' }))).toBe('')
+    await screen.findAllByText('Chitra Fakename', { selector: 'strong' })
+    expect(rowsOf('Chitra Fakename')).toHaveLength(2)
+    expect(document.querySelectorAll('.ops-duplicate-booking')).toHaveLength(0)
   })
 })
 

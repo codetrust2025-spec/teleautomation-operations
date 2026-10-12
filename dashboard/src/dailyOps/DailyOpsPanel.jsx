@@ -190,7 +190,8 @@ export function DailyOpsPanel({
     setRangePreset(detectPresetFromRange(iso, iso))
   }
 
-  const upcomingOnly = rangePreset === 'upcoming'
+  // Upcoming and Next 2 days both show what is still to come.
+  const upcomingOnly = rangePreset === 'upcoming' || rangePreset === 'next2days'
 
   function applyPreset(presetId) {
     const range = resolvePresetRange(presetId)
@@ -219,7 +220,7 @@ export function DailyOpsPanel({
   }
 
   // When range is custom, disable upcoming_only filter to show all interviews in the range
-  const effectiveUpcomingOnly = !unresolvedOnly && rangePreset === 'upcoming' ? upcomingOnly : false
+  const effectiveUpcomingOnly = !unresolvedOnly && upcomingOnly
 
   const loadGlobal = useCallback(async () => {
     setLoading(true)

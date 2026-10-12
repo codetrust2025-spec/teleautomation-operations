@@ -208,6 +208,17 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
                             <Icon name={source.tone === 'auto' ? 'sparkles' : 'user-check'} size={11} strokeWidth={2.2} />
                           </span>
                         )}
+                        {/* One interview booked twice, as the server's one
+                            booking rule decides it (12 Oct). Different
+                            interviews at one hour carry no flag. */}
+                        {slot.duplicate_count > 1 && (
+                          <span
+                            className="sbs-duplicate-flag"
+                            title={`This interview is booked ${slot.duplicate_count} times (the same invitation). Staff will keep one.`}
+                          >
+                            Duplicate ×{slot.duplicate_count}
+                          </span>
+                        )}
                       </div>
                       <div className="sbs-slot-card__line">
                         <div className="sbs-slot-card__time">

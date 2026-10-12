@@ -3,6 +3,7 @@ import { addDaysIso, todayIso } from './calendarDates.js'
 const PRESETS = [
   { id: 'today', label: 'Today' },
   { id: 'upcoming', label: 'Upcoming' },
+  { id: 'next2days', label: 'Next 2 days' },
   { id: 'thisWeek', label: 'This week' },
   { id: 'last7', label: 'Last 7 days' },
 ]
@@ -34,6 +35,11 @@ export function resolvePresetRange(presetId) {
       return { from: today, to: today }
     case 'upcoming':
       return { from: today, to: addDaysIso(today, 30) }
+    // Today and tomorrow in IST (todayIso is the IST day), still to come: the
+    // panel reads it with the same time-aware rule as Upcoming, so an interview
+    // whose time has passed leaves it on the hour (12 Oct).
+    case 'next2days':
+      return { from: today, to: addDaysIso(today, 1) }
     case 'thisWeek':
       return { from: startOfWeekIso(today), to: endOfWeekIso(today) }
     case 'last7':

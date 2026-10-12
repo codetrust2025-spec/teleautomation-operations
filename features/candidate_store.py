@@ -76,7 +76,61 @@ _lock = Lock()
 # interview was booked twice, eight seconds apart, by the form and the slot
 # route. A process lock is enough because production runs one worker process;
 # tests/test_one_booking_per_interview.py fails if the Dockerfile stops saying so.
-BOOKING_LOCK = RLock()
+class _BookingLock:
+    """One booking decision at a time.
+
+    Within the process an RLock (re-entrant: the booking paths nest). Across
+    processes on this host -- a second worker, a script run beside the server
+    -- an exclusive lock on a file next to the data, held by the outermost
+    holder only and released by the kernel if a process dies holding it.
+    Where file locks are unavailable (Windows test runs) the RLock alone
+    stands, which is what production had until 12 Oct.
+    """
+
+    def __init__(self) -> None:
+        import threading
+
+        self._rlock = RLock()
+        self._local = threading.local()
+
+    def _lock_path(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(_FILE)) or DATA_DIR, ".booking.lock")
+
+    def __enter__(self):
+        self._rlock.acquire()
+        depth = getattr(self._local, "depth", 0)
+        if depth == 0:
+            self._local.handle = None
+            try:
+                import fcntl
+
+                handle = open(self._lock_path(), "a+")
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                self._local.handle = handle
+            except ImportError:
+                pass
+            except OSError:
+                logging.getLogger(__name__).warning(
+                    "Booking file lock unavailable; the process lock alone serialises bookings"
+                )
+        self._local.depth = depth + 1
+        return self
+
+    def __exit__(self, *_exc) -> bool:
+        self._local.depth -= 1
+        if self._local.depth == 0 and getattr(self._local, "handle", None) is not None:
+            try:
+                import fcntl
+
+                fcntl.flock(self._local.handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                self._local.handle.close()
+                self._local.handle = None
+        self._rlock.release()
+        return False
+
+
+BOOKING_LOCK = _BookingLock()
 _load_cache: dict | None = None
 _load_cache_at: float = 0.0
 _LOAD_CACHE_TTL = 15.0  # seconds — avoids repeated PG reads per dashboard refresh
@@ -3198,7 +3252,7 @@ def daily_interview_roster(
         filter_candidate=filter_candidate,
     )
     counts = _interview_attendance_counts(rows)
-    rows = _enrich_interview_rows_with_slot_screenshots(rows)
+    rows = annotate_duplicate_bookings(_enrich_interview_rows_with_slot_screenshots(rows))
     return {
         "date": day,
         "interviews": rows,
@@ -4193,6 +4247,16 @@ def _resolve_public_slot_conflicts(
     conflicts = find_interview_slot_conflicts(
         date, time, time_end, exclude_candidate_id=exclude_candidate_id,
     )
+    # This person's own bookings at this hour are not a conflict for another
+    # candidate to win or lose: whether one is the same interview is decided
+    # by the one booking rule (`find_duplicate_booking`), and a genuinely
+    # different interview of theirs may share the hour (12 Oct). The priority
+    # rule below still settles the hour between different candidates.
+    own_key = _normalise_candidate_name_key(canonical_candidate_name(candidate_name))
+    conflicts = [
+        c for c in conflicts
+        if not own_key or _normalise_candidate_name_key(c.get("name") or "") != own_key
+    ]
     if not conflicts:
         return
 
@@ -4401,7 +4465,7 @@ def interview_monitor(
         # (IST time-aware, so it happens on the hour, not at date rollover).
         rows, _past_their_time = _split_pending_interviews_by_slot_phase(rows)
     counts = _interview_attendance_counts(rows)
-    rows = _enrich_interview_rows_with_slot_screenshots(rows)
+    rows = annotate_duplicate_bookings(_enrich_interview_rows_with_slot_screenshots(rows))
     by_date: dict[str, list[dict]] = {}
     by_attendee: dict[str, int] = {}
     for row in rows:
@@ -4509,7 +4573,7 @@ def public_booked_interview_slots(*, days: int = 60, now: float | None = None) -
     # future slots so the public page cannot accidentally show far-future data.
     start = "2000-01-01"
     end = (today + timedelta(days=max(int(days), 1))).isoformat()
-    rows = _filter_upcoming_only_rows(_interview_rows_for_range(start, end))
+    rows = annotate_duplicate_bookings(_filter_upcoming_only_rows(_interview_rows_for_range(start, end)))
     slots: list[dict] = []
     for row in rows:
         slot_date = (row.get("date") or "").strip()[:10]
@@ -4538,6 +4602,10 @@ def public_booked_interview_slots(*, days: int = 60, now: float | None = None) -
             # it if the payload says which it is. Rows booked before the type
             # existed have none, and those are interviews.
             "booking_type": _clean_str(row.get("booking_type")) or "Interview",
+            # One interview held twice (12 Oct): the page flags both rows.
+            # Absent on every genuinely separate interview.
+            **({"duplicate_count": row["duplicate_count"], "duplicate_rank": row["duplicate_rank"]}
+               if row.get("duplicate_count") else {}),
             # Which section of Confirmed slots it belongs in, by the same rule
             # Daily Ops uses to split Scheduled from Awaiting status: once the
             # slot's end (IST) has passed with no outcome recorded, it needs a
@@ -5491,6 +5559,7 @@ def assign_interview_slot(
     interview_booking_source: str = "candidate_booked",
     booking_type: str = "Interview",
     assessment_key: str = "",
+    invite_sha256: str = "",
 ) -> dict:
     """Schedule an existing candidate — first slot updates the record; later slots clone."""
     cid = _clean_str(candidate_id)
@@ -5505,6 +5574,37 @@ def assign_interview_slot(
     _refuse_far_future_date(day)
     slot_time = _clean_str(time)
     _validate_interview_slot_times(slot_time, time_end)
+    with BOOKING_LOCK:
+        # Every booking path reaches this write; one interview is held once.
+        duplicate = find_duplicate_booking(
+            cid, phone=_clean_str(existing.get("phone")), date=day, time=slot_time, time_end=time_end,
+            interview_round=interview_round, company=interview_company, invite_sha256=invite_sha256,
+            calendar_uid=interview_calendar_uid, source_message_id=interview_source_message_id,
+            booking_type=booking_type,
+        )
+        if duplicate:
+            raise DuplicateBookingError(duplicate)
+        return _assign_interview_slot_unlocked(
+            cid=cid, existing=existing, day=day, slot_time=slot_time, time_end=time_end, notes=notes,
+            interview_round=interview_round, interview_attendee=interview_attendee,
+            interview_company=interview_company, interview_role=interview_role,
+            interview_source_thread_id=interview_source_thread_id,
+            interview_source_message_id=interview_source_message_id,
+            interview_source_timezone=interview_source_timezone,
+            interview_calendar_uid=interview_calendar_uid,
+            interview_calendar_sequence=interview_calendar_sequence,
+            interview_booking_source=interview_booking_source,
+            booking_type=booking_type, assessment_key=assessment_key,
+        )
+
+
+def _assign_interview_slot_unlocked(
+    *, cid: str, existing: dict, day: str, slot_time: str, time_end: str, notes: str,
+    interview_round: str, interview_attendee: str | None, interview_company: str,
+    interview_role: str, interview_source_thread_id: str, interview_source_message_id: str,
+    interview_source_timezone: str, interview_calendar_uid: str, interview_calendar_sequence: str,
+    interview_booking_source: str, booking_type: str, assessment_key: str,
+) -> dict:
 
     if _candidate_has_confirmed_slot(existing):
         clone = _duplicate_candidate_slot(
@@ -6049,6 +6149,197 @@ def _same_slot_booking(name: str, date: str, time: str) -> dict | None:
     return None
 
 
+# ── One booking per interview (12 Oct) ─────────────────────────────────────
+#
+# Every path that books -- the booking form, Daily Ops, the Gmail and
+# assessment automation, a retry of any of them -- asks one question before it
+# writes, under BOOKING_LOCK: does this person already hold this interview?
+# On 9 Oct one candidate's 4:00 pm interview was booked twice, three minutes
+# apart, from the same invite screenshot: the form knew a repeat only by its
+# own form token. A person may hold any number of different interviews, at the
+# same hour too; what may not happen is one interview held twice.
+
+
+class DuplicateBookingError(ValueError):
+    """A booking asked for an interview this person already holds."""
+
+    def __init__(self, existing: dict, *, moving: bool = False):
+        self.existing = dict(existing or {})
+        who = self.existing.get("name") or "this candidate"
+        when = f"{str(self.existing.get('date') or '')[:10]} at {self.existing.get('time') or ''}"
+        super().__init__(
+            f"{who} already holds this interview on {when}. Moving this booking there would book it "
+            "twice -- cancel one of them instead."
+            if moving else
+            f"Already booked: {who} has this interview on {when}. Nothing new was created."
+        )
+
+
+_COMPANY_NOISE = frozenset({"pvt", "private", "ltd", "limited", "llp", "inc", "co", "company", "the", "india"})
+
+
+def _company_key(name) -> str:
+    words = [w for w in re.split(r"[^a-z0-9]+", _clean_str(name).lower()) if w and w not in _COMPANY_NOISE]
+    return " ".join(words)
+
+
+def _companies_differ(a, b) -> bool:
+    """Both named, and not the same company ("Evoke" and "Evoke Technologies Pvt Ltd" are one)."""
+    ka, kb = _company_key(a), _company_key(b)
+    if not ka or not kb:
+        return False
+    return not (ka == kb or ka.startswith(kb + " ") or kb.startswith(ka + " "))
+
+
+_invite_digests: dict[tuple, str] = {}
+
+
+def booking_invite_fingerprints(row: dict) -> set[str]:
+    """The sha256 of each invite screenshot stored on this booking.
+
+    Recorded on the attachment since 12 Oct; for older ones the stored file is
+    read once and remembered by path, size and modification time.
+    """
+    out: set[str] = set()
+    cid = _clean_str(row.get("id"))
+    for shot in row.get("slot_screenshot_proofs") or []:
+        if not isinstance(shot, dict):
+            continue
+        digest = _clean_str(shot.get("sha256")).lower()
+        if not digest and cid and shot.get("filename"):
+            path = os.path.join(_attachment_dir(cid, AttachmentType.SLOT_SCREENSHOT_PROOF), str(shot["filename"]))
+            try:
+                stat = os.stat(path)
+                key = (path, stat.st_size, int(stat.st_mtime))
+                digest = _invite_digests.get(key, "")
+                if not digest:
+                    with open(path, "rb") as handle:
+                        digest = hashlib.sha256(handle.read()).hexdigest()
+                    _invite_digests[key] = digest
+            except OSError:
+                digest = ""
+        if digest:
+            out.add(digest)
+    return out
+
+
+def _booking_descriptor(row: dict) -> dict:
+    return {
+        "calendar_uid": _clean_str(row.get("interview_calendar_uid")),
+        "source_message_id": _clean_str(row.get("interview_source_message_id")),
+        "invites": booking_invite_fingerprints(row),
+        "booking_type": _clean_str(row.get("booking_type")) or "Interview",
+        "end": normalise_interview_clock(row.get("time_end") or ""),
+        "round": normalise_interview_round(row.get("interview_round")),
+        "company": _clean_str(row.get("interview_company")),
+    }
+
+
+def same_interview(a: dict, b: dict) -> bool:
+    """Whether two bookings of one person, at one day and start, are one interview.
+
+    The strongest evidence both sides carry decides:
+      1. One invitation -- the same calendar event, source mail or invite
+         screenshot -- is one interview, whatever else differs.
+      2. Two calendar events that both name themselves and differ are two
+         interviews (the Gmail path's long-standing rule).
+      3. Anything both sides state that differs -- booking type, end time,
+         round, company -- makes them two interviews.
+      4. Otherwise nothing tells them apart: one interview.
+    A field one side leaves blank never tells two interviews apart, and never
+    joins them either beyond what the rest of the evidence says.
+    """
+    def same_text(x, y) -> bool:
+        return bool(x) and bool(y) and x.casefold() == y.casefold()
+
+    if same_text(a["calendar_uid"], b["calendar_uid"]) or same_text(a["source_message_id"], b["source_message_id"]):
+        return True
+    if a["invites"] and b["invites"] and a["invites"] & b["invites"]:
+        return True
+    if a["calendar_uid"] and b["calendar_uid"]:
+        return False
+    if a["booking_type"].casefold() != b["booking_type"].casefold():
+        return False
+    if a["end"] and b["end"] and a["end"] != b["end"]:
+        return False
+    if a["round"] and b["round"] and a["round"] != b["round"]:
+        return False
+    if _companies_differ(a["company"], b["company"]):
+        return False
+    return True
+
+
+def _phone_key(value) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))[-10:]
+    return digits if len(digits) == 10 else ""
+
+
+def find_duplicate_booking(
+    candidate_id: str = "",
+    *,
+    phone: str = "",
+    date: str,
+    time: str,
+    time_end: str = "",
+    interview_round: str = "",
+    company: str = "",
+    invite_sha256: str = "",
+    calendar_uid: str = "",
+    source_message_id: str = "",
+    booking_type: str = "Interview",
+    exclude_ids=(),
+    invite_fingerprints=(),
+    name: str = "",
+) -> dict | None:
+    """The standing booking that this request would duplicate, or None.
+
+    The person is every row linked to `candidate_id` by identity (phone,
+    email, explicit link -- never a name alone), plus every row holding
+    `phone`. Only bookings still standing on the same day at the same start are
+    compared, and `same_interview` decides. Call it under BOOKING_LOCK.
+    """
+    day = _clean_str(date)[:10]
+    start = normalise_interview_clock(time)
+    if len(day) != 10 or not start:
+        return None
+    cid = _clean_str(candidate_id)
+    family = set(candidate_identity_ids(cid, include_name_matches=False)) | {cid} if cid else set()
+    family.discard("")
+    phone_key = _phone_key(phone)
+    if not family and not phone_key and _clean_str(name):
+        # A profile candidate the form names without an id or a number: the
+        # name is the identity that path books by, so it is the one checked.
+        name_key = _normalise_candidate_name_key(canonical_candidate_name(_clean_str(name)))
+        family = {
+            str(row.get("id")) for row in all_booking_rows()
+            if name_key and _normalise_candidate_name_key(row.get("name") or "") == name_key
+        }
+    excluded = {_clean_str(x) for x in exclude_ids or ()}
+    wanted = {
+        "calendar_uid": _clean_str(calendar_uid),
+        "source_message_id": _clean_str(source_message_id),
+        "invites": ({_clean_str(invite_sha256).lower()} if _clean_str(invite_sha256) else set())
+        | {_clean_str(x).lower() for x in invite_fingerprints or () if _clean_str(x)},
+        "booking_type": _clean_str(booking_type) or "Interview",
+        "end": normalise_interview_clock(time_end or ""),
+        "round": normalise_interview_round(interview_round),
+        "company": _clean_str(company),
+    }
+    candidates = [
+        row for row in all_booking_rows()
+        if (str(row.get("id") or "") in family or (phone_key and _phone_key(row.get("phone")) == phone_key))
+        and str(row.get("id") or "") not in excluded
+        and slot_still_stands(row)
+        and _clean_str(row.get("date"))[:10] == day
+        and normalise_interview_clock(row.get("time") or "") == start
+    ]
+    candidates.sort(key=lambda row: _clean_str(row.get("created_at")))
+    for row in candidates:
+        if same_interview(wanted, _booking_descriptor(row)):
+            return row
+    return None
+
+
 def same_standing_booking(
     candidate_id: str,
     *,
@@ -6056,40 +6347,68 @@ def same_standing_booking(
     time: str,
     time_end: str = "",
     interview_round: str = "",
+    **evidence,
 ) -> dict | None:
     """The interview this person already holds at exactly this date and time.
 
-    Same person by identity link -- phone, email, an explicit link -- never by
-    name alone; same day and start; the same end and round wherever both
-    sides state one; an interview rather than an assessment; still standing.
-    Asking for that again is the same booking asked for twice. Anything that
-    differs is a different interview and is left to book.
+    Kept for its callers; the rule is `find_duplicate_booking`'s.
     """
-    cid = _clean_str(candidate_id)
-    day = _clean_str(date)[:10]
-    start = normalise_interview_clock(time)
-    if not cid or len(day) != 10 or not start:
-        return None
-    end = normalise_interview_clock(time_end)
-    wanted_round = normalise_interview_round(interview_round)
-    family = set(candidate_identity_ids(cid, include_name_matches=False)) | {cid}
-    for row in all_booking_rows():
-        if str(row.get("id") or "") not in family or not slot_still_stands(row):
+    return find_duplicate_booking(
+        candidate_id, date=date, time=time, time_end=time_end,
+        interview_round=interview_round, **evidence,
+    )
+
+
+def annotate_duplicate_bookings(rows: list[dict]) -> list[dict]:
+    """Mark the rows that hold one interview twice, for the screens to flag.
+
+    Rows of one person (phone, else name), standing, at one day and start are
+    compared by `same_interview`; every row of a group of two or more gets
+    `duplicate_count` (the group's size), `duplicate_rank` (1 for the
+    earliest-created) and `duplicate_of` (the earliest row's id) on the 2nd and
+    later. Genuinely different interviews at one hour are left unmarked.
+    Nothing is written.
+    """
+    groups: dict[tuple, list[int]] = {}
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or not slot_still_stands(row):
             continue
-        if (_clean_str(row.get("booking_type")) or "Interview") != "Interview":
+        person = _phone_key(row.get("phone")) or _normalise_candidate_name_key(row.get("name") or "")
+        start = normalise_interview_clock(row.get("time") or "")
+        day = _clean_str(row.get("date"))[:10]
+        if person and start and len(day) == 10:
+            groups.setdefault((person, day, start), []).append(index)
+    for members in groups.values():
+        if len(members) < 2:
             continue
-        if _clean_str(row.get("date"))[:10] != day:
-            continue
-        if normalise_interview_clock(row.get("time") or "") != start:
-            continue
-        row_end = normalise_interview_clock(row.get("time_end") or "")
-        if end and row_end and row_end != end:
-            continue
-        row_round = normalise_interview_round(row.get("interview_round"))
-        if wanted_round and row_round and row_round != wanted_round:
-            continue
-        return row
-    return None
+        members.sort(key=lambda i: _clean_str(rows[i].get("created_at")))
+        descriptors = {i: _booking_descriptor(rows[i]) for i in members}
+        parent = {i: i for i in members}
+
+        def find(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for x, i in enumerate(members):
+            for j in members[x + 1:]:
+                if same_interview(descriptors[i], descriptors[j]):
+                    parent[find(j)] = find(i)
+        clusters: dict[int, list[int]] = {}
+        for i in members:
+            clusters.setdefault(find(i), []).append(i)
+        for cluster in clusters.values():
+            if len(cluster) < 2:
+                continue
+            cluster.sort(key=lambda i: _clean_str(rows[i].get("created_at")))
+            first_id = _clean_str(rows[cluster[0]].get("id"))
+            for rank, i in enumerate(cluster, start=1):
+                rows[i]["duplicate_count"] = len(cluster)
+                rows[i]["duplicate_rank"] = rank
+                if rank > 1:
+                    rows[i]["duplicate_of"] = first_id
+    return rows
 
 
 # What an interview invite knows that a booking made by hand does not.
@@ -6279,7 +6598,7 @@ def import_confirmed_interview_slot(**kwargs) -> tuple[dict, str]:
         interview_round=_clean_str(kwargs.get("interview_round") or ""),
         candidate_id=_clean_str(kwargs.get("candidate_id") or ""),
     )
-    row, action = _import_confirmed_interview_slot(**kwargs)
+    row, action = _import_confirmed_interview_slot(**kwargs, duplicate_company=company)
     if grant and isinstance(row, dict) and row.get("id"):
         row = _mark_re_service_booking(
             str(row["id"]), grant_row_id=str(grant.get("id") or "")
@@ -6329,6 +6648,7 @@ def _import_confirmed_interview_slot(
     slot_image: bytes | None = None,
     slot_image_name: str = "",
     slot_image_mime: str = "",
+    duplicate_company: str = "",
 ) -> tuple[dict, str]:
     """Create or assign a confirmed interview slot for a profile candidate."""
     canon = canonical_candidate_name(_clean_str(name))
@@ -6365,6 +6685,18 @@ def _import_confirmed_interview_slot(
         )
         if previous:
             return previous, "skip_exists"
+    # The same submission retried is answered above with its own booking. Any
+    # other request for an interview this person already holds -- the same
+    # invite sent again from a fresh page -- is refused here, before a row,
+    # a payment or a notification is touched.
+    duplicate = find_duplicate_booking(
+        candidate_id, phone=phone, date=date, time=time, time_end=time_end,
+        interview_round=interview_round, company=duplicate_company,
+        invite_sha256=hashlib.sha256(slot_image).hexdigest() if slot_image else "",
+        name=canon,
+    )
+    if duplicate:
+        raise DuplicateBookingError(duplicate)
     re_service_grant = find_re_service_grant(
         name=canon,
         phone=phone,
@@ -6461,27 +6793,12 @@ def _import_confirmed_interview_slot(
     proof_owner = _payment_proof_owner_for_slot_name(canon, payment_proof_id)
     existing = _same_slot_booking(canon, day, slot_time)
     if existing and _candidate_has_confirmed_slot(existing):
-        patch: dict = {}
-        existing_end = _clean_str(existing.get("time_end"))
-        # Compared as clock times: "02:45 PM" from the form is the "14:45" on
-        # the row, not a change to write.
-        if slot_end and normalise_interview_clock(slot_end) != normalise_interview_clock(existing_end):
-            patch["time_end"] = slot_end
-        if rnd and rnd != normalise_interview_round(existing.get("interview_round")):
-            patch["interview_round"] = rnd
-        if patch:
-            existing = update_candidate(str(existing["id"]), patch, allow_slot_without_rules=True)
-        return _finish_public_slot_import(
-            existing,
-            "skip_exists" if not patch else "updated",
-            technology=tech,
-            phone=normalized_phone,
-            interview_round=rnd,
-            slot_image=slot_image,
-            slot_image_name=slot_image_name,
-            slot_image_mime=slot_image_mime,
-            source=source,
-        )
+        # The one booking rule has already answered above: this person does
+        # not hold *this* interview. A booking standing at the same hour is
+        # therefore a different one -- another company, round or invitation
+        # -- and this request books beside it. It used to be taken for the
+        # same booking, and its round overwritten with this request's.
+        existing = None
 
     _resolve_public_slot_conflicts(
         candidate_name=canon,
@@ -7050,10 +7367,54 @@ def update_candidate(
     *,
     allow_slot_without_rules: bool = False,
 ) -> dict | None:
+    # A change of date or time can put a booking on an interview the person
+    # already holds -- which is how one interview came to be booked twice on
+    # 12 Oct: a booking stored on 10 Dec (the invite's 12/10 read the wrong
+    # way round) was corrected to 12 Oct, where the re-submitted booking
+    # already stood. Such a change is decided under the booking lock.
+    if isinstance(patch, dict) and ("date" in patch or "time" in patch):
+        with BOOKING_LOCK:
+            return _update_candidate(cid, patch, allow_slot_without_rules=allow_slot_without_rules)
+    return _update_candidate(cid, patch, allow_slot_without_rules=allow_slot_without_rules)
+
+
+def _refuse_move_onto_held_interview(row: dict, patch: dict) -> None:
+    """Raise when this standing booking's new day/start is an interview already held."""
+    if not slot_still_stands(row):
+        return
+    new_day = _clean_str(patch.get("date") if "date" in patch else row.get("date"))[:10]
+    new_time = _clean_str(patch.get("time") if "time" in patch else row.get("time"))
+    if new_day == _clean_str(row.get("date"))[:10] and (
+        normalise_interview_clock(new_time) == normalise_interview_clock(row.get("time") or "")
+    ):
+        return
+    moved = {**row, **{k: patch[k] for k in ("time_end", "interview_round", "interview_company") if k in patch}}
+    twin = find_duplicate_booking(
+        _clean_str(row.get("id")), phone=_clean_str(row.get("phone")), date=new_day, time=new_time,
+        time_end=_clean_str(moved.get("time_end")), interview_round=_clean_str(moved.get("interview_round")),
+        company=_clean_str(moved.get("interview_company")),
+        calendar_uid=_clean_str(row.get("interview_calendar_uid")),
+        source_message_id=_clean_str(row.get("interview_source_message_id")),
+        booking_type=_clean_str(row.get("booking_type")) or "Interview",
+        invite_fingerprints=booking_invite_fingerprints(row),
+        exclude_ids={_clean_str(row.get("id"))},
+    )
+    if twin:
+        raise DuplicateBookingError(twin, moving=True)
+
+
+def _update_candidate(
+    cid: str,
+    patch: dict,
+    *,
+    allow_slot_without_rules: bool = False,
+) -> dict | None:
     data = _load()
     rows = data.get("candidates") or []
     for i, r in enumerate(rows):
         if r.get("id") == cid:
+            if "date" in patch or "time" in patch:
+                _refuse_move_onto_held_interview(r, patch)
             original_phone_key = candidate_phone_identity(r.get("phone"))
             original_name_key = _normalise_candidate_name_key(r.get("name") or "")
             profile_identity_ids = {
@@ -8362,6 +8723,9 @@ def _store_typed_attachment(
         "uploaded_at":   _now_iso(),
         "attachment_type": kind.value,
         "url":           f"/candidates/{cid}/attachments/{kind.value}/{pid}",
+        # The file's own fingerprint: an invite screenshot uploaded twice is
+        # recognised as one invitation (12 Oct). Metadata may still override it.
+        "sha256":        hashlib.sha256(data).hexdigest(),
     }
     if metadata:
         for key in (

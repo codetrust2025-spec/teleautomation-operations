@@ -200,29 +200,20 @@ def _anonymous_booked_view(snapshot: dict) -> dict:
 
 def _standing_booking_for(
     candidate_id: str, phone: str, *, day: str, start: str, end: str, round_name: str,
+    company: str = "", invite_sha256: str = "", name: str = "",
 ) -> dict | None:
-    """The interview this person already holds at this day and start, if any.
+    """The interview this person already holds that this request repeats, if any.
 
-    The person is the picked candidate, else whoever holds this phone number;
-    `same_standing_booking` then widens that to every row of the same identity.
+    The one rule every booking path uses (`find_duplicate_booking`): the same
+    invitation is one interview; a different company, round or calendar event
+    at the same hour is a different one and books.
     """
     from features import candidate_store as cs
 
-    ids = [candidate_id] if candidate_id else []
-    digits = re.sub(r"\D", "", str(phone or ""))[-10:]
-    if not ids and len(digits) == 10:
-        ids = [
-            str(row.get("id"))
-            for row in cs.all_booking_rows()
-            if re.sub(r"\D", "", str(row.get("phone") or ""))[-10:] == digits
-        ][:1]
-    for cid in ids:
-        hit = cs.same_standing_booking(
-            cid, date=day, time=start, time_end=end, interview_round=round_name,
-        )
-        if hit:
-            return hit
-    return None
+    return cs.find_duplicate_booking(
+        candidate_id, phone=phone, date=day, time=start, time_end=end,
+        interview_round=round_name, company=company, invite_sha256=invite_sha256, name=name,
+    )
 
 
 def _post_booking_payments(row: dict, pending_ids) -> None:
@@ -1269,6 +1260,8 @@ def install_public_slot_routes(app) -> None:
                     already_booked = _standing_booking_for(
                         candidate_id.strip(), normalized_phone,
                         day=day, start=slot_time, end=slot_end, round_name=normalized_round,
+                        company=normalized_company, invite_sha256=image_sha256 if slot_image else "",
+                        name=name,
                     )
                 if existing_booking:
                     row, action = existing_booking, "skip_exists"
@@ -1335,6 +1328,11 @@ def install_public_slot_routes(app) -> None:
                         payment_reuse=payment_reuse,
                         idempotency_key=booking_key,
                     )
+        except cs.DuplicateBookingError as e:
+            # Found by the booking's own check, under the same lock: nothing
+            # was written for this request. Answer with the standing booking.
+            rollback_attempt()
+            row, action, already_booked = e.existing, "skip_exists", e.existing
         except cs.PaymentDueError as e:
             rollback_attempt()
             return _json_error(

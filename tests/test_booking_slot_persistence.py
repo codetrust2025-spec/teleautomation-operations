@@ -291,23 +291,24 @@ def test_reattaching_evidence_is_idempotent_for_the_slot(store):
     assert_slot(booked["id"], "2026-08-14", "13:00", "13:45")
 
 
-def test_repeating_the_same_booking_is_a_duplicate_row_not_a_lost_slot(store):
-    """Booking the identical slot twice must leave both rows describing it.
+def test_repeating_the_same_booking_answers_with_it_and_loses_nothing(store):
+    """Booking the identical interview twice is one booking (12 Oct).
 
-    The AI path blocks this earlier as DUPLICATE_BOOKING; the store's own job is
-    simply never to lose a slot, whichever way it is called.
+    It used to write a second row describing the same interview; since one
+    rule guards every booking path, the repeat is refused naming the booking
+    that already holds it. The store's other job stands: the slot is never lost.
     """
     row = make_candidate()
     first = cs.assign_interview_slot(
         candidate_id=row["id"], date="2026-08-14", time="13:00", time_end="13:45",
     )
-    second = cs.assign_interview_slot(
-        candidate_id=row["id"], date="2026-08-14", time="13:00", time_end="13:45",
-    )
+    with pytest.raises(cs.DuplicateBookingError) as refused:
+        cs.assign_interview_slot(
+            candidate_id=row["id"], date="2026-08-14", time="13:00", time_end="13:45",
+        )
 
-    assert first["id"] != second["id"]
+    assert refused.value.existing["id"] == first["id"]
     assert_slot(first["id"], "2026-08-14", "13:00", "13:45")
-    assert_slot(second["id"], "2026-08-14", "13:00", "13:45")
 
 
 def test_no_confirmed_slot_is_lost_across_the_whole_sequence(store):

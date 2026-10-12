@@ -125,15 +125,23 @@ def execute_assessment_booking(
         return _outcome(PENDING, "assessment_booking_blocked", audit=record, notification=notification,
                         failure_code=decision.reason_code, reason=decision.reason)
 
-    booking = candidate_store.assign_interview_slot(
-        candidate_id=candidate_id, date=decision.date, time=decision.time, time_end=decision.time_end,
-        interview_company=company, interview_role=window.name or str(message.get("subject") or "")[:120],
-        interview_source_thread_id=str(message.get("provider_thread_id") or ""),
-        interview_source_message_id=str(message.get("provider_message_id") or ""),
-        interview_source_timezone="Asia/Kolkata",
-        interview_booking_source="ai_auto_booked",
-        booking_type="Assessment", assessment_key=key,
-    )
+    try:
+        booking = candidate_store.assign_interview_slot(
+            candidate_id=candidate_id, date=decision.date, time=decision.time, time_end=decision.time_end,
+            interview_company=company, interview_role=window.name or str(message.get("subject") or "")[:120],
+            interview_source_thread_id=str(message.get("provider_thread_id") or ""),
+            interview_source_message_id=str(message.get("provider_message_id") or ""),
+            interview_source_timezone="Asia/Kolkata",
+            interview_booking_source="ai_auto_booked",
+            booking_type="Assessment", assessment_key=key,
+        )
+    except candidate_store.DuplicateBookingError as exc:
+        # The shared one-booking-per-interview rule found it already held.
+        already = exc.existing
+        record = audit(booking_id=str(already.get("id") or ""), auto_booked=True,
+                       status="Already Booked", booking=already)
+        return _outcome("Already Booked", "assessment_already_booked", audit=record,
+                        booking=already, notification=notification, duplicate=True)
     record = audit(booking_id=str(booking.get("id") or ""), auto_booked=True, status=BOOKED, booking=booking)
     logger.info("Assessment booked candidate=%s booking=%s %s %s-%s",
                 candidate_id, booking.get("id"), decision.date, decision.time, decision.time_end)

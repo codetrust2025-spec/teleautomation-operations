@@ -24,6 +24,8 @@ Items (the records are named on the command line, never in this file):
   B  --row NAME --cancel | --date YYYY-MM-DD        a slot dated 2027 or later
   E  --name NAME --phone NUMBER                     every row of that candidate holding another number
   N1 post verified company/referrer payments that never reached the ledger (one credit per transaction)
+  DUP one interview booked twice (the shared booking rule): keep one, cancel the others -- records,
+     history and payments all kept; groups with two outcomes or a payment only on the copy are left to the owner
 
 Prints names, dates and counts only: no record ids, no secrets.
 """
@@ -262,7 +264,53 @@ def item_n1(cs, args):
     return out
 
 
-ITEMS = {"K": item_k, "F": item_f, "C1": item_c1, "C2": item_c2, "J": item_j, "B": item_b, "E": item_e, "N1": item_n1}
+OUTCOME_STATUSES = {"attended", "not_attended", "re_service"}
+
+
+def item_dup(cs, args):
+    """Standing bookings that hold one interview twice (12 Oct audit, item M1).
+
+    Grouped by the same rule every booking path now enforces
+    (`annotate_duplicate_bookings`). The booking kept is the one with a
+    recorded outcome, else the earliest created; each other one is marked
+    cancelled with a remark naming the booking kept. Nothing is deleted and
+    no payment is touched."""
+    rows = [dict(r) for r in _rows(cs) if cs.slot_still_stands(r)]
+    cs.annotate_duplicate_bookings(rows)
+    groups = {}
+    for r in rows:
+        if r.get("duplicate_count"):
+            groups.setdefault(r.get("duplicate_of") or r.get("id"), []).append(r)
+    out = []
+    for members in groups.values():
+        members.sort(key=lambda r: (r.get("duplicate_rank") or 0))
+        with_outcome = [r for r in members if cs.row_interview_attendance_status(r) in OUTCOME_STATUSES]
+        if len(with_outcome) > 1:
+            print(f"OWNER  {members[0].get('name')} {members[0].get('date')} {members[0].get('time')}: "
+                  f"{len(with_outcome)} copies carry an outcome -- left for your decision")
+            continue
+        keep = with_outcome[0] if with_outcome else members[0]
+        keep_proofs = {str(p.get('sha256') or p.get('utr_number') or p.get('id')) for p in keep.get("payment_proofs") or []}
+        for r in members:
+            if r is keep:
+                continue
+            own = {str(p.get('sha256') or p.get('utr_number') or p.get('id')) for p in r.get("payment_proofs") or []}
+            if own - keep_proofs:
+                print(f"OWNER  {r.get('name')} {r.get('date')} {r.get('time')}: the copy holds a payment the kept booking "
+                      f"does not -- left for your decision")
+                continue
+            remark = (f"Duplicate booking of the same interview (the booking created {str(keep.get('created_at') or '')[:16]} "
+                      f"is kept); cancelled on owner approval. Record, history and payments kept.")
+            out.append((f"{r.get('name')} {r.get('date')} {r.get('time')} {r.get('interview_round') or ''} "
+                        f"(created {str(r.get('created_at') or '')[:16]}): mark cancelled as the duplicate of the booking "
+                        f"created {str(keep.get('created_at') or '')[:16]}",
+                        lambda cid=r["id"], remark=remark: cs.set_interview_attendance(
+                            cid, status="cancelled", remark=remark, by=REVIEWER, allow_future=True)))
+    return out
+
+
+ITEMS = {"K": item_k, "F": item_f, "C1": item_c1, "C2": item_c2, "J": item_j, "B": item_b, "E": item_e, "N1": item_n1,
+         "DUP": item_dup}
 
 
 def main(argv=None) -> int:
