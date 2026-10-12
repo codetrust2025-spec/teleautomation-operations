@@ -198,6 +198,66 @@ def _anonymous_booked_view(snapshot: dict) -> dict:
     return {**snapshot, "slots": slots, "details_withheld": True}
 
 
+def _standing_booking_for(
+    candidate_id: str, phone: str, *, day: str, start: str, end: str, round_name: str,
+) -> dict | None:
+    """The interview this person already holds at this day and start, if any.
+
+    The person is the picked candidate, else whoever holds this phone number;
+    `same_standing_booking` then widens that to every row of the same identity.
+    """
+    from features import candidate_store as cs
+
+    ids = [candidate_id] if candidate_id else []
+    digits = re.sub(r"\D", "", str(phone or ""))[-10:]
+    if not ids and len(digits) == 10:
+        ids = [
+            str(row.get("id"))
+            for row in cs.all_booking_rows()
+            if re.sub(r"\D", "", str(row.get("phone") or ""))[-10:] == digits
+        ][:1]
+    for cid in ids:
+        hit = cs.same_standing_booking(
+            cid, date=day, time=start, time_end=end, interview_round=round_name,
+        )
+        if hit:
+            return hit
+    return None
+
+
+def _post_booking_payments(row: dict, pending_ids) -> None:
+    """Post each receipt this booking just attached; never fail the booking."""
+    from features import candidate_store as cs
+    from features.payment_verification_engine import credit_confirmed_payment
+
+    cid = str(row.get("id") or "")
+    wanted = {str(pid) for pid in pending_ids or []}
+    for proof in cs.list_attachments(cid, "payment_proof") or []:
+        if str(proof.get("pending_proof_id") or "") not in wanted or proof.get("ledger_entry_id"):
+            continue
+        try:
+            links = credit_confirmed_payment(
+                proof,
+                source_module="public_slot_confirmation",
+                candidate_id=cid,
+                entity_name=str(row.get("name") or ""),
+                referrer_id=str(row.get("reference") or ""),
+                payment_scope=str(proof.get("payment_scope") or ""),
+            )
+            if links.get("ledger_entry_id"):
+                cs.link_proof_to_ledger(cid, str(proof.get("id") or ""), links)
+            elif links.get("duplicate_payment_id"):
+                logger.warning(
+                    "Booking payment not posted: its transaction is already credited (payment %s)",
+                    links["duplicate_payment_id"],
+                )
+        except Exception:
+            # The booking and its payment are recorded on the row either way;
+            # a ledger that refuses now shows as a reconciliation gap rather
+            # than an undone booking.
+            logger.exception("Could not post a confirmed booking payment to the ledger")
+
+
 def install_public_slot_routes(app) -> None:
     from features import candidate_store as cs
 
@@ -1166,6 +1226,12 @@ def install_public_slot_routes(app) -> None:
             for created_id in current_ids - candidate_ids_before:
                 cs.delete_candidate(created_id)
 
+        # Set before the attempt so the steps after it can read them whichever
+        # branch ran: a repeated booking answered from the one already standing
+        # spends and posts nothing, and a reused payment was posted when first
+        # paid.
+        payment_reuse: dict = {}
+        already_booked: dict | None = None
         try:
             with _booking_lock():
                 candidate_ids_before = {
@@ -1190,8 +1256,24 @@ def install_public_slot_routes(app) -> None:
                     ),
                     None,
                 )
+                if not existing_booking:
+                    # The same invite submitted again from a fresh page carries
+                    # a new form token, so the key above cannot see the first
+                    # booking: on 12 Oct one candidate's 4:00 pm interview was
+                    # booked twice, three minutes apart, with the same
+                    # screenshot. This person's own standing booking at this day
+                    # and start (and round, where both name one) is the same
+                    # booking asked for twice -- the rule the Daily Ops slot
+                    # route applies. It is answered before any payment is
+                    # checked, so a receipt sent with the repeat stays unspent.
+                    already_booked = _standing_booking_for(
+                        candidate_id.strip(), normalized_phone,
+                        day=day, start=slot_time, end=slot_end, round_name=normalized_round,
+                    )
                 if existing_booking:
                     row, action = existing_booking, "skip_exists"
+                elif already_booked:
+                    row, action = already_booked, "skip_exists"
                 else:
                     payment_reuse = {}
                     if pending_payment_proofs:
@@ -1315,8 +1397,9 @@ def install_public_slot_routes(app) -> None:
             )
 
         # The booking is committed and verified on the row. Only now is the
-        # payment spent -- every earlier exit above leaves it reusable.
-        if requested_proof_ids:
+        # payment spent -- every earlier exit above leaves it reusable. A repeat
+        # answered from the standing booking spent nothing.
+        if requested_proof_ids and not already_booked:
             try:
                 from features.pending_slot_payment import mark_utilized
 
@@ -1330,6 +1413,14 @@ def install_public_slot_routes(app) -> None:
                 # this marker is the pending-side mirror of it. Failing to
                 # write it must not fail a booking that already succeeded.
                 logger.exception("Could not mark pending payment proofs utilized")
+            # The receipts this booking just paid with go to the ledger now.
+            # The form read them before the booking existed and deliberately
+            # posted nothing then -- and nothing posted them after, so verified
+            # company payments made through this form never reached the
+            # ledger (12 Oct). A payment reused from an earlier booking was
+            # posted when it was first paid.
+            if not payment_reuse.get("reuse_allowed"):
+                _post_booking_payments(row, requested_proof_ids)
 
         logger.warning(
             "Invite booking trace phase=confirm_stored trace_id=%s image_sha256=%s "
@@ -1351,6 +1442,17 @@ def install_public_slot_routes(app) -> None:
                 logger.debug("slot booking notify failed: %s", exc)
 
         asyncio.create_task(_notify())
+        if already_booked:
+            return {
+                "status": "ok",
+                "action": action,
+                "candidate": row,
+                "already_booked": True,
+                "message": (
+                    f"Already booked: {row.get('name') or 'this candidate'} has this interview on "
+                    f"{str(row.get('date') or '')[:10]} at {row.get('time') or ''}. Nothing new was created."
+                ),
+            }
         return {"status": "ok", "action": action, "candidate": row}
 
     @app.post("/public/slots/book")

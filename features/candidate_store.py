@@ -8649,6 +8649,62 @@ def confirm_proof_receiver(
     proof["receiver_confirmed_by"] = reviewer
     proof["receiver_match"] = "administrator_confirmation"
     proof["company_payment_verified"] = receiver_type == "company"
+    # A confirmed receiver is a verified payment, and a verified payment is a
+    # ledger credit. This used to stop at the row: two ₹10,000 receipts read
+    # "verified" on the candidate while the ledger still held them unconfirmed
+    # with no credit (12 Oct). Posted before the row is saved, so a ledger that
+    # refuses leaves the proof exactly as it was.
+    from features.payment_verification_engine import credit_confirmed_payment
+
+    row = rows[idx]
+    links = credit_confirmed_payment(
+        proof,
+        source_module="receiver_confirmation",
+        candidate_id=cid,
+        entity_name=_clean_str(row.get("name")),
+        referrer_id=_clean_str(row.get("reference")),
+        payment_scope=_clean_str(proof.get("payment_scope"))
+        or ("ROUND" if row.get("service_type") == "round_wise" else "PROFILE"),
+    )
+    if links.get("duplicate_payment_id"):
+        raise ValueError(
+            f"Proof {pid}'s transaction is already credited as payment "
+            f"{links['duplicate_payment_id']}; the receiver was not confirmed"
+        )
+    proof.update({key: value for key, value in links.items() if value})
+    proofs[position] = proof
+    rows[idx][field] = proofs
+    rows[idx]["updated_at"] = _now_iso()
+    cdata["candidates"] = rows
+    _save(cdata)
+    return dict(proof)
+
+
+#: The only fields `link_proof_to_ledger` may write on a proof.
+PROOF_LEDGER_LINK_FIELDS = (
+    "ledger_entry_id", "payment_id", "evidence_id", "entitlement_id",
+    "ledger_action", "ledger_status",
+)
+
+
+def link_proof_to_ledger(cid: str, pid: str, links: dict) -> dict | None:
+    """Record on one proof the ledger rows that now credit it.
+
+    Only the link fields are written; the amount, state and file are not
+    touched. Returns the updated proof, or None when the row or proof is gone.
+    """
+    wanted = {
+        key: _clean_str(links.get(key))
+        for key in PROOF_LEDGER_LINK_FIELDS
+        if _clean_str(links.get(key))
+    }
+    cdata = _load()
+    rows = cdata.get("candidates") or []
+    idx, field, located = _locate_proof(rows, cid, pid)
+    if idx is None or located is None:
+        return None
+    proofs, position = located
+    proof = {**proofs[position], **wanted}
     proofs[position] = proof
     rows[idx][field] = proofs
     rows[idx]["updated_at"] = _now_iso()

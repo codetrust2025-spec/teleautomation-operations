@@ -23,6 +23,7 @@ Items (the records are named on the command line, never in this file):
   J  archive identical stored resume copies and orphan resume files to history
   B  --row NAME --cancel | --date YYYY-MM-DD        a slot dated 2027 or later
   E  --name NAME --phone NUMBER                     every row of that candidate holding another number
+  N1 post verified company/referrer payments that never reached the ledger (one credit per transaction)
 
 Prints names, dates and counts only: no record ids, no secrets.
 """
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 
 REVIEWER = "owner-approved 2026-10-11"
@@ -211,7 +213,56 @@ def item_e(cs, args):
             for r in _named(_rows(cs), args.name) if cs.candidate_phone_identity(r.get("phone")) != want]
 
 
-ITEMS = {"K": item_k, "F": item_f, "C1": item_c1, "C2": item_c2, "J": item_j, "B": item_b, "E": item_e}
+def _digits(value):
+    return re.sub(r"\D", "", str(value or ""))
+
+
+def item_n1(cs, args):
+    """Verified payments the ledger never credited (12 Oct audit, item N1).
+
+    Found by transaction: a proof already linked to an entry, or whose UTR or
+    payment already has one, is skipped. Profile bookings copy one receipt onto
+    every booking row, so each transaction is posted once and every row
+    carrying it is linked. The ledger writer's idempotency keys make a re-run a
+    no-op."""
+    from features import payment_verification_engine as pve
+
+    entries = pve.ledger_entries()
+    posted_refs = {_digits(e.get("external_transaction_id")) for e in entries} - {""}
+    posted_payments = {e.get("payment_id") for e in entries if e.get("payment_id")}
+    groups = {}
+    for r in _rows(cs):
+        for p in r.get("payment_proofs") or []:
+            if p.get("verification_state") not in ("VERIFIED_COMPANY_PAYMENT", "VERIFIED_REFERRER_PAYMENT"):
+                continue
+            ref = _digits(p.get("utr_number") or p.get("transaction_id"))
+            if p.get("ledger_entry_id") or (ref and ref in posted_refs) or p.get("payment_id") in posted_payments:
+                continue
+            groups.setdefault(ref or str(p.get("sha256") or p.get("id")), []).append((r, p))
+    out = []
+    for key, holders in sorted(groups.items(), key=lambda kv: str(kv[1][0][1].get("uploaded_at") or "")):
+        holders.sort(key=lambda rp: str(rp[0].get("created_at") or ""))
+        r, p = holders[0]
+
+        def apply(r=r, p=p, holders=holders):
+            links = pve.credit_confirmed_payment(
+                p, source_module="owner_approved_backfill", candidate_id=str(r["id"]),
+                entity_name=str(r.get("name") or ""), referrer_id=str(r.get("reference") or ""),
+                payment_scope=str(p.get("payment_scope") or "")
+                or ("ROUND" if r.get("service_type") == "round_wise" else "PROFILE"),
+            )
+            if not links.get("ledger_entry_id"):
+                return None
+            for row, proof in holders:
+                cs.link_proof_to_ledger(str(row["id"]), str(proof["id"]), links)
+            return links
+
+        out.append((f"{r.get('name')} Rs {p.get('verified_amount')} UTR ...{key[-4:]} paid {str(p.get('uploaded_at') or '')[:10]} "
+                    f"({p.get('verification_state')}): post the credit to the ledger; link {len(holders)} row(s)", apply))
+    return out
+
+
+ITEMS = {"K": item_k, "F": item_f, "C1": item_c1, "C2": item_c2, "J": item_j, "B": item_b, "E": item_e, "N1": item_n1}
 
 
 def main(argv=None) -> int:

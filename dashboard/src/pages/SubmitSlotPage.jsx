@@ -1136,7 +1136,9 @@ export function SubmitSlotPage() {
       // node that read it and both analysis times used to survive a booking
       // and sit under an empty form as if they belonged to the next one.
       resetBookForm()
-      setSuccess(`Slot confirmed for ${data.candidate?.name || effectiveName}.`)
+      // A repeat of a booking that already stands creates nothing; say so
+      // rather than "Slot confirmed", which read as a second booking (12 Oct).
+      setSuccess(data.already_booked && data.message ? data.message : `Slot confirmed for ${data.candidate?.name || effectiveName}.`)
       // Refresh data first, then switch to confirmed tab after 2 seconds
       await refresh()
       setTimeout(() => { setTab('confirmed'); setSuccess('') }, 2000)

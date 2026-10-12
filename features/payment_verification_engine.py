@@ -1725,6 +1725,117 @@ def _record_verification(**kwargs: Any) -> dict[str, Any]:
         return _record_verification_unlocked(**kwargs)
 
 
+#: What a proof record keeps of the reading that verified it, carried into the
+#: evidence row when that reading is posted later instead of read again.
+_PROOF_READING_FIELDS = (
+    "verified_amount", "utr_number", "transaction_id", "reference_number",
+    "payment_status", "payment_date", "payment_time", "receiver_name",
+    "receiver_upi_id", "receiver_phone", "receiver_account", "sender_name",
+    "sender_upi_id",
+)
+
+
+def credit_confirmed_payment(
+    proof: dict[str, Any],
+    *,
+    source_module: str,
+    candidate_id: str,
+    entity_name: str = "",
+    referrer_id: str = "",
+    payment_scope: str = "",
+    purpose: str = "candidate_payment",
+) -> dict[str, Any]:
+    """Post to the ledger a payment whose proof is already verified.
+
+    Two paths verified a receipt without posting it (12 Oct). The booking form
+    reads a receipt before the booking exists, so it deliberately records
+    nothing then -- and nothing posted it once the booking was confirmed. And
+    an administrator's receiver confirmation turned a proof into a verified
+    company payment on the candidate's row while the ledger still held it as
+    unconfirmed, with no credit. Four verified company payments were missing
+    from the ledger that way.
+
+    The proof's own verified reading is what is posted: nothing is read again,
+    so this is as fast as the booking it follows. It goes through the one
+    ledger writer, whose idempotency keys (the transaction reference, else the
+    screenshot's digest) make a second call -- or the same receipt filed again
+    from Edit Candidate -- land on the same payment and entry instead of a new
+    one. A transaction already credited to someone else is reported as a
+    duplicate and posts nothing.
+
+    Returns the ledger links to keep on the proof, or {} when the proof is not
+    a verified company or referrer payment, or cannot be tied to a transaction.
+    """
+    state = str(proof.get("verification_state") or "").strip().upper()
+    if state not in {"VERIFIED_COMPANY_PAYMENT", "VERIFIED_REFERRER_PAYMENT"}:
+        return {}
+    amount = int(proof.get("verified_amount") or 0)
+    digest = str(proof.get("sha256") or "").strip()
+    references = {
+        key: _norm_text(proof.get(key)).replace(" ", "")
+        for key in ("transaction_id", "utr_number", "reference_number")
+        if _norm_text(proof.get(key)).replace(" ", "")
+    }
+    if amount <= 0 or not (digest or references):
+        return {}
+    entity_id = str(candidate_id or "")
+    scope = payment_scope or str(proof.get("payment_scope") or "") or "OTHER"
+    # The payment row the original reading created, when there is one, is the
+    # one to credit: its own entity, candidate and scope, not a copy's.
+    payment_id = str(proof.get("payment_id") or "")
+    if payment_id:
+        stored = next(
+            (row for row in _load_ledger().get("payments") or [] if row.get("payment_id") == payment_id),
+            None,
+        )
+        if stored:
+            entity_id = str(stored.get("source_entity_id") or entity_id)
+            candidate_id = str(stored.get("candidate_id") or candidate_id)
+            scope = str(stored.get("payment_scope") or scope)
+    receiver_type = "company" if state == "VERIFIED_COMPANY_PAYMENT" else "referrer"
+    reading = {key: proof.get(key) for key in _PROOF_READING_FIELDS if proof.get(key) not in (None, "")}
+    reading["amount"] = amount
+    result: dict[str, Any] = {
+        **reading,
+        "status": str(proof.get("payment_status") or "SUCCESS"),
+        "currency": "INR",
+        "verification_state": state,
+        "reason_codes": list(proof.get("reason_codes") or []),
+        "deterministic_verified": True,
+        "company_payment_verified": state == "VERIFIED_COMPANY_PAYMENT",
+        "referrer_sponsored": state == "VERIFIED_REFERRER_PAYMENT" and purpose == "candidate_payment",
+        "receiver_type": receiver_type,
+        "receiver_registry_name": str(proof.get("receiver_registry_name") or proof.get("receiver_name") or ""),
+        "receiver_registry_id": str(proof.get("receiver_registry_id") or ""),
+        "ledger_action": "company_credit" if receiver_type == "company" else "referrer_recovery",
+        "deterministic_reasons": [
+            str(proof.get("receiver_match") or "verified proof posted after confirmation")
+        ],
+        "confidence_score": int(proof.get("confidence_score") or 0),
+    }
+    outcome = _record_verification(
+        digest=digest or f"proof:{proof.get('id') or ''}",
+        mime_type=str(proof.get("mime_type") or "image/jpeg"),
+        extraction=reading,
+        result=result,
+        source_module=source_module,
+        source_entity_type="candidate",
+        entity_id=entity_id,
+        entity_name=entity_name,
+        candidate_id=candidate_id,
+        referrer_id=referrer_id,
+        payment_scope=scope,
+        purpose=purpose,
+        create_ledger=True,
+    )
+    if outcome.get("duplicate"):
+        return {"duplicate_payment_id": result.get("duplicate_payment_id") or ""}
+    return {
+        key: result.get(key) or ""
+        for key in ("ledger_entry_id", "payment_id", "evidence_id", "entitlement_id")
+    } | {"ledger_action": result["ledger_action"], "ledger_status": "posted" if result.get("ledger_entry_id") else ""}
+
+
 def _transaction_references(result: dict[str, Any]) -> dict[str, str]:
     return {
         key: _norm_text(result.get(key)).replace(" ", "")
