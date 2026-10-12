@@ -1110,13 +1110,15 @@
 }
 .sot-candidate strong {
   font-size: 13px;
+  font-weight: 650;
   color: #f1f5f9;
 }
 .sot-candidate small,
 .sot-review-table td small {
   margin-top: 2px;
-  font-size: 11px;
-  color: var(--sot-muted);
+  font-size: 11.5px;
+  color: #94a3b8;
+  letter-spacing: 0.01em;
 }
 .sot-status-badge {
   display: inline-flex;
@@ -1205,9 +1207,25 @@
 .sot-action-menu summary {
   list-style: none;
   cursor: pointer;
-  padding: 6px 8px;
-  color: #94a6c0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  font-size: 15px;
   font-weight: 800;
+  line-height: 1;
+  transition: all 0.12s ease;
+}
+.sot-action-menu summary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+  border-color: rgba(255, 255, 255, 0.2);
 }
 .sot-action-menu summary::-webkit-details-marker {
   display: none;
@@ -1937,16 +1955,16 @@
   color: #c4b5fd;
 }
 @media (min-width: 641px) {
-  .mail-table th:nth-child(1), .mail-table td:nth-child(1) { width: 14%; overflow: hidden; text-overflow: ellipsis; }
-  .mail-table th:nth-child(1) small, .mail-table td:nth-child(1) small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mail-table th:nth-child(2), .mail-table td:nth-child(2) { width: 10.5%; overflow: hidden; text-overflow: ellipsis; }
-  .mail-table th:nth-child(3), .mail-table td:nth-child(3) { width: 14.5%; }
-  .mail-table th:nth-child(4), .mail-table td:nth-child(4) { width: 22%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mail-table th:nth-child(5), .mail-table td:nth-child(5) { width: 6%; text-align: center; white-space: nowrap; }
-  .mail-table th:nth-child(6), .mail-table td:nth-child(6) { width: 9.5%; white-space: nowrap; }
-  .mail-table th:nth-child(7), .mail-table td:nth-child(7) { width: 9.5%; white-space: nowrap; }
-  .mail-table th:nth-child(8), .mail-table td:nth-child(8) { width: 8%; white-space: nowrap; }
-  .mail-table th:nth-child(9), .mail-table td:nth-child(9) { width: 12%; text-align: right; }
+  .mail-table th:nth-child(1), .mail-table td:nth-child(1) { width: 13%; overflow: hidden; text-overflow: ellipsis; }
+  .mail-table th:nth-child(1) small, .mail-table td:nth-child(1) small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .mail-table th:nth-child(2), .mail-table td:nth-child(2) { width: 10%; overflow: hidden; text-overflow: ellipsis; }
+  .mail-table th:nth-child(3), .mail-table td:nth-child(3) { width: 14%; }
+  .mail-table th:nth-child(4), .mail-table td:nth-child(4) { width: 26%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mail-table th:nth-child(5), .mail-table td:nth-child(5) { width: 5.5%; text-align: center; white-space: nowrap; }
+  .mail-table th:nth-child(6), .mail-table td:nth-child(6) { width: 9%; white-space: nowrap; }
+  .mail-table th:nth-child(7), .mail-table td:nth-child(7) { width: 9%; white-space: nowrap; }
+  .mail-table th:nth-child(8), .mail-table td:nth-child(8) { width: 7.5%; white-space: nowrap; }
+  .mail-table th:nth-child(9), .mail-table td:nth-child(9) { width: 11%; text-align: right; }
 }
 .mail-priority {
   display: inline-flex;

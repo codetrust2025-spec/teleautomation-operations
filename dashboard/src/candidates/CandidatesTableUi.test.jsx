@@ -138,55 +138,22 @@ describe("2. the green tick says what it means", () => {
   });
 });
 
-describe("3. notes wrap and expand cleanly", () => {
-  it("keeps the whole note and follow-up in the page, never cut with an ellipsis", async () => {
+describe("3. notes and follow-up remarks are preserved without distorting main table rows", () => {
+  it("does not render follow-up remarks or notes in the main table list, keeping rows normalized", async () => {
     await renderTable();
     const row = rowOf("Complete Person");
-    expect(row.textContent).toContain(LONG_NOTE);
-    expect(row.textContent).toContain(LONG_FOLLOW_UP);
-    expect(row.textContent).not.toContain("…");
-    expect(row.textContent).not.toContain("...");
+    expect(row.querySelector(".cand-cell-note")).toBeNull();
+    expect(row.querySelector(".cand-cell-followup")).toBeNull();
+    expect(row.textContent).not.toContain(LONG_FOLLOW_UP);
+    expect(row.textContent).not.toContain(LONG_NOTE);
   });
 
-  it("shows the full text on hover as well", async () => {
+  it("preserves candidate details and meta without row-distorting remarks", async () => {
     await renderTable();
-    expect(rowOf("Complete Person").querySelector(".cand-cell-note")).toHaveAttribute("title", LONG_NOTE);
-  });
-
-  it("a long note gets a Show more control that opens it in place and closes it again", async () => {
-    await renderTable();
-    const note = rowOf("Complete Person").querySelector(".cand-cell-note");
-    expect(note.className).toContain("cand-note--long");
-    expect(note.className).not.toContain("cand-note--open");
-    const toggle = within(note).getByRole("button", { name: "Show more" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(toggle);
-    expect(note.className).toContain("cand-note--open");
-    expect(within(note).getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(within(note).getByRole("button", { name: "Show less" }));
-    expect(note.className).not.toContain("cand-note--open");
-  });
-
-  it("the control never opens the row's editor", async () => {
-    await renderTable();
-    fireEvent.click(within(rowOf("Complete Person").querySelector(".cand-cell-note")).getByRole("button", { name: "Show more" }));
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(calls.some((c) => /\/candidates\/row-complete$/.test(c.url))).toBe(false);
-  });
-
-  it("the follow-up has its own control", async () => {
-    await renderTable();
-    const followUp = rowOf("Complete Person").querySelector(".cand-cell-followup");
-    fireEvent.click(within(followUp).getByRole("button", { name: "Show more" }));
-    expect(followUp.className).toContain("cand-note--open");
-  });
-
-  it("a short note is plain text with no control", async () => {
-    await renderTable();
-    const note = rowOf("Lost Person").querySelector(".cand-cell-note");
-    expect(note.textContent).toContain("short note");
-    expect(note.className).not.toContain("cand-note--long");
-    expect(within(note).queryByRole("button")).toBeNull();
+    const lostRow = rowOf("Lost Person");
+    expect(lostRow.querySelector(".cand-cell-note")).toBeNull();
+    expect(lostRow.querySelector(".cand-cell-followup")).toBeNull();
+    expect(lostRow.textContent).not.toContain("short note");
   });
 });
 

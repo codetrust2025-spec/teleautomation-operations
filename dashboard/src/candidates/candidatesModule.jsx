@@ -7202,20 +7202,6 @@ function CandidatesPanelImpl() {
                               )}
                             </span>
                           )}
-                          {ge.notes && (
-                            <ExpandableNote
-                              className="cand-cell-note"
-                              text={ge.notes}
-                              prefix="· "
-                            />
-                          )}
-                          {ge.follow_up && (
-                            <ExpandableNote
-                              className="cand-cell-followup"
-                              text={ge.follow_up}
-                              prefix="⟳ "
-                            />
-                          )}
                         </td>
                         <td className="cand-cell-service">
                           {ge.service_type === "round_wise" ? (
