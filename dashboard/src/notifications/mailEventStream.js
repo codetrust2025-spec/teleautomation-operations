@@ -17,6 +17,7 @@ import { API } from '../config.js'
 const CHANNEL_NAME = 'teleautomation-mail-monitoring'
 const LAST_EVENT_KEY = 'teleautomation-mail-last-event-id'
 const SEEN_LIMIT = 500
+const TRANSPORT_FRAMES = new Set(['ping', 'pong'])
 const TRACE_LIMIT = 200
 
 const subscribers = new Set()
@@ -98,6 +99,11 @@ function emit(payload, fromSocket) {
 }
 
 function receive(payload, fromSocket = true) {
+  // Keep-alive frames say nothing about mail. Handed to subscribers, every pong
+  // made the sidebar re-read the unread count, and mirrored to every other tab
+  // it did so there too: the reads grew with the square of the open tabs
+  // (~570 summary requests per 10 minutes from two offices on 12 Oct).
+  if (TRANSPORT_FRAMES.has(payload?.event)) return
   if (payload?.event === 'ai_node_activity') {
     for (const fn of activitySubscribers) {
       try {

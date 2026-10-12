@@ -106,6 +106,11 @@ class RecruitmentMailWorker:
     def schedule_due(self):
         from core.db.connection import get_connection
         with get_connection() as conn,conn.cursor() as cur:
+            # Nothing is due on most passes (each mailbox comes due every few
+            # minutes, the loop runs every few seconds), and both statements
+            # below only touch due rows, so there is nothing to work out then.
+            cur.execute("SELECT 1 FROM candidate_mailboxes WHERE monitoring_enabled=true AND COALESCE(next_sync_at,now())<=now() LIMIT 1")
+            if cur.fetchone() is None:return
             # A closed, rejected or dropped candidate's mailbox is history: it
             # keeps its linkage and its rows, but nothing new is fetched for it.
             # Derived from stage on every pass, so reopening a candidate puts

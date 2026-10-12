@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API } from "../config.js";
 import { subscribeMailEvents, subscribeMailStatus, traceMailAlert } from "../notifications/mailEventStream.js";
-import { publishMailUnread } from "../notifications/mailUnread.js";
+import { fetchMailSummary, publishMailUnread } from "../notifications/mailUnread.js";
 import { useDialogA11y } from "../hooks/useDialogA11y.js";
 import { formatIstDateTime, formatScheduleDateTime, formatScheduleIstDateTime } from "../utils/istTime.js";
 import { useConfirm } from "../context/ConfirmContext.jsx";
@@ -196,7 +196,7 @@ export function MailNotificationBell({ compact = false }) {
     const version = ++loadVersion.current;
     try {
       const [summaryBody, listBody] = await Promise.all([
-        request("/api/mail-monitoring/summary"),
+        fetchMailSummary(),
         request("/api/mail-monitoring/notifications?limit=6&offset=0"),
       ]);
       if (version !== loadVersion.current) return;
@@ -329,7 +329,7 @@ export function MailMonitoringNotifications() {
     const version = ++loadVersion.current;
     if (!silent) setLoading(true);
     try {
-      const [list, counts] = await Promise.all([request(`/api/mail-monitoring/notifications?${query}`),request("/api/mail-monitoring/summary")]);
+      const [list, counts] = await Promise.all([request(`/api/mail-monitoring/notifications?${query}`),fetchMailSummary()]);
       if (version !== loadVersion.current) return;
       setItems(list.notifications || []);setTotal(list.total || 0);setSummary(counts.summary || {});
       publishMailUnread(counts.summary?.unread);

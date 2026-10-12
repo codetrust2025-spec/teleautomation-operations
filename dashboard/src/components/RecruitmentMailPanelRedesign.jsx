@@ -9,6 +9,7 @@ import { OcrToggle } from "./OcrToggle.jsx";
 import { PureOllamaToggle } from "./PureOllamaToggle.jsx";
 import { ReconnectWorklist } from "./ReconnectWorklist.jsx";
 import { useReconnectStatus } from "../hooks/useReconnectStatus.js";
+import { readMailboxHealth } from "../notifications/mailboxHealth.js";
 
 const request = async (path, options = {}) => {
   const isGet = !options.method || options.method === "GET";
@@ -1992,7 +1993,7 @@ export default function RecruitmentMailPanelRedesign() {
     let stopped = false;
     const refreshMailboxHealth = async () => {
       try {
-        const body = await request(`/api/candidate-mailboxes/health?_=${Date.now()}`);
+        const body = await readMailboxHealth();
         if (stopped) return;
         const healthById = new Map(
           (body.mailboxes || []).map((mailbox) => [String(mailbox.id), mailbox]),
@@ -2007,7 +2008,9 @@ export default function RecruitmentMailPanelRedesign() {
         /* The full page load remains the fallback when health polling fails. */
       }
     };
-    const timer = window.setInterval(refreshMailboxHealth, 30000);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) refreshMailboxHealth();
+    }, 30000);
     return () => {
       stopped = true;
       window.clearInterval(timer);
@@ -2113,7 +2116,10 @@ export default function RecruitmentMailPanelRedesign() {
         activeSyncRefreshInFlight.current = false;
       }
     };
-    const timer = window.setInterval(refreshActiveSyncs, 3000);
+    // Progress nobody can see is not worth a request every three seconds.
+    const timer = window.setInterval(() => {
+      if (!document.hidden) refreshActiveSyncs();
+    }, 3000);
     return () => window.clearInterval(timer);
   }, [activeSyncSignature]);
   useEffect(() => {

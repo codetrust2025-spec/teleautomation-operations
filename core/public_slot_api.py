@@ -260,7 +260,9 @@ def install_public_slot_routes(app) -> None:
         # made by candidate id).
         rows = [
             {k: v for k, v in row.items() if k not in _PUBLIC_PICKER_WITHHELD}
-            for row in cs.interview_slot_picker_rows(channel=channel or "profile")
+            for row in await asyncio.to_thread(
+                cs.interview_slot_picker_rows, channel=channel or "profile"
+            )
         ]
         return JSONResponse(
             {"status": "ok", "candidates": rows, "count": len(rows)},
@@ -271,7 +273,7 @@ def install_public_slot_routes(app) -> None:
     async def public_slot_booked(request: Request, days: int = 60):
         from core.dashboard_auth_vps import username_from_request_cookies
 
-        snap = cs.public_booked_interview_slots(days=days)
+        snap = await asyncio.to_thread(cs.public_booked_interview_slots, days=days)
         if not username_from_request_cookies(request.cookies):
             snap = _anonymous_booked_view(snap)
         return JSONResponse(

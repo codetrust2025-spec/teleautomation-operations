@@ -48,7 +48,9 @@ import os
 import re
 import time
 import uuid
-from functools import lru_cache
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import lru_cache, wraps
 from pathlib import Path
 from datetime import date as _date, datetime, timedelta, timezone
 from threading import Lock, RLock
@@ -2010,10 +2012,30 @@ def interview_booking_source(row: dict) -> str:
     return "candidate_booked"
 
 
+def _stored_row_slots(data: dict) -> dict[int, list]:
+    return {id(r): [r, None] for r in data.get("candidates") or [] if isinstance(r, dict)}
+
+
 def _with_computed(row: dict) -> dict:
     """Append derived fields (`balance_due`, `payment_status`) without
     persisting them. Keeps the storage format simple while giving the
-    UI a single, server-computed source of truth."""
+    UI a single, server-computed source of truth.
+
+    Inside one shared read a stored row is computed once: the stats card alone
+    used to compute every row six times over. Each caller gets its own copy,
+    so annotating one never shows up in another. Rows that are not the stored
+    ones (a preview, a merged profile) are always computed fresh."""
+    slots = _snapshot_memo("computed_rows", _stored_row_slots)
+    if slots is not None:
+        slot = slots.get(id(row))
+        if slot is not None and slot[0] is row:
+            if slot[1] is None:
+                slot[1] = _compute_row(row)
+            return dict(slot[1])
+    return _compute_row(row)
+
+
+def _compute_row(row: dict) -> dict:
     consultancy = bool(row.get("consultancy", False))
     service_type = _normalise_service_type(row.get("service_type"), row)
     interview_scope = _normalise_interview_scope(row.get("interview_scope"), row)
@@ -2144,9 +2166,9 @@ def _with_computed(row: dict) -> dict:
     # This is a data-entry completion signal only. An unpaid balance or a
     # future interview slot must not hide it, because those are workflow state.
     enriched["details_complete"] = not enriched["completion_missing"]
-    slot_ok = can_confirm_slot(enriched)
-    enriched["can_confirm_slot"] = slot_ok
-    enriched["slot_confirm_block_reason"] = slot_confirm_block_reason(enriched)
+    block_reason = slot_confirm_block_reason(enriched)
+    enriched["can_confirm_slot"] = block_reason is None
+    enriched["slot_confirm_block_reason"] = block_reason
     enriched["slot_confirm_min_payment"] = minimum_payment_for_slot(enriched)
     enriched["interview_attendee_resolved"] = row_interview_attendee(enriched)
     enriched["interview_attendance_status_resolved"] = row_interview_attendance_status(enriched)
@@ -2545,6 +2567,56 @@ def _attach_pending_work_stats(payload: dict, pw: dict) -> dict:
     return payload
 
 
+_READ_SNAPSHOT: ContextVar[dict | None] = ContextVar("candidate_read_snapshot", default=None)
+
+
+@contextmanager
+def shared_read_snapshot():
+    """Answer one read's cross-row questions once instead of once per row.
+
+    A list, a stats card or the booking form computes every row, and some of a
+    row's fields are questions about the other rows (how many interviews this
+    person already has booked, what the person owes across slot clones). Asked
+    row by row they made each read quadratic. Inside this block the answers
+    are taken once per store snapshot and shared; outside it nothing is kept,
+    so a write path still reads the rows as they stand at that moment.
+
+    Scoped to the calling context, so two requests never share answers, and
+    tied to the snapshot object, so a reload or a save starts afresh.
+    """
+    if _READ_SNAPSHOT.get() is not None:
+        yield
+        return
+    token = _READ_SNAPSHOT.set({})
+    try:
+        yield
+    finally:
+        _READ_SNAPSHOT.reset(token)
+
+
+def reads_one_snapshot(fn):
+    """Run a read-only, whole-store function inside `shared_read_snapshot`."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        with shared_read_snapshot():
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+def _snapshot_memo(name: str, build):
+    """`build(data)` once per snapshot inside a shared read; None outside one."""
+    memo = _READ_SNAPSHOT.get()
+    if memo is None:
+        return None
+    data = _load()
+    hit = memo.get(name)
+    if hit is not None and hit[0] is data:
+        return hit[1]
+    value = build(data)
+    memo[name] = (data, value)
+    return value
+
+
 def _booked_round_evidencing(row: dict, raw_rows: list[dict]) -> dict | None:
     """The booked round whose verified proof already evidences this row's money.
 
@@ -2602,6 +2674,7 @@ def _annotate_evidenced_elsewhere(row: dict, raw_rows: list[dict]) -> dict:
     return row
 
 
+@reads_one_snapshot
 def list_candidates(*, stage: str | None = None, task: str | None = None,
                     search: str | None = None, month: str | None = None,
                     pending_only: bool = False,
@@ -3063,6 +3136,7 @@ def _pending_works_core(rows: list[dict]) -> dict:
     }
 
 
+@reads_one_snapshot
 def pending_works(*, month: str | None = None, reference: str | None = None) -> dict:
     """Auto-detected operator to-dos for active in-progress candidates.
 
@@ -3096,6 +3170,7 @@ def _drop_inactive_referrer_rows(rows: list[dict], month: str | None) -> list[di
     return kept
 
 
+@reads_one_snapshot
 def active_roster(
     *,
     month: str | None = None,
@@ -3219,6 +3294,7 @@ def _enrich_interview_rows_with_slot_screenshots(rows: list[dict]) -> list[dict]
     return enriched
 
 
+@reads_one_snapshot
 def daily_interview_roster(
     day: str,
     *,
@@ -3846,6 +3922,10 @@ def _payment_proof_owner_for_slot_name(
     return None
 
 
+def _in_progress_balance_rows(_data: dict) -> list[dict]:
+    return [_with_computed(r) for r in list_candidates(stage="in_progress", month="all")]
+
+
 def merged_balance_due_for_name(name: str, rows: list[dict] | None = None) -> int:
     """Outstanding balance once per profile — merged slot clones."""
     canon = canonical_candidate_name(_clean_str(name))
@@ -3855,7 +3935,9 @@ def merged_balance_due_for_name(name: str, rows: list[dict] | None = None) -> in
     if not key:
         return 0
     if rows is None:
-        rows = [_with_computed(r) for r in list_candidates(stage="in_progress", month="all")]
+        rows = _snapshot_memo("in_progress_balance_rows", _in_progress_balance_rows)
+        if rows is None:
+            rows = _in_progress_balance_rows(_load())
     else:
         rows = [_with_computed(r) for r in rows]
     profile_rows = [
@@ -3892,25 +3974,39 @@ def _booking_name_key(name: str) -> str:
     return _normalise_candidate_name_key(canonical_candidate_name(name))
 
 
-def profile_booked_slot_count(name: str) -> int:
-    """Interviews this profile candidate has booked that stand or took place.
-
-    Read from the stored rows, so a row being confirmed right now is not yet
-    counted. A cancelled, released or superseded booking does not count."""
-    key = _booking_name_key(_clean_str(name))
-    if not key:
-        return 0
-    count = 0
-    for row in _load().get("candidates") or []:
+def _booked_slot_counts(data: dict) -> dict[str, int]:
+    """Standing profile bookings per candidate name key, over one snapshot."""
+    counts: dict[str, int] = {}
+    for row in data.get("candidates") or []:
         if not isinstance(row, dict):
             continue
         if _normalise_service_type(row.get("service_type"), row) == "round_wise":
             continue
-        if _booking_name_key(_clean_str(row.get("name"))) != key:
+        if not slot_still_stands(row):
             continue
-        if slot_still_stands(row):
-            count += 1
-    return count
+        key = _booking_name_key(_clean_str(row.get("name")))
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def profile_booked_slot_count(name: str) -> int:
+    """Interviews this profile candidate has booked that stand or took place.
+
+    Read from the stored rows, so a row being confirmed right now is not yet
+    counted. A cancelled, released or superseded booking does not count.
+
+    Every row's computed fields ask this, so a read of the whole store used to
+    walk the whole store once per row: 1.5 s for the Candidates list, 5 s for
+    its stats and 21 s for the booking form's name list on 286 rows. Inside one
+    read (`shared_read_snapshot`) the counts are taken once."""
+    key = _booking_name_key(_clean_str(name))
+    if not key:
+        return 0
+    counts = _snapshot_memo("booked_slot_counts", _booked_slot_counts)
+    if counts is None:
+        counts = _booked_slot_counts(_load())
+    return counts.get(key, 0)
 
 
 def booking_payment_lock(name: str, *, due: int | None = None) -> dict:
@@ -4406,6 +4502,7 @@ def _interview_slot_is_future(row: dict) -> bool:
     return slot_date > date.today().isoformat()
 
 
+@reads_one_snapshot
 def interview_monitor(
     from_date: str,
     to_date: str,
@@ -4494,6 +4591,7 @@ def interview_monitor(
     }
 
 
+@reads_one_snapshot
 def interview_upcoming(
     *,
     days: int = 14,
@@ -4554,6 +4652,7 @@ SLOT_PHASE_UPCOMING = "upcoming"
 SLOT_PHASE_NEEDS_STATUS_UPDATE = "needs_status_update"
 
 
+@reads_one_snapshot
 def public_booked_interview_slots(*, days: int = 60, now: float | None = None) -> dict:
     """Confirmed slots awaiting an attendance outcome for the public submit page.
 
@@ -4659,6 +4758,7 @@ def clear_future_interview_attendance(*, by: str = "system") -> int:
     return changed
 
 
+@reads_one_snapshot
 def interview_global_summary(
     from_date: str,
     to_date: str,
@@ -5232,6 +5332,10 @@ def canonical_candidate_identity_id(cid: str) -> str:
     return str(current.get("id")) if current else str(cid)
 
 
+_CANONICAL_IDS_MEMO: tuple | None = None
+
+
+@reads_one_snapshot
 def canonical_candidate_identity_ids(candidate_ids: list[str]) -> dict[str, str]:
     """Resolve many mailbox candidate ids without one DB connection per id.
 
@@ -5263,7 +5367,15 @@ def canonical_candidate_identity_ids(candidate_ids: list[str]) -> dict[str, str]
     for alias, canonical in links:
         aliases_by_canonical.setdefault(canonical, set()).add(alias)
 
-    rows = list(_load().get("candidates") or [])
+    # Polled with the mailbox overview: the answer only changes with the
+    # candidate store or the identity links, so one snapshot answers once.
+    global _CANONICAL_IDS_MEMO
+    snapshot = _load()
+    memo_key = (tuple(requested), tuple(links))
+    memo = _CANONICAL_IDS_MEMO
+    if memo is not None and memo[0] is snapshot and memo[1] == memo_key:
+        return dict(memo[2])
+    rows = list(snapshot.get("candidates") or [])
     rows_by_id = {str(row.get("id")): row for row in rows if row.get("id")}
     visible_rows = list_candidates()
     resolved: dict[str, str] = {}
@@ -5329,6 +5441,7 @@ def canonical_candidate_identity_ids(candidate_ids: list[str]) -> dict[str, str]
             None,
         )
         resolved[cid] = str(current.get("id")) if current else cid
+    _CANONICAL_IDS_MEMO = (snapshot, memo_key, dict(resolved))
     return resolved
 
 
@@ -7249,6 +7362,7 @@ def resolve_public_slot_candidate_from_hint(hint: str) -> tuple[str | None, str]
     )
 
 
+@reads_one_snapshot
 def interview_slot_picker_rows(
     *,
     reference: str | None = None,
@@ -7911,6 +8025,7 @@ def _carry_forward_balances(
     return result
 
 
+@reads_one_snapshot
 def stats(
     month: str | None = None,
     reference: str | None = None,
@@ -8566,6 +8681,7 @@ def stats(
     return _attach_pending_work_stats(result, _pw)
 
 
+@reads_one_snapshot
 def bootstrap_data(
     *,
     stage: str | None = None,

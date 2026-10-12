@@ -43,6 +43,12 @@ app.include_router(referrers_router)
 app.include_router(operations_ai_router)
 app.include_router(daybreak_integration_router)
 
+# Outermost, so it sees every response as it finally leaves: gzip for text the
+# browser asks to have compressed, a year's caching for the hashed /assets/.
+from core.response_compression import CompressionMiddleware
+
+app.add_middleware(CompressionMiddleware)
+
 
 class OpportunityCommandV1(BaseModel):
     slot: str = Field(min_length=1, max_length=80)

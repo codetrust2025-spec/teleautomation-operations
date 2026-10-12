@@ -129,3 +129,47 @@ describe('AI node activity on the shared socket', () => {
     off()
   })
 })
+
+describe('keep-alive frames', () => {
+  // 12 Oct: each pong reached every subscriber and was mirrored into every
+  // other tab, where the sidebar re-read the unread count for it.
+  beforeEach(() => {
+    __resetMailEventStream()
+    localStorage.clear()
+    vi.stubGlobal('WebSocket', FakeSocket)
+    vi.stubGlobal('BroadcastChannel', FakeChannel)
+    vi.stubGlobal('fetch', vi.fn(() => response({ enabled: true })))
+  })
+
+  afterEach(() => {
+    __resetMailEventStream()
+    FakeSocket.latest = null
+    FakeChannel.latest = null
+    vi.unstubAllGlobals()
+  })
+
+  it.each(['ping', 'pong'])('a %s reaches no subscriber and no other tab', async (name) => {
+    const received = []
+    const off = subscribeMailEvents(payload => received.push(payload))
+    await vi.waitFor(() => expect(FakeSocket.latest).not.toBeNull())
+    const channelPost = vi.spyOn(FakeChannel.latest, 'postMessage')
+
+    FakeSocket.latest.onmessage({ data: JSON.stringify({ event: name, at: 1 }) })
+    FakeChannel.latest.onmessage({ data: { event: name, at: 2 } })
+
+    expect(received).toEqual([])
+    expect(channelPost).not.toHaveBeenCalled()
+    expect(getMailAlertTrace()).toEqual([])
+    off()
+  })
+
+  it('still delivers the mail event that follows', async () => {
+    const received = []
+    const off = subscribeMailEvents(payload => received.push(payload.event))
+    await vi.waitFor(() => expect(FakeSocket.latest).not.toBeNull())
+    FakeSocket.latest.onmessage({ data: JSON.stringify({ event: 'pong' }) })
+    FakeSocket.latest.onmessage({ data: JSON.stringify({ event: 'notification_created', event_id: 'e-9' }) })
+    expect(received).toEqual(['notification_created'])
+    off()
+  })
+})

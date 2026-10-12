@@ -37,7 +37,8 @@ async def candidates_list(
     from features import candidate_store
 
     reference = handler_reference_scope(request, reference)
-    rows = candidate_store.list_candidates(
+    rows = await asyncio.to_thread(
+        candidate_store.list_candidates,
         stage=stage, task=task, search=search, month=month,
         pending_only=pending_only, reference=reference, service_type=service_type,
     )
@@ -58,7 +59,7 @@ async def candidates_stats(
 
     # Earnings and payout totals must never expose another handler's figures.
     reference = handler_payout_reference_scope(request, reference)
-    return {"status": "ok", "stats": candidate_store.stats(month=month, reference=reference, service_type=service_type)}
+    return {"status": "ok", "stats": await asyncio.to_thread(candidate_store.stats, month=month, reference=reference, service_type=service_type)}
 @router.get("/candidates/roster")
 async def candidates_active_roster(
     request: Request,
@@ -70,7 +71,7 @@ async def candidates_active_roster(
     from features import candidate_store
 
     reference = handler_reference_scope(request, reference)
-    roster = candidate_store.active_roster(month=month, reference=reference)
+    roster = await asyncio.to_thread(candidate_store.active_roster, month=month, reference=reference)
     return {"status": "ok", **roster}
 @router.get("/candidates/roster.csv")
 async def candidates_active_roster_csv(
@@ -85,7 +86,7 @@ async def candidates_active_roster_csv(
     from features import candidate_store
 
     reference = handler_reference_scope(request, reference)
-    roster = candidate_store.active_roster(month=month, reference=reference)
+    roster = await asyncio.to_thread(candidate_store.active_roster, month=month, reference=reference)
     csv_text = candidate_store.roster_csv_rows(roster.get("candidates") or [])
     filename = "active_candidates.csv"
     if month and month != "all":
@@ -110,7 +111,8 @@ async def candidates_bootstrap(
     from features import candidate_store
 
     reference = handler_reference_scope(request, reference)
-    payload = candidate_store.bootstrap_data(
+    payload = await asyncio.to_thread(
+        candidate_store.bootstrap_data,
         stage=stage,
         task=task,
         search=search,
@@ -131,7 +133,7 @@ async def candidates_pending_works(
     from features import candidate_store
 
     reference = handler_reference_scope(request, reference)
-    payload = candidate_store.pending_works(month=month, reference=reference)
+    payload = await asyncio.to_thread(candidate_store.pending_works, month=month, reference=reference)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return {"status": "ok", **payload}
@@ -157,7 +159,8 @@ async def candidates_interviews_daily(
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
     viewer = _viewer_reference(request)
     try:
-        payload = candidate_store.daily_interview_roster(
+        payload = await asyncio.to_thread(
+        candidate_store.daily_interview_roster,
             day,
             viewer_reference=viewer,
             filter_attendee=attendee,
@@ -199,7 +202,8 @@ async def candidates_interviews_monitor(
         raise HTTPException(status_code=400, detail="from and to must be YYYY-MM-DD")
     viewer = _viewer_reference(request)
     try:
-        payload = candidate_store.interview_monitor(
+        payload = await asyncio.to_thread(
+        candidate_store.interview_monitor,
             start,
             end,
             viewer_reference=viewer,
@@ -229,7 +233,8 @@ async def candidates_interviews_upcoming(
     from features import candidate_store
 
     viewer = _viewer_reference(request)
-    payload = candidate_store.interview_upcoming(
+    payload = await asyncio.to_thread(
+        candidate_store.interview_upcoming,
         days=days,
         filter_search=search,
         filter_attendee=attendee,
@@ -266,7 +271,8 @@ async def candidates_interviews_global(
         raise HTTPException(status_code=400, detail="from and to must be YYYY-MM-DD")
     viewer = _viewer_reference(request)
     try:
-        payload = candidate_store.interview_global_summary(
+        payload = await asyncio.to_thread(
+        candidate_store.interview_global_summary,
             start,
             end,
             viewer_reference=viewer,

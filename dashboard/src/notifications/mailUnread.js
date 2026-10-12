@@ -4,8 +4,8 @@
  * The sidebar cannot poll for this on its own without lagging behind the page:
  * marking a mail read is a local action whose result the server only reports
  * on the next fetch. So the page publishes the count it already knows, and the
- * sidebar listens. A fetch on mount and on each mail socket event covers the
- * cases the page is not open for — a mail arriving, or another tab.
+ * sidebar listens. A fetch on mount and on each mail event that can change the
+ * count covers the cases the page is not open for — a mail arriving, or another tab.
  */
 import { useEffect, useState } from 'react'
 import { subscribeMailEvents } from './mailEventStream.js'
@@ -19,13 +19,47 @@ export function publishMailUnread(count) {
   window.dispatchEvent(new CustomEvent(EVENT, { detail: { unread: value } }))
 }
 
-export async function fetchMailUnread() {
-  const response = await fetch(`${API}/api/mail-monitoring/summary`, {
+/** Events after which the counts can differ; the Mail Alerts page reloads on the same set. */
+const SUMMARY_EVENTS = new Set([
+  'notification_created', 'notification_updated', 'important_mail_detected', 'mail_retry_pending', 'connected',
+])
+
+export function changesMailSummary(payload) {
+  return SUMMARY_EVENTS.has(payload?.event)
+}
+
+let inflight = null
+
+/**
+ * The Mail Alerts summary, one request at a time for the whole tab.
+ *
+ * The sidebar, the page and the bell all react to the same mail event and
+ * used to send a request each. A request already on its way is shared, but only
+ * one that started at or after `since`: a read that left before the change it
+ * is meant to show (a mail marked read, an event that just arrived) would bring
+ * back the old count.
+ */
+export function fetchMailSummary({ since = Date.now() } = {}) {
+  if (inflight && inflight.startedAt >= since) return inflight.promise
+  const entry = { startedAt: Date.now(), promise: null }
+  entry.promise = fetch(`${API}/api/mail-monitoring/summary`, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
+  }).then(async response => {
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body?.detail || 'summary unavailable')
+    return body
   })
-  if (!response.ok) throw new Error('summary unavailable')
-  const body = await response.json().catch(() => ({}))
+  inflight = entry
+  entry.promise.then(
+    () => { if (inflight === entry) inflight = null },
+    () => { if (inflight === entry) inflight = null },
+  )
+  return entry.promise
+}
+
+export async function fetchMailUnread(options) {
+  const body = await fetchMailSummary(options)
   return Math.max(0, Number(body?.summary?.unread) || 0)
 }
 
@@ -56,7 +90,16 @@ export function useMailUnreadCount() {
       if (Number.isFinite(value)) setUnread(Math.max(0, value))
     }
     window.addEventListener(EVENT, onPublished)
-    const unsubscribe = subscribeMailEvents(refresh)
+    // Only what can change the count: keep-alives, sync progress and the AI
+    // pipeline's own steps never do, and each one used to cost a request.
+    const unsubscribe = subscribeMailEvents(payload => {
+      if (!changesMailSummary(payload)) return
+      if (payload.event === 'connected' && payload.summary) {
+        if (live) setUnread(Math.max(0, Number(payload.summary.unread) || 0))
+        return
+      }
+      refresh()
+    })
 
     return () => {
       live = false

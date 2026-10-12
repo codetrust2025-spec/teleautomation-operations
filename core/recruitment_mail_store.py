@@ -307,6 +307,9 @@ def mailboxes_for_candidates(candidate_ids: list[str]) -> list[dict[str, Any]]:
 TERMINAL_CANDIDATE_STAGES = frozenset({"completed", "fail", "dropped"})
 
 
+_TERMINAL_MEMO: tuple | None = None
+
+
 def terminal_mailbox_ids(rows) -> set[str]:
     """Which of these mailboxes belong to a candidate who has left the pipeline.
 
@@ -324,33 +327,56 @@ def terminal_mailbox_ids(rows) -> set[str]:
     other way would silently stop monitoring a live candidate's mail, which is
     far worse than leaving a closed one listed.
     """
+    global _TERMINAL_MEMO
     from features import candidate_store
 
-    stages = {
-        str(row.get("id")): str(row.get("stage") or "").strip().lower()
-        for row in candidate_store.list_candidates(stage="all", month="all")
-    }
+    # The scheduler asks every few seconds and every health poll asks again;
+    # the answer only changes when the candidate store or the mailboxes do.
+    snapshot = candidate_store._load()
+    shape = tuple(
+        (str(row.get("id") or ""), str(row.get("candidate_id") or ""), str(row.get("canonical_candidate_id") or ""))
+        for row in rows
+    )
+    memo = _TERMINAL_MEMO
+    if memo is not None and memo[0] is snapshot and memo[1] == shape:
+        return set(memo[2])
+    with candidate_store.shared_read_snapshot():
+        stages = {
+            str(row.get("id")): str(row.get("stage") or "").strip().lower()
+            for row in candidate_store.list_candidates(stage="all", month="all")
+        }
+        stage_by_mailbox: dict[str, str | None] = {}
+        unresolved: list[str] = []
+        for row in rows:
+            mailbox_id = str(row.get("id") or "")
+            candidate_id = str(row.get("candidate_id") or "")
+            canonical_id = str(row.get("canonical_candidate_id") or "")
+            stage = None
+            for key in (canonical_id, candidate_id):
+                if key and key in stages:
+                    stage = stages[key]
+                    break
+            stage_by_mailbox[mailbox_id] = stage
+            if stage is None and candidate_id:
+                unresolved.append(candidate_id)
+        # The alias column is not enough on its own; this is the resolver the
+        # candidates page itself uses, asked once for every unresolved mailbox.
+        # Asked one mailbox at a time it recomputed the whole candidate list
+        # per mailbox: 19 s for 24 mailboxes, on every health poll.
+        try:
+            resolved = candidate_store.canonical_candidate_identity_ids(unresolved) if unresolved else {}
+        except Exception:
+            resolved = {}
     terminal: set[str] = set()
     for row in rows:
         mailbox_id = str(row.get("id") or "")
+        stage = stage_by_mailbox.get(mailbox_id)
         candidate_id = str(row.get("candidate_id") or "")
-        canonical_id = str(row.get("canonical_candidate_id") or "")
-        stage = None
-        for key in (canonical_id, candidate_id):
-            if key and key in stages:
-                stage = stages[key]
-                break
-        if stage is None and candidate_id:
-            # The alias column is not enough on its own; this is the resolver
-            # the candidates page itself uses.
-            try:
-                resolved = candidate_store.canonical_candidate_identity_id(candidate_id)
-            except Exception:
-                resolved = None
-            if resolved:
-                stage = stages.get(str(resolved))
+        if stage is None and candidate_id and resolved.get(candidate_id):
+            stage = stages.get(str(resolved[candidate_id]))
         if stage in TERMINAL_CANDIDATE_STAGES:
             terminal.add(mailbox_id)
+    _TERMINAL_MEMO = (snapshot, shape, frozenset(terminal))
     return terminal
 
 
@@ -419,11 +445,14 @@ def _mailbox_health_rows(cur) -> list[dict[str, Any]]:
            -- mode, so Google expires refresh tokens seven days after consent:
            -- measured across 54 reconnects the median gap is 7.0 days. There
            -- is no authorised-at column, and the audit log already records it.
-           LEFT JOIN LATERAL (
-             SELECT max(created_at) AS authorized_at
+           -- One pass over the log for every mailbox: a per-mailbox lookup
+           -- scanned all of it once per mailbox (0.5 s for 24 mailboxes).
+           LEFT JOIN (
+             SELECT source_id, max(created_at) AS authorized_at
                FROM recruitment_audit_log
-              WHERE source_id=m.id AND action='MAILBOX_CONNECTED'
-           ) a ON true
+              WHERE action='MAILBOX_CONNECTED'
+              GROUP BY source_id
+           ) a ON a.source_id=m.id
            WHERE m.credential_ciphertext IS NOT NULL
              AND m.connection_status <> 'SUPERSEDED'
            ORDER BY m.updated_at DESC""",
@@ -477,12 +506,16 @@ def mailbox_overview_rows() -> list[dict[str, Any]]:
               count(*) FILTER(WHERE e.primary_status IN('SELECTED','FINAL_SELECTION_CONFIRMED') AND {predicate}) selection_events,
               count(*) FILTER(WHERE e.primary_status IN('OFFER_INDICATION','OFFER_IN_PROGRESS','OFFER_APPROVED','OFFER_LETTER_RECEIVED','APPOINTMENT_LETTER_RECEIVED','OFFER_ACCEPTED') AND {predicate}) offer_events,
               count(*) FILTER(WHERE e.primary_status='OFFER_LETTER_RECEIVED' AND {predicate}) offer_letters
-              FROM mailbox_messages m
-              LEFT JOIN ai_recruitment_events e ON e.mailbox_message_id=m.id
+              FROM ai_recruitment_events e
+              JOIN mailbox_messages m ON m.id=e.mailbox_message_id
               WHERE m.mailbox_id=ANY(%s)
               GROUP BY m.mailbox_id""",
             params * 4 + [mailbox_ids],
         )
+        # Every count needs an event, so the walk starts from the events and
+        # looks each message up by id; starting from the messages read the whole
+        # mail archive on every poll. A mailbox with no events gets no row here
+        # and reads as zero below, exactly as before.
         event_stats = {str(row["mailbox_id"]): row for row in _rows(cur)}
 
         cur.execute(
@@ -501,13 +534,21 @@ def mailbox_overview_rows() -> list[dict[str, Any]]:
             for row in _rows(cur)
         }
 
+        # Each mailbox's newest job. Sorting the whole job history to find it
+        # spilled 77k rows to disk (0.7 s on every overview poll); taking the
+        # newest time per mailbox first leaves one row each to sort.
         cur.execute(
-            """SELECT DISTINCT ON (mailbox_id)
-              mailbox_id,id,status,job_type,created_at,started_at,completed_at,
-              messages_fetched,messages_processed,events_detected,error_message
-              FROM mailbox_sync_jobs
-              WHERE mailbox_id=ANY(%s)
-              ORDER BY mailbox_id,created_at DESC""",
+            """SELECT DISTINCT ON (j.mailbox_id)
+              j.mailbox_id,j.id,j.status,j.job_type,j.created_at,j.started_at,j.completed_at,
+              j.messages_fetched,j.messages_processed,j.events_detected,j.error_message
+              FROM mailbox_sync_jobs j
+              JOIN (
+                SELECT mailbox_id,max(created_at) AS created_at
+                  FROM mailbox_sync_jobs
+                 WHERE mailbox_id=ANY(%s)
+                 GROUP BY mailbox_id
+              ) latest ON latest.mailbox_id=j.mailbox_id AND latest.created_at=j.created_at
+              ORDER BY j.mailbox_id,j.created_at DESC""",
             (mailbox_ids,),
         )
         latest_jobs = {str(row["mailbox_id"]): row for row in _rows(cur)}

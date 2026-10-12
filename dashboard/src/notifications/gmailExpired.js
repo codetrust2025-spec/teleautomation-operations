@@ -14,9 +14,9 @@
  */
 import { useEffect, useState } from 'react'
 import { reconnectRequiredMailboxes } from '../utils/mailboxStatus.js'
+import { mailboxHealthReadAt, onMailboxHealth, readMailboxHealth } from './mailboxHealth.js'
 
 const EVENT = 'teleautomation:gmail-expired'
-const API = import.meta.env?.VITE_API_BASE || ''
 
 /** How often to re-read when nothing has published a count. */
 export const GMAIL_EXPIRED_POLL_MS = 60000
@@ -28,15 +28,7 @@ export function publishGmailExpired(count) {
 }
 
 export async function fetchGmailExpiredCount() {
-  // The cache-buster matches the existing health poll: this endpoint is read
-  // straight after an operator reconnects, and a cached body would show the
-  // account still broken.
-  const response = await fetch(
-    `${API}/api/candidate-mailboxes/health?_=${Date.now()}`,
-    { credentials: 'include', headers: { 'Content-Type': 'application/json' } },
-  )
-  if (!response.ok) throw new Error('mailbox health unavailable')
-  const body = await response.json().catch(() => ({}))
+  const body = await readMailboxHealth()
   return reconnectRequiredMailboxes(body?.mailboxes).length
 }
 
@@ -66,11 +58,21 @@ export function useGmailExpiredCount() {
       if (Number.isFinite(value)) setExpired(Math.max(0, value))
     }
     window.addEventListener(EVENT, onPublished)
-    const timer = window.setInterval(refresh, GMAIL_EXPIRED_POLL_MS)
+    // A snapshot read for anything else in this tab (the alert sound, the AI
+    // Mail Review page) moves the badge too, and makes this poll's own read
+    // unnecessary until it is due again.
+    const offHealth = onMailboxHealth(body => {
+      if (live) setExpired(reconnectRequiredMailboxes(body?.mailboxes).length)
+    })
+    const timer = window.setInterval(() => {
+      if (Date.now() - mailboxHealthReadAt() < GMAIL_EXPIRED_POLL_MS / 2) return
+      refresh()
+    }, GMAIL_EXPIRED_POLL_MS)
 
     return () => {
       live = false
       window.removeEventListener(EVENT, onPublished)
+      offHealth()
       window.clearInterval(timer)
     }
   }, [])

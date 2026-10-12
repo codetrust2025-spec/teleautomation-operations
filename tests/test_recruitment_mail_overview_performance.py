@@ -30,7 +30,7 @@ class _Cursor:
                 ("mailbox-2", "candidate-2", "candidate-2", "two@example.com",
                  "CONNECTED", True, None, None, None, "2026-08-31T00:00:00Z"),
             ]
-        elif "FROM mailbox_messages m" in compact:
+        elif "JOIN mailbox_messages m" in compact:
             names = [
                 "mailbox_id", "important_emails", "selection_events",
                 "offer_events", "offer_letters",

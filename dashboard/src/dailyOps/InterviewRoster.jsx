@@ -496,8 +496,15 @@ export function InterviewRoster({
     return () => window.removeEventListener('teleautomation:slot-booking-updated', refresh)
   }, [load])
   useEffect(() => {
-    const timer = setInterval(() => load({ silent: true }), 5000)
-    return () => clearInterval(timer)
+    // Every five seconds while someone can see it; a hidden tab waits and
+    // catches up the moment it is shown again.
+    const timer = setInterval(() => { if (!document.hidden) load({ silent: true }) }, 5000)
+    const onVisible = () => { if (!document.hidden) load({ silent: true }) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [load])
   useEffect(() => { loadCandidateOptions() }, [loadCandidateOptions])
   useEffect(() => {

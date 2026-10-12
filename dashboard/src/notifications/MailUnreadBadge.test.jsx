@@ -21,7 +21,7 @@ vi.mock('./mailEventStream.js', () => ({
   },
 }))
 
-import { publishMailUnread, useMailUnreadCount } from './mailUnread.js'
+import { fetchMailSummary, fetchMailUnread, publishMailUnread, useMailUnreadCount } from './mailUnread.js'
 
 /** Minimal stand-in for the sidebar row, with the same conditional rules. */
 function SidebarRow() {
@@ -127,14 +127,71 @@ describe('the count follows the click', () => {
 })
 
 describe('a mail arriving while the page is closed', () => {
-  it('re-reads the summary on a mail socket event', async () => {
+  it('re-reads the summary when a mail alert is created', async () => {
     stubSummary(0)
     render(<SidebarRow />)
     await waitFor(() => expect(screen.queryByTestId('badge')).toBeNull())
 
     stubSummary(2)
-    await act(async () => { subscribers.forEach(handler => handler({})) })
+    await act(async () => { subscribers.forEach(handler => handler({ event: 'notification_created' })) })
     await waitFor(() => expect(screen.getByTestId('badge').textContent).toBe('2'))
+  })
+
+  it('takes the count the socket hands over on connecting, without a request', async () => {
+    stubSummary(0)
+    render(<SidebarRow />)
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      subscribers.forEach(handler => handler({ event: 'connected', summary: { unread: 5 } }))
+    })
+    await waitFor(() => expect(screen.getByTestId('badge').textContent).toBe('5'))
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('only what can change the count costs a request', () => {
+  // 12 Oct: every socket keep-alive, mirrored into every other tab, re-read the
+  // summary -- about 570 reads in ten minutes from two offices.
+  it.each(['ping', 'pong', 'mail_received', 'mail_classified', 'mail_ai_queued', 'mail_ai_analyzing', 'auto_booking_started', undefined])(
+    'ignores %s',
+    async (name) => {
+      stubSummary(1)
+      render(<SidebarRow />)
+      await waitFor(() => expect(screen.getByTestId('badge').textContent).toBe('1'))
+      await act(async () => { subscribers.forEach(handler => handler(name ? { event: name } : {})) })
+      expect(fetch).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('shares one request between everything that asks at the same moment', async () => {
+    let release
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => {
+      release = () => resolve({ ok: true, json: async () => ({ summary: { unread: 2 } }) })
+    })))
+    const since = Date.now()
+    const reads = [fetchMailSummary({ since }), fetchMailSummary({ since }), fetchMailUnread({ since })]
+    expect(fetch).toHaveBeenCalledTimes(1)
+    release()
+    const [a, b, c] = await Promise.all(reads)
+    expect(a.summary.unread).toBe(2)
+    expect(b).toBe(a)
+    expect(c).toBe(2)
+  })
+
+  it('never hands a read that left before a change to someone asking after it', async () => {
+    const resolvers = []
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => {
+      resolvers.push(resolve)
+    })))
+    const before = fetchMailSummary({ since: 0 })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const after = fetchMailSummary()
+    expect(fetch).toHaveBeenCalledTimes(2)
+    resolvers[0]({ ok: true, json: async () => ({ summary: { unread: 3 } }) })
+    resolvers[1]({ ok: true, json: async () => ({ summary: { unread: 2 } }) })
+    expect((await before).summary.unread).toBe(3)
+    expect((await after).summary.unread).toBe(2)
   })
 })
 
