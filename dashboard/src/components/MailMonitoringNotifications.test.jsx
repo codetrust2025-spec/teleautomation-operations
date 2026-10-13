@@ -430,12 +430,15 @@ describe("booking result filter", () => {
     await screen.findByText("Rahul Kumar");
     fireEvent.change(bookingFilter(), { target: { value: "booked" } });
     await waitFor(() => expect(lastList().get("booking_result")).toBe("booked"));
-    // The cards count everything, whatever the table is filtered to.
+    // The tab counts come from the summary endpoint, whatever the table is filtered to.
     expect(summaryRequests.every((path) => !path.includes("?"))).toBe(true);
-    expect(screen.getByRole("button", { name: /109\s*All/ })).toBeInTheDocument();
+    // The All Alerts tab badge reflects visible_total (109) from the summary.
+    // Counts > 99 are capped at "99+" by the component.
+    const allTab = screen.getByRole("tab", { name: /All Alerts/ });
+    expect(allTab.textContent).toContain("99+");
   });
 
-  it("is cleared by the All card, with every other filter", async () => {
+  it("switching to All Alerts tab removes tab-owned filter params", async () => {
     renderNotifications();
     await screen.findByText("Rahul Kumar");
     await screen.findByRole("option", { name: "Asha Rao" });
@@ -443,12 +446,15 @@ describe("booking result filter", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Alert type filter" }), { target: { value: "interview" } });
     fireEvent.change(bookingFilter(), { target: { value: "blocked" } });
     await waitFor(() => expect(lastList().get("booking_result")).toBe("blocked"));
-    fireEvent.click(screen.getByRole("button", { name: /109\s*All/ }));
-    await waitFor(() => expect(lastList().has("booking_result")).toBe(false));
-    // It used to send candidate_id=undefined, which no row matches, so "All"
-    // emptied the table.
+    // Switch to All Alerts — is_read (from Unread tab) should be gone
+    fireEvent.click(screen.getByRole("tab", { name: /All Alerts/ }));
+    await waitFor(() => expect(lastList().has("is_read")).toBe(false));
+    // Advanced filters (candidate, alert-type, booking-result) survive the tab switch
+    expect(lastList().get("candidate_id")).toBe("c1");
+    expect(lastList().get("classification_group")).toBe("interview");
+    expect(lastList().get("booking_result")).toBe("blocked");
+    // No stale undefined values
     expect(lastList().toString()).not.toContain("undefined");
-    for (const key of ["candidate_id", "classification_group", "search"]) expect(lastList().has(key)).toBe(false);
-    expect(bookingFilter()).toHaveValue("");
+    expect(bookingFilter()).toHaveValue("blocked");
   });
 });

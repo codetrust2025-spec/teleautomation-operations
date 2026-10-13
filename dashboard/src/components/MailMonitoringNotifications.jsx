@@ -246,6 +246,20 @@ export function MailNotificationBell({ compact = false }) {
   </div>;
 }
 
+// Three compact tabs that sit above the filter row and instantly narrow results.
+// Using tab state rather than hard-coding filter values keeps the existing
+// server-side filter parameters as the single source of truth: the tab merely
+// pre-sets them; the advanced dropdowns still work on top.
+export const MAIL_TABS = [
+  { id: "unread",  label: "Unread Invitations", filterKey: "read",     filterValue: "false"         },
+  { id: "retry",   label: "AI Retry Pending",   filterKey: "priority", filterValue: "retry_pending" },
+  { id: "all",     label: "All Alerts",          filterKey: null,       filterValue: null            },
+];
+// Which filter fields a tab owns. Switching tabs clears exactly these keys
+// and sets the new tab's key, while leaving candidate / alert-type / search
+// / booking-result untouched so users can filter within a tab.
+const TAB_OWNED_KEYS = new Set(["read", "priority"]);
+
 // Read-only. The panel reports what the pipeline decided and offers the two
 // ways of acting on it that live outside this screen -- opening the booking and
 // joining the meeting. It writes nothing: the correction, re-run, dismiss and
@@ -314,17 +328,30 @@ export function MailMonitoringNotifications() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  // activeTab defaults to "unread" so the panel opens on actionable alerts.
+  const [activeTab, setActiveTab] = useState("unread");
   // Candidates that actually have alerts. Fetched once; the filter matches on
   // candidate_id, so the options have to be ids this table really holds.
   const [candidates, setCandidates] = useState([]);
   const [candidateQuery, setCandidateQuery] = useState("");
   const loadVersion = useRef(0);
   const pendingRenders = useRef(new Map());
+  // Merge user-supplied filters with the active tab's owned filter values.
+  // Tab-owned keys (read, priority) are overridden by the tab; all others
+  // pass through unchanged so candidate / alert-type / search / booking-result
+  // keep working inside any tab.
+  const effectiveFilters = useMemo(() => {
+    const tab = MAIL_TABS.find((t) => t.id === activeTab) || MAIL_TABS[0];
+    const merged = { ...filters };
+    for (const key of TAB_OWNED_KEYS) merged[key] = "";
+    if (tab.filterKey) merged[tab.filterKey] = tab.filterValue;
+    return merged;
+  }, [filters, activeTab]);
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: "20", offset: String(page * 20), sort: "newest" });
-    for (const [key, value] of Object.entries({ search:filters.search,classification_group:filters.classificationGroup,candidate_id:filters.candidateId,booking_result:filters.bookingResult,priority:filters.priority,is_read:filters.read,group_by:filters.classificationGroup === SELECTION_GROUP ? "candidate" : "" })) if (value !== "") params.set(key, String(value));
+    for (const [key, value] of Object.entries({ search:effectiveFilters.search,classification_group:effectiveFilters.classificationGroup,candidate_id:effectiveFilters.candidateId,booking_result:effectiveFilters.bookingResult,priority:effectiveFilters.priority,is_read:effectiveFilters.read,group_by:effectiveFilters.classificationGroup === SELECTION_GROUP ? "candidate" : "" })) if (value !== "") params.set(key, String(value));
     return params.toString();
-  }, [filters, page]);
+  }, [effectiveFilters, page]);
   const load = useCallback(async ({ silent = false } = {}) => {
     const version = ++loadVersion.current;
     if (!silent) setLoading(true);
@@ -367,7 +394,7 @@ export function MailMonitoringNotifications() {
   // stay flat. Interview mails cannot appear here at all - `classification_group
   // =selection` is applied on the server, and the two groups are disjoint by
   // construction, so nothing interview-related reaches this list to be grouped.
-  const grouped = filters.classificationGroup === SELECTION_GROUP;
+  const grouped = effectiveFilters.classificationGroup === SELECTION_GROUP;
   // One parent per candidate, in the order the server returned them, holding
   // every one of that candidate's mails as its own row. Nothing is merged or
   // deduplicated: two mails from the same company on the same day are two
@@ -389,6 +416,9 @@ export function MailMonitoringNotifications() {
   }, [items]);
   const set = (key) => (event) => { setPage(0); setFilters((value) => ({ ...value, [key]: event.target.value })); };
   const act = async (item, action) => { await request(`/api/mail-monitoring/notifications/${item.id}/${action}`, { method:"POST", body:"{}" }); load({ silent:true }); };
+  // Switching tabs resets page only — user's candidate/alert-type/search/booking
+  // filters are preserved so they keep working within the new tab view.
+  const switchTab = (tabId) => { setActiveTab(tabId); setPage(0); };
   const openNotification = useCallback(async (item) => {
     setSelected({ ...item, is_read: true, detail_loading: true, detail_error: "" });
     if (!item.is_read) {
@@ -443,13 +473,34 @@ export function MailMonitoringNotifications() {
       setSelected(null);setPage(0);await load();
     } finally { setClearing(false); }
   };
+  // Live counts shown on each tab badge, pulled from the summary endpoint so
+  // they reflect the full dataset regardless of what is currently filtered.
+  const tabCounts = {
+    unread: summary.unread || 0,
+    retry:  summary.ai_retry_pending || 0,
+    all:    summary.visible_total || 0,
+  };
   return <section className="mail-monitoring-page">
     <header className="mail-monitoring-page__head"><div><p className="mail-eyebrow">AI MAIL MONITORING</p><h1>Mail Monitoring Notifications</h1><p>Candidate job-status alerts with live delivery and automatic validation.</p></div><div className="mail-monitoring-page__actions"><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
-    <div className="mail-summary mail-summary--compact">
-      <button onClick={() => { setPage(0);setFilters(EMPTY_FILTERS);setCandidateQuery(""); }}><strong>{summary.visible_total || 0}</strong><span>All</span></button>
-      <button onClick={() => { setPage(0);setFilters((value) => ({ ...value, priority:"retry_pending", read:"" })); }}><strong>{summary.ai_retry_pending || 0}</strong><span>AI retry pending</span></button>
-      <button onClick={() => { setPage(0);setFilters((value) => ({ ...value, read:"false", priority:"" })); }}><strong>{summary.unread || 0}</strong><span>Unread</span></button>
-    </div>
+    <nav className="mail-tabs" role="tablist" aria-label="Mail alerts filter tabs">
+      {MAIL_TABS.map((tab) => {
+        const count = tabCounts[tab.id] ?? 0;
+        const isActive = activeTab === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            className={`mail-tab${isActive ? " mail-tab--active" : ""}`}
+            onClick={() => switchTab(tab.id)}
+          >
+            <span className="mail-tab__label">{tab.label}</span>
+            <span className={`mail-tab__count${count === 0 ? " mail-tab__count--zero" : ""}`}>{count > 99 ? "99+" : count}</span>
+          </button>
+        );
+      })}
+    </nav>
     <div className="mail-filters mail-filters--compact">
       <input aria-label="Search notifications" placeholder="Search candidate, email, company or subject" value={filters.search} onChange={set("search")} />
       {/* Beyond this many options a native select is unusable, so switch to a
@@ -524,7 +575,16 @@ export function MailMonitoringNotifications() {
         >Reason: {reason.reason}</span>;
       })()}</td><td className="mail-cell mail-cell--subject">{item.email_subject || "(no subject)"}</td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received">{when(item.email_received_at)}</td><td className="mail-cell mail-cell--detected">{when(item.created_at)}</td><td className="mail-cell mail-cell--automation">{human(item.booking_status || item.automation_state || "AUTOMATED")}</td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}><button onClick={() => openNotification(item)}>Open</button><button onClick={() => act(item,item.is_read ? "unread" : "read")}>{item.is_read ? "Unread" : "Read"}</button><button onClick={() => act(item,"dismiss")}>Dismiss</button></td></tr>)}
       </tbody>)}
-      {!loading && !items.length && <tbody><tr><td colSpan={9} className="mail-empty">No notifications match these filters.</td></tr></tbody>}
+      {!loading && !items.length && <tbody><tr><td colSpan={9} className="mail-empty">{
+        // When advanced filters (search, candidate, alert-type, booking) are set, the
+        // generic message is always correct regardless of tab. Tab-specific friendly
+        // messages only fire when the tab itself is the sole filter applied.
+        (filters.search || filters.candidateId || filters.classificationGroup || filters.bookingResult)
+          ? "No notifications match these filters."
+          : activeTab === "unread" ? "No unread invitations. All caught up!"
+          : activeTab === "retry"  ? "No alerts are waiting for AI retry."
+          : "No notifications match these filters."
+      }</td></tr></tbody>}
     </table></div>
     {total > 20 && <footer className="mail-pagination"><span>{total} {grouped ? "candidates" : "notifications"}</span><button disabled={page===0} onClick={() => setPage((value) => value-1)}>Previous</button><span>Page {page+1}</span><button disabled={(page+1)*20>=total} onClick={() => setPage((value) => value+1)}>Next</button></footer>}
     {selected && <NotificationDetail item={selected} onClose={() => setSelected(null)} />}
