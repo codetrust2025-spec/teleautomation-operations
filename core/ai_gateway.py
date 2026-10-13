@@ -278,6 +278,7 @@ def chat(
     deadline_monotonic: float | None = None,
     num_predict: int | None = None,
     think: bool | str | None = None,
+    format: str | dict[str, Any] | None = None,
 ) -> AIResult:
     """Call Ollama through the single bounded production gateway."""
     # The request is reported as it moves -- waiting, on a node, released,
@@ -290,6 +291,7 @@ def chat(
             messages=messages, model=model, timeout=timeout, temperature=temperature,
             images=images, max_retries=max_retries, schema=schema, workload=workload,
             deadline_monotonic=deadline_monotonic, num_predict=num_predict, think=think,
+            format=format,
         )
     finally:
         activity.end()
@@ -309,6 +311,7 @@ def _chat(
     deadline_monotonic: float | None,
     num_predict: int | None,
     think: bool | str | None,
+    format: str | dict[str, Any] | None = None,
 ) -> AIResult:
     chosen = (model or configured_models()["text"]).strip()
     if not chosen:
@@ -337,13 +340,20 @@ def _chat(
         "stream": False,
         "options": {"temperature": temperature},
     }
+    # Bound context window so 8 GB GPU nodes (RTX 4060) can fit 100% of layers in VRAM
+    # without partial CPU offloading or excessive KV cache allocation.
+    num_ctx = _env_int("OLLAMA_NUM_CTX", 4096)
+    if num_ctx > 0:
+        request_payload["options"]["num_ctx"] = num_ctx
     if schema is not None:
         request_payload["format"] = schema
+    elif format is not None:
+        request_payload["format"] = format
     if num_predict is not None:
         request_payload["options"]["num_predict"] = int(num_predict)
     if think is not None:
         request_payload["think"] = think
-    keep_alive = (os.getenv("OLLAMA_KEEP_ALIVE") or "5m").strip()
+    keep_alive = (os.getenv("OLLAMA_KEEP_ALIVE") or "30m").strip()
     if keep_alive:
         request_payload["keep_alive"] = keep_alive
     body = json.dumps(request_payload).encode("utf-8")

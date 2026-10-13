@@ -340,6 +340,35 @@ def _is_ollama_available() -> bool:
     return bool(status.get("endpoint_reachable") and status.get("model_available"))
 
 
+def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 1280) -> tuple[bytes, bool]:
+    """Resize high-res screenshots to optimal vision resolution (max_edge=1280).
+
+    A full-resolution phone screenshot (e.g. 1290x2796) produces ~4,600 vision patches,
+    costing 25-35s in ViT encoding alone and overflowing 8GB VRAM on RTX 4060.
+    At 1280px max edge, text remains 100% sharp and legible while token count drops to
+    ~900 tokens (a 5x speedup), keeping inference under 10 seconds.
+    """
+    if not image_data or len(image_data) < 100:
+        return image_data, False
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(image_data))
+        w, h = img.size
+        if max(w, h) > max_edge:
+            scale = max_edge / max(w, h)
+            new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            resized.save(buf, format="JPEG", quality=90, optimize=True)
+            return buf.getvalue(), True
+    except Exception as exc:
+        logger.warning("Image optimization for vision skipped: %s", exc)
+    return image_data, False
+
+
 def call_ollama_vision_model(
     model_name: str,
     image_base64: str,
@@ -358,7 +387,8 @@ def call_ollama_vision_model(
             images=[image_base64],
             timeout=timeout,
             temperature=0.1,
-            num_predict=2048,
+            num_predict=512,
+            format="json",
             # Qwen3-VL can consume the complete output budget in its hidden
             # reasoning field and leave message.content empty. Screenshot
             # extraction needs only the final structured answer.
@@ -918,9 +948,10 @@ def _extract_with_ocr_and_ai(
             result = validate_invite_extraction(result)
             ocr_candidate = result
 
-        # Regex didn't find date+time — try text model (slower but more capable)
-        if ocr_candidate is None:
-            logger.info("Regex didn't find date/time, trying text model")
+        # Regex didn't find date+time — only try text model cleanup if OCR text has interview context keywords,
+        # otherwise proceed straight to vision model without adding 20-30s of unnecessary latency
+        if ocr_candidate is None and re.search(r"\b(?:interview|meeting|assessment|schedule|slot)\b", ocr_text, re.IGNORECASE):
+            logger.info("Regex didn't find date/time, trying text model cleanup on candidate text")
             extracted = _try_text_model_cleanup(ocr_text)
             if extracted:
                 extracted = validate_invite_extraction(extracted)
@@ -962,10 +993,11 @@ def _extract_with_ocr_and_ai(
         )
         return ocr_candidate
 
-    # ── Step 2: Try vision model (slow path) ────────────────────────────────
-    img_b64 = base64.b64encode(image_data).decode("utf-8")
+    # ── Step 2: Try vision model (optimized path) ───────────────────────────
+    opt_image, was_compressed = _optimize_image_for_vision(image_data)
+    img_b64 = base64.b64encode(opt_image).decode("utf-8")
 
-    logger.info("Calling vision model: %s (timeout=%ds)", OLLAMA_VISION_MODEL, OLLAMA_TIMEOUT)
+    logger.info("Calling vision model: %s (timeout=%ds, compressed=%s)", OLLAMA_VISION_MODEL, OLLAMA_TIMEOUT, was_compressed)
     start = time.time()
     response = call_ollama_vision_model(
         OLLAMA_VISION_MODEL, img_b64, _get_invite_prompt(), timeout=OLLAMA_TIMEOUT
@@ -1125,6 +1157,7 @@ def _extract_with_ocr_and_ai(
     verified = validate_invite_extraction(extracted)
     verified["processing_mode"] = mode
     verified["ocr_used"] = True
+    verified.setdefault("diagnostics", {})["image_compressed"] = was_compressed
     return verified
 
 
@@ -1157,7 +1190,8 @@ def _try_text_model_cleanup(ocr_text: str) -> dict[str, Any] | None:
 
 def _ai_only_vision_extraction(image_data: bytes) -> tuple[dict[str, Any] | None, str]:
     """Run only the vision models. Returns (extraction, model_used)."""
-    img_b64 = base64.b64encode(image_data).decode("utf-8")
+    opt_image, _ = _optimize_image_for_vision(image_data)
+    img_b64 = base64.b64encode(opt_image).decode("utf-8")
     used_model = OLLAMA_VISION_MODEL
     response = call_ollama_vision_model(
         OLLAMA_VISION_MODEL, img_b64, _get_invite_prompt(), timeout=OLLAMA_TIMEOUT

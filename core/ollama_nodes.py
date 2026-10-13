@@ -684,6 +684,14 @@ def candidate_order(model: str | None = None) -> list[str]:
     ordered = [item["id"] for item in configured_nodes()]
     head: list[str] = []
     pinned = model_node_preference().get(str(model or "")) if model else None
+    if not pinned and model and "model_nodes" not in _read_state():
+        # RTX 4060 (8 GB VRAM) is dedicated to GPU vision extraction.
+        # Text requests route to Jagadeesh to avoid alternating model unloads/reloads in VRAM.
+        m = str(model).lower()
+        if "vl" in m or "vision" in m:
+            pinned = "rtx4060"
+        elif "7b" in m or "qwen2.5" in m:
+            pinned = "jagadeesh"
     if pinned and pinned in ordered:
         head.append(pinned)
     primary = primary_node_id()
