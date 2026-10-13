@@ -114,10 +114,16 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+async function selectCandidateFilter(value) {
+  fireEvent.click(screen.getByRole('button', { name: /^Filters/i }))
+  fireEvent.change(screen.getByRole('combobox', { name: 'Candidate filter' }), { target: { value } })
+  fireEvent.click(screen.getByRole('button', { name: /^Apply/i }))
+}
+
 describe('the Candidate dropdown', () => {
   it('sends the choice as an exact candidate, never as a loose search', async () => {
     await renderPanel()
-    fireEvent.change(screen.getByLabelText('Candidate filter'), { target: { value: 'Ram Charan M S' } })
+    await selectCandidateFilter('Ram Charan M S')
 
     await waitFor(() => expect(lastRosterCall()?.searchParams.get('candidate')).toBe('Ram Charan M S'))
     const roster = lastRosterCall()
@@ -127,7 +133,7 @@ describe('the Candidate dropdown', () => {
 
   it('passes the choice to the global summary too, so the counters and pie match', async () => {
     await renderPanel()
-    fireEvent.change(screen.getByLabelText('Candidate filter'), { target: { value: 'Ram Charan M S' } })
+    await selectCandidateFilter('Ram Charan M S')
 
     await waitFor(() => expect(lastGlobalCall()?.searchParams.get('candidate')).toBe('Ram Charan M S'))
     expect(lastGlobalCall().searchParams.get('search')).toBeNull()
@@ -142,7 +148,7 @@ describe('the Candidate dropdown', () => {
     await waitFor(() => expect(inTable('Rama Krishna')).toBe(true))
     expect(inTable('Ram Charan M S')).toBe(true)
 
-    fireEvent.change(screen.getByLabelText('Candidate filter'), { target: { value: 'Ram Charan M S' } })
+    await selectCandidateFilter('Ram Charan M S')
 
     await waitFor(() => expect(inTable('Rama Krishna')).toBe(false))
     expect(inTable('Ram Charan M S')).toBe(true)

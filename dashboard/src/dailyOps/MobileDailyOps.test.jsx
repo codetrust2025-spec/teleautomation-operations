@@ -460,6 +460,7 @@ describe('on an iPhone (390-430px)', () => {
 
   it('drops the captions above the filters only because each select names itself', async () => {
     await renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /^Filters/i }))
     // An admin sees all four (the attendee filter is hidden for a handler).
     for (const name of ['Candidate filter', 'Attendee filter', 'Candidate interview level filter', 'Technology filter']) {
       expect(screen.getByRole('combobox', { name })).toBeInTheDocument()

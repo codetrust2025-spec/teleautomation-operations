@@ -159,7 +159,9 @@ describe('columns', () => {
 
   it('drops the attendee <col> with the attendee column', async () => {
     await renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /^Filters/ }))
     fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Bhavana' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     await waitFor(() => expect(rosterCalls().at(-1).searchParams.get('attendee')).toBe('Bhavana'))
     await waitFor(() => expect(document.querySelectorAll('.ops-interview-table thead th')).toHaveLength(9))
     expect(document.querySelectorAll('.ops-interview-table colgroup col')).toHaveLength(9)
@@ -228,11 +230,18 @@ describe('icons', () => {
 })
 
 describe('Reset', () => {
+  function openFilterPanel() {
+    const trigger = screen.getByRole('button', { name: /^Filters/ })
+    fireEvent.click(trigger)
+  }
+
   it('is always offered, and counts what it will put back', async () => {
     await renderPanel()
     const reset = screen.getByRole('button', { name: 'Reset all filters' })
     expect(reset).toBeInTheDocument()
+    openFilterPanel()
     fireEvent.change(screen.getByLabelText('Candidate interview level filter'), { target: { value: 'L1' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Filter interviews by date' }))
     const todayBtn = document.querySelector('.ops-datepicker__day--today')
     if (todayBtn) fireEvent.click(todayBtn)
@@ -245,10 +254,12 @@ describe('Reset', () => {
     const todayBtn = document.querySelector('.ops-datepicker__day--today')
     if (todayBtn) fireEvent.click(todayBtn)
     fireEvent.change(screen.getByLabelText('Candidate search'), { target: { value: 'asha' } })
+    openFilterPanel()
     fireEvent.change(screen.getByLabelText('Candidate filter'), { target: { value: 'Asha Rao' } })
     fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Bhavana' } })
     fireEvent.change(screen.getByLabelText('Candidate interview level filter'), { target: { value: 'L1' } })
     fireEvent.change(screen.getByLabelText('Technology filter'), { target: { value: 'Python' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     fireEvent.click(screen.getByRole('button', { name: /^Attended/ }))
     await waitFor(() => expect(globalCalls().at(-1).searchParams.get('technology')).toBe('Python'))
 
@@ -266,6 +277,7 @@ describe('Reset', () => {
     })
     expect(screen.getByRole('button', { name: 'Filter interviews by date' })).toHaveTextContent('Select date')
     expect(screen.getByLabelText('Candidate search')).toHaveValue('')
+    openFilterPanel()
     expect(screen.getByLabelText('Candidate filter')).toHaveValue('')
     expect(screen.getByLabelText('Attendee filter')).toHaveValue('')
     expect(screen.getByLabelText('Candidate interview level filter')).toHaveValue('')

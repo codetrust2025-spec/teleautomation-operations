@@ -347,7 +347,9 @@ describe('a day with nothing on it', () => {
   it('says which filters are narrowing the day when some are set', async () => {
     await renderPanel()
 
+    fireEvent.click(screen.getByRole('button', { name: /^Filters/ }))
     fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Nikhila' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     const calendar = await openCalendar()
     fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
 

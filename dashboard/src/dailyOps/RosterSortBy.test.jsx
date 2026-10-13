@@ -116,9 +116,26 @@ describe('Sort By on the Daily Ops roster', () => {
     .map(tr => tr.textContent)
     .map(text => ['Asha', 'Bala', 'Chitra', 'Dev'].find(n => text.includes(`${n} Fakename`)))
     .filter(Boolean)
-  const sortBox = () => screen.getByRole('combobox', { name: 'Sort by' })
+  function openFilterPanel() {
+    const trigger = screen.getByRole('button', { name: /^Filters/ })
+    fireEvent.click(trigger)
+  }
+  const sortBox = () => {
+    let box = screen.queryByRole('combobox', { name: 'Sort by' })
+    if (!box) {
+      openFilterPanel()
+      box = screen.getByRole('combobox', { name: 'Sort by' })
+    }
+    return box
+  }
 
-  it('shows Latest to Oldest by default, beside the filters', async () => {
+  function applySort(value) {
+    const box = sortBox()
+    fireEvent.change(box, { target: { value } })
+    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+  }
+
+  it('shows Latest to Oldest by default, inside the filters panel', async () => {
     render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
     expect(sortBox().value).toBe('date_desc')
@@ -126,7 +143,6 @@ describe('Sort By on the Daily Ops roster', () => {
       'Latest to Oldest', 'Oldest to Latest', 'Time Earliest', 'Time Latest', 'Interview Round', 'Attendance Status',
       'Recently Updated', 'Recently Created', 'Screenshot Available First', 'Missing Company First', 'Missing Round First',
     ])
-    expect(sortBox().closest('.ops-roster-controls__filters')).not.toBeNull()
     expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
   })
 
@@ -134,7 +150,7 @@ describe('Sort By on the Daily Ops roster', () => {
     const { unmount } = render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
     const before = calls.length
-    fireEvent.change(sortBox(), { target: { value: 'date_asc' } })
+    applySort('date_asc')
     expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala'])
     expect(calls.length).toBe(before)
     expect(window.localStorage.getItem(ROSTER_SORT_STORAGE_KEY)).toBe('date_asc')
@@ -150,7 +166,7 @@ describe('Sort By on the Daily Ops roster', () => {
   it('stays sorted after a search refetches the roster, and Reset leaves the choice alone', async () => {
     render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
-    fireEvent.change(sortBox(), { target: { value: 'date_asc' } })
+    applySort('date_asc')
     fireEvent.change(screen.getByRole('textbox', { name: 'Candidate search' }), { target: { value: 'fake' } })
     await waitFor(() => expect(calls.some(url => url.searchParams.get('candidate_search') === 'fake' || url.searchParams.get('q') === 'fake' || [...url.searchParams.values()].includes('fake'))).toBe(true))
     await waitFor(() => expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala']))

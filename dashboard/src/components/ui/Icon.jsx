@@ -142,6 +142,12 @@ const PATHS = {
       <path d="M18 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
     </>
   ),
+  filter: (
+    <>
+      <path d="M4 6h16M7 12h10M10 18h4" />
+    </>
+  ),
+  'chevron-down': <path d="m6 9 6 6 6-6" />,
 }
 
 export const ICON_NAMES = Object.keys(PATHS)

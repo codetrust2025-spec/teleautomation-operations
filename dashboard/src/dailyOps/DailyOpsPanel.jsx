@@ -6,6 +6,7 @@ import { InterviewRoster } from './InterviewRoster.jsx'
 import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } from './rosterSort.js'
 import { PendingWorksStrip } from './PendingWorksStrip.jsx'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
+import { DailyOpsFilterMenu } from './DailyOpsFilterMenu.jsx'
 import { addDaysIso, isValidIsoDay, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
@@ -296,64 +297,61 @@ export function DailyOpsPanel({
         </div>
 
         <div className="ops-roster-controls__filters">
-        <label className="ops-roster-search"><span className="ops-roster-search__icon" aria-hidden="true"><Icon name="search" size={15} /></span><input placeholder="Search candidate or phone..." value={candidateSearch} onChange={e => setCandidateSearch(e.target.value)} aria-label="Candidate search" /></label>
-        <label className="ops-roster-control ops-roster-control--candidate"><span>Candidate</span><select className="cand-input ops-ctrl-select" value={candidateFilter} onChange={e => { setCandidateFilter(e.target.value); setCandidateSearch('') }} aria-label="Candidate filter"><option value="">All candidates</option>{candidateOptions.map(item => <option key={item.name} value={item.name}>{item.name} ({item.scheduled})</option>)}</select></label>
+          <label className="ops-roster-search">
+            <span className="ops-roster-search__icon" aria-hidden="true">
+              <Icon name="search" size={15} />
+            </span>
+            <input
+              placeholder="Search candidate or phone..."
+              value={candidateSearch}
+              onChange={e => setCandidateSearch(e.target.value)}
+              aria-label="Candidate search"
+            />
+          </label>
 
-        {!handlerScoped && (
-          <label className="ops-roster-control"><span>Attendee</span><select
-            className="cand-input ops-ctrl-select"
-            value={attendeeFilter}
-            onChange={e => setAttendeeFilter(e.target.value)}
-            aria-label="Attendee filter"
-          >
-            <option value="">Everyone</option>
-            {ATTENDEES.map(name => <option key={name} value={name}>{name}</option>)}
-          </select></label>
-        )}
-        <label className="ops-roster-control ops-roster-control--level"><span>Level</span><select
-          className="cand-input ops-ctrl-select"
-          value={roundFilter}
-          onChange={e => setRoundFilter(e.target.value)}
-          aria-label="Candidate interview level filter"
-        >
-          <option value="">All levels</option>
-          {ROUNDS.map(r => <option key={r} value={r}>{r}</option>)}
-        </select></label>
-        <label className="ops-roster-control"><span>Profile</span><select
-          className="cand-input ops-ctrl-select"
-          value={technologyFilter}
-          onChange={e => setTechnologyFilter(e.target.value)}
-          aria-label="Technology filter"
-        >
-          <option value="">All profiles</option>
-          {technologyOptions.map(t => <option key={t} value={t}>{t}</option>)}
-        </select></label>
-        <label className="ops-roster-control ops-roster-control--sort"><span>Sort by</span><select
-          className="cand-input ops-ctrl-select"
-          value={sortOrder}
-          onChange={e => changeSortOrder(e.target.value)}
-          aria-label="Sort by"
-          title={`Sort by: ${rosterSortLabel(sortOrder)}`}
-        >
-          {ROSTER_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select></label>
-        <div className="ops-roster-controls__actions">
-          {/* Reset is always here: period, date, search, candidate, attendee,
-              level, profile and the status tab, all at once. "Clear" only
-              reached the five filters and only appeared once one was set. */}
-          <button
-            type="button"
-            className="ops-roster-clear ops-roster-reset"
-            onClick={resetAll}
-            title="Reset period, date, search, candidate, attendee, level, profile and status, and reload"
-            aria-label={resetCount > 0 ? `Reset all filters (${resetCount} set)` : 'Reset all filters'}
-          >
-            <Icon name="reset" size={13} strokeWidth={2.1} />
-            <span className="ops-roster-reset__label">Reset</span>
-            {resetCount > 0 && <span className="ops-roster-reset__count">{resetCount}</span>}
-          </button>
-          <button type="button" className="ops-roster-refresh" onClick={refreshAll} disabled={loading}><span aria-hidden="true"><Icon name="refresh" size={14} strokeWidth={2.1} /></span>{loading ? 'Updating' : 'Refresh'}</button>
-        </div>
+          <DailyOpsFilterMenu
+            candidateFilter={candidateFilter}
+            attendeeFilter={attendeeFilter}
+            roundFilter={roundFilter}
+            technologyFilter={technologyFilter}
+            sortOrder={sortOrder}
+            candidateOptions={candidateOptions}
+            attendeeOptions={ATTENDEES}
+            roundOptions={ROUNDS}
+            technologyOptions={technologyOptions}
+            onApply={({ candidate, attendee, round, technology, sort }) => {
+              setCandidateFilter(candidate)
+              if (candidate) setCandidateSearch('')
+              setAttendeeFilter(attendee)
+              setRoundFilter(round)
+              setTechnologyFilter(technology)
+              if (sort) changeSortOrder(sort)
+            }}
+            onResetAll={clearFilters}
+          />
+
+          <div className="ops-roster-controls__actions">
+            <button
+              type="button"
+              className="ops-roster-clear ops-roster-reset"
+              onClick={resetAll}
+              title="Reset date, search, candidate, attendee, level, profile and status, and reload"
+              aria-label={resetCount > 0 ? `Reset all filters (${resetCount} set)` : 'Reset all filters'}
+            >
+              <Icon name="reset" size={13} strokeWidth={2.1} />
+              <span className="ops-roster-reset__label">Reset</span>
+              {resetCount > 0 && <span className="ops-roster-reset__count">{resetCount}</span>}
+            </button>
+            <button
+              type="button"
+              className="ops-roster-refresh"
+              onClick={refreshAll}
+              disabled={loading}
+            >
+              <span aria-hidden="true"><Icon name="refresh" size={14} strokeWidth={2.1} /></span>
+              {loading ? 'Updating' : 'Refresh'}
+            </button>
+          </div>
         </div>
       </div>
 
