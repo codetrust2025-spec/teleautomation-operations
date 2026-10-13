@@ -348,7 +348,10 @@ def _chat(
     }
     # Bound context window so 8 GB GPU nodes (RTX 4060) can fit 100% of layers in VRAM
     # without partial CPU offloading or excessive KV cache allocation.
-    num_ctx = _env_int("OLLAMA_NUM_CTX", 4096)
+    # At 768px max_edge (default), qwen3-vl generates ~500 image patch tokens.
+    # Adding ~300 prompt tokens + ~384 output = ~1184 total → fits in 1536 with headroom.
+    # KV cache at 1536 ctx is ~375MB vs ~1GB at 4096, freeing VRAM for model weights.
+    num_ctx = _env_int("OLLAMA_NUM_CTX", 1536)
     if num_ctx > 0:
         request_payload["options"]["num_ctx"] = num_ctx
     if schema is not None:

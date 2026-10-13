@@ -366,14 +366,15 @@ def _is_ollama_available() -> bool:
     return bool(status.get("endpoint_reachable") and status.get("model_available"))
 
 
-def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 1024) -> tuple[bytes, bool]:
-    """Resize high-res screenshots to optimal vision resolution (max_edge=1024).
+def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 768) -> tuple[bytes, bool]:
+    """Resize high-res screenshots to optimal vision resolution (max_edge=768).
 
-    At 1024px max edge:
-      - Text remains 100% sharp and legible for vision extraction.
-      - Vision tokens drop to ~600-750 (from ~4600 raw, or ~1200 at 1280px).
-      - ViT quadratic attention O(N^2) computation is reduced by 2.5x vs 1280px.
+    At 768px max edge:
+      - Text remains legible for vision extraction of interview invites.
+      - Image patch tokens drop to ~450-550 (vs ~2190 at 1024px on qwen3-vl).
+      - KV cache shrinks ~4x, letting qwen3-vl:8b fit 100% in RTX 4060 8GB VRAM.
       - Converts PNG/uncompressed to JPEG to minimize base64 SSH transfer latency.
+      - Combined with num_ctx=1536, total context comfortably fits prompt+response.
     """
     if not image_data or len(image_data) < 100:
         return image_data, False
