@@ -310,7 +310,7 @@ describe('default behavior and clearing the date', () => {
   it('defaults to showing upcoming interviews when no date is picked', async () => {
     await renderPanel()
 
-    expect(dateTrigger()).toHaveTextContent('Select date')
+    expect(dateTrigger()).toHaveTextContent('Upcoming')
     await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
     expect(lastRosterCall().searchParams.get('upcoming_only')).toBe('true')
   })
@@ -327,9 +327,45 @@ describe('default behavior and clearing the date', () => {
     calendar = await openCalendar()
     fireEvent.click(within(calendar).getByRole('button', { name: 'Clear' }))
 
-    await waitFor(() => expect(dateTrigger()).toHaveTextContent('Select date'))
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('Upcoming'))
     await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
     expect(lastRosterCall().searchParams.get('upcoming_only')).toBe('true')
+  })
+
+  it('filters by This Week preset and clears back to upcoming', async () => {
+    await renderPanel()
+
+    let calendar = await openCalendar()
+    fireEvent.click(within(calendar).getByRole('button', { name: 'This Week' }))
+
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('This Week'))
+    // 2026-09-08 is Tuesday, week starts Monday 2026-09-07 to Sunday 2026-09-13
+    await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
+    expect(lastRosterCall().searchParams.get('from')).toBe('2026-09-07')
+    expect(lastRosterCall().searchParams.get('to')).toBe('2026-09-13')
+
+    calendar = await openCalendar()
+    fireEvent.click(within(calendar).getByRole('button', { name: 'Clear' }))
+
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('Upcoming'))
+  })
+
+  it('filters by This Month preset and This Year preset', async () => {
+    await renderPanel()
+
+    let calendar = await openCalendar()
+    fireEvent.click(within(calendar).getByRole('button', { name: 'This Month' }))
+
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('This Month'))
+    expect(lastRosterCall().searchParams.get('from')).toBe('2026-09-01')
+    expect(lastRosterCall().searchParams.get('to')).toBe('2026-09-30')
+
+    calendar = await openCalendar()
+    fireEvent.click(within(calendar).getByRole('button', { name: 'This Year' }))
+
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('This Year'))
+    expect(lastRosterCall().searchParams.get('from')).toBe('2026-01-01')
+    expect(lastRosterCall().searchParams.get('to')).toBe('2026-12-31')
   })
 })
 

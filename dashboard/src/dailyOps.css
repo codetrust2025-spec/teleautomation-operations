@@ -1767,25 +1767,25 @@
    which sets width:100%. */
 .ops-roster-control--date{min-width:0;flex:0 0 auto}
 .ops-roster-control .ops-datepicker__trigger{width:max-content;min-width:0}
-.ops-datepicker__trigger{display:flex;align-items:center;gap:6px;padding:0 8px;text-align:left;cursor:pointer}
-.ops-datepicker__trigger:hover{border-color:rgba(96,165,250,.42);background:#0e1520}
-.ops-datepicker__trigger:focus-visible{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.18)}
-.ops-datepicker__trigger--set{border-color:rgba(59,130,246,.42)}
-.ops-datepicker__value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0;font-weight:600}
-.ops-datepicker__trigger:not(.ops-datepicker__trigger--set) .ops-datepicker__value{color:#8494a8;font-weight:500}
-/* The same two-gradient chevron `select.cand-input` draws, at the same size,
-   so the date control's indicator is pixel-identical to the selects it sits
-   between rather than merely similar. */
-.ops-datepicker__caret,.ops-datepicker__select{background-image:linear-gradient(45deg,transparent 50%,#94a3b8 50%),linear-gradient(135deg,#94a3b8 50%,transparent 50%);background-repeat:no-repeat}
-.ops-datepicker__caret{flex-shrink:0;width:10px;height:5px;margin-left:auto;background-position:0 0,5px 0;background-size:5px 5px}
+.ops-datepicker__trigger{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 11px;border-radius:8px;border:1px solid rgba(59,130,246,.35);background:rgba(30,41,59,.7);color:#e2e8f0;font-size:12px;font-weight:600;text-align:left;cursor:pointer;white-space:nowrap;transition:all .15s ease;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.ops-datepicker__trigger:hover,.ops-datepicker__trigger--open{border-color:rgba(96,165,250,.6);background:rgba(30,58,138,.4);color:#ffffff}
+.ops-datepicker__trigger:focus-visible{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+.ops-datepicker__trigger--set{border-color:#3b82f6;background:rgba(37,99,235,.22);color:#ffffff}
+.ops-datepicker__icon{display:inline-flex;align-items:center;color:#60a5fa}
+.ops-datepicker__value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;font-size:12px;font-weight:600}
+.ops-datepicker__caret{display:inline-flex;align-items:center;color:#94a3b8;margin-left:2px}
+
+.ops-datepicker__presets{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid rgba(148,163,184,.12)}
+.ops-datepicker__preset{height:28px;padding:0 4px;border:1px solid rgba(148,163,184,.18);border-radius:6px;background:rgba(15,23,42,.6);color:#cbd5e1;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.ops-datepicker__preset:hover{background:rgba(59,130,246,.15);border-color:rgba(96,165,250,.4);color:#ffffff}
+.ops-datepicker__preset--active{background:#2563eb;border-color:#3b82f6;color:#ffffff;box-shadow:0 2px 8px rgba(37,99,235,.3)}
 
 .ops-datepicker__popover{position:fixed;z-index:12500;width:280px;padding:10px;border:1px solid rgba(96,165,250,.22);border-radius:11px;background:linear-gradient(180deg,#141b27,#0d1219);box-shadow:0 22px 54px rgba(0,0,0,.55)}
 
 .ops-datepicker__nav{display:flex;align-items:center;gap:5px;margin-bottom:8px}
 .ops-datepicker__step{flex-shrink:0;width:26px;height:28px;border:1px solid rgba(148,163,184,.16);border-radius:6px;background:rgba(3,7,12,.4);color:#cbd5e1;font-size:15px;line-height:1;cursor:pointer}
 .ops-datepicker__step:hover{border-color:rgba(96,165,250,.45);background:rgba(59,130,246,.12);color:#f8fafc}
-.ops-datepicker__select{flex:1;min-width:0;height:28px;padding:0 20px 0 7px;border:1px solid rgba(148,163,184,.16);border-radius:6px;background-color:#0c1119;color:#e2e8f0;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;appearance:none}
-.ops-datepicker__select{background-position:calc(100% - 13px) calc(50% - 1px),calc(100% - 8px) calc(50% - 1px);background-size:5px 5px,5px 5px}
+.ops-datepicker__select{flex:1;min-width:0;height:28px;padding:0 20px 0 7px;border:1px solid rgba(148,163,184,.16);border-radius:6px;background-color:#0c1119;color:#e2e8f0;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#94a3b8 50%),linear-gradient(135deg,#94a3b8 50%,transparent 50%);background-repeat:no-repeat;background-position:calc(100% - 13px) calc(50% - 1px),calc(100% - 8px) calc(50% - 1px);background-size:5px 5px,5px 5px}
 .ops-datepicker__select--year{flex:0 0 68px}
 .ops-datepicker__select:focus{outline:none;border-color:#3b82f6}
 .ops-datepicker__select option{background-color:#0f172a;color:#e5e7eb}

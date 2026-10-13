@@ -140,3 +140,80 @@ export function monthGrid(year, monthIndex) {
   }
   return weeks
 }
+
+/** Start of week (Monday) in IST for an ISO date. */
+export function startOfWeekIso(iso = todayIso()) {
+  const date = noonUtc(iso)
+  if (!date) return ''
+  const day = date.getUTCDay()
+  return addDaysIso(iso, day === 0 ? -6 : 1 - day)
+}
+
+/** End of week (Sunday) in IST for an ISO date. */
+export function endOfWeekIso(iso = todayIso()) {
+  return addDaysIso(startOfWeekIso(iso), 6)
+}
+
+/** Start of month (1st) for an ISO date. */
+export function startOfMonthIso(iso = todayIso()) {
+  const match = ISO_DAY.exec(String(iso || '').trim())
+  if (!match) return ''
+  return `${match[1]}-${match[2]}-01`
+}
+
+/** End of month for an ISO date. */
+export function endOfMonthIso(iso = todayIso()) {
+  const match = ISO_DAY.exec(String(iso || '').trim())
+  if (!match) return ''
+  const year = Number(match[1])
+  const monthIndex = Number(match[2]) - 1
+  return toIsoDay(year, monthIndex, daysInMonth(year, monthIndex))
+}
+
+/** Start of year (1 Jan) for an ISO date. */
+export function startOfYearIso(iso = todayIso()) {
+  const match = ISO_DAY.exec(String(iso || '').trim())
+  if (!match) return ''
+  return `${match[1]}-01-01`
+}
+
+/** End of year (31 Dec) for an ISO date. */
+export function endOfYearIso(iso = todayIso()) {
+  const match = ISO_DAY.exec(String(iso || '').trim())
+  if (!match) return ''
+  return `${match[1]}-12-31`
+}
+
+export const CALENDAR_PRESETS = [
+  { id: 'thisWeek', label: 'This Week' },
+  { id: 'thisMonth', label: 'This Month' },
+  { id: 'thisYear', label: 'This Year' },
+]
+
+export function resolveCalendarPreset(presetId, today = todayIso()) {
+  switch (presetId) {
+    case 'thisWeek':
+      return {
+        id: 'thisWeek',
+        label: 'This Week',
+        from: startOfWeekIso(today),
+        to: endOfWeekIso(today),
+      }
+    case 'thisMonth':
+      return {
+        id: 'thisMonth',
+        label: 'This Month',
+        from: startOfMonthIso(today),
+        to: endOfMonthIso(today),
+      }
+    case 'thisYear':
+      return {
+        id: 'thisYear',
+        label: 'This Year',
+        from: startOfYearIso(today),
+        to: endOfYearIso(today),
+      }
+    default:
+      return null
+  }
+}

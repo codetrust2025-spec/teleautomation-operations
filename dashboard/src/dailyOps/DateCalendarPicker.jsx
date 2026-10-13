@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatIstCalendarDay } from '../utils/istTime.js'
+import { Icon } from '../components/ui/Icon.jsx'
 import {
+  CALENDAR_PRESETS,
   MONTH_LABELS,
   WEEKDAY_LABELS,
   addDaysIso,
@@ -10,12 +12,13 @@ import {
   monthGrid,
   monthKeyOf,
   parseMonthKey,
+  resolveCalendarPreset,
   todayIso,
   toIsoDay,
 } from './calendarDates.js'
 
 const POPOVER_WIDTH = 280
-const POPOVER_HEIGHT = 384
+const POPOVER_HEIGHT = 430
 
 /** Today / Yesterday / Tomorrow, so the common picks need no counting. */
 function relativeDayLabel(iso, today) {
@@ -25,7 +28,6 @@ function relativeDayLabel(iso, today) {
   if (iso === addDaysIso(today, 1)) return 'Tomorrow'
   return ''
 }
-
 
 /** Where the popover can sit without leaving the viewport. */
 function popoverPosition(rect) {
@@ -38,22 +40,24 @@ function popoverPosition(rect) {
 }
 
 /**
- * The Daily Ops date selector.
- *
- * A real calendar rather than a month list: any single day can be picked, and
- * picking one applies it as the exact-date filter straight away. The period
- * presets keep working alongside it — a preset that resolves to one day shows
- * that day here, and a multi-day preset leaves the control empty rather than
- * claiming a date the table is not filtered by.
+ * The Daily Ops date selector with presets (This Week, This Month, This Year)
+ * and full calendar grid for manual day selection.
+ * Defaults to all upcoming interviews when cleared or unselected.
  */
 export function DateCalendarPicker({
   value = '',
+  preset = '',
+  placeholder = 'Upcoming',
   onSelectDate,
+  onSelectPreset,
   onClear,
   label = 'Filter interviews by date',
 }) {
   const today = todayIso()
   const selected = isValidIsoDay(value) ? value : ''
+  const currentPreset = CALENDAR_PRESETS.find(p => p.id === preset)
+  const isSet = Boolean(currentPreset || selected)
+
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState(null)
   const [view, setView] = useState(() => parseMonthKey(monthKeyOf(selected)) || parseMonthKey(monthKeyOf(today)))
@@ -104,8 +108,6 @@ export function DateCalendarPicker({
     }
   }, [open, closePicker])
 
-  // Keyboard navigation moves focus between days, so the focused cell has to
-  // actually take focus once it is on screen.
   useLayoutEffect(() => {
     if (!open || !shouldFocusDay.current) return
     shouldFocusDay.current = false
@@ -127,6 +129,11 @@ export function DateCalendarPicker({
   function pickDate(iso) {
     if (!isValidIsoDay(iso)) return
     onSelectDate?.(iso)
+    closePicker()
+  }
+
+  function pickPreset(presetId) {
+    onSelectPreset?.(presetId)
     closePicker()
   }
 
@@ -165,14 +172,20 @@ export function DateCalendarPicker({
     }
   }
 
-  const relative = relativeDayLabel(selected, today)
-  const triggerText = selected ? formatIstCalendarDay(selected) : 'Select date'
+  let triggerText = placeholder
+  let triggerTitle = 'All upcoming interviews'
 
-  // Yesterday/Today/Tomorrow rides on the tooltip rather than on a pill in the
-  // trigger. The controls row is already wider than its container at 1440px,
-  // and a pill costs ~58px of it to repeat what the date already says — and
-  // squeezed the date itself into an ellipsis.
-  const triggerTitle = relative ? `${triggerText} · ${relative}` : triggerText
+  if (currentPreset) {
+    triggerText = currentPreset.label
+    const resolved = resolveCalendarPreset(currentPreset.id, today)
+    triggerTitle = resolved
+      ? `${currentPreset.label} (${formatIstCalendarDay(resolved.from)} – ${formatIstCalendarDay(resolved.to)})`
+      : currentPreset.label
+  } else if (selected) {
+    const relative = relativeDayLabel(selected, today)
+    triggerText = formatIstCalendarDay(selected)
+    triggerTitle = relative ? `${triggerText} · ${relative}` : triggerText
+  }
 
   const popover = open && position && createPortal(
     <div
@@ -183,6 +196,24 @@ export function DateCalendarPicker({
       aria-modal="false"
       aria-label="Choose a date"
     >
+      {/* Calendar Presets: This Week, This Month, This Year */}
+      <div className="ops-datepicker__presets" role="group" aria-label="Calendar presets">
+        {CALENDAR_PRESETS.map(p => {
+          const isActive = preset === p.id
+          return (
+            <button
+              key={p.id}
+              type="button"
+              className={`ops-datepicker__preset${isActive ? ' ops-datepicker__preset--active' : ''}`}
+              aria-pressed={isActive}
+              onClick={() => pickPreset(p.id)}
+            >
+              {p.label}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="ops-datepicker__nav">
         <button type="button" className="ops-datepicker__step" onClick={() => stepView(-1)} aria-label="Previous month">&#8249;</button>
         <select
@@ -242,7 +273,16 @@ export function DateCalendarPicker({
       </div>
 
       <div className="ops-datepicker__footer">
-        <button type="button" className="ops-datepicker__link ops-datepicker__link--clear" onClick={() => { onClear?.(); closePicker() }}>Clear</button>
+        <button
+          type="button"
+          className="ops-datepicker__link ops-datepicker__link--clear"
+          onClick={() => {
+            onClear?.()
+            closePicker()
+          }}
+        >
+          Clear
+        </button>
       </div>
     </div>,
     document.body,
@@ -253,15 +293,20 @@ export function DateCalendarPicker({
       <button
         ref={triggerRef}
         type="button"
-        className={`cand-input ops-datepicker__trigger${selected ? ' ops-datepicker__trigger--set' : ''}`}
+        className={`cand-input ops-datepicker__trigger${open ? ' ops-datepicker__trigger--open' : ''}${isSet ? ' ops-datepicker__trigger--set' : ''}`}
         onClick={() => (open ? closePicker() : openPicker())}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={label}
         title={triggerTitle}
       >
+        <span className="ops-datepicker__icon" aria-hidden="true">
+          <Icon name="calendar" size={14} strokeWidth={2.2} />
+        </span>
         <span className="ops-datepicker__value">{triggerText}</span>
-        <span className="ops-datepicker__caret" aria-hidden="true" />
+        <span className="ops-datepicker__caret" aria-hidden="true">
+          <Icon name="chevron-down" size={13} strokeWidth={2.2} />
+        </span>
       </button>
       {popover}
     </>

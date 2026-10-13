@@ -275,7 +275,7 @@ describe('Reset', () => {
       for (const key of ['search', 'candidate', 'attendee', 'round', 'technology']) expect(last.get(key), key).toBeNull()
       expect(last.get('upcoming_only')).toBe('true')
     })
-    expect(screen.getByRole('button', { name: 'Filter interviews by date' })).toHaveTextContent('Select date')
+    expect(screen.getByRole('button', { name: 'Filter interviews by date' })).toHaveTextContent('Upcoming')
     expect(screen.getByLabelText('Candidate search')).toHaveValue('')
     openFilterPanel()
     expect(screen.getByLabelText('Candidate filter')).toHaveValue('')

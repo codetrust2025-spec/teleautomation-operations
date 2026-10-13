@@ -11,11 +11,18 @@ import {
   addDaysIso,
   addMonthsIso,
   daysInMonth,
+  endOfMonthIso,
+  endOfWeekIso,
+  endOfYearIso,
   isValidIsoDay,
   monthGrid,
   monthKeyOf,
   monthRangeIso,
   parseMonthKey,
+  resolveCalendarPreset,
+  startOfMonthIso,
+  startOfWeekIso,
+  startOfYearIso,
   todayIso,
   toIsoDay,
 } from './calendarDates.js'
@@ -141,5 +148,66 @@ describe('monthGrid', () => {
   it('rolls the year over when asked for the month after December', () => {
     const weeks = monthGrid(2026, 12)
     expect(weeks.flat().find(cell => cell.inMonth).iso.slice(0, 7)).toBe('2027-01')
+  })
+})
+
+describe('calendar presets arithmetic in IST', () => {
+  it('calculates This Week from Monday to Sunday', () => {
+    // 2026-10-13 is Tuesday -> Mon 2026-10-12 to Sun 2026-10-18
+    expect(startOfWeekIso('2026-10-13')).toBe('2026-10-12')
+    expect(endOfWeekIso('2026-10-13')).toBe('2026-10-18')
+
+    // Sunday 2026-10-18 belongs to the same week ending on Sunday
+    expect(startOfWeekIso('2026-10-18')).toBe('2026-10-12')
+    expect(endOfWeekIso('2026-10-18')).toBe('2026-10-18')
+
+    // Monday 2026-10-12 starts the week
+    expect(startOfWeekIso('2026-10-12')).toBe('2026-10-12')
+    expect(endOfWeekIso('2026-10-12')).toBe('2026-10-18')
+  })
+
+  it('calculates This Month from 1st to last day of month', () => {
+    expect(startOfMonthIso('2026-10-13')).toBe('2026-10-01')
+    expect(endOfMonthIso('2026-10-13')).toBe('2026-10-31')
+
+    expect(startOfMonthIso('2026-02-15')).toBe('2026-02-01')
+    expect(endOfMonthIso('2026-02-15')).toBe('2026-02-28')
+
+    // Leap year
+    expect(endOfMonthIso('2028-02-15')).toBe('2028-02-29')
+  })
+
+  it('calculates This Year from 1 Jan to 31 Dec', () => {
+    expect(startOfYearIso('2026-10-13')).toBe('2026-01-01')
+    expect(endOfYearIso('2026-10-13')).toBe('2026-12-31')
+  })
+
+  it('resolves presets via resolveCalendarPreset', () => {
+    const today = '2026-10-13'
+    const week = resolveCalendarPreset('thisWeek', today)
+    expect(week).toEqual({
+      id: 'thisWeek',
+      label: 'This Week',
+      from: '2026-10-12',
+      to: '2026-10-18',
+    })
+
+    const month = resolveCalendarPreset('thisMonth', today)
+    expect(month).toEqual({
+      id: 'thisMonth',
+      label: 'This Month',
+      from: '2026-10-01',
+      to: '2026-10-31',
+    })
+
+    const year = resolveCalendarPreset('thisYear', today)
+    expect(year).toEqual({
+      id: 'thisYear',
+      label: 'This Year',
+      from: '2026-01-01',
+      to: '2026-12-31',
+    })
+
+    expect(resolveCalendarPreset('unknown', today)).toBeNull()
   })
 })

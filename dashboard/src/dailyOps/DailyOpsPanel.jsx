@@ -7,7 +7,7 @@ import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } 
 import { PendingWorksStrip } from './PendingWorksStrip.jsx'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu } from './DailyOpsFilterMenu.jsx'
-import { addDaysIso, isValidIsoDay, todayIso } from './calendarDates.js'
+import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
@@ -126,10 +126,12 @@ export function DailyOpsPanel({
   const handlerScoped = false
 
   // Default behavior: show all upcoming interviews automatically (including
-  // today and future dates) until the user selects a date.
+  // today and future dates) until the user selects a date or preset.
   // After date selection: show only interviews scheduled for the selected date.
-  // Clearing the date returns to all upcoming interviews.
+  // After preset selection: show interviews for the preset range.
+  // Clearing the date or preset returns to all upcoming interviews.
   const [selectedDate, setSelectedDate] = useState('')
+  const [selectedPreset, setSelectedPreset] = useState('')
   const [attendeeFilter, setAttendeeFilter] = useState('')
   const [roundFilter, setRoundFilter] = useState('')
   const [technologyFilter, setTechnologyFilter] = useState('')
@@ -153,23 +155,36 @@ export function DailyOpsPanel({
    */
   function applyExactDate(iso) {
     if (!isValidIsoDay(iso)) return
+    setSelectedPreset('')
     setSelectedDate(iso)
+  }
+
+  function applyPreset(presetId) {
+    setSelectedDate('')
+    setSelectedPreset(presetId)
   }
 
   function clearDate() {
     setSelectedDate('')
+    setSelectedPreset('')
   }
 
-  // Upcoming only when no specific date is selected
-  const upcomingOnly = !selectedDate
+  // Upcoming only when neither a specific date nor a preset is selected
+  const upcomingOnly = !selectedDate && !selectedPreset
 
   const loadGlobal = useCallback(async () => {
     setLoading(true)
     try {
       const today = todayIso()
-      const range = selectedDate
-        ? { from: selectedDate, to: selectedDate }
-        : { from: today, to: addDaysIso(today, 30) }
+      let range
+      if (selectedPreset) {
+        const p = resolveCalendarPreset(selectedPreset, today)
+        range = p ? { from: p.from, to: p.to } : { from: today, to: addDaysIso(today, 30) }
+      } else if (selectedDate) {
+        range = { from: selectedDate, to: selectedDate }
+      } else {
+        range = { from: today, to: addDaysIso(today, 30) }
+      }
       const params = new URLSearchParams({ from: range.from, to: range.to })
       if (attendeeFilter) params.set('attendee', attendeeFilter)
       if (roundFilter) params.set('round', roundFilter)
@@ -193,7 +208,7 @@ export function DailyOpsPanel({
     } finally {
       setLoading(false)
     }
-  }, [selectedDate, attendeeFilter, roundFilter, technologyFilter, candidateSearch, candidateFilter, upcomingOnly, summaryReload])
+  }, [selectedDate, selectedPreset, attendeeFilter, roundFilter, technologyFilter, candidateSearch, candidateFilter, upcomingOnly, summaryReload])
 
   // Refresh has to move the counters, and they come from the roster's rows,
   // so it reloads the roster as well as the range summary. Declared after
@@ -226,10 +241,10 @@ export function DailyOpsPanel({
     setCandidateFilter('')
   }
 
-  // Everything Reset puts back, counted for its badge: a picked date, the status tab,
+  // Everything Reset puts back, counted for its badge: a picked date/preset, the status tab,
   // and the filters beside the search box.
   const resetCount = activeFilterCount
-    + (selectedDate ? 1 : 0)
+    + (selectedDate || selectedPreset ? 1 : 0)
     + (statusFilter ? 1 : 0)
 
   /** One click back to the page as it opens, then a fresh read of both the
@@ -239,6 +254,7 @@ export function DailyOpsPanel({
     clearFilters()
     setStatusFilter('')
     setSelectedDate('')
+    setSelectedPreset('')
     setSummaryReload(value => value + 1)
     setRefreshNonce(value => value + 1)
   }
@@ -283,19 +299,8 @@ export function DailyOpsPanel({
         </div>
       </div>
 
-      {/* ── Controls row: all filters in one line ───────────────────── */}
+      {/* ── Controls row: Search → Calendar → Filters → Reset → Refresh ── */}
       <div className="ops-roster-controls" aria-label="Roster controls">
-        <div className="ops-roster-controls__range">
-          <div className="ops-roster-control ops-roster-control--date">
-            <span>Date</span>
-            <DateCalendarPicker
-              value={selectedDate}
-              onSelectDate={applyExactDate}
-              onClear={clearDate}
-            />
-          </div>
-        </div>
-
         <div className="ops-roster-controls__filters">
           <label className="ops-roster-search">
             <span className="ops-roster-search__icon" aria-hidden="true">
@@ -308,6 +313,16 @@ export function DailyOpsPanel({
               aria-label="Candidate search"
             />
           </label>
+
+          <div className="ops-roster-control ops-roster-control--date">
+            <DateCalendarPicker
+              value={selectedDate}
+              preset={selectedPreset}
+              onSelectDate={applyExactDate}
+              onSelectPreset={applyPreset}
+              onClear={clearDate}
+            />
+          </div>
 
           <DailyOpsFilterMenu
             candidateFilter={candidateFilter}
@@ -361,10 +376,18 @@ export function DailyOpsPanel({
       <div className="ops-dashboard ops-dashboard--v3 ops-table-area">
         <InterviewRoster
           refreshNonce={refreshNonce}
-          key={`${selectedDate}|${upcomingOnly}`}
+          key={`${selectedPreset}|${selectedDate}|${upcomingOnly}`}
           variant="dashboard"
-          dashboardFromDate={selectedDate || todayIso()}
-          dashboardToDate={selectedDate || addDaysIso(todayIso(), 30)}
+          dashboardFromDate={
+            selectedPreset
+              ? resolveCalendarPreset(selectedPreset)?.from || todayIso()
+              : selectedDate || todayIso()
+          }
+          dashboardToDate={
+            selectedPreset
+              ? resolveCalendarPreset(selectedPreset)?.to || todayIso()
+              : selectedDate || addDaysIso(todayIso(), 30)
+          }
           dashboardAttendeeFilter={attendeeFilter}
           dashboardRoundFilter={roundFilter}
           dashboardTechnologyFilter={technologyFilter}
