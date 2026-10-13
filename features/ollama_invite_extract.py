@@ -81,6 +81,7 @@ def _invite_model_timeout() -> int:
 
 OLLAMA_TIMEOUT = _invite_model_timeout()
 OLLAMA_TEXT_TIMEOUT = min(int(os.environ.get("OLLAMA_TEXT_TIMEOUT", "60")), OLLAMA_TIMEOUT)
+_last_vision_error: str = ""
 
 
 
@@ -444,7 +445,9 @@ def call_ollama_vision_model(
             timings=timings,
         )
     except AIGatewayError as exc:
-        logger.warning("Ollama interview vision failed model=%s code=%s", model_name, exc.code)
+        global _last_vision_error
+        _last_vision_error = f"{exc.code}: {exc}"
+        logger.warning("Ollama interview vision failed model=%s code=%s error=%s", model_name, exc.code, exc)
         return None
 
 
@@ -1321,7 +1324,7 @@ def _extract_with_ai_only(
         result["auto_booking_safe"] = False
         result["manual_fields_required"] = True
         result["failure_stage"] = "vision"
-        result["failure_reason"] = "The AI could not read this screenshot."
+        result["failure_reason"] = _last_vision_error or "The AI could not read this screenshot."
         result["warnings"] = [
             "The AI could not read this screenshot. "
             "Enter the interview date and start time to continue."

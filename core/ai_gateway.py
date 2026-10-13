@@ -348,7 +348,7 @@ def _chat(
     }
     # Bound context window so 8 GB GPU nodes (RTX 4060) can fit 100% of layers in VRAM
     # without partial CPU offloading or excessive KV cache allocation.
-    num_ctx = _env_int("OLLAMA_NUM_CTX", 2048)
+    num_ctx = _env_int("OLLAMA_NUM_CTX", 4096)
     if num_ctx > 0:
         request_payload["options"]["num_ctx"] = num_ctx
     if schema is not None:
