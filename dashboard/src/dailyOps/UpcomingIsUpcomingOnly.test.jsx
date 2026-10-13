@@ -119,16 +119,6 @@ describe('Upcoming', () => {
   })
 })
 
-describe('the interview whose time has passed', () => {
-  it('is under All unresolved instead', async () => {
-    await renderPanel()
-    fireEvent.click(screen.getByRole('tab', { name: 'All unresolved' }))
-
-    expect(await screen.findByText('Vikram Devi')).toBeInTheDocument()
-    expect(screen.getByText('Asha Rao')).toBeInTheDocument()
-  })
-})
-
 describe('the section is gone from the component, not hidden', () => {
   it('leaves no second table, badge or awaiting state behind', () => {
     for (const trace of ['ops-awaiting-outcome-section', 'ops-awaiting-badge', 'Awaiting outcome',

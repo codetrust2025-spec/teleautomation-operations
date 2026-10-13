@@ -57,28 +57,9 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('Next 2 days', () => {
-  it('is a period of its own: today and tomorrow, by the IST day', () => {
+describe('Next 2 days helper', () => {
+  it('is today and tomorrow, by the IST day', () => {
     expect(PRESETS.map(p => p.label)).toContain('Next 2 days')
     expect(resolvePresetRange('next2days')).toEqual({ from: '2026-10-12', to: '2026-10-13' })
-  })
-
-  it('asks for those two days with the still-to-come rule, for the table and the counters alike', async () => {
-    render(<DailyOpsPanel />)
-    await waitFor(() => expect(calls.length).toBeGreaterThan(0))
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Next 2 days' })) })
-
-    await waitFor(() => {
-      const roster = calls.filter(u => u.pathname.endsWith('/interviews/monitor')).at(-1)
-      expect(roster?.searchParams.get('from')).toBe('2026-10-12')
-      expect(roster?.searchParams.get('to')).toBe('2026-10-13')
-      expect(roster?.searchParams.get('upcoming_only')).toBe('true')
-    })
-    const summary = calls.filter(u => u.pathname.endsWith('/interviews/global')).at(-1)
-    expect(summary.searchParams.get('from')).toBe('2026-10-12')
-    expect(summary.searchParams.get('to')).toBe('2026-10-13')
-    expect(summary.searchParams.get('upcoming_only')).toBe('true')
-    expect(await screen.findByText('Asha Fakename', { selector: 'strong' })).toBeTruthy()
-    expect(screen.getByText('Bala Fakename', { selector: 'strong' })).toBeTruthy()
   })
 })

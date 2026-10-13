@@ -96,7 +96,9 @@ async function renderPanel() {
   render(<DailyOpsPanel />)
   await waitFor(() => expect(calls.length).toBeGreaterThan(0))
   await act(async () => { await Promise.resolve() })
-  fireEvent.click(screen.getByRole('tab', { name: 'Today' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Filter interviews by date' }))
+  const todayBtn = document.querySelector('.ops-datepicker__day--today')
+  if (todayBtn) fireEvent.click(todayBtn)
   await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 }
 

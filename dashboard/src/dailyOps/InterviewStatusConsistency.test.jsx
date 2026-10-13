@@ -348,7 +348,9 @@ describe('changing a row refreshes the counters', () => {
     // where a status change moves a counter rather than removing the row. The
     // Upcoming and All unresolved lists hold rows *because* they have no
     // outcome, and recording one takes the row off them — see below.
-    fireEvent.click(screen.getByRole('tab', { name: 'Today' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Filter interviews by date' }))
+    const todayBtn = document.querySelector('.ops-datepicker__day--today')
+    if (todayBtn) fireEvent.click(todayBtn)
     await waitFor(() => expect(tab('Cancelled').textContent).toMatch(/Cancelled\s*1/))
 
     // The status is set in the row's Edit dialog, with the note it needs.

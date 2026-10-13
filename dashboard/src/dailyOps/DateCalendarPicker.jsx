@@ -26,11 +26,6 @@ function relativeDayLabel(iso, today) {
   return ''
 }
 
-function monthLabelOf(monthKey) {
-  const parsed = parseMonthKey(monthKey)
-  if (!parsed) return ''
-  return `${MONTH_LABELS[parsed.monthIndex]} ${parsed.year}`
-}
 
 /** Where the popover can sit without leaving the viewport. */
 function popoverPosition(rect) {
@@ -53,11 +48,7 @@ function popoverPosition(rect) {
  */
 export function DateCalendarPicker({
   value = '',
-  monthValue = '',
-  allTime = false,
-  availableMonths = [],
   onSelectDate,
-  onSelectMonth,
   onClear,
   label = 'Filter interviews by date',
 }) {
@@ -65,7 +56,7 @@ export function DateCalendarPicker({
   const selected = isValidIsoDay(value) ? value : ''
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState(null)
-  const [view, setView] = useState(() => parseMonthKey(monthKeyOf(selected) || monthValue) || parseMonthKey(monthKeyOf(today)))
+  const [view, setView] = useState(() => parseMonthKey(monthKeyOf(selected)) || parseMonthKey(monthKeyOf(today)))
   const [focusedIso, setFocusedIso] = useState(selected || today)
   const triggerRef = useRef(null)
   const popoverRef = useRef(null)
@@ -73,14 +64,14 @@ export function DateCalendarPicker({
   const shouldFocusDay = useRef(false)
 
   const openPicker = useCallback(() => {
-    const anchor = selected || (monthValue ? `${monthValue}-01` : '') || today
+    const anchor = selected || today
     setView(parseMonthKey(monthKeyOf(anchor)) || parseMonthKey(monthKeyOf(today)))
     setFocusedIso(selected || today)
     const rect = triggerRef.current?.getBoundingClientRect()
     setPosition(rect ? popoverPosition(rect) : { top: 80, left: 24 })
     shouldFocusDay.current = true
     setOpen(true)
-  }, [monthValue, selected, today])
+  }, [selected, today])
 
   const closePicker = useCallback(({ restoreFocus = true } = {}) => {
     setOpen(false)
@@ -124,18 +115,14 @@ export function DateCalendarPicker({
   const weeks = useMemo(() => monthGrid(view.year, view.monthIndex), [view])
 
   const years = useMemo(() => {
-    const known = [today, selected, `${monthValue}-01`, toIsoDay(view.year, view.monthIndex, 1)]
-      .concat(availableMonths.map(month => `${month.value}-01`))
+    const known = [today, selected, toIsoDay(view.year, view.monthIndex, 1)]
       .map(iso => parseMonthKey(monthKeyOf(iso))?.year)
       .filter(Boolean)
     const currentYear = Number(today.slice(0, 4))
     const first = Math.min(currentYear - 5, ...known)
     const last = Math.max(currentYear + 5, ...known)
     return Array.from({ length: last - first + 1 }, (unused, index) => first + index)
-  }, [availableMonths, monthValue, selected, today, view])
-
-  const viewMonthKey = `${String(view.year).padStart(4, '0')}-${String(view.monthIndex + 1).padStart(2, '0')}`
-  const viewMonthCount = availableMonths.find(month => month.value === viewMonthKey)?.count
+  }, [selected, today, view])
 
   function pickDate(iso) {
     if (!isValidIsoDay(iso)) return
@@ -179,11 +166,7 @@ export function DateCalendarPicker({
   }
 
   const relative = relativeDayLabel(selected, today)
-  const triggerText = selected
-    ? formatIstCalendarDay(selected)
-    : allTime
-      ? 'All time'
-      : monthLabelOf(monthValue) || 'Select date'
+  const triggerText = selected ? formatIstCalendarDay(selected) : 'Select date'
 
   // Yesterday/Today/Tomorrow rides on the tooltip rather than on a pill in the
   // trigger. The controls row is already wider than its container at 1440px,
@@ -259,10 +242,6 @@ export function DateCalendarPicker({
       </div>
 
       <div className="ops-datepicker__footer">
-        <button type="button" className="ops-datepicker__link" onClick={() => { onSelectMonth?.(viewMonthKey); closePicker() }}>
-          Whole month{typeof viewMonthCount === 'number' ? ` (${viewMonthCount})` : ''}
-        </button>
-        <button type="button" className="ops-datepicker__link" onClick={() => { onSelectMonth?.('all'); closePicker() }}>All time</button>
         <button type="button" className="ops-datepicker__link ops-datepicker__link--clear" onClick={() => { onClear?.(); closePicker() }}>Clear</button>
       </div>
     </div>,

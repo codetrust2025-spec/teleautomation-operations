@@ -178,30 +178,6 @@ describe('the card labels say what the control does', () => {
   })
 })
 
-describe('the date control goes when it cannot do anything', () => {
-  it('marks it not applicable under All unresolved, and only then', async () => {
-    await renderPanel()
-    const dateControl = () => document.querySelector('.ops-roster-control--date')
-    expect(dateControl().className).not.toContain('not-applicable')
-
-    fireEvent.click(screen.getByRole('tab', { name: 'All unresolved' }))
-    await act(async () => { await Promise.resolve() })
-    expect(dateControl().className).toContain('ops-roster-control--not-applicable')
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Today' }))
-    await act(async () => { await Promise.resolve() })
-    expect(dateControl().className).not.toContain('not-applicable')
-  })
-
-  it('hides it on a phone only', () => {
-    const hidden = declaring('.ops-roster-control--not-applicable', 'display')
-    expect(hidden.length, 'the marker class must hide the control somewhere').toBeGreaterThan(0)
-    for (const rule of hidden) {
-      expect(rule.body).toMatch(/display\s*:\s*none/)
-      expect(phoneOnly(rule.media), `${rule.media} reaches a desktop`).toBe(true)
-    }
-  })
-})
 
 describe('the counters scroll instead of colliding', () => {
   it('gives the strip a sideways scroll on a phone', () => {
@@ -252,7 +228,6 @@ describe('what it all looks like laid out', () => {
             slot_screenshot_proof: { url: '/media/slot-shots/example.png', original_name: 'invite.png' } }),
     ])
     await renderPanel()
-    fireEvent.click(screen.getByRole('tab', { name: 'All unresolved' }))
     await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 
     expect(document.querySelectorAll('.ops-interview-row')).toHaveLength(3)
@@ -306,28 +281,6 @@ describe('the period tabs scroll rather than being cut off', () => {
     // No rule outside a phone width may turn the strip into a grid.
     for (const rule of declaring('.ops-date-range__presets', 'grid-template-columns')) {
       expect(phoneOnly(rule.media), `${rule.media} reaches a desktop`).toBe(true)
-    }
-  })
-
-  it('brings the selected tab into view when it is off the edge', async () => {
-    // jsdom has no scrollIntoView, so the panel calls it optionally and this
-    // supplies one. `nearest` is what leaves a desktop, where nothing
-    // overflows, completely still.
-    const scrolled = []
-    const original = Element.prototype.scrollIntoView
-    Element.prototype.scrollIntoView = function (options) { scrolled.push([this, options]) }
-    try {
-      await renderPanel()
-      scrolled.length = 0
-      fireEvent.click(screen.getByRole('tab', { name: 'All unresolved' }))
-      await act(async () => { await Promise.resolve() })
-
-      const [element, options] = scrolled.at(-1) || []
-      expect(element, 'the newly selected tab was never scrolled to').toBe(
-        screen.getByRole('tab', { name: 'All unresolved' }))
-      expect(options).toEqual({ inline: 'nearest', block: 'nearest' })
-    } finally {
-      Element.prototype.scrollIntoView = original
     }
   })
 })

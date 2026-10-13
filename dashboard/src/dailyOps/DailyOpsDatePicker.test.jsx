@@ -306,60 +306,30 @@ describe('the chosen day survives', () => {
   })
 })
 
-describe('the period presets keep working alongside it', () => {
-  it('still offers Today, Upcoming, This week and Last 7 days', async () => {
+describe('default behavior and clearing the date', () => {
+  it('defaults to showing upcoming interviews when no date is picked', async () => {
     await renderPanel()
 
-    for (const label of ['Today', 'Upcoming', 'This week', 'Last 7 days']) {
-      expect(screen.getByRole('tab', { name: label })).toBeInTheDocument()
-    }
-  })
-
-  it('sends a multi-day range for Last 7 days and empties the date control', async () => {
-    await renderPanel()
-
-    const calendar = await openCalendar()
-    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
-    await waitFor(() => expect(dateTrigger()).toHaveTextContent('7 Sept 2026'))
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Last 7 days' }))
-
-    await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
-    expect(lastRosterCall().searchParams.get('from')).toBe('2026-09-01')
-    expect(lastRosterCall().searchParams.get('to')).toBe(TODAY)
-    // No single day is in force, so the control must not claim one.
     expect(dateTrigger()).toHaveTextContent('Select date')
+    await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
+    expect(lastRosterCall().searchParams.get('upcoming_only')).toBe('true')
   })
 
-  it('marks the Today preset when today is picked from the calendar', async () => {
+  it('filters by single day when date picked and clears back to upcoming on Clear', async () => {
     await renderPanel()
 
-    const calendar = await openCalendar()
-    fireEvent.click(dayCell(calendar, 'Tuesday', '8 September', '2026'))
+    let calendar = await openCalendar()
+    fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))
 
-    await waitFor(() => expect(lastRosterCall().searchParams.get('date')).toBe(TODAY))
-    expect(screen.getByRole('tab', { name: 'Today' })).toHaveAttribute('aria-selected', 'true')
-    expect(dateTrigger()).toHaveTextContent('8 Sept 2026')
-  })
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('7 Sept 2026'))
+    expect(lastRosterCall().searchParams.get('date')).toBe(YESTERDAY)
 
-  it('still filters by a whole month, first day to last', async () => {
-    await renderPanel()
+    calendar = await openCalendar()
+    fireEvent.click(within(calendar).getByRole('button', { name: 'Clear' }))
 
-    const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: /Whole month/ }))
-
-    await waitFor(() => expect(lastRosterCall().searchParams.get('from')).toBe('2026-09-01'))
-    expect(lastRosterCall().searchParams.get('to')).toBe('2026-09-30')
-  })
-
-  it('still filters across all time', async () => {
-    await renderPanel()
-
-    const calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'All time' }))
-
-    await waitFor(() => expect(lastRosterCall().searchParams.get('from')).toBe('2000-01-01'))
-    expect(lastRosterCall().searchParams.get('to')).toBe('2100-12-31')
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('Select date'))
+    await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
+    expect(lastRosterCall().searchParams.get('upcoming_only')).toBe('true')
   })
 })
 
