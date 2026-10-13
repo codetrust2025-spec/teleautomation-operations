@@ -21,6 +21,16 @@ function formatFriendlyTime(hhmm) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+/** Format ISO date (YYYY-MM-DD) to "13 Oct 2026" in IST */
+function formatDisplayDate(isoDate) {
+  if (!isoDate) return ''
+  const [y, m, d] = isoDate.split('-').map(Number)
+  if (!y || !m || !d) return ''
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
+  })
+}
+
 /** Convert any time to 12-hour "hh:mm AM/PM" format */
 function normalizeTo12h(val) {
   if (!val) return ''
@@ -1549,6 +1559,19 @@ export function SubmitSlotPage() {
                     : !interviewRound
                     ? 'Select interview round'
                     : 'Please complete all required fields to confirm booking'}
+                </div>
+              )}
+
+              {bookingSlot && !success && (
+                <div className="sbs-slot-preview" role="status" aria-label="Detected interview slot">
+                  <span className="sbs-slot-preview__icon" aria-hidden="true">📅</span>
+                  <div className="sbs-slot-preview__info">
+                    <span className="sbs-slot-preview__label">Detected slot (IST)</span>
+                    <span className="sbs-slot-preview__value">
+                      {formatDisplayDate(bookingSlot.date)}
+                      {manualTime && <> · {manualTime}</>}
+                    </span>
+                  </div>
                 </div>
               )}
 
