@@ -105,6 +105,12 @@ class AIResult:
     duration_ms: int
     node_id: str = ""
     node_label: str = ""
+    load_duration_ms: int = 0
+    prompt_eval_duration_ms: int = 0
+    eval_duration_ms: int = 0
+    prompt_eval_count: int = 0
+    eval_count: int = 0
+    queued_ms: int = 0
 
 
 class AIGatewayError(RuntimeError):
@@ -342,7 +348,7 @@ def _chat(
     }
     # Bound context window so 8 GB GPU nodes (RTX 4060) can fit 100% of layers in VRAM
     # without partial CPU offloading or excessive KV cache allocation.
-    num_ctx = _env_int("OLLAMA_NUM_CTX", 4096)
+    num_ctx = _env_int("OLLAMA_NUM_CTX", 2048)
     if num_ctx > 0:
         request_payload["options"]["num_ctx"] = num_ctx
     if schema is not None:
@@ -488,10 +494,19 @@ def _chat(
                         ) from exc
                     content = json.dumps(parsed_content, ensure_ascii=False)
                 duration_ms = int((time.monotonic() - started - queued) * 1000)
+                load_duration_ms = int(payload.get("load_duration", 0) / 1e6)
+                prompt_eval_duration_ms = int(payload.get("prompt_eval_duration", 0) / 1e6)
+                eval_duration_ms = int(payload.get("eval_duration", 0) / 1e6)
+                prompt_eval_count = int(payload.get("prompt_eval_count", 0))
+                eval_count = int(payload.get("eval_count", 0))
+                queued_ms = int(queued * 1000)
                 logger.info(
                     "Ollama response completed workload=%s inference_host=%s model=%s "
-                    "attempt=%s duration_ms=%s",
+                    "attempt=%s duration_ms=%s load_ms=%s prompt_eval_ms=%s eval_ms=%s "
+                    "prompt_tokens=%s eval_tokens=%s queued_ms=%s",
                     workload, host_id, chosen, attempt + 1, duration_ms,
+                    load_duration_ms, prompt_eval_duration_ms, eval_duration_ms,
+                    prompt_eval_count, eval_count, queued_ms,
                 )
                 ollama_status.record_request_success(duration_ms)
                 ollama_nodes.record_success(selected_node)
@@ -502,6 +517,12 @@ def _chat(
                     duration_ms=duration_ms,
                     node_id=selected_node,
                     node_label=str(selected_node_record.get("label") or selected_node),
+                    load_duration_ms=load_duration_ms,
+                    prompt_eval_duration_ms=prompt_eval_duration_ms,
+                    eval_duration_ms=eval_duration_ms,
+                    prompt_eval_count=prompt_eval_count,
+                    eval_count=eval_count,
+                    queued_ms=queued_ms,
                 )
             except AIGatewayError as exc:
                 last_error = exc

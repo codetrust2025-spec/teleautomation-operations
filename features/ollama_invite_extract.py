@@ -44,8 +44,27 @@ def _invite_model_timeout() -> int:
     call would keep a pool thread and an Ollama slot busy for the full
     OLLAMA_TIMEOUT (900s by default) — and a candidate retrying would stack
     more of them until the shared executor starved.
+
+    Vision inference timing on a cold RTX 4060 (8 GB):
+      - Model load into VRAM:   ~20s
+      - ViT image patch encoding: ~30s (at max_edge=1280)
+      - Token generation (512 tokens): ~10-15s
+      - Total cold-start:        ~65s
+
+    OLLAMA_VISION_TIMEOUT (default 200s) is vision-specific and takes priority.
+    OLLAMA_TIMEOUT is the general fallback but is floored at 120s here so a
+    server-side OLLAMA_TIMEOUT=60 cannot cut off a cold-start vision call and
+    force an expensive retry cycle (which was causing the observed 1m 39s).
     """
-    configured = int(os.environ.get("OLLAMA_TIMEOUT", "900"))
+    # Check for a vision-specific timeout first (new, takes priority)
+    vision_specific = int(os.environ.get("OLLAMA_VISION_TIMEOUT", "0"))
+    if vision_specific > 0:
+        configured = vision_specific
+    else:
+        configured = int(os.environ.get("OLLAMA_TIMEOUT", "900"))
+        # Floor at 120s: cold model load (20s) + ViT encoding (30s) + generation
+        # (15s) = ~65s. A single cold inference must not timeout and retry.
+        configured = max(configured, 120)
     try:
         budget = int(str(os.environ.get("INVITE_EXTRACTION_TIMEOUT", "")).strip())
     except (TypeError, ValueError):
@@ -64,6 +83,7 @@ OLLAMA_TIMEOUT = _invite_model_timeout()
 OLLAMA_TEXT_TIMEOUT = min(int(os.environ.get("OLLAMA_TEXT_TIMEOUT", "60")), OLLAMA_TIMEOUT)
 
 
+
 class InferenceResponse(str):
     """Model text plus the node that actually produced it.
 
@@ -77,10 +97,12 @@ class InferenceResponse(str):
         *,
         node_id: str = "",
         node_label: str = "",
+        timings: dict[str, Any] | None = None,
     ):
         value = super().__new__(cls, content)
         value.node_id = node_id
         value.node_label = node_label
+        value.timings = timings or {}
         return value
 
 
@@ -92,10 +114,13 @@ def _attach_inference_node(
         return extracted
     node_id = str(getattr(response, "node_id", "") or "").strip()
     node_label = str(getattr(response, "node_label", "") or "").strip()
+    timings = getattr(response, "timings", None)
     if node_id:
         extracted["inference_node_id"] = node_id
     if node_label:
         extracted["inference_node_label"] = node_label
+    if timings:
+        extracted.setdefault("diagnostics", {})["timings"] = timings
     return extracted
 
 
@@ -335,18 +360,19 @@ def _timezone_agrees(first: dict[str, Any], second: dict[str, Any]) -> bool:
 
 # ── Ollama API calls ────────────────────────────────────────────────────────
 def _is_ollama_available() -> bool:
-    """Check if Ollama is running and accessible."""
-    status = health(model=OLLAMA_REASONING_MODEL, timeout=5)
+    """Check if Ollama vision model is running and accessible."""
+    status = health(model=OLLAMA_VISION_MODEL, timeout=5)
     return bool(status.get("endpoint_reachable") and status.get("model_available"))
 
 
-def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 1280) -> tuple[bytes, bool]:
-    """Resize high-res screenshots to optimal vision resolution (max_edge=1280).
+def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 1024) -> tuple[bytes, bool]:
+    """Resize high-res screenshots to optimal vision resolution (max_edge=1024).
 
-    A full-resolution phone screenshot (e.g. 1290x2796) produces ~4,600 vision patches,
-    costing 25-35s in ViT encoding alone and overflowing 8GB VRAM on RTX 4060.
-    At 1280px max edge, text remains 100% sharp and legible while token count drops to
-    ~900 tokens (a 5x speedup), keeping inference under 10 seconds.
+    At 1024px max edge:
+      - Text remains 100% sharp and legible for vision extraction.
+      - Vision tokens drop to ~600-750 (from ~4600 raw, or ~1200 at 1280px).
+      - ViT quadratic attention O(N^2) computation is reduced by 2.5x vs 1280px.
+      - Converts PNG/uncompressed to JPEG to minimize base64 SSH transfer latency.
     """
     if not image_data or len(image_data) < 100:
         return image_data, False
@@ -355,15 +381,20 @@ def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 1280) -> tu
         import io
         img = Image.open(io.BytesIO(image_data))
         w, h = img.size
-        if max(w, h) > max_edge:
-            scale = max_edge / max(w, h)
+        needs_resize = max(w, h) > max_edge
+        needs_convert = getattr(img, "format", "") != "JPEG"
+        if needs_resize or needs_convert:
+            scale = min(1.0, max_edge / max(w, h)) if needs_resize else 1.0
             new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
-            resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            if needs_resize:
+                img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
             buf = io.BytesIO()
-            resized.save(buf, format="JPEG", quality=90, optimize=True)
-            return buf.getvalue(), True
+            img.save(buf, format="JPEG", quality=90, optimize=True)
+            compressed = buf.getvalue()
+            if len(compressed) < len(image_data) or needs_resize:
+                return compressed, True
     except Exception as exc:
         logger.warning("Image optimization for vision skipped: %s", exc)
     return image_data, False
@@ -387,7 +418,7 @@ def call_ollama_vision_model(
             images=[image_base64],
             timeout=timeout,
             temperature=0.1,
-            num_predict=512,
+            num_predict=384,
             format="json",
             # Qwen3-VL can consume the complete output budget in its hidden
             # reasoning field and leave message.content empty. Screenshot
@@ -397,10 +428,20 @@ def call_ollama_vision_model(
         )
         if not result.content:
             return None
+        timings = {
+            "load_duration_ms": result.load_duration_ms,
+            "prompt_eval_duration_ms": result.prompt_eval_duration_ms,
+            "eval_duration_ms": result.eval_duration_ms,
+            "prompt_eval_count": result.prompt_eval_count,
+            "eval_count": result.eval_count,
+            "queued_ms": result.queued_ms,
+            "total_ms": result.duration_ms,
+        }
         return InferenceResponse(
             result.content,
             node_id=result.node_id,
             node_label=result.node_label,
+            timings=timings,
         )
     except AIGatewayError as exc:
         logger.warning("Ollama interview vision failed model=%s code=%s", model_name, exc.code)
@@ -1190,7 +1231,7 @@ def _try_text_model_cleanup(ocr_text: str) -> dict[str, Any] | None:
 
 def _ai_only_vision_extraction(image_data: bytes) -> tuple[dict[str, Any] | None, str]:
     """Run only the vision models. Returns (extraction, model_used)."""
-    opt_image, _ = _optimize_image_for_vision(image_data)
+    opt_image, was_compressed = _optimize_image_for_vision(image_data)
     img_b64 = base64.b64encode(opt_image).decode("utf-8")
     used_model = OLLAMA_VISION_MODEL
     response = call_ollama_vision_model(
@@ -1218,6 +1259,7 @@ def _ai_only_vision_extraction(image_data: bytes) -> tuple[dict[str, Any] | None
             if extracted:
                 used_model = OLLAMA_BACKUP_VISION_MODEL
     if extracted:
+        extracted.setdefault("diagnostics", {})["image_compressed"] = was_compressed
         # Preserve exactly what the vision model supplied before normalization.
         # The public API removes these private fields from its response after
         # writing the correlated, non-image diagnostic trace.
