@@ -17786,6 +17786,43 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page .cand-stats .cand-stat-card:nth-child(n + 5) { display: none !important; }
 }
 
+/* Candidates toolbar on a phone: every label inside its control. Three to a
+   line left each control 108-129px at 375-440px, and "Download active CSV",
+   "Total expenditure" and "Pending only" ran past their edges ("Closed /
+   Completed" past the stage filter's). On six tracks the actions go two to a
+   line and the filters two, or three when an admin's referrer filter makes
+   four, so the long labels get 166px at 375px. That holds "Download active
+   CSV" on one line at 12px even in Verdana, which is what an iPhone draws
+   for this font stack. A label that still runs out of room wraps instead of
+   being cut. */
+@media (max-width: 599px) {
+  .cand-page.cand-page--candidates > .cand-toolbar {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  }
+  .cand-page.cand-page--candidates > .cand-toolbar > .cand-btn {
+    grid-column: span 3 !important;
+    min-width: 0;
+    min-height: 40px;
+    padding-inline: 6px;
+    gap: 4px;
+    font-size: 12px;
+    white-space: normal;
+    text-align: center;
+  }
+  /* Without Total expenditure (a handler's view) Add candidate takes the line. */
+  .cand-page.cand-page--candidates > .cand-toolbar > button.cand-btn:last-of-type:nth-of-type(odd) {
+    grid-column: 1 / -1 !important;
+  }
+  .cand-page.cand-page--candidates > .cand-toolbar > select.cand-input,
+  .cand-page.cand-page--candidates > .cand-toolbar > .cand-toggle {
+    grid-column: span 3 !important;
+  }
+  /* Type, referrer and month share a line; stage and Pending only the next. */
+  .cand-page.cand-page--candidates > .cand-toolbar:has(> select:nth-of-type(4)) > select.cand-input:not(:nth-of-type(3)) {
+    grid-column: span 2 !important;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    Candidates page — compact layout overrides
    Goal: stat cards take minimal vertical space, table fills the rest.
