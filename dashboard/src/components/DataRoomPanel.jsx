@@ -35,6 +35,23 @@ const STATUS_LABELS = {
   not_relevant: 'Not relevant',
 }
 
+const EMPTY_FORM = {
+  opportunity_type: 'partnership',
+  status: 'new',
+  name: '',
+  phone: '',
+  whatsapp: '',
+  email: '',
+  preferred_contact: 'whatsapp',
+  username: '',
+  account_id: '',
+  tech_stack: '',
+  volume_hint: '',
+  summary: '',
+  notes: '',
+  inbox_ref: '',
+}
+
 function waHref(digits) {
   const d = String(digits || '').replace(/\D/g, '')
   if (d.length < 10) return null
@@ -508,6 +525,7 @@ export function DataRoomPanel() {
     load()
   }, [load])
 
+  const openNew = () => setEditor({ mode: 'create', form: { ...EMPTY_FORM } })
 
   const openEdit = (row) => {
     setEditor({
@@ -584,10 +602,8 @@ export function DataRoomPanel() {
 
   return (
     <div className="cand-page dr-page">
-      {/* No page header: the shell header already names the page, and the
-          Refresh / Add opportunity buttons that sat beside the title were
-          never shown (index.css hides .cand-header-actions on every
-          .cand-page). Each tab carries its own title and actions. */}
+      {/* No page header: the shell header already names the page. Each tab
+          carries its own title and actions, Add opportunity included. */}
       <nav className="dr-tabs" aria-label="Data room sections">
         {visibleTabs.map(tab => (
           <button
@@ -627,11 +643,14 @@ export function DataRoomPanel() {
 
       {activeTab === 'partners' && (
       <section className="dr-section dr-partners-section dr-section--active" aria-labelledby="dr-partners-title">
-        <div className="dr-section-head">
-          <h2 id="dr-partners-title" className="dr-section-title">Operations opportunities</h2>
-          <p className="dr-section-desc">
-            Partner leads with phone, WhatsApp, or email — not Telegram IDs. Karthik auto-captures vendor and support-provider threads.
-          </p>
+        <div className="dr-tab-header">
+          <div>
+            <h2 id="dr-partners-title" className="dr-section-title">Operations opportunities</h2>
+            <p className="dr-section-desc">
+              Partner leads with phone, WhatsApp, or email — not Telegram IDs. Karthik auto-captures vendor and support-provider threads.
+            </p>
+          </div>
+          <button type="button" className="cand-btn cand-btn--primary" onClick={openNew}>+ Add opportunity</button>
         </div>
 
       <div className="cand-stats">
