@@ -268,6 +268,7 @@ describe('on a phone', () => {
     const media = /@media \(max-width: 640px\) \{([\s\S]*?)\n\}/.exec(phone)[1]
     expect(media).toMatch(/\.offer-preview \{[^}]*height: 100dvh/)
     expect(media).toMatch(/\.offer-preview__btn \{[^}]*min-width: 44px[^}]*height: 44px/)
+    expect(media).toMatch(/\.offer-preview__password \.cand-btn \{[^}]*min-height: 44px/)   // Open PDF, under a thumb
     expect(media).toMatch(/\.dr-offers-tab \.dr-tab-table thead \{ display: none; \}/)
   })
 })

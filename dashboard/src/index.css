@@ -15799,6 +15799,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .offer-preview__download { flex: 1 1 auto; }
   .offer-preview__body { padding: 8px; }
   .offer-preview__pager { padding: 6px 10px max(6px, env(safe-area-inset-bottom)); }
+  .offer-preview__password .cand-btn { min-height: 44px; padding: 0 18px; }
   /* Offers as cards: candidate on top, then labelled lines, actions last. */
   .dr-page .dr-offers-tab .dr-tab-table-wrap { overflow-x: visible; border: 0; background: transparent; }
   .dr-page .dr-offers-tab .dr-tab-table, .dr-page .dr-offers-tab .dr-tab-table tbody,
