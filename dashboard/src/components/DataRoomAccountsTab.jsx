@@ -63,12 +63,18 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 export const SERVICE_TYPES = ['Naukri', 'Gmail', 'Telegram']
 const DEFAULT_SERVICE = 'Naukri'
 export const SERVICE_FILTER_KEY = 'ta.dataRoom.accountsService'
+// The filter value for accounts with no service yet, so that All Services is
+// always the sum of the options below it.
+export const UNSET_SERVICE = 'unset'
+
+/** The account's service when it is one of the three, otherwise ''. */
+const serviceOf = row => (SERVICE_TYPES.includes(row.service) ? row.service : '')
 
 /** The service filter remembered for this browser session, or All Services. */
 function readServiceFilter() {
   try {
     const saved = window.sessionStorage.getItem(SERVICE_FILTER_KEY)
-    return saved === 'all' || SERVICE_TYPES.includes(saved) ? saved : 'all'
+    return saved === 'all' || saved === UNSET_SERVICE || SERVICE_TYPES.includes(saved) ? saved : 'all'
   } catch {
     return 'all'
   }
@@ -94,7 +100,8 @@ async function copyFetched(getText) {
 
 const SVC_FIELDS = [
   { key: 'label', label: 'Account name', placeholder: 'e.g. Bhavana Naukri', full: true },
-  { key: 'service', label: 'Service type', type: 'select', options: SERVICE_TYPES, placeholder: 'Choose a service' },
+  { key: 'service', label: 'Service type', type: 'select', options: SERVICE_TYPES, placeholder: 'Choose a service',
+    hint: 'A Naukri login is Naukri even when its username is a Gmail address.' },
   { key: 'username', label: 'Username / email', placeholder: 'name@example.com' },
   { key: 'password', label: 'Password', type: 'password' },
   { key: 'notes', label: 'Notes (optional)', type: 'textarea', rows: 3, full: true },
@@ -133,14 +140,19 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error, ima
             <label key={f.key} className={f.full ? 'dr-form-full' : ''}>
               {f.label}
               {f.type === 'select' ? (
-                <select
-                  className="cand-input dr-select"
-                  value={form[f.key] || ''}
-                  onChange={(e) => onChange({ ...form, [f.key]: e.target.value })}
-                >
-                  {!form[f.key] && <option value="" disabled>{f.placeholder}</option>}
-                  {f.options.map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
+                <>
+                  <select
+                    className="cand-input dr-select"
+                    aria-label={f.label}
+                    aria-describedby={f.hint ? `dr-field-hint-${f.key}` : undefined}
+                    value={form[f.key] || ''}
+                    onChange={(e) => onChange({ ...form, [f.key]: e.target.value })}
+                  >
+                    {!form[f.key] && <option value="" disabled>{f.placeholder}</option>}
+                    {f.options.map(option => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                  {f.hint && <small id={`dr-field-hint-${f.key}`} className="dr-field-hint">{f.hint}</small>}
+                </>
               ) : f.type === 'textarea' ? (
                 <textarea
                   className="cand-input"
@@ -467,22 +479,31 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
   const oldAccounts = accounts.filter(r => accountStatus(r) === 'old').length
   const primaryAccounts = accounts.filter(r => isPrimary(r)).length
 
+  // Every account is counted exactly once: under its service, or under Not set
+  // until someone chooses one. All Services is always the sum.
   const serviceCounts = useMemo(() => {
-    const counts = Object.fromEntries(SERVICE_TYPES.map(name => [name, 0]))
-    for (const row of accounts) if (row.service in counts) counts[row.service] += 1
+    const counts = { ...Object.fromEntries(SERVICE_TYPES.map(name => [name, 0])), [UNSET_SERVICE]: 0 }
+    for (const row of accounts) counts[serviceOf(row) || UNSET_SERVICE] += 1
     return counts
   }, [accounts])
+  const unsetCount = serviceCounts[UNSET_SERVICE]
+  // Not set is offered only while some account has no service; once none is
+  // left, a remembered Not set falls back to All Services.
+  const activeFilter = serviceFilter === UNSET_SERVICE && !unsetCount ? 'all' : serviceFilter
 
   // The service filter and the search narrow the same list.
   const query = search.trim().toLowerCase()
   const filtered = accounts
-    .filter(r => serviceFilter === 'all' || r.service === serviceFilter)
+    .filter(r => activeFilter === 'all' || (serviceOf(r) || UNSET_SERVICE) === activeFilter)
     .filter(r => !query ||
       (r.label || '').toLowerCase().includes(query) ||
       (r.username || '').toLowerCase().includes(query) ||
-      (r.service || '').toLowerCase().includes(query))
-  const emptyText = serviceFilter !== 'all'
-    ? (query ? `No ${serviceFilter} accounts match your search.` : `No ${serviceFilter} accounts.`)
+      serviceOf(r).toLowerCase().includes(query))
+  const filterName = activeFilter === UNSET_SERVICE ? 'unclassified' : activeFilter
+  const emptyText = activeFilter !== 'all'
+    ? (query ? `No ${filterName} accounts match your search.`
+      : activeFilter === 'Gmail' ? 'No Gmail accounts. Naukri logins that use a Gmail address are under Naukri.'
+        : `No ${filterName} accounts.`)
     : (query ? 'No accounts match your search.' : 'No accounts found.')
 
   return (
@@ -508,11 +529,12 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
           <select
             className="cand-input dr-service-select"
             aria-label="Service type"
-            value={serviceFilter}
+            value={activeFilter}
             onChange={(e) => chooseServiceFilter(e.target.value)}
           >
             <option value="all">All Services ({accounts.length})</option>
             {SERVICE_TYPES.map(name => <option key={name} value={name}>{name} ({serviceCounts[name]})</option>)}
+            {unsetCount > 0 && <option value={UNSET_SERVICE}>Not set ({unsetCount})</option>}
           </select>
           {/* The admin's, by role: the server refuses everyone else too. */}
           {canExport && (
@@ -528,6 +550,17 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
         </div>
       </div>
       {exporting && <AccountsExportModal count={accounts.length} onClose={closeExport} />}
+      {unsetCount > 0 && activeFilter !== UNSET_SERVICE && (
+        <div className="dr-svc-notice" role="status">
+          <span>
+            {unsetCount === 1 ? '1 account has' : `${unsetCount} accounts have`} no service type yet.
+            Choose Naukri, Gmail or Telegram with Edit so {unsetCount === 1 ? 'it is' : 'they are'} counted under {unsetCount === 1 ? 'its' : 'their'} service.
+          </span>
+          <button type="button" className="cand-btn cand-btn--sm" onClick={() => chooseServiceFilter(UNSET_SERVICE)}>
+            Show {unsetCount === 1 ? 'it' : 'them'}
+          </button>
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="dr-tab-stats">
@@ -594,7 +627,7 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
                     </div>
                   </td>
                   <td data-label="Service">
-                    <span className={`dr-svc-badge dr-svc-badge--${(row.service || 'none').toLowerCase()}`}>{row.service || 'Not set'}</span>
+                    <span className={`dr-acct-svc dr-acct-svc--${(serviceOf(row) || 'none').toLowerCase()}`}>{serviceOf(row) || 'Not set'}</span>
                   </td>
                   <td data-label="Username">
                     <div className="dr-acct-cred-cell">
