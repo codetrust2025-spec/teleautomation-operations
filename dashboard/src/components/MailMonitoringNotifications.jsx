@@ -481,7 +481,8 @@ export function MailMonitoringNotifications() {
     all:    summary.visible_total || 0,
   };
   return <section className="mail-monitoring-page">
-    <header className="mail-monitoring-page__head"><div><p className="mail-eyebrow">AI MAIL MONITORING</p><h1>Mail Monitoring Notifications</h1><p>Candidate job-status alerts with live delivery and automatic validation.</p></div><div className="mail-monitoring-page__actions"><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
+    {/* The page is named once, in the shell header; this row holds only its controls. */}
+    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
     <nav className="mail-tabs" role="tablist" aria-label="Mail alerts filter tabs">
       {MAIL_TABS.map((tab) => {
         const count = tabCounts[tab.id] ?? 0;

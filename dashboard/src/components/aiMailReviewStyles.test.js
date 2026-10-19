@@ -87,8 +87,10 @@ describe('OCR control is styled', () => {
   }
 })
 
+// sot-title is not listed: the title block it styled was removed, because the
+// shell header already names the page. The header row now holds only actions.
 describe('the page header keeps its layout', () => {
-  for (const cls of ['sot-page', 'sot-header', 'sot-header-actions', 'sot-title']) {
+  for (const cls of ['sot-page', 'sot-header', 'sot-header-actions']) {
     it(`.${cls} has a rule`, () => {
       expect(hasRule(cls)).toBe(true)
     })

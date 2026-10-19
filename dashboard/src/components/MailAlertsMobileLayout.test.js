@@ -51,21 +51,18 @@ describe('Mail Alerts on a phone', () => {
     expect(PHONE, 'no 640px block holds the card layout').not.toBe('')
   })
 
-  it('keeps the header to one title line with Live beside it and a small Clear all', () => {
-    // At 390px the title had been squeezed to 153px and two or three lines by
-    // a 12px Clear all button sharing its row. Now: title and Live on one row,
-    // Live centred on the title; Clear all at 11px under it, same right edge.
-    const head = rule('.mail-monitoring-page__head')
-    expect(head).toMatch(/display:\s*grid/)
-    expect(head).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/)
-    expect(head).toMatch(/align-items:\s*center/)
-    expect(rule('.mail-monitoring-page__actions')).toMatch(/display:\s*contents/)
-    const live = rule('.mail-monitoring-page__actions .mail-live')
-    expect(live).toMatch(/grid-row:\s*1/)
-    expect(live).toMatch(/justify-self:\s*end/)
+  it('keeps the header to one short row: a small Clear all beside Live, on the right', () => {
+    // The header used to hold the page title too, which at 390px was squeezed
+    // to two or three lines; the phone block then gave it a grid of its own.
+    // The title is gone (the shell header names the page), so the header is
+    // just its two controls. It is no longer a grid, and its actions are a
+    // plain row again rather than `display: contents` cells of one.
+    expect(rule('.mail-monitoring-page__head')).toBe('')
+    expect(rule('.mail-monitoring-page__actions')).not.toMatch(/display:\s*contents/)
+    const base = CSS.replace(PHONE, '')
+    expect(base).toMatch(/\.mail-monitoring-page__head \{[^}]*justify-content: flex-end;/)
     const clear = rule('.mail-monitoring-page__actions .mail-clear-all')
-    expect(clear).toMatch(/grid-row:\s*2/)
-    expect(clear).toMatch(/justify-self:\s*end/)
+    expect(clear).toMatch(/min-height:\s*26px/)
     expect(clear).toMatch(/font-size:\s*11px/)
   })
 

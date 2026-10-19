@@ -35,23 +35,6 @@ const STATUS_LABELS = {
   not_relevant: 'Not relevant',
 }
 
-const EMPTY_FORM = {
-  opportunity_type: 'partnership',
-  status: 'new',
-  name: '',
-  phone: '',
-  whatsapp: '',
-  email: '',
-  preferred_contact: 'whatsapp',
-  username: '',
-  account_id: '',
-  tech_stack: '',
-  volume_hint: '',
-  summary: '',
-  notes: '',
-  inbox_ref: '',
-}
-
 function waHref(digits) {
   const d = String(digits || '').replace(/\D/g, '')
   if (d.length < 10) return null
@@ -525,7 +508,6 @@ export function DataRoomPanel() {
     load()
   }, [load])
 
-  const openNew = () => setEditor({ mode: 'create', form: { ...EMPTY_FORM } })
 
   const openEdit = (row) => {
     setEditor({
@@ -602,26 +584,10 @@ export function DataRoomPanel() {
 
   return (
     <div className="cand-page dr-page">
-      <header className="cand-header">
-        <div className="cand-header-titles">
-          <h1 className="cand-title">Data room</h1>
-          <p className="cand-subtitle">
-            Three tabs: <strong>Logins</strong> (admin), <strong>Vault</strong> (accounts &amp; links), and{' '}
-            <strong>Opportunities</strong> (partner leads).
-          </p>
-        </div>
-        <div className="cand-header-actions">
-          {activeTab === 'partners' && (
-            <button type="button" className="cand-btn cand-btn--primary" onClick={openNew}>
-              Add opportunity
-            </button>
-          )}
-          <button type="button" className="cand-btn" onClick={load} disabled={loading}>
-            Refresh
-          </button>
-        </div>
-      </header>
-
+      {/* No page header: the shell header already names the page, and the
+          Refresh / Add opportunity buttons that sat beside the title were
+          never shown (index.css hides .cand-header-actions on every
+          .cand-page). Each tab carries its own title and actions. */}
       <nav className="dr-tabs" aria-label="Data room sections">
         {visibleTabs.map(tab => (
           <button

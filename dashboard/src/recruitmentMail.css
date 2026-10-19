@@ -354,7 +354,6 @@
   margin: 0;
 }
 .sot-header,
-.sot-title,
 .sot-header-actions,
 .sot-row-actions,
 .sot-candidate,
@@ -369,21 +368,11 @@
   gap: 24px;
   margin-bottom: 28px;
 }
-.sot-title {
-  gap: 18px;
-  min-width: 0;
-}
-.sot-title h1 {
-  font-size: clamp(24px, 2vw, 34px);
-  letter-spacing: -0.035em;
-}
-.sot-title p,
 .sot-overview-head p,
 .sot-content-card header p {
   color: var(--sot-muted);
   margin-top: 5px;
 }
-.sot-brand-avatar,
 .sot-avatar {
   display: grid;
   place-items: center;
@@ -392,12 +381,6 @@
   color: #fff;
   font-weight: 800;
   background: linear-gradient(145deg, #3c87ff, #5427bb);
-}
-.sot-brand-avatar {
-  width: 56px;
-  height: 56px;
-  border: 3px solid #20385f;
-  box-shadow: 0 0 0 2px #171c44;
 }
 .sot-avatar {
   width: 38px;
@@ -1619,10 +1602,6 @@
   .sot-add-mailbox-empty {
     grid-column: auto;
   }
-  .sot-brand-avatar {
-    width: 46px;
-    height: 46px;
-  }
   .sot-summary-grid {
     grid-template-columns: 1fr;
   }
@@ -1823,33 +1802,21 @@
   color: var(--muted, #94a3b8);
 }
 
+/* The shell header names the page, so the page carries no title of its own:
+   it opens on its controls, close under that header. */
 .mail-monitoring-page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 24px;
+  gap: 14px;
+  padding: 0 24px 24px;
   max-width: 1600px;
   margin: 0 auto;
   color: var(--text-color, inherit);
 }
 .mail-monitoring-page__head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-.mail-monitoring-page__head h1 {
-  margin: 2px 0 6px;
-  font-size: 26px;
-}
-.mail-monitoring-page__head p {
-  margin: 0;
-  color: var(--muted, #94a3b8);
-}
-.mail-eyebrow {
-  font-size: 11px !important;
-  letter-spacing: 0.14em;
-  color: #8b5cf6 !important;
-  font-weight: 800;
+  align-items: center;
+  justify-content: flex-end;
 }
 .mail-summary {
   display: grid;
@@ -2106,7 +2073,7 @@
 
 @media (max-width: 900px) {
   .mail-monitoring-page {
-    padding: 14px;
+    padding: 0 14px 14px;
   }
   .mail-summary {
     grid-template-columns: repeat(2, 1fr);
@@ -2740,29 +2707,20 @@
    Placed at the end of the file deliberately: these override the base rules
    above and would be dead if they came first. */
 
-/* The title block: same content, less air. */
+/* The header row: the page's controls alone, on the right. The shell header
+   names the page, so the page no longer repeats its title, eyebrow or
+   strapline, and it starts close under that header rather than a full page
+   gutter below it. */
+.sot-mailboxes-page.sot-page {
+  padding-top: 0;
+}
 .sot-mailboxes-page .sot-header {
+  justify-content: flex-end;
   gap: 16px;
   margin-bottom: 14px;
 }
-.sot-mailboxes-page .sot-title {
-  gap: 10px;
-}
-.sot-mailboxes-page .sot-brand-avatar {
-  width: 34px;
-  height: 34px;
-  font-size: 12px;
-}
-.sot-mailboxes-page .sot-title h1 {
-  margin: 0;
-  font-size: 19px;
-  line-height: 1.2;
-}
-/* The eyebrow and the strapline say what the page already says; on a page
-   whose job is the list below them they cost more than they explain. Hidden
-   rather than deleted so the markup and its meaning stay intact. */
-.sot-mailboxes-page .sot-title .sot-page-eyebrow,
-.sot-mailboxes-page .sot-title p,
+/* The strapline says what the section already says; on a page whose job is
+   the list below it, it costs more than it explains. */
 .sot-mailboxes-page .sot-overview-head p {
   display: none;
 }
@@ -3088,27 +3046,11 @@
      Read / Dismiss. Confidence and "tool detected" stay one tap away, in the
      alert itself. */
 @media (max-width: 640px) {
-  .mail-monitoring-page { gap: 10px; padding: 10px 10px 16px; }
-  /* Header: the title on one line with the Live badge beside it, centred on
-     it; a small Clear all under the badge, so the two controls stay together
-     on the right as they are on a desktop. The actions wrapper steps aside
-     (display: contents) so both controls sit in the header's own grid. */
-  .mail-monitoring-page__head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 2px 10px;
-  }
-  .mail-monitoring-page__head > div:first-child { grid-column: 1; grid-row: 1; min-width: 0; }
-  .mail-monitoring-page__head .mail-eyebrow,
-  .mail-monitoring-page__head > div:first-child > p:not(.mail-eyebrow) { display: none; }
-  .mail-monitoring-page__head h1 { margin: 0; font-size: 17px; line-height: 1.2; }
-  .mail-monitoring-page__actions { display: contents; }
-  .mail-monitoring-page__actions .mail-live { grid-column: 2; grid-row: 1; justify-self: end; }
+  .mail-monitoring-page { gap: 10px; padding: 0 10px 16px; }
+  /* Header: no title (the shell header has it), so one short row -- a small
+     Clear all beside the Live badge, on the right as on a desktop. */
+  .mail-monitoring-page__actions { gap: 8px; }
   .mail-monitoring-page__actions .mail-clear-all {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: end;
     min-height: 26px;
     padding: 3px 9px;
     border-radius: 7px;
@@ -3205,14 +3147,10 @@
    Controls stay at the 16px index.css sets below 1024px, so iOS Safari does
    not zoom into a field when it is tapped. */
 @media (max-width: 640px) {
-  .sot-mailboxes-page.sot-page { padding: 12px 10px 20px; }
+  .sot-mailboxes-page.sot-page { padding: 0 10px 20px; }
 
   /* header */
   .sot-mailboxes-page .sot-header { gap: 8px; margin-bottom: 10px; }
-  .sot-mailboxes-page .sot-title .sot-page-eyebrow,
-  .sot-mailboxes-page .sot-title p { display: none; }
-  .sot-mailboxes-page .sot-title h1 { font-size: 17px; }
-  .sot-mailboxes-page .sot-brand-avatar { width: 28px; height: 28px; font-size: 11px; }
   .sot-mailboxes-page .sot-header-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

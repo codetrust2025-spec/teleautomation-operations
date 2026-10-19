@@ -1442,33 +1442,6 @@
   display: inline;
 }
 
-.ops-topbar__left {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-shrink: 0;
-  min-width: 0;
-}
-
-.ops-topbar__left .ops-dash-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #f1f5f9;
-  margin: 0;
-  white-space: nowrap;
-}
-
-.ops-topbar__sub {
-  font-size: 11px;
-  color: #64748b;
-  white-space: nowrap;
-  display: none; /* hidden on small screens, shown on wide */
-}
-
-@media (min-width: 1100px) {
-  .ops-topbar__sub { display: inline; }
-}
-
 /* KPI chips in topbar — compact horizontal strip */
 .ops-topbar__kpis {
   display: flex;
@@ -1613,10 +1586,6 @@
   .ops-topbar {
     flex-wrap: wrap;
     gap: 6px;
-  }
-
-  .ops-topbar__left .ops-dash-title {
-    font-size: 1rem;
   }
 
   .ops-topbar__kpis {

@@ -6907,11 +6907,7 @@ function CandidatesPanelImpl() {
   }, [i]);
   return (
     <div className="cand-page cand-page--candidates">
-      <header className="cand-header">
-        <div className="cand-header-titles">
-          <h2 className="cand-title">Candidates</h2>
-        </div>
-      </header>
+      {/* No page title here: the shell header already names the page. */}
       <nav
         className="cand-tabs"
         role="tablist"

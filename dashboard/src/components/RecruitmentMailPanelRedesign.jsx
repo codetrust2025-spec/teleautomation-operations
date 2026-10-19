@@ -2505,15 +2505,9 @@ export default function RecruitmentMailPanelRedesign() {
 
   return (
     <main className="sot-page sot-mailboxes-page">
+      {/* The page is named once, in the shell header ("AI Mail Review"); this
+          row holds only the page's controls. */}
       <header className="sot-header">
-        <div className="sot-title">
-          <span className="sot-brand-avatar">AD</span>
-          <div>
-            <span className="sot-page-eyebrow">GMAIL OPERATIONS</span>
-            <h1>Candidate Mailboxes</h1>
-            <p>Connect and monitor candidate Gmail accounts.</p>
-          </div>
-        </div>
         <div className="sot-header-actions">
           <label className="sot-global-candidate-filter">
             <select

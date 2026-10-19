@@ -12,11 +12,10 @@
 .attendance-primary-button:disabled, .attendance-secondary-button:disabled, .attendance-later-button:disabled { opacity: .55; cursor: wait; }
 .attendance-error { margin: 12px 0 !important; padding: 10px 12px; border: 1px solid rgba(248, 113, 113, .35); border-radius: 8px; background: rgba(127, 29, 29, .2); color: #fecaca !important; font-size: 13px; }
 .attendance-toast { position: fixed; z-index: 10020; right: 24px; bottom: 24px; padding: 13px 18px; border: 1px solid rgba(74, 222, 128, .4); border-radius: 10px; background: #123421; color: #bbf7d0; box-shadow: 0 12px 40px rgba(0, 0, 0, .4); font-weight: 700; }
-.attendance-page { max-width: 1480px; margin: 0 auto; padding: 4px 2px 30px; }
+.attendance-page { max-width: 1480px; margin: 0 auto; padding: 0 2px 30px; }
 .attendance-page__header, .attendance-section__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.attendance-page__header { margin-bottom: 18px; }
-.attendance-page__header h2 { margin: 3px 0 0; color: #f8fafc; font-size: 25px; }
-.attendance-eyebrow { margin: 0; color: #60a5fa; font-size: 10px; font-weight: 800; letter-spacing: .13em; }
+/* No title of its own (the shell header has it): just Refresh, on the right. */
+.attendance-page__header { justify-content: flex-end; margin-bottom: 12px; }
 .attendance-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
 .attendance-stat, .attendance-section { border: 1px solid #263247; border-radius: 14px; background: #111827; }
 .attendance-stat { min-height: 126px; padding: 19px; }
@@ -46,7 +45,7 @@
 .attendance-list__row--recommendation > div { display: flex; gap: 7px; }
 .attendance-list__row button.attendance-approve { border-color: #2563eb; background: #2563eb; color: #fff; }
 .attendance-findings { margin: 12px 0 0; color: #94a3b8; font-size: 12px; }
-@media (max-width: 760px) { .attendance-summary-grid { grid-template-columns: 1fr; } .attendance-holiday-form { grid-template-columns: 1fr; } .attendance-list__row, .attendance-page__header { align-items: stretch; flex-direction: column; } .attendance-list__row--recommendation > div { width: 100%; } .attendance-list__row--recommendation button { flex: 1; } .attendance-modal { padding: 30px 20px 24px; } }
+@media (max-width: 760px) { .attendance-summary-grid { grid-template-columns: 1fr; } .attendance-holiday-form { grid-template-columns: 1fr; } .attendance-list__row { align-items: stretch; flex-direction: column; } .attendance-list__row--recommendation > div { width: 100%; } .attendance-list__row--recommendation button { flex: 1; } .attendance-modal { padding: 30px 20px 24px; } }
 
 /* Daily check-out: the checklist is the feature, so it reads as a list of
    things to do rather than as an error state. */

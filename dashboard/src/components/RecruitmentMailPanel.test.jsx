@@ -136,9 +136,11 @@ describe("RecruitmentMailPanel", () => {
         <RecruitmentMailPanel />
       </ConfirmProvider>,
     );
+    // The page's own "Candidate Mailboxes" title is gone: the shell header
+    // names the page ("AI Mail Review"), so the page opens on its controls.
     expect(
-      screen.getByRole("heading", { name: "Candidate Mailboxes" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { name: "Candidate Mailboxes" }),
+    ).not.toBeInTheDocument();
     expect(
       await screen.findByRole("button", { name: "+ Add Gmail" }),
     ).toBeInTheDocument();

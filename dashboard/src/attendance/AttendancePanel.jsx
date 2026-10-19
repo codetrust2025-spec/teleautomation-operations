@@ -185,8 +185,8 @@ export function AttendancePanel() {
 
   return (
     <div className="attendance-page">
+      {/* The shell header names the page; this row holds only its controls. */}
       <header className="attendance-page__header">
-        <div><p className="attendance-eyebrow">WORKING-DAY ATTENDANCE</p><h2>Attendance & earnings eligibility</h2></div>
         <button type="button" className="attendance-secondary-button" onClick={refreshPage} disabled={attendance.loading}>Refresh</button>
       </header>
       {attendance.error && <p className="attendance-error" role="alert">{attendance.error}</p>}

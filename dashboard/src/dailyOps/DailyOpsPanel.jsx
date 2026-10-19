@@ -262,13 +262,9 @@ export function DailyOpsPanel({
   return (
     <div className="daily-ops-page daily-ops-page--dashboard">
 
-      {/* ── Compact top bar: title + KPIs + pending pill ─────────────── */}
+      {/* ── Compact top bar: KPIs + pending pill. The page title lives in
+          the shell header alone; repeating it here named the page twice. ── */}
       <div className="ops-topbar">
-        <div className="ops-topbar__left">
-          <h1 className="ops-dash-title">Daily ops</h1>
-          <span className="ops-dash-sub ops-topbar__sub">Interview roster</span>
-        </div>
-
         {/* One tab per status the backend stores, built from the same list the
             row dropdown uses so the two cannot disagree. Scheduled stays first
             and separate: it is the booking state every row in this roster already

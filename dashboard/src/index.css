@@ -14827,6 +14827,11 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .dr-page-error {
   margin: 0 0 12px;
 }
+/* The tab strip opens the page now that it has no title of its own (the shell
+   header names it), so it drops the gap .cand-page puts above later blocks. */
+.cand-page.dr-page > .dr-tabs:first-child {
+  margin-top: 0;
+}
 .dr-page .dr-section {
   margin-bottom: 0;
 }

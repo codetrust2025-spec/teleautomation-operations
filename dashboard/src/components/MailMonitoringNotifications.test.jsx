@@ -89,8 +89,12 @@ describe("mail monitoring notifications", () => {
 
   it("renders summary and evidence without manual decision actions", async () => {
     renderNotifications();
-    expect(await screen.findByRole("heading", { name: "Mail Monitoring Notifications" })).toBeInTheDocument();
+    // The page no longer repeats its own title ("Mail Monitoring
+    // Notifications"): the shell header names it, as "Mail Alerts". Its
+    // controls stay -- see PageTitleOnce.test.jsx for every page.
     expect(await screen.findByText("Formal employment offer")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Mail Monitoring Notifications" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Clear all notifications" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Mail received" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Tool detected" })).toBeInTheDocument();
     // The eighteen-classification dropdown was replaced by two groups plus a
