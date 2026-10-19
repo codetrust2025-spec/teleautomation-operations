@@ -157,6 +157,13 @@ describe('the preview of a PDF', () => {
     expect(zoomLabel()).toBe('300%')
   })
 
+  it('counts every press, even two that land together', async () => {
+    await openAsha()
+    const zoomIn = within(preview()).getByRole('button', { name: 'Zoom in' })
+    act(() => { zoomIn.click(); zoomIn.click() })
+    expect(zoomLabel()).toBe('150%')
+  })
+
   it('zooms with Ctrl and the mouse wheel (a trackpad pinch)', async () => {
     await openAsha()
     const body = document.querySelector('.offer-preview__body')

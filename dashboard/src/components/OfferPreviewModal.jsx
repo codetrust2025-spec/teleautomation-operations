@@ -191,6 +191,8 @@ export function OfferPreviewModal({ offer, previewUrl, downloadUrl, onClose }) {
     if (next === zoomRef.current) return
     const across = body && body.scrollWidth > body.clientWidth ? (body.scrollLeft + body.clientWidth / 2) / body.scrollWidth : 0.5
     const down = body && body.scrollHeight > body.clientHeight ? (body.scrollTop + body.clientHeight / 2) / body.scrollHeight : 0
+    // Ahead of the render, so presses that land together (a held key) all count.
+    zoomRef.current = next
     setZoom(next)
     window.requestAnimationFrame?.(() => {
       if (!body) return
