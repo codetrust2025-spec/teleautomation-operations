@@ -84,7 +84,7 @@ async function roundWiseForm(options) {
   const roundWise = [...document.querySelectorAll('li')].find(li => /Round-wise/i.test(li.textContent))
   fireEvent.click(roundWise)
 
-  const nameBox = document.querySelector('.sbs-field input')
+  const nameBox = document.querySelector('.sbs-field--client input')
   fireEvent.change(nameBox, { target: { value: 'Sowmya' } })
   await waitFor(() => expect(document.querySelector('.sbs-pay-card')).not.toBeNull())
   return document.querySelector('.sbs-pay-card')

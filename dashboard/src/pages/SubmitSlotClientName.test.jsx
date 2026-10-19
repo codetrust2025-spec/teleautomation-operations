@@ -53,7 +53,7 @@ function stubFetch(candidateName) {
   return calls
 }
 
-const nameBox = () => document.querySelector('.sbs-field input')
+const nameBox = () => document.querySelector('.sbs-field--client input')
 const nameHint = () => nameBox().closest('label').querySelector('.sbs-hint')
 const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
 

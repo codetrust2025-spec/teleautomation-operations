@@ -81,7 +81,7 @@ async function completedForm({ company, readCompany } = {}) {
   if (readCompany !== undefined) calls.invite.company = readCompany
   render(<SubmitSlotPage />)
   const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
-  fireEvent.change(document.querySelector('.sbs-field input'), { target: { value: 'Aniket' } })
+  fireEvent.change(document.querySelector('.sbs-field--client input'), { target: { value: 'Aniket' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
   if (company !== undefined) fireEvent.change(companyBox(), { target: { value: company } })
   await attachInvite()

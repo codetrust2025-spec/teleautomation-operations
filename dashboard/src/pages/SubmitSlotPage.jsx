@@ -614,13 +614,21 @@ export function SubmitSlotPage() {
   const effectiveName = name.trim()
   useEffect(() => { nameValueRef.current = name }, [name])
   useEffect(() => { candidatesRef.current = candidates }, [candidates])
+  // The name the invite was read as, for re-applying under a new service type.
+  const inviteReadNameRef = useRef('')
+  const applyInviteClientRef = useRef(() => {})
+  useEffect(() => { inviteReadNameRef.current = inviteReadName }, [inviteReadName])
   useEffect(() => {
     // A new service type starts with an empty name (its handlers clear it), so
-    // nothing typed or matched carries over.
+    // nothing typed or matched carries over. The invite now sits above Service
+    // type and is usually read first, so what it named is applied again under
+    // the new type: matched to a client for profile service, offered for
+    // round-wise.
     serviceTypeRef.current = serviceType
     nameTypedRef.current = false
     setNameFromInvite(false)
     setInviteNameHint('')
+    if (inviteReadNameRef.current) applyInviteClientRef.current(inviteReadNameRef.current)
   }, [serviceType])
   const selected = useMemo(() => {
     if (!effectiveName) return null
@@ -788,12 +796,23 @@ export function SubmitSlotPage() {
       setInviteNameHint(read)
     }
   }, [])
+  applyInviteClientRef.current = applyInviteClient
 
   const typeClientName = value => {
     nameTypedRef.current = Boolean(String(value || '').trim())
     setInviteNameChecked(false)
     setNameFromInvite(false)
     setName(value)
+    resetPaymentProofs()
+  }
+
+  // Changing the service type clears the name, technology and any payment,
+  // exactly as before; the technology the invite named is put back, because the
+  // invite is read before the service type is chosen.
+  const chooseServiceType = type => {
+    setServiceType(type); setShowServiceDrop(false); setName("")
+    setTechnology(parsedSlot?.technology || "")
+    setUserEditedFields(prev => ({ ...prev, technology: false }))
     resetPaymentProofs()
   }
 
@@ -1069,12 +1088,13 @@ export function SubmitSlotPage() {
     // the name box is blank is not an explanation of what to do next.
     //
     // The rules themselves are unchanged; they are only ordered and reported
-    // one at a time, in the order the fields appear: the invite now sits above
-    // Company and Interview round, because reading it fills them. Payment sits
+    // one at a time, in the order the fields appear: the invite is the first
+    // field, because reading it fills the ones below it. Payment sits
     // after the candidate details deliberately:
     // what is owed depends on the service type, the round and the candidate,
     // so validating it earlier would judge an amount that is not settled yet.
     const steps = [
+      { key: 'invite', ref: inviteRef, ok: !!slotFile },
       { key: 'name', ref: nameRef, fallbackRef: nameFieldRef, ok: !!effectiveName },
       { key: 'invite_name', ref: nameRef, fallbackRef: nameFieldRef,
         ok: !inviteNamesAnotherClient(inviteReadName, effectiveName) || inviteNameChecked },
@@ -1082,7 +1102,6 @@ export function SubmitSlotPage() {
         ok: serviceType !== 'round_wise' || !!roundWisePhone.trim() },
       { key: 'technology', ref: technologyRef,
         ok: serviceType !== 'round_wise' || !!effectiveTechnology },
-      { key: 'invite', ref: inviteRef, ok: !!slotFile },
       { key: 'company', ref: companyRef, ok: !!company.trim() },
       { key: 'round', ref: roundRef, ok: !!interviewRound },
       { key: 'payment', ref: paymentRef, ok: !needsPaymentProof },
@@ -1284,6 +1303,42 @@ export function SubmitSlotPage() {
                   neither the field nor what to do. Every rule here is
                   the application's. */}
             <form className="sbs-form" noValidate onSubmit={submitBook}>
+              {/* The invite is the first field: reading it fills what it can --
+                  client name, technology, company, round, date and time -- so
+                  the candidate attaches it first and then checks or corrects
+                  what was read, top to bottom. Its result and the manual date
+                  and time stay with it. */}
+              <div ref={inviteRef} className="sbs-field">
+                <span className="sbs-label">Interview invite screenshot</span>
+                <SubmitSlotFileDrop hint="Teams, Gmail, Calendar, or Zoom — date and time must be visible." file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} attachedLabel="Invite screenshot attached" removeLabel="Remove invite screenshot" />
+                {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
+              </div>
+
+              {/* The node reading the invite, and once it is done who read it and
+                  how long it took. What it read is not shown back: it fills
+                  Company and Interview round, and the date and time it found are
+                  booked as read. Only when those are missing or uncertain does the
+                  manual date and time below appear, with the reader's reason. */}
+              {slotFile && inviteAnalysis && (
+                <AiNodeProgress analysis={inviteAnalysis} idle="Reading invite…" finishedLabel="Invite read" />
+              )}
+
+              {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
+
+              {showManualSlotFields && (
+                <div className="sbs-manual">
+                  <p className="sbs-manual__hint">{parsedSlot?.date ? 'Verify detected date & time — correct below if wrong.' : 'Include the date line in your screenshot or enter manually.'}</p>
+                  {aiExtraction?.warnings?.length > 0 && (
+                    <div className="sbs-manual__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>
+                  )}
+                  <div className="sbs-manual__grid">
+                    <label className="sbs-field"><span className="sbs-label">Interview date</span><input className="sbs-input" type="date" value={manualDate || parsedSlot?.date || ''} onChange={e => { setManualDate(e.target.value); setUserEditedFields(f => ({...f, date: true})); }} disabled={busy || parsing} /></label>
+                    <label className="sbs-field"><span className="sbs-label">Start time</span><input className="sbs-input" type="text" placeholder="e.g. 02:00 PM" value={normalizeTo12h(manualTime || parsedSlot?.time || '')} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} disabled={busy || parsing} /></label>
+                  </div>
+                  {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
+                </div>
+              )}
+
               <div className="sbs-field">
                 <span className="sbs-label">Service type</span>
                 <div className="sbs-select-wrap sbs-select-wrap--custom">
@@ -1293,14 +1348,14 @@ export function SubmitSlotPage() {
                   </button>
                   {showServiceDrop && (
                     <ul className="sbs-dropdown">
-                      <li className={`sbs-dropdown__item${serviceType === "round_wise" ? " sbs-dropdown__item--active" : ""}`} onMouseDown={e => e.preventDefault()} onClick={e => { e.stopPropagation(); setServiceType("round_wise"); setShowServiceDrop(false); setName(""); setTechnology(""); resetPaymentProofs(); }}>Round-wise</li>
-                      <li className={`sbs-dropdown__item${serviceType === "profile_service" ? " sbs-dropdown__item--active" : ""}`} onMouseDown={e => e.preventDefault()} onClick={e => { e.stopPropagation(); setServiceType("profile_service"); setShowServiceDrop(false); setName(""); setTechnology(""); resetPaymentProofs(); }}>Profile service</li>
+                      <li className={`sbs-dropdown__item${serviceType === "round_wise" ? " sbs-dropdown__item--active" : ""}`} onMouseDown={e => e.preventDefault()} onClick={e => { e.stopPropagation(); chooseServiceType("round_wise") }}>Round-wise</li>
+                      <li className={`sbs-dropdown__item${serviceType === "profile_service" ? " sbs-dropdown__item--active" : ""}`} onMouseDown={e => e.preventDefault()} onClick={e => { e.stopPropagation(); chooseServiceType("profile_service") }}>Profile service</li>
                     </ul>
                   )}
                 </div>
               </div>
 
-              <label ref={nameFieldRef} className="sbs-field">
+              <label ref={nameFieldRef} className="sbs-field sbs-field--client">
                 <span className="sbs-label">Client name</span>
                 {serviceType === "round_wise" ? (
                   <input ref={nameRef} className="sbs-input" type="text" value={name} onChange={e => typeClientName(e.target.value)} placeholder="Type client name" disabled={busy || parsing} />
@@ -1368,41 +1423,6 @@ export function SubmitSlotPage() {
                     ? <span className="sbs-hint sbs-hint--warn" role="alert">Choose the technology for this interview.</span>
                     : <span className="sbs-hint">Read from the invite when it says; otherwise pick or type it.</span>}
                 </label>
-              )}
-
-              {/* The invite comes before Company and Interview round: reading it
-                  fills both, so the candidate attaches it first and then checks
-                  or corrects what was read, top to bottom. Its result and the
-                  manual date and time stay with it. */}
-              <div ref={inviteRef} className="sbs-field">
-                <span className="sbs-label">Interview invite screenshot</span>
-                <SubmitSlotFileDrop hint="Teams, Gmail, Calendar, or Zoom — date and time must be visible." file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} attachedLabel="Invite screenshot attached" removeLabel="Remove invite screenshot" />
-                {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
-              </div>
-
-              {/* The node reading the invite, and once it is done who read it and
-                  how long it took. What it read is not shown back: it fills
-                  Company and Interview round, and the date and time it found are
-                  booked as read. Only when those are missing or uncertain does the
-                  manual date and time below appear, with the reader's reason. */}
-              {slotFile && inviteAnalysis && (
-                <AiNodeProgress analysis={inviteAnalysis} idle="Reading invite…" finishedLabel="Invite read" />
-              )}
-
-              {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
-
-              {showManualSlotFields && (
-                <div className="sbs-manual">
-                  <p className="sbs-manual__hint">{parsedSlot?.date ? 'Verify detected date & time — correct below if wrong.' : 'Include the date line in your screenshot or enter manually.'}</p>
-                  {aiExtraction?.warnings?.length > 0 && (
-                    <div className="sbs-manual__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>
-                  )}
-                  <div className="sbs-manual__grid">
-                    <label className="sbs-field"><span className="sbs-label">Interview date</span><input className="sbs-input" type="date" value={manualDate || parsedSlot?.date || ''} onChange={e => { setManualDate(e.target.value); setUserEditedFields(f => ({...f, date: true})); }} disabled={busy || parsing} /></label>
-                    <label className="sbs-field"><span className="sbs-label">Start time</span><input className="sbs-input" type="text" placeholder="e.g. 02:00 PM" value={normalizeTo12h(manualTime || parsedSlot?.time || '')} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} disabled={busy || parsing} /></label>
-                  </div>
-                  {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
-                </div>
               )}
 
               {/* Company and round share one row, so a required field more

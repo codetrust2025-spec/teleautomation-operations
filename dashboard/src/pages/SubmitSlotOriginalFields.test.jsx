@@ -57,7 +57,7 @@ async function readyForm(read) {
   const calls = stubFetch(read)
   render(<SubmitSlotPage />)
   const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
-  fireEvent.change(document.querySelector('.sbs-field input'), { target: { value: 'Aniket' } })
+  fireEvent.change(document.querySelector('.sbs-field--client input'), { target: { value: 'Aniket' } })
   Object.defineProperty(inviteInput(), 'files', { value: [new File(['x'], 'invite.jpg', { type: 'image/jpeg' })], configurable: true })
   fireEvent.change(inviteInput())
   await readDone()
@@ -65,7 +65,8 @@ async function readyForm(read) {
 }
 
 describe('the form shows its original fields only', () => {
-  const ORIGINAL = ['Service type', 'Client name', 'Interview invite screenshot', 'Company *', 'Interview round *']
+  // The invite moved to the top on 19 Oct; the other fields keep their order.
+  const ORIGINAL = ['Interview invite screenshot', 'Service type', 'Client name', 'Company *', 'Interview round *']
 
   it('before an invite is attached', async () => {
     stubFetch()

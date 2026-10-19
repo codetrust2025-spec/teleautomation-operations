@@ -59,7 +59,7 @@ async function completedForm(name) {
   render(<SubmitSlotPage />)
   const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
   await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
-  fireEvent.change(document.querySelector('.sbs-field input'), { target: { value: name } })
+  fireEvent.change(document.querySelector('.sbs-field--client input'), { target: { value: name } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
   const invite = inviteInput()
   Object.defineProperty(invite, 'files', { value: [new File(['x'], 'invite.jpg', { type: 'image/jpeg' })], configurable: true })

@@ -103,7 +103,7 @@ async function clickConfirm(confirm) {
 /** The ordered checks, read out of the component. */
 function steps() {
   const start = page.indexOf('const steps = [')
-  const end = page.indexOf(']', page.indexOf('inviteRef', start))
+  const end = page.indexOf('\n    ]', start)
   expect(start).toBeGreaterThan(-1)
   const block = page.slice(start, end)
   return [...block.matchAll(/\{ key: '(\w+)'/g)].map(m => m[1])
@@ -124,9 +124,10 @@ describe('the browser no longer decides', () => {
 describe('validation runs top to bottom', () => {
   it('checks the fields in the order they appear on the form', () => {
     expect(steps()).toEqual([
+      // The invite is the first field (19 Oct): reading it fills the rest.
       // invite_name (11 Oct): an invite addressed to someone else must be
       // confirmed as this client's before anything below it is judged.
-      'name', 'invite_name', 'phone', 'technology', 'invite', 'company', 'round', 'payment',
+      'invite', 'name', 'invite_name', 'phone', 'technology', 'company', 'round', 'payment',
     ])
   })
 
@@ -139,11 +140,8 @@ describe('validation runs top to bottom', () => {
     expect(order.indexOf('payment')).toBeGreaterThan(order.indexOf('technology'))
   })
 
-  it('the invite screenshot is checked before the company and round it fills, as it now appears above them', () => {
-    const order = steps()
-    expect(order.indexOf('invite')).toBeLessThan(order.indexOf('company'))
-    expect(order.indexOf('invite')).toBeLessThan(order.indexOf('round'))
-    expect(order.indexOf('invite')).toBeGreaterThan(order.indexOf('technology'))
+  it('the invite screenshot is checked first, as it is the first field and fills the rest', () => {
+    expect(steps()[0]).toBe('invite')
   })
 
   it('stops at the first missing field rather than reporting all of them', () => {
@@ -208,7 +206,7 @@ describe('every field in the sequence can actually be reached', () => {
   it('client name is reachable under both service types', () => {
     // It renders as a text input for round-wise and a picker for profile
     // service, so the wrapper carries the ref the sequence scrolls to.
-    expect(page).toContain('ref={nameFieldRef} className="sbs-field"')
+    expect(page).toContain('ref={nameFieldRef} className="sbs-field sbs-field--client"')
     expect(page).toContain('fallbackRef: nameFieldRef')
   })
 

@@ -96,7 +96,7 @@ describe('SubmitSlotPage - Detected Interview Slot Preview', () => {
     render(<SubmitSlotPage />)
     const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
 
-    const nameBox = document.querySelector('.sbs-field input')
+    const nameBox = document.querySelector('.sbs-field--client input')
     fireEvent.change(nameBox, { target: { value: 'Aniket' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
