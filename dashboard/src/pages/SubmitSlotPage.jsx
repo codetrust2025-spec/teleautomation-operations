@@ -32,23 +32,17 @@ function formatDisplayDate(isoDate) {
 }
 
 /**
- * The one line the slot preview shows above Confirm: the date with its weekday
- * and the whole time range, "Mon, 26 Oct 2026 · 03:00 PM – 03:45 PM". Without
- * an end time it says so rather than looking cut off. The date and each time
- * hold together (no-break spaces), so a narrow phone wraps the line at "·" or
- * "–", never between "03:45" and "PM".
+ * What the Interview date & time field shows: "20 Oct 2026 · 02:00 PM – 02:45 PM",
+ * or as much of it as is set (no end time: just the start). Empty when neither
+ * a date nor a start is set. The date and each time hold together (no-break
+ * spaces), so a narrow phone wraps only at "·" or "–".
  */
-export function detectedSlotText(slot) {
-  if (!slot?.date || !slot?.time) return ''
-  const [y, m, d] = slot.date.split('-').map(Number)
-  const day = y && m && d
-    ? new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' })
-    : ''
-  const whole = text => String(text || '').replace(/ /g, ' ')
-  const date = whole([day, formatDisplayDate(slot.date)].filter(Boolean).join(', '))
-  const start = whole(normalizeTo12h(slot.time))
-  const range = slot.time_end ? `${start} – ${whole(normalizeTo12h(slot.time_end))}` : `${start} · no end time`
-  return `${date} · ${range}`
+export function slotFieldText({ date, time, time_end } = {}) {
+  if (!date && !time) return ''
+  const whole = text => String(text || '').replace(/ /g, '\u00a0')
+  const start = whole(normalizeTo12h(time || ''))
+  const range = start ? (time_end ? `${start} – ${whole(normalizeTo12h(time_end))}` : start) : 'add\u00a0start\u00a0time'
+  return `${whole(formatDisplayDate(date)) || 'add\u00a0date'} · ${range}`
 }
 
 /** Convert any time to 12-hour "hh:mm AM/PM" format */
@@ -561,6 +555,99 @@ function focusField(ref) {
   }
 }
 
+const CALENDAR_ICON = (
+  <svg className="sbs-lead-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" /><path d="M16 2.5v4M8 2.5v4M3 10h18" strokeLinecap="round" />
+  </svg>
+)
+// The mockup's leading icons (19 Oct): service type, company, round.
+const LAYERS_ICON = (
+  <svg className="sbs-lead-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3 3 7.5 12 12l9-4.5L12 3Z" /><path d="m3 12 9 4.5 9-4.5" /><path d="m3 16.5 9 4.5 9-4.5" />
+  </svg>
+)
+const BUILDING_ICON = (
+  <svg className="sbs-lead-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10.5 21v-3h3v3" strokeLinecap="round" />
+  </svg>
+)
+const LIST_ICON = (
+  <svg className="sbs-lead-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+    <path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="0.9" fill="currentColor" /><circle cx="4.5" cy="12" r="0.9" fill="currentColor" /><circle cx="4.5" cy="18" r="0.9" fill="currentColor" />
+  </svg>
+)
+const ALERT_ICON = (
+  <svg className="sbs-confirm-pending-hint__icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" fill="currentColor" /><path d="M12 7v6" stroke="#1a1408" strokeWidth="2.4" strokeLinecap="round" /><circle cx="12" cy="16.8" r="1.4" fill="#1a1408" />
+  </svg>
+)
+const CHEVRON = (
+  <svg className="sbs-select__arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+)
+
+/**
+ * Interview date & time (IST): one field for the date, the start and the end
+ * (19 Oct mockup). It shows what is set; tapping it opens one picker -- the
+ * phone's own date and time pickers -- for all three. The values are the
+ * page's: filled from the invite when it was read confidently, corrected here,
+ * and booked exactly as shown. It opens once the invite is read, so a later
+ * upload can never wipe what was set by hand.
+ */
+function SlotWhenField({ date, time, timeEnd, onDate, onTime, onTimeEnd, disabled, waiting, children }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const close = e => { if (!rootRef.current?.contains(e.target)) setOpen(false) }
+    const escape = e => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', escape)
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape) }
+  }, [open])
+  useEffect(() => { if (disabled) setOpen(false) }, [disabled])
+  const text = slotFieldText({ date, time, time_end: timeEnd })
+  return (
+    <div ref={rootRef} className="sbs-field sbs-when">
+      <span className="sbs-label" id="sbs-when-label">Interview date &amp; time (IST) <span className="sbs-required" aria-hidden="true">*</span></span>
+      <button
+        type="button"
+        className={`sbs-select sbs-select--custom sbs-when__button${text ? '' : ' sbs-when__button--empty'}`}
+        aria-labelledby="sbs-when-label sbs-when-value"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+        disabled={disabled}
+      >
+        <span className="sbs-lead">
+          {CALENDAR_ICON}
+          <span id="sbs-when-value" className="sbs-when__value">{text || (waiting ? 'Read from the invite' : 'Select date & time')}</span>
+        </span>
+        {CHEVRON}
+      </button>
+      {open && (
+        <div className="sbs-when__panel" role="dialog" aria-label="Interview date and time (IST)">
+          <label className="sbs-field">
+            <span className="sbs-label">Interview date</span>
+            <input className="sbs-input" type="date" value={date} onChange={e => onDate(e.target.value)} />
+          </label>
+          <div className="sbs-field-row">
+            <label className="sbs-field">
+              <span className="sbs-label">Start time (IST)</span>
+              <input className="sbs-input" type="time" value={to24h(normalizeTo12h(time))} onChange={e => onTime(normalizeTo12h(e.target.value))} />
+            </label>
+            <label className="sbs-field">
+              <span className="sbs-label">End time (IST)</span>
+              <input className="sbs-input" type="time" value={to24h(normalizeTo12h(timeEnd))} onChange={e => onTimeEnd(normalizeTo12h(e.target.value))} />
+            </label>
+          </div>
+          <button type="button" className="sbs-when__done" onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
 export function SubmitSlotPage() {
   const [tab, setTab] = useState('book')
   const [candidates, setCandidates] = useState([])
@@ -595,7 +682,6 @@ export function SubmitSlotPage() {
   // field's read value and whether the date and times were read confidently.
   const [interviewRound, setInterviewRound] = useState('')
   // True while the round shown is the one the invite named, so it is labelled.
-  const [roundFromInviteRead, setRoundFromInviteRead] = useState(false)
   const [technology, setTechnology] = useState('')
   // The company the interview is with. Required: it is read from the invite
   // when the invite names it, and typed when it does not. Saved with the
@@ -603,7 +689,6 @@ export function SubmitSlotPage() {
   const [company, setCompany] = useState('')
   // Whether what is in the box came from the invite rather than from the
   // candidate, so the hint can say which, and so another invite may replace it.
-  const [companyFromInvite, setCompanyFromInvite] = useState(false)
   // True once the candidate has typed one. What they typed is never replaced by
   // a reading; a ref, because a reading arrives after the render that started it.
   const companyTypedRef = useRef(false)
@@ -831,7 +916,6 @@ export function SubmitSlotPage() {
     if (companyTypedRef.current) return
     const read = String(name || '').trim()
     setCompany(read)
-    setCompanyFromInvite(Boolean(read))
   }, [])
 
   const applyInviteClient = useCallback(readName => {
@@ -878,9 +962,9 @@ export function SubmitSlotPage() {
   const resetBookForm = useCallback(() => {
     setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
     setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
-    setManualDate(''); setManualTime(''); setManualEnd(''); setRoundFromInviteRead(false)
+    setManualDate(''); setManualTime(''); setManualEnd('')
     setInterviewRound(''); setTechnology(''); setCompany('')
-    setCompanyFromInvite(false); companyTypedRef.current = false
+    companyTypedRef.current = false
     setNameFromInvite(false); setInviteNameHint(''); nameTypedRef.current = false
     setInviteReadName(''); setInviteNameChecked(false)
     setSessionFile(null); setSessionPreview('')
@@ -972,7 +1056,6 @@ export function SubmitSlotPage() {
         const readRound = roundFromInvite(ext.interview_round)
         if (readRound && !interviewRound && !userEditedFields.round) {
           setInterviewRound(readRound)
-          setRoundFromInviteRead(true)
           slot.interview_round = readRound
         }
 
@@ -1016,7 +1099,6 @@ export function SubmitSlotPage() {
       const fallbackRound = roundFromInvite(slot?.interview_round)
       if (!interviewRound) {
         setInterviewRound(fallbackRound)
-        setRoundFromInviteRead(Boolean(fallbackRound))
       }
       // The fallback reader is not cross-checked, so nothing it found is
       // filled: the candidate enters the date and times.
@@ -1032,7 +1114,6 @@ export function SubmitSlotPage() {
   async function onSlotFileChange(file) {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setManualEnd(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
-    setRoundFromInviteRead(false)
     setInviteNameHint('')   // a name already in the box stays: a payment may already be filed under it
     setInviteReadName(''); setInviteNameChecked(false)
     applyInviteCompany('')
@@ -1401,7 +1482,7 @@ export function SubmitSlotPage() {
                 <span className="sbs-label">Service type</span>
                 <div className="sbs-select-wrap sbs-select-wrap--custom">
                   <button type="button" className="sbs-select sbs-select--custom" onClick={() => setShowServiceDrop(v => !v)} disabled={busy || parsing}>
-                    <span>{serviceType === "round_wise" ? "Round-wise" : "Profile service"}</span>
+                    <span className="sbs-lead">{LAYERS_ICON}<span>{serviceType === "round_wise" ? "Round-wise" : "Profile service"}</span></span>
                     <svg className="sbs-select__arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
                   </button>
                   {showServiceDrop && (
@@ -1488,76 +1569,72 @@ export function SubmitSlotPage() {
               <div className="sbs-field-row">
               <label className="sbs-field sbs-field--company">
                 <span className="sbs-label">Company <span className="sbs-required" aria-hidden="true">*</span></span>
-                <input
-                  ref={companyRef}
-                  className="sbs-input"
-                  type="text"
-                  value={company}
-                  maxLength={120}
-                  onChange={e => {
-                    companyTypedRef.current = Boolean(e.target.value.trim())
-                    setCompany(e.target.value)
-                    setCompanyFromInvite(false)
-                  }}
-                  placeholder="e.g. Capgemini"
-                  disabled={busy || parsing}
-                  aria-label="Company"
-                  aria-required="true"
-                />
+                <span className="sbs-icon-input">
+                  {BUILDING_ICON}
+                  <input
+                    ref={companyRef}
+                    className="sbs-input sbs-input--lead"
+                    type="text"
+                    value={company}
+                    maxLength={120}
+                    onChange={e => {
+                      companyTypedRef.current = Boolean(e.target.value.trim())
+                      setCompany(e.target.value)
+                    }}
+                    placeholder="e.g. Capgemini"
+                    disabled={busy || parsing}
+                    aria-label="Company"
+                    aria-required="true"
+                  />
+                </span>
                 {/* Short, because this column is half a row: where the name came
                     from, or that the candidate has to supply it. */}
                 {missingField === 'company'
                   ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter the company name.</span>
-                  : companyFromInvite
-                    ? <span className="sbs-hint">Read from the invite. Check it.</span>
-                    : slotFile && !parsing && !aiBlocked && !company.trim()
-                      ? <span className="sbs-hint">Not on the invite. Type it.</span>
-                      : <span className="sbs-hint">Read from the invite, or type it.</span>}
+                  : slotFile && !parsing && !aiBlocked && !company.trim()
+                    ? <span className="sbs-hint">Not on the invite. Type it.</span>
+                    : null}
               </label>
               <label className="sbs-field">
                 <span className="sbs-label">Interview round <span className="sbs-required" aria-hidden="true">*</span></span>
-                <div className={`sbs-select-wrap${missingField === 'round' ? ' sbs-select-wrap--required' : ''}`}>
-                  <select ref={roundRef} className="sbs-select" value={interviewRound} onChange={e => { setInterviewRound(e.target.value); setRoundFromInviteRead(false); setUserEditedFields(f => ({ ...f, round: true })) }} disabled={busy || parsing}>
+                <div className={`sbs-select-wrap sbs-icon-input${missingField === 'round' ? ' sbs-select-wrap--required' : ''}`}>
+                  {LIST_ICON}
+                  <select ref={roundRef} className="sbs-select sbs-select--lead" value={interviewRound} onChange={e => { setInterviewRound(e.target.value); setUserEditedFields(f => ({ ...f, round: true })) }} disabled={busy || parsing}>
                     <option value="">Select round (L1, L2…)</option>
                     {ROUND_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
-                {missingField === 'round'
-                  ? <span className="sbs-hint sbs-hint--warn" role="alert">Choose the interview round.</span>
-                  : roundFromInviteRead && interviewRound
-                    ? <span className="sbs-hint">Read from the invite. Check it.</span>
-                    : null}
+                {missingField === 'round' && <span className="sbs-hint sbs-hint--warn" role="alert">Choose the interview round.</span>}
               </label>
               </div>
 
-              {/* The interview's date and times (IST) are ordinary fields: filled
-                  when the invite was read confidently, empty otherwise, and
-                  always correctable. They open once the invite is read, so a
-                  later upload can never wipe what was typed. */}
-              <label className="sbs-field">
-                <span className="sbs-label">Interview date</span>
-                <input className="sbs-input" type="date" value={manualDate} onChange={e => { setManualDate(e.target.value); setUserEditedFields(f => ({...f, date: true})); }} disabled={busy || !showSlotFields} />
-              </label>
-              <div className="sbs-field-row">
-                <label className="sbs-field"><span className="sbs-label">Start time (IST)</span><input className="sbs-input" type="text" inputMode="text" placeholder="02:00 PM" value={manualTime} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} onBlur={e => setManualTime(normalizeTo12h(e.target.value))} disabled={busy || !showSlotFields} /></label>
-                <label className="sbs-field"><span className="sbs-label">End time (IST)</span><input className="sbs-input" type="text" inputMode="text" placeholder="02:45 PM" value={manualEnd} onChange={e => { setManualEnd(e.target.value); setUserEditedFields(f => ({...f, time_end: true})); }} onBlur={e => setManualEnd(normalizeTo12h(e.target.value))} disabled={busy || !showSlotFields} /></label>
-              </div>
-              {/* Only what needs doing: what the reader could not settle, and a
-                  date or time that cannot be booked. */}
-              {showSlotFields && (aiExtraction?.warnings?.length > 0 || (!inviteConfident && !bookingSlot) || isPastDate || endBeforeStart) && (
-                <div className="sbs-slot-hints">
-                  {!inviteConfident && !bookingSlot && (
-                    <span className="sbs-hint sbs-hint--warn">
-                      {parsedSlot?.date || parsedSlot?.time
-                        ? 'The invite could not be read with confidence. Enter the date and time (IST).'
-                        : 'No date or time found on the invite. Enter them (IST).'}
-                    </span>
-                  )}
-                  {aiExtraction?.warnings?.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}
-                  {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
-                  {endBeforeStart && <span className="sbs-hint sbs-hint--warn">End time is before the start time. Check it.</span>}
-                </div>
-              )}
+              <SlotWhenField
+                date={manualDate}
+                time={manualTime}
+                timeEnd={manualEnd}
+                onDate={value => { setManualDate(value); setUserEditedFields(f => ({ ...f, date: true })) }}
+                onTime={value => { setManualTime(value); setUserEditedFields(f => ({ ...f, time: true })) }}
+                onTimeEnd={value => { setManualEnd(value); setUserEditedFields(f => ({ ...f, time_end: true })) }}
+                disabled={busy || !showSlotFields}
+                waiting={!slotFile || parsing}
+              >
+                {/* Only what needs doing: what the reader could not settle, and a
+                    date or time that cannot be booked. */}
+                {showSlotFields && (aiExtraction?.warnings?.length > 0 || (!inviteConfident && !bookingSlot) || isPastDate || endBeforeStart) && (
+                  <div className="sbs-slot-hints">
+                    {!inviteConfident && !bookingSlot && (
+                      <span className="sbs-hint sbs-hint--warn">
+                        {parsedSlot?.date || parsedSlot?.time
+                          ? 'The invite could not be read with confidence. Enter the date and time (IST).'
+                          : 'No date or time found on the invite. Enter them (IST).'}
+                      </span>
+                    )}
+                    {aiExtraction?.warnings?.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}
+                    {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
+                    {endBeforeStart && <span className="sbs-hint sbs-hint--warn">End time is before the start time. Check it.</span>}
+                  </div>
+                )}
+              </SlotWhenField>
 
               {/* Amber only when payment needs attention: a screenshot was
                   refused, or the sequence is asking for one. Otherwise this is
@@ -1651,7 +1728,8 @@ export function SubmitSlotPage() {
 
               {!confirmReady && !busy && !success && !aiBlocked && (
                 <div className="sbs-confirm-pending-hint" role="status">
-                  {!slotFile
+                  {ALERT_ICON}
+                  <span>{!slotFile
                     ? 'Attach interview invite screenshot to continue'
                     : parsing
                     ? 'Reading interview invite...'
@@ -1669,17 +1747,7 @@ export function SubmitSlotPage() {
                     ? 'Enter company name'
                     : !interviewRound
                     ? 'Select interview round'
-                    : 'Please complete all required fields to confirm booking'}
-                </div>
-              )}
-
-              {bookingSlot && !success && (
-                <div className="sbs-slot-preview" role="status" aria-label="Detected interview slot">
-                  <span className="sbs-slot-preview__icon" aria-hidden="true">📅</span>
-                  <div className="sbs-slot-preview__info">
-                    <span className="sbs-slot-preview__label">Detected slot (IST)</span>
-                    <span className="sbs-slot-preview__value">{detectedSlotText(bookingSlot)}</span>
-                  </div>
+                    : 'Please complete all required fields to confirm booking'}</span>
                 </div>
               )}
 

@@ -16923,51 +16923,54 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-hint { font-size: 0.72rem; color: #94a3b8; line-height: 1.35; }
 .sbs-hint--warn { color: #f87171; font-weight: 500; }
 .sbs-confirm-pending-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-size: 0.75rem;
-  font-weight: 550;
+  font-weight: 600;
   color: #fbbf24;
   background: rgba(245, 158, 11, 0.1);
   border: 1px solid rgba(245, 158, 11, 0.25);
   border-radius: 0.45rem;
-  padding: 0.45rem 0.75rem;
-  text-align: center;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
   margin-top: 0.15rem;
 }
-/* Detected slot preview — shown above Confirm booking after AI extraction */
-.sbs-slot-preview {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.65rem 0.9rem;
-  border: 1px solid rgba(99, 179, 237, 0.3);
-  border-radius: 0.55rem;
-  background: rgba(49, 130, 206, 0.08);
-  margin-top: 0.15rem;
-}
-.sbs-slot-preview__icon {
-  font-size: 1.15rem;
-  flex-shrink: 0;
-  line-height: 1;
-}
-.sbs-slot-preview__info {
+.sbs-confirm-pending-hint__icon { flex-shrink: 0; color: #fbbf24; }
+/* Leading icons inside the controls (19 Oct mockup): service type, company,
+   round, date & time. */
+.sbs-lead { display: inline-flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.sbs-lead-icon { flex-shrink: 0; color: #a5b4fc; }
+.sbs-icon-input { position: relative; display: block; }
+.sbs-icon-input > .sbs-lead-icon { position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%); pointer-events: none; z-index: 1; }
+.sbs-input--lead, .sbs-select--lead { padding-left: 2.4rem !important; }
+/* Interview date & time (IST): one field showing the date and the whole range;
+   tapping it opens one panel with the phone's own date and time pickers. */
+.sbs-when__button { text-align: left; }
+.sbs-when__value { overflow-wrap: anywhere; }
+.sbs-when__button--empty .sbs-when__value { color: #64748b; }
+.sbs-when__button:disabled { opacity: 0.55; cursor: not-allowed; }
+.sbs-when__panel {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 0.55rem;
+  background: #161925;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
-.sbs-slot-preview__label {
-  font-size: 0.68rem;
+.sbs-when__panel input { color-scheme: dark; }
+.sbs-when__done {
+  align-self: flex-end;
+  min-height: 2.5rem;
+  padding: 0 1.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  background: rgba(99, 102, 241, 0.18);
+  color: #e0e7ff;
   font-weight: 600;
-  color: #63b3ed;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.sbs-slot-preview__value {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #e2e8f0;
-  /* Wraps rather than hiding the end time on a narrow phone. */
-  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 /* An invite addressed to someone else: confirm it is for this client. */
 .sbs-name-check { display: flex; align-items: flex-start; gap: 6px; }

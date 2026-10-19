@@ -61,15 +61,20 @@ function stubFetch({ date = '2026-10-25', time = '02:30 PM', confirmReply } = {}
   return calls
 }
 
-describe('SubmitSlotPage - Detected Interview Slot Preview', () => {
-  it('does not display slot preview when no file or slot is detected', async () => {
+// Since 19 Oct the detected slot is shown in the Interview date & time field itself; the separate preview above
+// Confirm repeated it and is gone.
+const whenText = () => document.querySelector('.sbs-when__value').textContent.replace(/\u00a0/g, ' ')
+
+describe('SubmitSlotPage - the detected slot, in the Interview date & time field', () => {
+  it('shows no slot before an invite is read, and no separate preview at all', async () => {
     stubFetch()
     render(<SubmitSlotPage />)
     await screen.findByRole('button', { name: /Confirm booking/i })
     expect(screen.queryByLabelText('Detected interview slot')).toBeNull()
+    expect(whenText()).toBe('Read from the invite')
   })
 
-  it('displays detected interview date and time (IST) above Confirm Booking button after analysis', async () => {
+  it('shows the detected date and time (IST) in the field, above Confirm, after analysis', async () => {
     stubFetch({ date: '2026-10-25', time: '02:30 PM' })
     render(<SubmitSlotPage />)
     const confirmButton = await screen.findByRole('button', { name: /Confirm booking/i })
@@ -79,22 +84,17 @@ describe('SubmitSlotPage - Detected Interview Slot Preview', () => {
     attach(invite, [screenshot('invite')])
 
     await waitFor(() => {
-      const preview = screen.getByLabelText('Detected interview slot')
-      expect(preview).toBeInTheDocument()
-      // The date and times are held together with no-break spaces (a phone
-      // wraps the line only at its separators); read them as plain spaces.
-      const text = preview.textContent.replace(/ /g, ' ')
-      expect(text).toContain('Detected slot (IST)')
-      expect(text).toContain('25 Oct 2026')
-      expect(text).toContain('02:30 PM')
+      expect(whenText()).toContain('25 Oct 2026')
+      expect(whenText()).toContain('02:30 PM')
     })
+    expect(screen.queryByLabelText('Detected interview slot')).toBeNull()
 
-    // Verify it is located above the Confirm booking button
-    const preview = screen.getByLabelText('Detected interview slot')
-    expect(preview.compareDocumentPosition(confirmButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The field sits above the Confirm booking button
+    const field = document.querySelector('.sbs-when')
+    expect(field.compareDocumentPosition(confirmButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('hides detected slot preview after successful booking confirmation', async () => {
+  it('clears the field after a successful booking confirmation', async () => {
     stubFetch({ date: '2026-10-25', time: '02:30 PM' })
     render(<SubmitSlotPage />)
     const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
@@ -106,15 +106,13 @@ describe('SubmitSlotPage - Detected Interview Slot Preview', () => {
     const invite = [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
     attach(invite, [screenshot('invite')])
 
-    await waitFor(() => {
-      expect(screen.getByLabelText('Detected interview slot')).toBeInTheDocument()
-    })
+    await waitFor(() => expect(whenText()).toContain('02:30 PM'))
 
     fireEvent.click(confirm)
 
     await waitFor(() => {
       expect(screen.getByText(/Slot confirmed for Aniket/i)).toBeInTheDocument()
-      expect(screen.queryByLabelText('Detected interview slot')).toBeNull()
+      expect(whenText()).toBe('Read from the invite')
     })
   })
 })

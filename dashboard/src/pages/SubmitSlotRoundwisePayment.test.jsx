@@ -470,7 +470,8 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     const confirmBtn = screen.getByRole('button', { name: /confirm booking/i })
     expect(confirmBtn.disabled).toBe(true)
 
-    // User corrects date to an upcoming date
+    // User corrects date to an upcoming date, in the Interview date & time picker
+    fireEvent.click(document.querySelector('.sbs-when__button'))
     const dateInput = document.querySelector('input[type="date"]')
     expect(dateInput).toBeTruthy()
     fireEvent.change(dateInput, { target: { value: upcomingDate() } })

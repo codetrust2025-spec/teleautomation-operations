@@ -179,8 +179,8 @@ describe('the company is read from the invite', () => {
   it('fills the company the invite names, says where it came from, and books with it', async () => {
     const { confirm, calls } = await completedForm({ readCompany: 'Infosys' })
     expect(companyBox().value).toBe('Infosys')
-    expect(hintOf().textContent).toBe('Read from the invite. Check it.')
-    expect(hintOf().className).not.toContain('sbs-hint--warn')
+    // The filled box says it; no note under it (19 Oct: only messages that ask for something remain).
+    expect(hintOf()).toBeNull()
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
     expect(calls.confirms[0].get('company')).toBe('Infosys')
@@ -202,7 +202,7 @@ describe('the company is read from the invite', () => {
   it('a company read from the invite can be corrected, and the correction is what is booked', async () => {
     const { confirm, calls } = await completedForm({ readCompany: 'Infosis' })
     fireEvent.change(companyBox(), { target: { value: 'Infosys' } })
-    expect(hintOf().textContent).toBe('Read from the invite, or type it.')
+    expect(hintOf()).toBeNull()
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
     expect(calls.confirms[0].get('company')).toBe('Infosys')
@@ -236,7 +236,7 @@ describe('the company is read from the invite', () => {
     await completedForm({ readCompany: 'Infosys' })
     fireEvent.click(screen.getByRole('button', { name: /remove invite screenshot/i }))
     await waitFor(() => expect(companyBox().value).toBe(''))
-    expect(hintOf().textContent).toBe('Read from the invite, or type it.')
+    expect(hintOf()).toBeNull()
 
     cleanup()
     vi.unstubAllGlobals()

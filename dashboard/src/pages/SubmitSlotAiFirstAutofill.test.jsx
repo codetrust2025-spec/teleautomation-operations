@@ -3,14 +3,15 @@
  *
  * After the invite is read, every field it read with confidence is filled in:
  * client name, company, interview round, date, start and end time (IST), right
- * in the editable fields -- there is no separate summary (19 Oct). Every filled
+ * in the editable fields -- the date, start and end in the one Interview date &
+ * time (IST) field -- with no separate summary or slot preview (19 Oct). Every filled
  * value can be corrected, and nothing missing or doubtful is guessed: a date or
  * time the reader was not confident about is left for the candidate to enter.
  */
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { SubmitSlotPage, detectedSlotText, inviteSlotConfident } from './SubmitSlotPage.jsx'
+import { SubmitSlotPage, inviteSlotConfident, slotFieldText } from './SubmitSlotPage.jsx'
 
 afterEach(() => {
   cleanup()
@@ -51,6 +52,10 @@ function stubFetch(invite) {
 
 const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
 const field = label => screen.getByLabelText(label)
+const plain = text => text.replace(/\u00a0/g, ' ')
+const whenButton = () => document.querySelector('.sbs-when__button')
+const whenText = () => plain(whenButton().querySelector('.sbs-when__value').textContent)
+const openWhen = () => fireEvent.click(whenButton())
 
 async function openAndRead(invite) {
   const calls = stubFetch(invite)
@@ -83,9 +88,13 @@ describe('a confident reading fills every field it found', () => {
     await waitFor(() => expect(document.querySelector('.sbs-field--client input').value).toBe('Ira Testwala'))
     expect(field('Company').value).toBe('Contoso Ltd')
     expect(screen.getByRole('combobox').value).toBe('L2')
+    expect(whenText()).toBe(plain(slotFieldText({ date: upcomingDate(), time: '03:00 PM', time_end: '03:45 PM' })))
+    expect(whenText()).toMatch(/ · 03:00 PM – 03:45 PM$/)
+    // The one picker holds the same three values.
+    openWhen()
     expect(field('Interview date').value).toBe(upcomingDate())
-    expect(field('Start time (IST)').value).toBe('03:00 PM')
-    expect(field('End time (IST)').value).toBe('03:45 PM')
+    expect(field('Start time (IST)').value).toBe('15:00')
+    expect(field('End time (IST)').value).toBe('15:45')
 
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
@@ -99,25 +108,41 @@ describe('a confident reading fills every field it found', () => {
     expect(body.get('time_end')).toBe('15:45')
   })
 
-  it('shows what was read in the fields themselves: no summary box, one status line, one slot preview', async () => {
-    const { confirm } = await openAndRead(CONFIDENT())
+  it('shows what was read in the fields themselves: no summary, no slot preview, one status line', async () => {
+    await openAndRead(CONFIDENT())
     expect(screen.queryByText('Read from invite')).toBeNull()
-    expect(document.querySelector('.sbs-read, .sbs-manual')).toBeNull()
+    expect(document.querySelector('.sbs-read, .sbs-manual, .sbs-slot-preview')).toBeNull()
+    expect(screen.queryByRole('status', { name: 'Detected interview slot' })).toBeNull()
     const status = document.querySelectorAll('.ai-node-progress')
     expect(status).toHaveLength(1)
     expect(status[0].textContent).toMatch(/^✓ (Invite read|Analysed by .+) in \d+\.\ds$/)
-    // The slot about to be booked -- date and the whole range -- once, directly above Confirm.
-    const preview = screen.getByRole('status', { name: 'Detected interview slot' })
-    expect(preview.textContent).toContain(detectedSlotText({ date: upcomingDate(), time: '15:00', time_end: '15:45' }))
-    expect(preview.textContent).toMatch(/03:00\sPM – 03:45\sPM/)
-    expect(preview.nextElementSibling).toBe(confirm)
-    expect(document.querySelectorAll('.sbs-slot-preview')).toHaveLength(1)
+    // The date and the whole range, once, in the one field; the picker stays closed until tapped.
+    expect(whenText()).toMatch(/ · 03:00 PM – 03:45 PM$/)
+    expect(document.querySelector('.sbs-when__panel')).toBeNull()
+    expect(whenButton().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('opens one picker for the date, start and end, and closes it with Done', async () => {
+    await openAndRead(CONFIDENT())
+    openWhen()
+    const panel = screen.getByRole('dialog', { name: 'Interview date and time (IST)' })
+    expect([...panel.querySelectorAll('.sbs-label')].map(l => l.textContent)).toEqual(['Interview date', 'Start time (IST)', 'End time (IST)'])
+    expect(whenButton().getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(document.querySelector('.sbs-when__panel')).toBeNull()
+    // Escape closes it too.
+    openWhen()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(document.querySelector('.sbs-when__panel')).toBeNull()
   })
 
   it('lets every filled value be corrected, and books the correction', async () => {
     const { confirm, calls } = await openAndRead(CONFIDENT())
-    fireEvent.change(field('Start time (IST)'), { target: { value: '04:00 PM' } })
-    fireEvent.change(field('End time (IST)'), { target: { value: '04:30 PM' } })
+    openWhen()
+    fireEvent.change(field('Start time (IST)'), { target: { value: '16:00' } })
+    fireEvent.change(field('End time (IST)'), { target: { value: '16:30' } })
+    // What was picked is what the field shows.
+    expect(whenText()).toMatch(/ · 04:00 PM – 04:30 PM$/)
     fireEvent.change(field('Company'), { target: { value: 'Contoso India' } })
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
@@ -131,8 +156,9 @@ describe('a confident reading fills every field it found', () => {
 describe('nothing missing or doubtful is guessed', () => {
   it('an end time the invite does not give stays empty and is not booked', async () => {
     const { confirm, calls } = await openAndRead({ ...CONFIDENT(), end_time: '' })
+    expect(whenText()).toMatch(/ · 03:00 PM$/)
+    openWhen()
     expect(field('End time (IST)').value).toBe('')
-    expect(screen.getByRole('status', { name: 'Detected interview slot' }).textContent).toMatch(/03:00\sPM · no\send\stime/)
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -150,18 +176,16 @@ describe('nothing missing or doubtful is guessed', () => {
       ...CONFIDENT(), confidence_score: 0, manual_fields_required: true, auto_booking_safe: false,
       warnings: ['OCR and AI did not independently agree on the booking date/time.'],
     })
-    expect(field('Interview date').value).toBe('')
-    expect(field('Start time (IST)').value).toBe('')
-    expect(field('End time (IST)').value).toBe('')
+    expect(whenText()).toBe('Select date & time')
     expect(document.querySelector('.sbs-slot-hints').textContent)
       .toContain('The invite could not be read with confidence. Enter the date and time (IST).')
     expect(document.querySelector('.sbs-slot-hints').textContent)
       .toContain('OCR and AI did not independently agree on the booking date/time.')
-    expect(screen.queryByRole('status', { name: 'Detected interview slot' })).toBeNull()
     expect(confirm.disabled).toBe(true)
 
+    openWhen()
     fireEvent.change(field('Interview date'), { target: { value: upcomingDate(8) } })
-    fireEvent.change(field('Start time (IST)'), { target: { value: '05:00 PM' } })
+    fireEvent.change(field('Start time (IST)'), { target: { value: '17:00' } })
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -171,29 +195,34 @@ describe('nothing missing or doubtful is guessed', () => {
 
   it('warns when the end time is before the start', async () => {
     await openAndRead(CONFIDENT())
-    fireEvent.change(field('End time (IST)'), { target: { value: '02:00 PM' } })
+    openWhen()
+    fireEvent.change(field('End time (IST)'), { target: { value: '14:00' } })
     expect(screen.getByText('End time is before the start time. Check it.')).toBeInTheDocument()
   })
 })
 
-describe('the detected slot line', () => {
-  const plain = text => text.replace(/ /g, ' ')
-
-  it('names the weekday, the date and the whole time range', () => {
-    expect(plain(detectedSlotText({ date: '2026-10-26', time: '15:00', time_end: '15:45' }))).toBe('Mon, 26 Oct 2026 · 03:00 PM – 03:45 PM')
+describe('what the Interview date & time field shows', () => {
+  it('the date and the whole time range, as in the mockup', () => {
+    expect(plain(slotFieldText({ date: '2026-10-20', time: '14:00', time_end: '14:45' }))).toBe('20 Oct 2026 · 02:00 PM – 02:45 PM')
+    expect(plain(slotFieldText({ date: '2026-10-20', time: '02:00 PM', time_end: '02:45 PM' }))).toBe('20 Oct 2026 · 02:00 PM – 02:45 PM')
   })
 
-  it('says when there is no end time instead of looking cut off', () => {
-    expect(plain(detectedSlotText({ date: '2026-10-26', time: '09:30' }))).toBe('Mon, 26 Oct 2026 · 09:30 AM · no end time')
+  it('just the start when there is no end time', () => {
+    expect(plain(slotFieldText({ date: '2026-10-20', time: '09:30' }))).toBe('20 Oct 2026 · 09:30 AM')
+  })
+
+  it('says what is still missing when only one of date and start is set', () => {
+    expect(plain(slotFieldText({ date: '2026-10-20' }))).toBe('20 Oct 2026 · add start time')
+    expect(plain(slotFieldText({ time: '14:00' }))).toBe('add date · 02:00 PM')
+  })
+
+  it('nothing until a date or a start is set', () => {
+    expect(slotFieldText({})).toBe('')
+    expect(slotFieldText()).toBe('')
   })
 
   it('wraps on a phone only at the separators, never inside a date or a time', () => {
-    const text = detectedSlotText({ date: '2026-10-22', time: '15:00', time_end: '15:45' })
-    expect(text.split(/ /)).toEqual(['Thu, 22 Oct 2026', '·', '03:00 PM', '–', '03:45 PM'])
-  })
-
-  it('is empty until both a date and a start are known', () => {
-    expect(detectedSlotText({ date: '2026-10-26' })).toBe('')
-    expect(detectedSlotText(null)).toBe('')
+    const text = slotFieldText({ date: '2026-10-20', time: '14:00', time_end: '14:45' })
+    expect(text.split(/ /)).toEqual(['20\u00a0Oct\u00a02026', '·', '02:00\u00a0PM', '–', '02:45\u00a0PM'])
   })
 })

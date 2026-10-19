@@ -67,7 +67,7 @@ describe('the invite is the first field', () => {
     await screen.findByLabelText('Company')
     expect(labels()).toEqual([
       'Interview invite screenshot', 'Service type', 'Client name', 'Company *', 'Interview round *',
-      'Interview date', 'Start time (IST)', 'End time (IST)',
+      'Interview date & time (IST) *',
     ])
     const first = document.querySelector('.sbs-form > .sbs-field')
     expect(first.contains(inviteInput())).toBe(true)
@@ -80,7 +80,7 @@ describe('the invite is the first field', () => {
     chooseService('Round-wise')
     expect(labels().map(l => l.replace(/ \*$/, ''))).toEqual([
       'Interview invite screenshot', 'Service type', 'Client name', 'Candidate phone', 'Technology', 'Company', 'Interview round',
-      'Interview date', 'Start time (IST)', 'End time (IST)',
+      'Interview date & time (IST)',
     ])
   })
 
