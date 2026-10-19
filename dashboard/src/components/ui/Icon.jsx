@@ -141,6 +141,13 @@ const PATHS = {
     </>
   ),
   check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  // Data Room Key Links: open a link in a new tab.
+  'external-link': (
+    <>
+      <path d="M13.5 4.5h6v6M19.5 4.5 11 13" />
+      <path d="M17.5 13.5v4a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h4" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   sparkles: (
     <>

@@ -19320,6 +19320,110 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-tab-header-actions { flex-wrap: wrap; justify-content: flex-end; }
 }
 
+/* ── Data Room: Key Links, compact (Oct 2026) ────────────────────────────────
+   Every description carried the WhatsApp import's provenance, so each of the
+   nine rows ran three or four lines; the URL column printed 50 characters of a
+   Sheets id; Edit / Delete / Open were three text buttons wider than the title.
+   Title and description take two lines at most, the URL one, cut with an
+   ellipsis beside its copy button, and the actions are three square icon
+   buttons -- 40px under a finger, and on a phone each link is a card. */
+.dr-page .dr-kl-table tbody td { padding: 7px 12px; line-height: 1.35; vertical-align: middle; }
+.dr-page .dr-kl-title,
+.dr-page .dr-kl-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.dr-page .dr-kl-title { font-size: 0.85rem; font-weight: 600; color: #f1f5f9; }
+.dr-page .dr-kl-desc { font-size: 0.8rem; color: #94a3b8; }
+.dr-page .dr-kl-url-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dr-page .dr-kl-url {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+.dr-page .dr-kl-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.dr-page .dr-kl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  box-sizing: border-box;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.dr-page .dr-kl-icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); border-color: rgba(148, 163, 184, 0.32); color: #e2e8f0; }
+.dr-page .dr-kl-icon-btn--danger:hover:not(:disabled) { background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.45); color: #fca5a5; }
+.dr-page .dr-kl-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.dr-page .dr-kl-icon-btn:focus-visible,
+.dr-page .dr-kl-url:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+.dr-page .dr-kl-copy { width: 26px; height: 26px; border-radius: 6px; }
+.dr-page .dr-kl-copy--copied { background: rgba(22, 101, 52, 0.35); border-color: rgba(34, 197, 94, 0.5); color: #86efac; }
+
+/* Columns: title and URL a share each, the description the rest, the
+   actions as wide as their three buttons. At every width, not from 641px: a
+   viewport between 640 and 641px (a zoomed page) would otherwise get neither
+   these nor the phone cards: an auto-width table that scrolled sideways. */
+.dr-page .dr-kl-table { table-layout: fixed; }
+.dr-page .dr-kl-th--title { width: 27%; }
+.dr-page .dr-kl-th--url { width: 27%; }
+.dr-page .dr-kl-th--actions { width: 122px; text-align: right; }
+@media (pointer: coarse) {
+  .dr-page .dr-kl-th--actions { width: 160px; }
+  .dr-page .dr-kl-actions { gap: 6px; }
+  .dr-page .dr-kl-icon-btn,
+  .dr-page .dr-kl-copy { width: 40px; height: 40px; }
+}
+
+/* Phones: each link a card -- title, then what it is for, then the URL with
+   its copy button and the three actions on one line. */
+@media (max-width: 640px) {
+  .dr-page .dr-links-tab .dr-tab-table-wrap { overflow-x: visible; border: 0; background: transparent; }
+  .dr-page .dr-kl-table,
+  .dr-page .dr-kl-table tbody,
+  .dr-page .dr-kl-table .dr-kl-empty-row,
+  .dr-page .dr-kl-table .dr-kl-empty-row td { display: block; width: 100%; }
+  .dr-page .dr-kl-table thead { display: none; }
+  .dr-page .dr-kl-table tbody tr.dr-kl-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title title" "desc desc" "url actions";
+    column-gap: 8px;
+    row-gap: 3px;
+    margin-bottom: 8px;
+    padding: 10px 10px 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-card, rgba(255, 255, 255, 0.02));
+  }
+  .dr-page .dr-kl-table tbody td { display: block; min-width: 0; padding: 0; border: 0; }
+  .dr-page .dr-kl-table td.dr-kl-title-cell { grid-area: title; }
+  .dr-page .dr-kl-table td.dr-kl-desc-cell { grid-area: desc; }
+  .dr-page .dr-kl-table td.dr-kl-desc-cell--empty { display: none; }
+  .dr-page .dr-kl-table td.dr-kl-url-cell { grid-area: url; align-self: center; margin-top: 4px; }
+  .dr-page .dr-kl-table td.dr-kl-actions-cell { grid-area: actions; align-self: center; margin-top: 4px; }
+  .dr-page .dr-kl-title { font-size: 0.92rem; }
+  .dr-page .dr-kl-url-wrap { gap: 4px; }
+  .dr-page .dr-kl-url { font-size: 0.8rem; }
+  .dr-page .dr-kl-actions { gap: 4px; }
+  .dr-page .dr-kl-icon-btn,
+  .dr-page .dr-kl-copy { width: 40px; height: 40px; border-radius: 9px; }
+}
+
 /* Confirmed slots: one interview booked twice (12 Oct). */
 .sbs-duplicate-flag {
   display: inline-flex; align-items: center; margin-left: 6px; padding: 1px 7px;

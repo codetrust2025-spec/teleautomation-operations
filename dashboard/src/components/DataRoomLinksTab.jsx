@@ -1,6 +1,8 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
+import { copyToClipboard } from '../utils/copyToClipboard.js'
+import { Icon } from './ui/Icon.jsx'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -17,8 +19,45 @@ const LINK_FIELDS = [
   { key: 'id', label: 'ID (stable slug)', placeholder: 'e.g. drive_folder' },
   { key: 'title', label: 'Title / label' },
   { key: 'url', label: 'URL', placeholder: 'https://' },
-  { key: 'notes', label: 'Notes', full: true },
+  { key: 'notes', label: 'Notes', full: true, type: 'textarea', rows: 4 },
 ]
+
+/**
+ * What a link's notes say about the link itself.
+ *
+ * The WhatsApp import of 5 Oct appended its provenance to every link's notes --
+ * "Source: THRILOK Support WhatsApp archive.", the dataset sentence it also keeps
+ * as `source_ref`, and on one link an "Also in WhatsApp group ..." line -- so
+ * nine descriptions read as the same paragraph. This drops those sentences for
+ * the table only: the stored notes are what Edit shows and what Save sends back.
+ */
+export function keyLinkDescription(row) {
+  let text = String(row?.notes || '').trim()
+  if (!text) return ''
+  const sourceRef = String(row?.source_ref || '').trim().replace(/\.+$/, '')
+  if (sourceRef) text = text.split(sourceRef).join(' ')
+  const sourceFile = String(row?.source_file || '').trim()
+  const isProvenance = (sentence) => {
+    const bare = sentence.trim().replace(/[.\s]+$/, '')
+    return !bare
+      || /^source\s*:/i.test(bare)
+      || (sourceFile && bare === sourceFile)
+      || /^also in whatsapp group\b/i.test(bare)
+      || /_chat\.txt/i.test(bare)
+      || /\bas supplied by you on\b/i.test(bare)
+  }
+  return text
+    .replace(/([.!?])\s+/g, '$1\u0000')
+    .split('\u0000')
+    .filter((sentence) => !isProvenance(sentence))
+    .join(' ')
+    .trim()
+}
+
+/** The URL as shown in the table: no scheme, no `www.`; the link and the copy keep it whole. */
+export function keyLinkDisplayUrl(url) {
+  return String(url || '').trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '')
+}
 
 function VaultModal({ title, fields, form, onChange, onSave, onClose, error }) {
   // Mounted only while open, so the dialog is open for its whole life.
@@ -53,6 +92,10 @@ export function DataRoomLinksTab({ resources = [], onReload }) {
   const { confirm } = useConfirm()
   const [modal, setModal] = useState(null)
   const [modalError, setModalError] = useState('')
+  const [copied, setCopied] = useState(null)
+  const [copyStatus, setCopyStatus] = useState('')
+  const copiedTimer = useRef(0)
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), [])
 
   const openAdd = () => {
     setModalError('')
@@ -69,6 +112,15 @@ export function DataRoomLinksTab({ resources = [], onReload }) {
     if (!ok) return
     await fetch(`${API_BASE}/data-room/credentials/vault/resources/${row.id}`, { method: 'DELETE', credentials: 'include' })
     onReload()
+  }
+
+  const handleCopy = async (row) => {
+    const name = row.title || row.id
+    const ok = await copyToClipboard(row.url)
+    window.clearTimeout(copiedTimer.current)
+    setCopied(ok ? row.id : null)
+    setCopyStatus(ok ? `Copied the URL of ${name}` : `Could not copy the URL of ${name}`)
+    if (ok) copiedTimer.current = window.setTimeout(() => setCopied((id) => (id === row.id ? null : id)), 1600)
   }
 
   const handleSave = async () => {
@@ -121,40 +173,84 @@ export function DataRoomLinksTab({ resources = [], onReload }) {
       </div>
 
       <div className="dr-tab-table-wrap">
-        <table className="dr-tab-table">
+        <table className="dr-tab-table dr-kl-table">
           <thead>
             <tr>
-              <th>Title</th>
-              <th>URL</th>
-              <th>Description</th>
-              <th>Actions</th>
+              <th className="dr-kl-th--title">Title</th>
+              <th className="dr-kl-th--url">URL</th>
+              <th className="dr-kl-th--desc">Description</th>
+              <th className="dr-kl-th--actions">Actions</th>
             </tr>
           </thead>
           <tbody>
             {resources.length === 0 && (
-              <tr><td colSpan={4} className="dr-empty">No links yet.</td></tr>
+              <tr className="dr-kl-empty-row"><td colSpan={4} className="dr-empty">No links yet.</td></tr>
             )}
-            {resources.map(row => (
-              <tr key={row.id}>
-                <td><strong>{row.title || row.id}</strong></td>
-                <td>
-                  <a href={row.url} target="_blank" rel="noopener noreferrer" className="dr-link-url">
-                    {row.url ? (row.url.length > 50 ? row.url.slice(0, 50) + '…' : row.url) : '—'}
-                  </a>
-                </td>
-                <td className="dr-muted">{row.notes || '—'}</td>
-                <td>
-                  <div className="dr-acct-actions">
-                    <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)}>Edit</button>
-                    <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)}>Delete</button>
-                    <a href={row.url} target="_blank" rel="noopener noreferrer" className="cand-btn cand-btn--sm">Open ↗</a>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {resources.map(row => {
+              const name = row.title || row.id
+              const description = keyLinkDescription(row)
+              const isCopied = copied === row.id
+              return (
+                <tr key={row.id} className="dr-kl-row">
+                  <td className="dr-kl-title-cell" data-label="Title">
+                    <span className="dr-kl-title" title={name}>{name}</span>
+                  </td>
+                  <td className="dr-kl-url-cell" data-label="URL">
+                    {row.url ? (
+                      <div className="dr-kl-url-wrap">
+                        <a href={row.url} target="_blank" rel="noopener noreferrer" className="dr-link-url dr-kl-url" title={row.url}>
+                          {keyLinkDisplayUrl(row.url)}
+                        </a>
+                        <button
+                          type="button"
+                          className={`dr-kl-icon-btn dr-kl-copy${isCopied ? ' dr-kl-copy--copied' : ''}`}
+                          onClick={() => handleCopy(row)}
+                          aria-label={isCopied ? `Copied the URL of ${name}` : `Copy the URL of ${name}`}
+                          title={isCopied ? 'Copied' : 'Copy URL'}
+                        >
+                          <Icon name={isCopied ? 'check' : 'copy'} size={14} />
+                        </button>
+                      </div>
+                    ) : <span className="dr-muted">—</span>}
+                  </td>
+                  <td className={`dr-kl-desc-cell${description ? '' : ' dr-kl-desc-cell--empty'}`} data-label="Description">
+                    {description
+                      ? <span className="dr-kl-desc" title={description}>{description}</span>
+                      : <span className="dr-muted">—</span>}
+                  </td>
+                  <td className="dr-kl-actions-cell" data-label="Actions">
+                    <div className="dr-kl-actions">
+                      {row.url ? (
+                        <a
+                          href={row.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="dr-kl-icon-btn"
+                          aria-label={`Open ${name} in a new tab`}
+                          title="Open in a new tab"
+                        >
+                          <Icon name="external-link" size={15} />
+                        </a>
+                      ) : (
+                        <button type="button" className="dr-kl-icon-btn" disabled aria-label={`Open ${name}: no URL`} title="No URL to open">
+                          <Icon name="external-link" size={15} />
+                        </button>
+                      )}
+                      <button type="button" className="dr-kl-icon-btn" onClick={() => openEdit(row)} aria-label={`Edit ${name}`} title="Edit link">
+                        <Icon name="pencil" size={15} />
+                      </button>
+                      <button type="button" className="dr-kl-icon-btn dr-kl-icon-btn--danger" onClick={() => handleDelete(row)} aria-label={`Delete ${name}`} title="Delete link">
+                        <Icon name="trash" size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
+      <p className="sr-only" role="status" aria-live="polite">{copyStatus}</p>
 
       {modal && (
         <VaultModal
