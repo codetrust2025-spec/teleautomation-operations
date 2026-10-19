@@ -145,8 +145,8 @@ def reading(company="", verified=True, status="ok", failures=0):
     return {"status": status, "company": company, "verified": verified if company else None, "failures": failures}
 
 
-def row(*links, before=""):
-    return {"before": before, "links": [{"key": key, "domains": list(domains)} for key, domains in links]}
+def row(*links, before="", link="source"):
+    return {"before": before, "links": [{"key": key, "domains": list(domains), "link": link} for key, domains in links]}
 
 
 def decide(r, primary, audit=None, **kw):
@@ -211,7 +211,8 @@ class TestTheDecision:
         ({"m1": reading("Infosys")}, {}, "pending"),                                   # its second reading is still due
         ({"m1": reading(status="failed", failures=1)}, {}, "pending"),
         ({"m1": reading(status="failed", failures=3)}, {}, "unreadable"),
-        ({"m1": reading(status="not_an_invite")}, {}, "not_an_invite"),
+        # booked from this email, yet it does not read as an invitation: with a company's own domain, a person looks
+        ({"m1": reading(status="not_an_invite")}, {}, "review_not_an_invitation"),
         ({"m1": reading()}, {}, "review_sender_only"),
     ])
     def test_what_is_not_yet_known_is_not_decided(self, primary, audit, action):
@@ -219,6 +220,26 @@ class TestTheDecision:
 
     def test_personal_mail_alone_is_no_evidence_at_all(self):
         assert decide(row(("m1", ["gmail.com"])), {"m1": reading()})["action"] == "no_company_in_email"
+        assert decide(row(("m1", ["gmail.com"])), {"m1": reading(status="not_an_invite")})["action"] == "not_an_invite"
+
+    def test_a_record_tied_by_time_to_emails_from_two_organisations_is_left_for_review(self):
+        """6 Oct: one interview at 15:00 with one company and another at 15:15 with a second, for the same person."""
+        tied = row(("m1", ["mercedes-benz.com"]), ("m2", ["kekamail.com", "navikenz.com"]), link="date_time")
+        out = decide(tied, {"m1": reading(), "m2": reading("NAVIKENZ INDIA PRIVATE LIMITED")},
+                     {"m2": reading("NAVIKENZ INDIA PRIVATE LIMITED")})
+        assert out["action"] == "review_ambiguous_email_link" and out["after"] == ""
+        # one organisation (its platform aside) at the closest time is not ambiguous
+        one = row(("m2", ["kekamail.com", "navikenz.com"]), link="date_time")
+        out = decide(one, {"m2": reading("NAVIKENZ INDIA PRIVATE LIMITED")}, {"m2": reading("NAVIKENZ INDIA PRIVATE LIMITED")})
+        assert out["action"] == "fill" and out["basis"] == "email_text+second_model+sender_domain"
+        # an email's own thread is never "ambiguous": it is the email that booked the record
+        both = row(("m1", ["mercedes-benz.com"]), ("m2", ["gmail.com"]))
+        assert decide(both, {"m1": reading(), "m2": reading()})["action"] == "review_sender_only"
+
+    def test_only_the_closest_emails_in_time_are_linked(self):
+        near = [(15, "mercedes", "a"), (0, "navikenz-l3", "b"), (0, "navikenz-reminder", "c"), (10, "other", "d")]
+        assert bfm.closest_in_time(near) == [("navikenz-l3", "b"), ("navikenz-reminder", "c")]
+        assert bfm.closest_in_time([]) == []
 
     def test_a_record_without_email_is_not_eligible(self):
         assert decide(row(), {})["action"] == "no_email"

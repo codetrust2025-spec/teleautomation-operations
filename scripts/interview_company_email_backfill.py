@@ -229,6 +229,12 @@ def decide_row(row: dict, primary: dict[str, dict], audit: dict[str, dict], *, c
     base = {"before": before, "after": "", "evidence": []}
     if not links:
         return {**base, "action": "no_email"}
+    all_domains = sorted({d for link in links for d in link.get("domains") or [] if is_employer_domain(d)})
+    # A hand-booked record is tied to its email only by date and start. When the closest emails come from two
+    # organisations (an interview at 15:00 with one, at 15:15 with another), which one it is would be a guess.
+    if all(link.get("link") == "date_time" for link in links) and len({org_label(d) for d in all_domains}) > 1:
+        return {**base, "action": "review_ambiguous_email_link", "sender_domains": all_domains,
+                "suggestion": ", ".join(all_domains)}
     claims, invitations, domains, unread, pending = [], 0, set(), 0, 0
     for link in links:
         key = link["key"]
@@ -266,7 +272,14 @@ def decide_row(row: dict, primary: dict[str, dict], audit: dict[str, dict], *, c
     if pending:
         return {**base, "action": "pending"}
     if not invitations:
-        return {**base, "action": "unreadable" if unread else "not_an_invite"}
+        if unread:
+            return {**base, "action": "unreadable"}
+        # The record was booked from this email, yet it does not read as an invitation (a bare calendar invite, a
+        # consultation, a background check). With a company's own domain on it, a person should look.
+        if all_domains:
+            return {**base, "action": "review_not_an_invitation", "sender_domains": all_domains,
+                    "suggestion": ", ".join(all_domains)}
+        return {**base, "action": "not_an_invite"}
     names = _distinct([c["name"] for c in claims])
     if len(names) > 1:
         return {**base, "action": "review_emails_disagree"}
@@ -296,7 +309,8 @@ BUCKETS = {
     "to_update": ("fill", "correct_invalid"),
     "skipped": ("no_company_in_email", "not_an_invite"),
     "review": ("review_sender_only", "review_named_in_email_only", "review_emails_disagree", "review_models_disagree",
-               "review_second_model_not_confirmed", "review_other_company_named", "review_conflicts_with_screenshot"),
+               "review_second_model_not_confirmed", "review_other_company_named", "review_conflicts_with_screenshot",
+               "review_ambiguous_email_link", "review_not_an_invitation"),
     "failed": ("unreadable",),
     "pending": ("pending",),
     "not_eligible": ("no_email",),
@@ -311,6 +325,8 @@ REVIEW_REASONS = {
     "review_second_model_not_confirmed": "the second model could not read and quote the same company",
     "review_other_company_named": "the email also names another company (a vendor and its client?)",
     "review_conflicts_with_screenshot": "the invite screenshot names a different company",
+    "review_ambiguous_email_link": "the closest emails at that date and time come from different organisations",
+    "review_not_an_invitation": "the booking's email does not read as an interview invitation",
     "unreadable": "every reading of the email failed",
 }
 
@@ -323,6 +339,13 @@ def summarise_plan(plan: dict) -> dict:
     if buckets["unknown"]:
         out["unknown"] = buckets["unknown"]
     return out
+
+
+def closest_in_time(near: list[tuple[int, str, object]]) -> list[tuple[str, object]]:
+    """(key, payload) of the candidates at the smallest time gap: an email exactly at the booked start outranks one a
+    quarter-hour away, which is a different interview more often than the same one."""
+    best = min((gap for gap, _, _ in near), default=None)
+    return [(key, payload) for gap, key, payload in near if gap == best]
 
 
 def minutes_of(value) -> int | None:
@@ -381,10 +404,13 @@ def cmd_collect(_args) -> int:
                     cur.execute("SELECT m.id, m.sender_email, m.return_path_email, m.reply_to_email, a.interview_time "
                                 "FROM interview_mail_analyses a JOIN mailbox_messages m ON m.id=a.mailbox_message_id "
                                 "WHERE m.candidate_id = ANY(%s) AND a.interview_date=%s", (list(owners), str(row["date"])[:10]))
+                    near = []
                     for key, *rest in cur.fetchall():
-                        addresses, when = rest[:3], minutes_of(rest[3])
+                        when = minutes_of(rest[3])
                         if when is not None and abs(when - start) <= TIME_WINDOW_MINUTES:
-                            links[key] = {"key": key, "link": "date_time", "addresses": addresses}
+                            near.append((abs(when - start), key, rest[:3]))
+                    for key, addresses in closest_in_time(near):
+                        links[key] = {"key": key, "link": "date_time", "addresses": addresses}
             entries = []
             for link in links.values():
                 domains = sorted({domain_of(a) for a in link.pop("addresses") if domain_of(a)})
@@ -422,11 +448,15 @@ def cmd_read(args) -> int:
     os._exit(0)
 
 
-def _screenshot_names(cs, clean, cid: str, people, inventory: dict, primary: dict, audit: dict) -> list[str]:
+def _screenshot_names(cs, clean, cid: str, people, inventory: dict, primary: dict, audit: dict,
+                      misdated: frozenset = frozenset()) -> list[str]:
     """Companies both screenshot models read and quoted off this record's own invite screenshots. The image the
-    auto-booking renders from the email is the email again, not a second source, and is left out."""
+    auto-booking renders from the email is the email again, not a second source, and is left out, as is a screenshot
+    whose date is not the booked date (`misdated`: short hashes the screenshot backfill marked date_mismatch)."""
     names = []
     for shot in (inventory.get("rows", {}).get(cid) or {}).get("shots") or []:
+        if shot["sha"][:8] in misdated:
+            continue
         got = cs.get_attachment(cid, shot["pid"], cs.AttachmentType.SLOT_SCREENSHOT_PROOF)
         original = str((got[1] if got else {}).get("original_name") or "").lower()
         if original.startswith("auto-booking-evidence"):
@@ -455,6 +485,9 @@ def cmd_plan(args) -> int:
     collected = core._load_json(args.collected)
     primary, audit = core._load_results(args.results, core.PRIMARY), core._load_results(args.results, core.AUDIT)
     shots_inventory = core._load_json(args.shots_inventory) if args.shots_inventory else {}
+    shots_plan = core._load_json(args.shots_plan) if args.shots_plan else {"items": []}
+    misdated = {cid: frozenset(e["sha"] for e in item.get("evidence") or [] if e.get("kind") == "date_mismatch")
+                for cid, item in ((i["cid"], i) for i in shots_plan["items"])}
     shots_primary = core._load_results(args.shots_results, core.PRIMARY) if args.shots_results else {}
     shots_audit = core._load_results(args.shots_results, core.AUDIT) if args.shots_results else {}
     live = {str(r.get("id") or ""): r for r in cs._load(force=True)["candidates"]}
@@ -468,7 +501,8 @@ def cmd_plan(args) -> int:
         row_clean = lambda value, people=people: clean(value, people=people)   # noqa: E731
         others = {link["key"]: named.get(link["key"], []) for link in row["links"]}
         decision = decide_row(row, primary, audit, clean=row_clean,
-                              screenshot_names=_screenshot_names(cs, clean, cid, people, shots_inventory, shots_primary, shots_audit),
+                              screenshot_names=_screenshot_names(cs, clean, cid, people, shots_inventory, shots_primary, shots_audit,
+                                                                 misdated.get(cid, frozenset())),
                               other_companies_in=others)
         items.append({"cid": cid, **decision})
     plan = {"generated_at": core._now(), "source": "email", "items": items,
@@ -520,13 +554,15 @@ def _plan_in_container(args, log) -> int:
     if args.shots_work:
         inputs[os.path.join(args.shots_work, "inventory.json")] = "/tmp/bfm-shots-inventory.json"
         inputs[os.path.join(args.shots_work, "results.jsonl")] = "/tmp/bfm-shots-results.jsonl"
+        inputs[os.path.join(args.shots_work, "plan.json")] = "/tmp/bfm-shots-plan.json"
     try:
         for local, inside in inputs.items():
             core._docker("cp", "-L", os.path.join(work, local), f"{core.CONTAINER}:{inside}", timeout=60).check_returncode()
         argv = ["exec", "-w", "/app", core.CONTAINER, "python", IN_CONTAINER, "plan", "--collected", inputs["collected.json"],
                 "--results", inputs[args.results], "--out", "/tmp/bfm-plan.json"]
         if args.shots_work:
-            argv += ["--shots-inventory", "/tmp/bfm-shots-inventory.json", "--shots-results", "/tmp/bfm-shots-results.jsonl"]
+            argv += ["--shots-inventory", "/tmp/bfm-shots-inventory.json", "--shots-results", "/tmp/bfm-shots-results.jsonl",
+                     "--shots-plan", "/tmp/bfm-shots-plan.json"]
         run = core._docker(*argv, timeout=900)
         if run.returncode != 0:
             log(f"plan failed: {run.stderr[-300:]}")
@@ -623,6 +659,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("plan")
     p.add_argument("--collected", required=True); p.add_argument("--results", required=True); p.add_argument("--out", required=True)
     p.add_argument("--shots-inventory", default=""); p.add_argument("--shots-results", default="")
+    p.add_argument("--shots-plan", default="", help="the screenshot backfill's plan: its date_mismatch screenshots support nothing")
     p = sub.add_parser("review")
     p.add_argument("--plan", required=True); p.add_argument("--collected", required=True)
     p = sub.add_parser("report")
