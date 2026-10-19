@@ -33,9 +33,8 @@ describe('DataRoomAccountsTab service account modal', () => {
   })
 
   it('asks only for what an operator has to type', () => {
-    // ID and Service were on this form and neither needed to be: the id is a
-    // slug derived from the title when left blank, and Service was free text
-    // the table already defaulted to Gmail.
+    // No ID: it is a slug derived from the title. The service is chosen from a
+    // list of three (19 Oct), Naukri unless another is picked.
     render(
       <ConfirmProvider>
         <DataRoomAccountsTab accounts={[]} onReload={() => {}} />
@@ -52,13 +51,17 @@ describe('DataRoomAccountsTab service account modal', () => {
       .map(l => l.childNodes[0].textContent.trim())
     expect(labels).toEqual([
       'Account name',
+      'Service type',
       'Username / email',
       'Password',
       'Notes (optional)',
     ])
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
-    expect(labels.some(l => /ID|slug|Service/i.test(l))).toBe(false)
+    expect(labels.some(l => /ID|slug/i.test(l))).toBe(false)
+    const service = dialog.querySelector('.dr-form-grid select')
+    expect(service.value).toBe('Naukri')
+    expect([...service.options].map(o => o.value)).toEqual(['Naukri', 'Gmail', 'Telegram'])
   })
 
   it('still sends a generated id, because the backend requires one', async () => {

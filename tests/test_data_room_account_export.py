@@ -131,7 +131,8 @@ def api(monkeypatch):
 
     state = {"profile": {"username": "admin", "role": "admin"}, "audits": [], "audit_fails": False}
     monkeypatch.setattr(dashboard_access, "operator_profile", lambda request: state["profile"])
-    monkeypatch.setattr(data_room_credentials_store, "get_credentials", lambda: {"service_accounts": ACCOUNTS})
+    # The export reads passwords through the store (the account list no longer carries them).
+    monkeypatch.setattr(data_room_credentials_store, "service_accounts_with_passwords", lambda: [dict(a) for a in ACCOUNTS])
 
     def audit(**kwargs):
         if state["audit_fails"]:

@@ -22,7 +22,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(HERE, '..', 'index.css'), 'utf8').replace(/\r\n/g, '\n')
 
 const ACCOUNTS = [
-  { id: 'a1', label: 'Ops Gmail (current)', service: 'Gmail', username: 'ops@example.com', password: 'pw-example' },
+  // As the list arrives since 19 Oct: whether there is a password, never the password itself.
+  { id: 'a1', label: 'Ops Gmail (current)', service: 'Gmail', username: 'ops@example.com', has_password: true },
 ]
 
 beforeEach(() => {

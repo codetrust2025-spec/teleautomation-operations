@@ -52,6 +52,39 @@ async def data_room_credentials(request: Request):
     return {"status": "ok", "credentials": data_room_credentials_store.get_credentials()}
 
 
+@router.get("/data-room/credentials/service-accounts/{item_id}/password")
+async def data_room_service_account_password(item_id: str, request: Request):
+    """One account's password, for Show, Copy and Edit. The account list never carries passwords; each one is read
+    here, on purpose, by the operators who can open the Data Room, and the read is recorded."""
+    import logging
+
+    from fastapi.responses import JSONResponse
+
+    from core.dashboard_access import operator_profile
+    from features import data_room_credentials_store as creds
+
+    if not _data_room_admin_only(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        password = creds.service_account_password(item_id)
+    except Exception as exc:  # noqa: BLE001 - a token the key cannot open
+        raise HTTPException(status_code=409, detail="This password cannot be read with the current key") from exc
+    if password is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    try:
+        from core import recruitment_mail_store
+
+        profile = operator_profile(request)
+        recruitment_mail_store.audit(
+            actor=str(profile.get("username") or ""), role=str(profile.get("role") or ""),
+            action="data_room_password_viewed", source_id=str(item_id),
+            source_ip=request.client.host if request.client else None,
+        )
+    except Exception:  # noqa: BLE001 - the record is wanted, not a condition of using the Data Room
+        logging.getLogger(__name__).exception("Could not record a Data Room password read")
+    return JSONResponse({"status": "ok", "password": password}, headers={"Cache-Control": "no-store"})
+
+
 def _require_account_export_admin(request: Request) -> dict:
     """A signed-in admin, by role. The Data Room's own gate admits every
     signed-in operator (handlers too); taking every account out at once,
@@ -91,7 +124,7 @@ async def data_room_accounts_export(request: Request, format: str = Query(defaul
     fmt = (format or "").strip().lower()
     if fmt not in export.FORMATS:
         raise HTTPException(status_code=400, detail="format must be xlsx, csv or txt")
-    rows = export.account_rows(data_room_credentials_store.get_credentials().get("service_accounts") or [])
+    rows = export.account_rows(data_room_credentials_store.service_accounts_with_passwords())
     try:
         _record_account_export(request, profile, fmt=fmt, count=len(rows))
     except Exception as exc:  # noqa: BLE001 - passwords never leave unrecorded
@@ -144,6 +177,12 @@ async def data_room_update_vault_item(section: str, item_id: str, body: dict, re
     from features import data_room_credentials_store as creds
 
     require_fleet_admin(request)
+    if section == "service_accounts":
+        # Checked fields only: the service must be one of the three, and a password is encrypted, never stored as typed.
+        updated, err = creds.update_service_account(item_id, body or {})
+        if err:
+            return {"status": "error", "message": "Vault entry not found" if err == "Not found" else err}
+        return {"status": "ok", "credentials": updated}
     updated = creds.update_vault_item(section, item_id, body or {})
     if not updated:
         return {"status": "error", "message": "Vault entry not found"}
@@ -154,7 +193,10 @@ async def data_room_create_vault_item(section: str, body: dict, request: Request
     from features import data_room_credentials_store as creds
 
     require_fleet_admin(request)
-    updated, err = creds.create_vault_item(section, body or {})
+    if section == "service_accounts":
+        updated, err = creds.create_service_account(body or {})
+    else:
+        updated, err = creds.create_vault_item(section, body or {})
     if err:
         return {"status": "error", "message": err}
     return {"status": "ok", "credentials": updated}

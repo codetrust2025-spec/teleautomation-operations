@@ -199,6 +199,13 @@ async def startup() -> None:
         hash_stored_admin_password()
     except Exception:  # noqa: BLE001 - never block startup on this copy
         logging.getLogger(__name__).exception("Could not hash the Data Room admin password copy")
+    try:
+        from features.data_room_credentials_store import migrate_service_accounts
+
+        # Each service account gets its service, and any password still stored in the clear is encrypted. Idempotent.
+        logging.getLogger(__name__).info("Data Room service accounts: %s", migrate_service_accounts())
+    except Exception:  # noqa: BLE001 - never block startup on this; the list withholds passwords either way
+        logging.getLogger(__name__).exception("Could not migrate the Data Room service accounts")
     # Started here rather than on first WebSocket connect: the tailer delivers
     # events written by any process, and it needs the loop registered before a
     # publisher runs, not after a browser happens to arrive.

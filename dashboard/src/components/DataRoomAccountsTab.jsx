@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
@@ -50,19 +50,51 @@ function isPrimary(row) {
 
 // What an operator actually has to type.
 //
-// `id` and `service` were asked for on this form and neither needed to be. The
-// id is a stable slug the backend requires but nobody chooses: `slugId` already
-// derived one from the title whenever the box was left blank, so the field only
-// ever offered a way to get it wrong. `service` was free text rendered with a
-// "Gmail" fallback in the table, which is what almost every row said anyway.
+// The id is a stable slug the backend requires but nobody chooses: `slugId`
+// derives one from the title. It is generated and sent, never asked for.
 //
-// The id is still generated and still sent; it is just no longer asked for.
+// The service is one of three, chosen from a list (19 Oct). It was free text
+// shown with a "Gmail" fallback, so 26 Naukri logins read as Gmail. It is never
+// worked out from the username: a Naukri login is very often a Gmail address.
 // Sniffed again in the backend from the bytes; this is only the picker filter.
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
+export const SERVICE_TYPES = ['Naukri', 'Gmail', 'Telegram']
+const DEFAULT_SERVICE = 'Naukri'
+export const SERVICE_FILTER_KEY = 'ta.dataRoom.accountsService'
+
+/** The service filter remembered for this browser session, or All Services. */
+function readServiceFilter() {
+  try {
+    const saved = window.sessionStorage.getItem(SERVICE_FILTER_KEY)
+    return saved === 'all' || SERVICE_TYPES.includes(saved) ? saved : 'all'
+  } catch {
+    return 'all'
+  }
+}
+
+/**
+ * Copy text that has to be fetched first. Safari only lets a page write to the
+ * clipboard inside the click itself, so the fetch is handed to the clipboard as
+ * a pending item where that is supported; elsewhere it is fetched, then copied.
+ */
+async function copyFetched(getText) {
+  if (typeof window !== 'undefined' && window.ClipboardItem && navigator.clipboard?.write) {
+    try {
+      const blob = getText().then(text => new Blob([text], { type: 'text/plain' }))
+      await navigator.clipboard.write([new window.ClipboardItem({ 'text/plain': blob })])
+      return true
+    } catch {
+      // fall through to the plain path
+    }
+  }
+  return copyToClipboard(await getText())
+}
+
 const SVC_FIELDS = [
-  { key: 'label', label: 'Account name', placeholder: 'e.g. Karthik Gmail (current)', full: true },
+  { key: 'label', label: 'Account name', placeholder: 'e.g. Bhavana Naukri', full: true },
+  { key: 'service', label: 'Service type', type: 'select', options: SERVICE_TYPES, placeholder: 'Choose a service' },
   { key: 'username', label: 'Username / email', placeholder: 'name@example.com' },
   { key: 'password', label: 'Password', type: 'password' },
   { key: 'notes', label: 'Notes (optional)', type: 'textarea', rows: 3, full: true },
@@ -100,7 +132,16 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error, ima
           {fields.map((f) => (
             <label key={f.key} className={f.full ? 'dr-form-full' : ''}>
               {f.label}
-              {f.type === 'textarea' ? (
+              {f.type === 'select' ? (
+                <select
+                  className="cand-input dr-select"
+                  value={form[f.key] || ''}
+                  onChange={(e) => onChange({ ...form, [f.key]: e.target.value })}
+                >
+                  {!form[f.key] && <option value="" disabled>{f.placeholder}</option>}
+                  {f.options.map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
+              ) : f.type === 'textarea' ? (
                 <textarea
                   className="cand-input"
                   rows={f.rows || 3}
@@ -267,6 +308,43 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
   const [search, setSearch] = useState('')
   const [exporting, setExporting] = useState(false)
   const closeExport = useCallback(() => setExporting(false), [])
+  // Remembered for the session, so it holds while moving around the Data Room.
+  const [serviceFilter, setServiceFilter] = useState(readServiceFilter)
+  const chooseServiceFilter = (value) => {
+    setServiceFilter(value)
+    try { window.sessionStorage.setItem(SERVICE_FILTER_KEY, value) } catch { /* private mode: not remembered */ }
+  }
+  // Passwords are not in the account list (19 Oct). One is read when it is
+  // shown, copied or edited, and kept here until the list is loaded again.
+  const passwords = useRef({})
+  const [shown, setShown] = useState({})
+  const [rowError, setRowError] = useState('')
+  useEffect(() => {
+    passwords.current = {}
+    // Unchanged when nothing is shown, so a fresh empty list cannot re-render forever.
+    setShown(current => (Object.keys(current).length ? {} : current))
+  }, [accounts])
+  const fetchPassword = useCallback(async (id) => {
+    if (Object.prototype.hasOwnProperty.call(passwords.current, id)) return passwords.current[id]
+    const res = await fetch(`${API_BASE}/data-room/credentials/service-accounts/${encodeURIComponent(id)}/password`, { credentials: 'include' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || data.status !== 'ok') throw new Error(data.detail || 'The password could not be read.')
+    passwords.current[id] = data.password
+    return data.password
+  }, [])
+  const toggleShown = async (row) => {
+    setRowError('')
+    if (shown[row.id] !== undefined) {
+      setShown(current => { const next = { ...current }; delete next[row.id]; return next })
+      return
+    }
+    try {
+      const password = await fetchPassword(row.id)
+      setShown(current => ({ ...current, [row.id]: password }))
+    } catch (err) {
+      setRowError(err.message)
+    }
+  }
   // The chosen screenshot is held here until Save. A new account has no id to
   // upload against yet, so the file waits for the row to exist; an edit uses
   // the same path so both behave identically.
@@ -302,22 +380,43 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
     })
   }
 
-  const onCopy = useCallback(async (key, text) => {
-    const ok = await copyToClipboard(text)
+  // "Copied" shows for a moment; the timer goes with the tab, so it never fires after.
+  const copiedTimer = useRef(null)
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), [])
+  const showCopied = useCallback((key, ok) => {
     setActiveKey(ok ? key : null)
-    if (ok) window.setTimeout(() => setActiveKey(k => (k === key ? null : k)), 1600)
+    window.clearTimeout(copiedTimer.current)
+    if (ok) copiedTimer.current = window.setTimeout(() => setActiveKey(k => (k === key ? null : k)), 1600)
   }, [])
+  const onCopy = useCallback(async (key, text) => {
+    showCopied(key, await copyToClipboard(text))
+  }, [showCopied])
+  const onCopyFetched = useCallback(async (key, getText) => {
+    setRowError('')
+    let ok = false
+    try { ok = await copyFetched(getText) } catch (err) { setRowError(err.message) }
+    showCopied(key, ok)
+  }, [showCopied])
 
   const openAdd = () => {
     setModalError('')
     clearImageState()
-    setModal({ mode: 'create', form: { id: '', label: '', service: '', username: '', password: '', notes: '' } })
+    setModal({ mode: 'create', form: { id: '', label: '', service: DEFAULT_SERVICE, username: '', password: '', notes: '' } })
   }
 
   const openEdit = (row) => {
     setModalError('')
     clearImageState()
-    setModal({ mode: 'edit', id: row.id, row, form: { id: row.id, label: row.label || '', service: row.service || '', username: row.username || '', password: row.password || '', notes: row.notes || '' } })
+    // An account whose service was never recorded opens with none chosen, so
+    // saving it asks for one rather than guessing.
+    setModal({ mode: 'edit', id: row.id, row, originalPassword: null, form: { id: row.id, label: row.label || '', service: SERVICE_TYPES.includes(row.service) ? row.service : '', username: row.username || '', password: '', notes: row.notes || '' } })
+    if (row.has_password) {
+      fetchPassword(row.id)
+        .then(password => setModal(m => (m && m.id === row.id && m.mode === 'edit' && m.originalPassword === null
+          ? { ...m, originalPassword: password, form: { ...m.form, password: m.form.password || password } }
+          : m)))
+        .catch(() => { /* the field stays empty: a blank password keeps the stored one */ })
+    }
   }
 
   const handleDelete = async (row) => {
@@ -328,9 +427,12 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
   }
 
   const handleSave = async () => {
-    const { mode, form, id } = modal
+    const { mode, form, id, originalPassword } = modal
+    if (!SERVICE_TYPES.includes(form.service)) { setModalError('Choose a service type.'); return }
     const body = { ...form }
     if (mode === 'create' && !body.id.trim()) body.id = slugId(body.label || body.username)
+    // An edit sends the password only when it was changed; blank keeps the stored one.
+    if (mode === 'edit' && (body.password === '' || body.password === originalPassword)) delete body.password
     const url = mode === 'create'
       ? `${API_BASE}/data-room/credentials/vault/service_accounts`
       : `${API_BASE}/data-room/credentials/vault/service_accounts/${id}`
@@ -365,14 +467,23 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
   const oldAccounts = accounts.filter(r => accountStatus(r) === 'old').length
   const primaryAccounts = accounts.filter(r => isPrimary(r)).length
 
-  const filtered = search.trim()
-    ? accounts.filter(r => {
-        const q = search.toLowerCase()
-        return (r.label || '').toLowerCase().includes(q) ||
-          (r.username || '').toLowerCase().includes(q) ||
-          (r.service || '').toLowerCase().includes(q)
-      })
-    : accounts
+  const serviceCounts = useMemo(() => {
+    const counts = Object.fromEntries(SERVICE_TYPES.map(name => [name, 0]))
+    for (const row of accounts) if (row.service in counts) counts[row.service] += 1
+    return counts
+  }, [accounts])
+
+  // The service filter and the search narrow the same list.
+  const query = search.trim().toLowerCase()
+  const filtered = accounts
+    .filter(r => serviceFilter === 'all' || r.service === serviceFilter)
+    .filter(r => !query ||
+      (r.label || '').toLowerCase().includes(query) ||
+      (r.username || '').toLowerCase().includes(query) ||
+      (r.service || '').toLowerCase().includes(query))
+  const emptyText = serviceFilter !== 'all'
+    ? (query ? `No ${serviceFilter} accounts match your search.` : `No ${serviceFilter} accounts.`)
+    : (query ? 'No accounts match your search.' : 'No accounts found.')
 
   return (
     <section className="dr-section dr-section--active dr-accounts-tab">
@@ -380,7 +491,7 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
       <div className="dr-tab-header">
         <div>
           <h2 className="dr-section-title">Accounts</h2>
-          <p className="dr-section-desc">Manage Gmail and service accounts used across operations.</p>
+          <p className="dr-section-desc">Naukri, Gmail and Telegram logins used across operations.</p>
         </div>
         <div className="dr-tab-header-actions">
           <div className="dr-search-wrap">
@@ -394,6 +505,15 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <select
+            className="cand-input dr-service-select"
+            aria-label="Service type"
+            value={serviceFilter}
+            onChange={(e) => chooseServiceFilter(e.target.value)}
+          >
+            <option value="all">All Services ({accounts.length})</option>
+            {SERVICE_TYPES.map(name => <option key={name} value={name}>{name} ({serviceCounts[name]})</option>)}
+          </select>
           {/* The admin's, by role: the server refuses everyone else too. */}
           {canExport && (
             <button type="button" className="cand-btn dr-add-btn dr-export-btn" onClick={() => setExporting(true)}>
@@ -457,14 +577,14 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="dr-empty">No accounts found.</td></tr>
+              <tr className="dr-acct-empty-row"><td colSpan={7} className="dr-empty">{emptyText}</td></tr>
             )}
             {filtered.map(row => {
               const status = accountStatus(row)
               const primary = isPrimary(row)
               return (
                 <tr key={row.id}>
-                  <td>
+                  <td data-label="Account">
                     <div className="dr-acct-cell">
                       <span className={`dr-acct-dot dr-acct-dot--${status}`} />
                       <div>
@@ -473,32 +593,50 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
                       </div>
                     </div>
                   </td>
-                  <td>{row.service || 'Gmail'}</td>
-                  <td>
+                  <td data-label="Service">
+                    <span className={`dr-svc-badge dr-svc-badge--${(row.service || 'none').toLowerCase()}`}>{row.service || 'Not set'}</span>
+                  </td>
+                  <td data-label="Username">
                     <div className="dr-acct-cred-cell">
                       <code title={row.username || undefined}>{row.username || '—'}</code>
                       {row.username && <CopyChip label="username" text={row.username} copyKey={`${row.id}-user`} activeKey={activeKey} onCopy={onCopy} />}
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Password">
                     <div className="dr-acct-cred-cell">
-                      <code className="dr-creds-pass">{row.password || '—'}</code>
-                      {row.password && <CopyChip label="password" text={row.password} copyKey={`${row.id}-pass`} activeKey={activeKey} onCopy={onCopy} />}
+                      {row.has_password ? (
+                        <>
+                          <code className="dr-creds-pass">{shown[row.id] !== undefined ? shown[row.id] : '••••••••'}</code>
+                          <button
+                            type="button"
+                            className="dr-copy-btn dr-pass-toggle"
+                            aria-label={`${shown[row.id] !== undefined ? 'Hide' : 'Show'} password for ${row.label || row.id}`}
+                            onClick={() => toggleShown(row)}
+                          >
+                            {shown[row.id] !== undefined ? 'Hide' : 'Show'}
+                          </button>
+                          <CopyChip label="password" text="" copyKey={`${row.id}-pass`} activeKey={activeKey}
+                            onCopy={(key) => onCopyFetched(key, () => fetchPassword(row.id))} />
+                        </>
+                      ) : <code className="dr-creds-pass">—</code>}
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Status">
                     <span className={`dr-acct-status dr-acct-status--${status}`}>
                       ● {status === 'active' ? 'Active' : 'Old'}
                     </span>
                   </td>
-                  <td className="dr-muted">{row.last_used || '—'}</td>
-                  <td>
+                  <td className="dr-muted" data-label="Last used">{row.last_used || '—'}</td>
+                  <td data-label="Actions">
                     <div className="dr-acct-actions">
                       <button
                         type="button"
                         className={`dr-copy-btn dr-copy-btn--all${activeKey === `${row.id}-all` ? ' dr-copy-btn--copied' : ''}`}
                         title="Copy the account name, username, password and notes"
-                        onClick={() => onCopy(`${row.id}-all`, [row.label || row.id, row.service ? `Service: ${row.service}` : '', row.username ? `Username: ${row.username}` : '', row.password ? `Password: ${row.password}` : '', row.notes || ''].filter(Boolean).join('\n'))}
+                        onClick={() => onCopyFetched(`${row.id}-all`, async () => {
+                          const password = row.has_password ? await fetchPassword(row.id) : ''
+                          return [row.label || row.id, row.service ? `Service: ${row.service}` : '', row.username ? `Username: ${row.username}` : '', password ? `Password: ${password}` : '', row.notes || ''].filter(Boolean).join('\n')
+                        })}
                       >
                         <Icon name={activeKey === `${row.id}-all` ? 'check' : 'copy'} size={13} />
                         {activeKey === `${row.id}-all` ? 'Copied' : 'Copy all'}
@@ -513,6 +651,8 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
           </tbody>
         </table>
       </div>
+
+      {rowError && <p className="dr-error" role="alert">{rowError}</p>}
 
       {/* Tip bar */}
       <div className="dr-tip-bar">

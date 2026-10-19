@@ -57,9 +57,106 @@ def _load() -> dict:
             return _empty()
 
 
+# ---------------------------------------------------------------------------------------------
+# Service accounts: their service, and their passwords encrypted at rest
+# ---------------------------------------------------------------------------------------------
+
+SERVICE_TYPES = ("Naukri", "Gmail", "Telegram")
+DEFAULT_SERVICE = "Naukri"
+_SERVICE_WORDS = {name.lower(): name for name in SERVICE_TYPES}
+_KEY_INFO = b"teleautomation data room service account passwords"
+
+
+def normalise_service(value) -> str:
+    """One of SERVICE_TYPES, whatever its case, or "" when it is none of them."""
+    return _SERVICE_WORDS.get(str(value or "").strip().lower(), "")
+
+
+def classify_service(row: dict) -> str:
+    """The service an account is for, from what the account itself says, or "" when it does not say.
+
+    A service already recorded wins. Otherwise the account's name, then its notes, must name exactly one service
+    ("Bhavana Naukri", "Telegram login number"). The username is never read: a Naukri login is very often a Gmail
+    address, and an email domain says where the mail goes, not what the account is for.
+    """
+    recorded = normalise_service(row.get("service"))
+    if recorded:
+        return recorded
+    for field in ("label", "notes"):
+        words = set(re.findall(r"[a-z]+", str(row.get(field) or "").lower()))
+        named = [name for word, name in _SERVICE_WORDS.items() if word in words]
+        if len(named) == 1:
+            return named[0]
+        if len(named) > 1:
+            return ""
+    return ""
+
+
+def _password_cipher():
+    """A key of its own for these passwords, derived from the deployment's credential key (the one the mailbox
+    credentials use) so no new secret has to be managed; derivation keeps the two uses apart."""
+    import base64
+
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    root = (os.getenv("MAILBOX_CREDENTIAL_ENCRYPTION_KEY") or "").strip().encode()
+    if not root:
+        raise RuntimeError("MAILBOX_CREDENTIAL_ENCRYPTION_KEY is not configured")
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=_KEY_INFO).derive(root)
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def _encrypt_password(value: str) -> str:
+    return _password_cipher().encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_password(token: str) -> str:
+    return _password_cipher().decrypt(token.encode("ascii")).decode("utf-8")
+
+
+def _seal_service_account_passwords(data: dict) -> int:
+    """Every plain `password` on a service account becomes `password_enc`; returns how many. Runs on every save, so
+    nothing writes one in the clear whichever path it takes. Without a configured key (a developer machine) the
+    rows are left as they are."""
+    sealed = 0
+    rows = data.get("service_accounts") or []
+    if not any(isinstance(r, dict) and "password" in r for r in rows):
+        return 0
+    try:
+        _password_cipher()
+    except RuntimeError:
+        return 0
+    for row in rows:
+        if isinstance(row, dict) and "password" in row:
+            plain = row.pop("password")
+            if plain:
+                row["password_enc"] = _encrypt_password(str(plain))
+            else:
+                row.pop("password_enc", None)
+            sealed += 1
+    return sealed
+
+
+def _stored_password(row: dict) -> str:
+    if row.get("password_enc"):
+        return _decrypt_password(str(row["password_enc"]))
+    return str(row.get("password") or "")
+
+
+def _public_service_account(row: dict) -> dict:
+    """What a routine response carries: everything but the password, plus whether there is one."""
+    public = {key: value for key, value in row.items() if key not in ("password", "password_enc")}
+    public["service"] = normalise_service(row.get("service")) or classify_service(row)
+    public["has_password"] = bool(row.get("password_enc") or row.get("password"))
+    return public
+
+
 def _save(data: dict) -> None:
     os.makedirs(os.path.dirname(_FILE), exist_ok=True)
     data = dict(data)
+    _seal_service_account_passwords(data)
     data["updated_at"] = _now_iso()
     with _lock:
         tmp = _FILE + ".tmp"
@@ -258,7 +355,9 @@ def get_credentials() -> dict:
             {key: value for key, value in h.items() if key != "password"}
             for h in handlers if isinstance(h, dict)
         ],
-        "service_accounts": service_accounts,
+        # Passwords stay in the store, encrypted: one is read only on purpose
+        # (service_account_password), never with the list.
+        "service_accounts": [_public_service_account(row) for row in service_accounts],
         "prompts": prompts,
         "resources": resources,
         "offer_letters": offer_letters,
@@ -424,6 +523,97 @@ def delete_vault_item(section: str, item_id: str) -> dict | None:
         except FileNotFoundError:
             pass
     return get_credentials()
+
+
+def migrate_service_accounts() -> dict:
+    """Give every service account its service and encrypt every password still stored in the clear.
+
+    A service already recorded is kept (only its case is tidied); one the account does not name stays empty for a
+    person to choose. Rows, ids, notes, images and provenance are untouched, nothing is added or removed, and running
+    it again changes nothing.
+    """
+    data = _load()
+    rows = data.get("service_accounts") or []
+    classified = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        service = classify_service(row)
+        if service and row.get("service") != service:
+            row["service"] = service
+            classified += 1
+    plain = sum(1 for row in rows if isinstance(row, dict) and "password" in row)
+    if classified or plain:
+        _save(data)
+    after = [r for r in (_load().get("service_accounts") or []) if isinstance(r, dict)]
+    by_service = {name: 0 for name in SERVICE_TYPES + ("",)}
+    for row in after:
+        by_service[normalise_service(row.get("service"))] += 1
+    return {
+        "accounts": len(after),
+        "classified": classified,
+        "encrypted_now": plain - sum(1 for r in after if "password" in r),
+        "still_plain": sum(1 for r in after if "password" in r),
+        "by_service": {name or "not_set": count for name, count in by_service.items()},
+    }
+
+
+def _find_service_row(data: dict, item_id: str) -> dict | None:
+    rid = str(item_id or "").strip()
+    return next((r for r in data.get("service_accounts") or [] if isinstance(r, dict) and str(r.get("id") or "") == rid), None)
+
+
+def service_account_password(item_id: str) -> str | None:
+    """One account's password, decrypted, or None when there is no such account."""
+    row = _find_service_row(_load(), item_id)
+    return None if row is None else _stored_password(row)
+
+
+def service_accounts_with_passwords() -> list[dict]:
+    """Every service account with its password, for the admin's export; nothing else reads them all."""
+    out = []
+    for row in _load().get("service_accounts") or []:
+        if isinstance(row, dict):
+            entry = _public_service_account(row)
+            entry["password"] = _stored_password(row)
+            out.append(entry)
+    return sorted(out, key=_section_sort_key("service_accounts"))
+
+
+def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | None]:
+    """The fields an operator may set on a service account, checked."""
+    fields: dict = {}
+    for key in ("label", "username", "notes"):
+        if key in body and body[key] is not None:
+            fields[key] = str(body[key])
+    if "service" in body or creating:
+        service = normalise_service(body.get("service")) if body.get("service") not in (None, "") else (DEFAULT_SERVICE if creating else "")
+        if not service:
+            return {}, f"Service must be one of {', '.join(SERVICE_TYPES)}"
+        fields["service"] = service
+    password = body.get("password")
+    # An edit sends a password only when it is changed; a blank one keeps what is stored.
+    if isinstance(password, str) and password != "":
+        fields["password"] = password
+    return fields, None
+
+
+def create_service_account(body: dict) -> tuple[dict | None, str | None]:
+    fields, error = _service_account_fields(body or {}, creating=True)
+    if error:
+        return None, error
+    return create_vault_item("service_accounts", {"id": str((body or {}).get("id") or "").strip(), **fields})
+
+
+def update_service_account(item_id: str, body: dict) -> tuple[dict | None, str | None]:
+    fields, error = _service_account_fields(body or {}, creating=False)
+    if error:
+        return None, error
+    if "password" in fields:
+        # replaces the stored one; _save encrypts it
+        fields["password_enc"] = None
+    updated = update_vault_item("service_accounts", item_id, fields)
+    return (updated, None) if updated is not None else (None, "Not found")
 
 
 def handler_login_rows() -> list[dict]:
