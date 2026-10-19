@@ -1,7 +1,7 @@
 /**
  * Download All Accounts (Data Room -> Accounts, 19 Oct).
  *
- * The admin downloads every account with its complete details, passwords included, as Excel, CSV or text. There
+ * The admin downloads every account's name, username and password, as Excel, CSV or text. There
  * is no password prompt and no encryption step; the one thing between the button and the file is a confirmation
  * that says the file holds every password in plain text.
  */
@@ -77,7 +77,8 @@ describe('the dialog', () => {
   it('says what is in the file, offers Excel, CSV and text, and asks for no password', () => {
     renderTab()
     const dialog = openExport()
-    expect(dialog.textContent).toContain('All 2 accounts with their complete details: account name, type, username, password, status')
+    expect(dialog.textContent).toContain('All 2 accounts: account name, username and password.')
+    for (const gone of ['type', 'status', 'last used', 'notes']) expect(dialog.textContent).not.toContain(gone)
     expect(dialog.textContent).toContain('The file holds every password in plain text.')
     expect([...dialog.querySelectorAll('.dr-export-format')].map(l => l.textContent)).toEqual(['Excel (.xlsx)', 'CSV (.csv)', 'Text (.txt)'])
     expect(dialog.querySelector('input[type="password"], input[type="checkbox"]')).toBeNull()

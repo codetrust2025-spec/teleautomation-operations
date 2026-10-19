@@ -79,9 +79,9 @@ def _record_account_export(request: Request, profile: dict, *, fmt: str, count: 
 
 @router.get("/data-room/credentials/service-accounts/export")
 async def data_room_accounts_export(request: Request, format: str = Query(default="xlsx")):
-    """Every Data Room account with its complete details -- name, type, username, password, status, last used,
-    notes -- as .xlsx, .csv or .txt. The admin's only; every download is recorded, and one that cannot be recorded
-    is not made. The file is built in memory and sent: nothing is written to the server, and nothing may cache it."""
+    """Every Data Room account -- Account Name, Username, Password, exactly as stored -- as .xlsx, .csv or .txt.
+    The admin's only; every download is recorded, and one that cannot be recorded is not made. The file is built in
+    memory and sent: nothing is written to the server, and nothing may cache it."""
     from fastapi.responses import Response
 
     from features import data_room_account_export as export

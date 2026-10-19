@@ -155,9 +155,8 @@ function saveBlob(blob, name) {
 }
 
 /**
- * Download All Accounts. Every account with its complete details -- account
- * name, type, username, password, status, last used and notes -- as Excel, CSV
- * or text, for the admin. The file holds the passwords in plain text, so the
+ * Download All Accounts. Every account's name, username and password, exactly
+ * as stored, as Excel, CSV or text, for the admin. The file holds the passwords in plain text, so the
  * download waits for one explicit confirmation that says so; the server builds
  * it in memory, records who took it, and keeps no copy.
  */
@@ -230,8 +229,7 @@ function AccountsExportModal({ count, onClose }) {
         ) : (
           <>
             <p className="dr-export-lead">
-              All {count} account{plural} with their complete details: account name, type, username, password, status,
-              last used and notes.
+              All {count} account{plural}: account name, username and password.
             </p>
             <p className="dr-export-warning" role="note">
               The file holds every password in plain text. It is made for you when you download it and is not kept on the server.

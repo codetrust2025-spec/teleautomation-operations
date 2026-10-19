@@ -1,8 +1,8 @@
 """Download All Accounts (Data Room -> Accounts).
 
-Every account with its complete details -- name, type, username, password, status, last used, notes -- as Excel,
-CSV or text; for the signed-in admin by role only; every download recorded (and none made unrecorded); built in
-memory and never written to the server or cached. Driven through the real route with the stores and session replaced.
+Three columns -- Account Name, Username, Password -- for every account, each value exactly as stored, as Excel, CSV
+or text; for the signed-in admin by role only; every download recorded (and none made unrecorded); built in memory
+and never written to the server or cached. Driven through the real route with the stores and session replaced.
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import io
 import json
 import zipfile
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -23,13 +22,24 @@ from features import data_room_account_export as export
 
 ACCOUNTS = [
     {"id": "karthik", "label": "Karthik Gmail (current)", "service": "", "username": "karthik@example.com",
-     "password": "Pa55-karthik-SECRET", "last_used": "18 Oct", "notes": "recovery phone on file\nsecond line"},
+     "password": "Pa55-karthik-SECRET", "last_used": "18 Oct", "notes": "recovery phone on file"},
     {"id": "naukri", "label": "Naukri legacy", "service": "Naukri", "username": "ops@example.com", "password": "naukri-SECRET-2"},
-    {"id": "formula", "label": "=HYPERLINK(\"http://x\")", "service": "Gmail", "username": "+91 trick", "password": "-dash"},
+    # Passwords that a careless export would change: a leading formula sign, spaces at both ends, a comma and quotes.
+    {"id": "tricky", "label": "Tricky", "username": "+91 trick", "password": " =SUM(1,2) \"x\" "},
+    {"id": "no-name-id", "label": "", "username": "nameless@example.com", "password": "nameless-SECRET"},
+    {"id": "no-password", "label": "No password yet", "username": "empty@example.com", "password": ""},
 ]
-HEADER = ["Account name", "Type", "Username", "Password", "Status", "Last used", "Notes"]
+HEADER = ["Account Name", "Username", "Password"]
+EXPECTED = [
+    ["Karthik Gmail (current)", "karthik@example.com", "Pa55-karthik-SECRET"],
+    ["Naukri legacy", "ops@example.com", "naukri-SECRET-2"],
+    ["Tricky", "+91 trick", " =SUM(1,2) \"x\" "],
+    ["no-name-id", "nameless@example.com", "nameless-SECRET"],
+    ["No password yet", "empty@example.com", ""],
+]
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 BOM = chr(0xFEFF)
+CRLF = chr(13) + chr(10)
 
 
 def sheet_rows(data: bytes) -> list[list[str]]:
@@ -39,45 +49,43 @@ def sheet_rows(data: bytes) -> list[list[str]]:
 
 
 class TestTheRows:
-    def test_complete_details_for_every_account(self):
+    def test_only_name_username_and_password_for_every_account(self):
         rows = export.account_rows(ACCOUNTS)
-        assert rows[0] == {"name": "Karthik Gmail (current)", "type": "Gmail", "username": "karthik@example.com",
-                           "password": "Pa55-karthik-SECRET", "status": "Active", "last_used": "18 Oct",
-                           "notes": "recovery phone on file\nsecond line"}
-        assert rows[1]["status"] == "Old" and rows[1]["type"] == "Naukri"     # "legacy" in the name, as on the table
-        assert len(rows) == len(ACCOUNTS)
+        assert [list(row) for row in rows] == [["name", "username", "password"]] * len(ACCOUNTS)
+        assert [[row["name"], row["username"], row["password"]] for row in rows] == EXPECTED
+
+    def test_an_account_with_no_name_is_named_by_its_id_rather_than_left_out(self):
+        assert export.account_rows([{"id": "abc", "username": "u"}]) == [{"name": "abc", "username": "u", "password": ""}]
 
 
 class TestTheFormats:
-    def test_csv_opens_in_excel_as_utf8_holds_the_passwords_and_runs_no_formula(self):
+    def test_csv_is_three_columns_with_every_value_exactly_as_stored(self):
         data = export.render(export.account_rows(ACCOUNTS), "csv")
-        assert data.startswith(BOM.encode("utf-8"))
+        assert data.startswith(BOM.encode("utf-8"))                      # Excel reads it as UTF-8
         rows = list(csv.reader(io.StringIO(data.decode("utf-8-sig"))))
-        assert rows[0] == HEADER
-        assert rows[1][:5] == ["Karthik Gmail (current)", "Gmail", "karthik@example.com", "Pa55-karthik-SECRET", "Active"]
-        assert rows[1][6] == "recovery phone on file\nsecond line"
-        assert rows[3][0] == "'=HYPERLINK(\"http://x\")" and rows[3][2] == "'+91 trick" and rows[3][3] == "'-dash"
+        assert rows == [HEADER] + EXPECTED                               # no prefix, no trimming, nothing missing
 
-    def test_text_lists_each_account_with_every_detail(self):
-        text = export.render(export.account_rows(ACCOUNTS), "txt", exported_at=datetime(2026, 10, 19, 4, 0, tzinfo=timezone.utc)).decode("utf-8")
-        assert "Exported 19 Oct 2026, 09:30 AM IST · 3 accounts" in text
-        assert ("1. Karthik Gmail (current)\r\n   Type: Gmail\r\n   Username: karthik@example.com\r\n"
-                "   Password: Pa55-karthik-SECRET\r\n   Status: Active\r\n   Last used: 18 Oct\r\n") in text
-        assert "   Notes: recovery phone on file\n          second line" in text      # a second line stays under its label
+    def test_text_is_a_header_and_one_aligned_line_per_account(self):
+        text = export.render(export.account_rows(ACCOUNTS), "txt").decode("utf-8")
+        lines = text.split(CRLF)
+        assert lines[-1] == "" and len(lines) == len(ACCOUNTS) + 2         # header, the accounts, the final newline
+        assert lines[0].split() == ["Account", "Name", "Username", "Password"]
+        assert lines[1] == "Karthik Gmail (current)  karthik@example.com   Pa55-karthik-SECRET"
+        # columns line up: every password starts where the Password heading does
+        start = lines[0].index("Password")
+        for line, (_, _, password) in zip(lines[1:], EXPECTED):
+            assert line[start:] == password                              # exact, trailing spaces included
+        assert lines[5] == "No password yet          empty@example.com"   # no padding after the last value
+        for gone in ("Type", "Status", "Last used", "Notes", "Exported", "1. "):
+            assert gone not in text
 
-    def test_excel_is_a_real_workbook_with_a_bold_frozen_header(self):
+    def test_excel_is_three_text_columns_with_a_bold_frozen_header(self):
         data = export.render(export.account_rows(ACCOUNTS), "xlsx")
-        rows = sheet_rows(data)
-        assert rows[0] == HEADER
-        assert rows[1][:5] == ["Karthik Gmail (current)", "Gmail", "karthik@example.com", "Pa55-karthik-SECRET", "Active"]
-        assert rows[3][0] == "=HYPERLINK(\"http://x\")"                      # text cells: nothing is a formula
+        assert sheet_rows(data) == [HEADER] + EXPECTED
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             sheet = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
-        assert 'state="frozen"' in sheet and '<c r="A1" t="inlineStr" s="1">' in sheet and "<f>" not in sheet
-
-    def test_excel_escapes_markup_and_drops_characters_xml_cannot_hold(self):
-        data = export.to_xlsx([{"name": "A & B <x>" + chr(7)}])
-        assert sheet_rows(data)[1][0] == "A & B <x>"
+        assert 'state="frozen"' in sheet and '<c r="A1" t="inlineStr" s="1">' in sheet
+        assert "<f>" not in sheet and '<c r="D' not in sheet              # text cells only, three columns
 
     def test_an_unknown_format_is_refused(self):
         with pytest.raises(ValueError):
@@ -124,7 +132,7 @@ URL = "/data-room/credentials/service-accounts/export"
 
 class TestTheRoute:
     @pytest.mark.parametrize("fmt, media", [("xlsx", "spreadsheetml"), ("csv", "text/csv"), ("txt", "text/plain")])
-    def test_the_admin_downloads_every_account_with_its_password(self, api, fmt, media):
+    def test_the_admin_downloads_every_account_exactly(self, api, fmt, media):
         client, _ = api
         res = client.get(f"{URL}?format={fmt}")
         assert res.status_code == 200 and media in res.headers["content-type"]
@@ -132,9 +140,12 @@ class TestTheRoute:
         assert res.headers["x-content-type-options"] == "nosniff"
         assert res.headers["content-disposition"].startswith('attachment; filename="teleautomation-accounts-')
         assert res.headers["content-disposition"].endswith(f'.{fmt}"')
-        body = res.content if fmt != "xlsx" else zipfile.ZipFile(io.BytesIO(res.content)).read("xl/worksheets/sheet1.xml")
-        for value in (b"karthik@example.com", b"Pa55-karthik-SECRET", b"naukri-SECRET-2"):
-            assert value in body
+        if fmt == "xlsx":
+            assert sheet_rows(res.content) == [HEADER] + EXPECTED
+        elif fmt == "csv":
+            assert list(csv.reader(io.StringIO(res.content.decode("utf-8-sig")))) == [HEADER] + EXPECTED
+        else:
+            assert all(password in res.content.decode("utf-8") for _, _, password in EXPECTED)
 
     def test_every_download_is_recorded_without_its_contents(self, api):
         client, state = api
@@ -142,7 +153,7 @@ class TestTheRoute:
         assert len(state["audits"]) == 1
         record = state["audits"][0]
         assert record["action"] == "data_room_accounts_export" and record["actor"] == "admin"
-        assert record["new"] == {"format": "csv", "accounts": 3, "with_passwords": True}
+        assert record["new"] == {"format": "csv", "accounts": len(ACCOUNTS), "with_passwords": True}
         assert "SECRET" not in json.dumps(record) and "example.com" not in json.dumps(record)
 
     def test_no_download_is_made_unrecorded(self, api):
@@ -161,8 +172,3 @@ class TestTheRoute:
     def test_an_unknown_format_is_refused(self, api):
         client, _ = api
         assert client.get(f"{URL}?format=pdf").status_code == 400
-
-    def test_there_is_no_separate_password_export_any_more(self, api):
-        client, _ = api
-        res = client.post("/data-room/credentials/service-accounts/export-with-passwords", json={})
-        assert res.status_code in (404, 405)

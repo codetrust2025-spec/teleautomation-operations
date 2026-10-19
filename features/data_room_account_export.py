@@ -1,13 +1,16 @@
 """Download every Data Room service account at once: Excel, CSV or plain text.
 
-Each account comes with its complete details, as the Accounts table holds them:
-account name, type, username, password, status, last used and notes. The file
-is built in memory and handed to the browser; nothing is written to the
-server's disk. Who may download it -- the admin, by role -- and the record of
-every download are the route's (api/routers/data_room.py).
+Three columns and nothing else: Account Name, Username, Password. Every value
+is written exactly as stored -- a password is never trimmed, escaped or
+prefixed -- and every account is a row; one with no name is named by its id,
+so none goes missing. The file is built in memory and handed to the browser;
+nothing is written to the server's disk. Who may download it -- the admin, by
+role -- and the record of every download are the route's
+(api/routers/data_room.py).
 
 The Excel writer is the standard library's: an .xlsx is a zip of a few XML
-parts, and a one-sheet table needs nothing more.
+parts, and a one-sheet table needs nothing more. Its cells are text cells, so a
+value Excel would read as a formula is shown as typed.
 """
 from __future__ import annotations
 
@@ -25,37 +28,19 @@ MEDIA_TYPES = {
     "csv": "text/csv; charset=utf-8",
     "txt": "text/plain; charset=utf-8",
 }
-COLUMNS = (
-    ("name", "Account name"), ("type", "Type"), ("username", "Username"), ("password", "Password"),
-    ("status", "Status"), ("last_used", "Last used"), ("notes", "Notes"),
-)
-
-
-def account_status(row: dict) -> str:
-    """The Accounts table's own rule: an account named deprecated or legacy is Old, any other is Active."""
-    label = str(row.get("label") or "").lower()
-    return "Old" if ("deprecated" in label or "legacy" in label) else "Active"
+COLUMNS = (("name", "Account Name"), ("username", "Username"), ("password", "Password"))
 
 
 def account_rows(service_accounts: list[dict]) -> list[dict]:
-    """One row per account, as the table shows it (no type is "Gmail", as there)."""
+    """One row per account: its name (its id when it has none), username and password, as stored."""
     return [
         {
-            "name": str(row.get("label") or row.get("id") or "").strip(),
-            "type": str(row.get("service") or "").strip() or "Gmail",
-            "username": str(row.get("username") or "").strip(),
+            "name": str(row.get("label") or "").strip() or str(row.get("id") or ""),
+            "username": str(row.get("username") or ""),
             "password": str(row.get("password") or ""),
-            "status": account_status(row),
-            "last_used": str(row.get("last_used") or "").strip(),
-            "notes": str(row.get("notes") or "").strip(),
         }
         for row in service_accounts or []
     ]
-
-
-def _csv_safe(value: str) -> str:
-    """A cell a spreadsheet would run as a formula is written as text (CSV injection)."""
-    return "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
 
 
 def to_csv(rows: list[dict]) -> bytes:
@@ -63,24 +48,23 @@ def to_csv(rows: list[dict]) -> bytes:
     writer = csv.writer(buffer, lineterminator="\r\n")
     writer.writerow([title for _, title in COLUMNS])
     for row in rows:
-        writer.writerow([_csv_safe(str(row.get(key) or "")) for key, _ in COLUMNS])
+        writer.writerow([row.get(key) or "" for key, _ in COLUMNS])
     # The byte-order mark makes Excel read the file as UTF-8.
-    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
+    return (chr(0xFEFF) + buffer.getvalue()).encode("utf-8")
 
 
-def to_txt(rows: list[dict], *, exported_at: datetime) -> bytes:
-    lines = [
-        "TeleAutomation · Data Room accounts",
-        f"Exported {exported_at.astimezone(IST):%d %b %Y, %I:%M %p} IST · {len(rows)} account{'s' if len(rows) != 1 else ''}",
-        "",
-    ]
-    for index, row in enumerate(rows, 1):
-        lines.append(f"{index}. {row.get('name') or '—'}")
-        for key, title in COLUMNS[1:]:
-            value = str(row.get(key) or "—").replace("\r\n", "\n").replace("\n", "\n" + " " * (len(title) + 5))
-            lines.append(f"   {title}: {value}")
-        lines.append("")
-    return "\r\n".join(lines).encode("utf-8")
+def to_txt(rows: list[dict]) -> bytes:
+    """A header line and one line per account, in aligned columns. Only padding is added: the last value on a line
+    is written as it is, so a password keeps every character, trailing spaces included."""
+    table = [[title for _, title in COLUMNS]] + [[row.get(key) or "" for key, _ in COLUMNS] for row in rows]
+    widths = [max(len(line[i]) for line in table) for i in range(len(COLUMNS))]
+
+    def line(cells: list[str]) -> str:
+        last = max((i for i, cell in enumerate(cells) if cell), default=0)
+        return "  ".join(cell.ljust(widths[i]) if i < last else cell for i, cell in enumerate(cells[:last + 1]))
+
+    newline = chr(13) + chr(10)
+    return (newline.join(line(cells) for cells in table) + newline).encode("utf-8")
 
 
 _XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -169,13 +153,13 @@ def to_xlsx(rows: list[dict]) -> bytes:
     return buffer.getvalue()
 
 
-def render(rows: list[dict], fmt: str, *, exported_at: datetime | None = None) -> bytes:
+def render(rows: list[dict], fmt: str) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"Unknown format: {fmt}")
     if fmt == "csv":
         return to_csv(rows)
     if fmt == "txt":
-        return to_txt(rows, exported_at=exported_at or datetime.now(timezone.utc))
+        return to_txt(rows)
     return to_xlsx(rows)
 
 
