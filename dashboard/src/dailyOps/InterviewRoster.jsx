@@ -12,6 +12,7 @@ import { STATUS_OPTIONS, canonicalStatus, countStatusRows, emptyStatusCounts, ma
 import { DarkSelect } from './DarkSelect.jsx'
 import { Icon } from '../components/ui/Icon.jsx'
 import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
+import { rowCompanyName as companyOf } from './companyName.js'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
@@ -827,12 +828,12 @@ export function InterviewRoster({
                         )}
                       </td>
                       <td data-label="Company" className="ops-interview-company">
-                        {row.interview_company
-                          ? <span className="ops-interview-company__name" title={row.interview_company}>{row.interview_company}</span>
+                        {/* The company's name and nothing else (19 Oct): the role
+                            line under it was the invite's subject, which carries
+                            the candidate's name and the job title. */}
+                        {companyOf(row)
+                          ? <span className="ops-interview-company__name" title={companyOf(row)}>{companyOf(row)}</span>
                           : <span className="ops-interview-company__none" title="No company recorded for this interview" aria-label="No company recorded">—</span>}
-                        {/* The role is recorded far more often than the company,
-                            so it shows under either. */}
-                        {row.interview_role && <span className="ops-interview-company__role" title={row.interview_role}>{row.interview_role}</span>}
                       </td>
                       <td data-label="Technology">{row.technology || '—'}</td>
                       <td data-label="Round">{row.interview_round || 'Round not specified'}</td>

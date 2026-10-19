@@ -586,6 +586,20 @@ _GENERIC_WORDS = frozenset({
     "company", "organisation", "organization", "client", "customer", "employer", "name", "the", "a", "hiring",
     "end", "interviewing", "firm", "business", "unknown", "your", "our", "this", "that",
 })
+# How a job is offered, not who offers it. "Contract" reached a Daily Ops row as a company (19 Oct).
+_EMPLOYMENT_TYPES = frozenset({
+    "contract", "contractual", "contract to hire", "contract to hire c2h", "c2h", "cth", "c2c", "full time",
+    "fulltime", "full time employment", "fte", "permanent", "part time", "freelance", "freelancer",
+    "internship", "intern", "lateral", "walk in", "walkin", "remote", "hybrid", "onsite", "wfh", "wfo",
+})
+# A calendar subject is not an organisation: "Round 1 Interview | Full Stack Developer | <candidate>". The subject is
+# stored as the role and carries the candidate's name; neither may stand in for the company. Daily Ops applies the
+# same rules (dashboard/src/dailyOps/companyName.js).
+_MEETING_TITLE = re.compile(
+    r"\b(interview|interviews|screening|discussion|scheduled|reschedule[d]?|invitation|round\s*\d+|l[1-4]\s*(round|interview|discussion))\b",
+    re.I,
+)
+_TITLE_SEPARATOR = re.compile(r"\|\||\s\|\s|\s[-–—:]\s")
 _COMPANY_MAX_LENGTH = 120
 _COMPANY_MAX_WORDS = 10
 
@@ -616,15 +630,20 @@ def clean_company_name(value: Any, *, people: tuple[str, ...] = ()) -> str:
     if not re.search(r"[A-Za-z]", text) or len(text.split()) > _COMPANY_MAX_WORDS:
         return ""
     key = _company_key(text)
-    if key in _NO_COMPANY or key in _NOT_A_COMPANY:
+    if key in _NO_COMPANY or key in _NOT_A_COMPANY or key in _EMPLOYMENT_TYPES:
         return ""
     words = key.split()
     if words and (words[0] in _NO_COMPANY_FIRST_WORDS or all(w in _GENERIC_WORDS for w in words)):
         return ""
     if any(phrase in key for phrase in _NAME_IS_MISSING):
         return ""
-    if key and key in {_company_key(person) for person in people if person}:
+    if _MEETING_TITLE.search(text) or _TITLE_SEPARATOR.search(text):
         return ""
+    for person in people:
+        name = _company_key(person or "")
+        # A one-word name is refused only as the whole value, so a company that shares it survives.
+        if name and (key == name or (" " in name and f" {name} " in f" {key} ")):
+            return ""
     return text
 
 

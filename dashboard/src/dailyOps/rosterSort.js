@@ -12,6 +12,7 @@
  * deliberately not offered.
  */
 import { INTERVIEW_STATUSES, canonicalStatus } from './interviewStatuses.js'
+import { rowCompanyName } from './companyName.js'
 
 export const ROSTER_SORT_OPTIONS = [
   { value: 'date_desc', label: 'Latest to Oldest' },
@@ -121,7 +122,7 @@ const COMPARE = {
   updated_desc: (a, b) => by(stamp(a?.updated_at), stamp(b?.updated_at), -1) || defaultOrder(a, b),
   created_desc: (a, b) => by(stamp(a?.created_at), stamp(b?.created_at), -1) || defaultOrder(a, b),
   screenshot_first: (a, b) => by(has(a?.slot_screenshot_proof?.url) ? 0 : 1, has(b?.slot_screenshot_proof?.url) ? 0 : 1) || defaultOrder(a, b),
-  missing_company_first: (a, b) => by(has(a?.interview_company) ? 1 : 0, has(b?.interview_company) ? 1 : 0) || defaultOrder(a, b),
+  missing_company_first: (a, b) => by(has(rowCompanyName(a)) ? 1 : 0, has(rowCompanyName(b)) ? 1 : 0) || defaultOrder(a, b),
   missing_round_first: (a, b) => by(has(a?.interview_round) ? 1 : 0, has(b?.interview_round) ? 1 : 0) || defaultOrder(a, b),
 }
 

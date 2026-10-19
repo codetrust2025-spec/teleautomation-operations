@@ -104,6 +104,41 @@ class TestWhatCountsAsACompany:
         assert clean_company_name("ASHA  RAO", people=("", "Asha Rao")) == ""
         assert clean_company_name("Capgemini", people=("Asha Rao",)) == "Capgemini"
 
+    def test_a_value_that_carries_the_candidates_full_name_is_not_a_company(self):
+        assert clean_company_name("Asha Rao Technologies", people=("Asha Rao",)) == ""
+        # Whole words only, and a one-word name only as the whole value.
+        assert clean_company_name("Ram Systems", people=("Ram S",)) == "Ram Systems"
+        assert clean_company_name("Infosys", people=("Info",)) == "Infosys"
+
+    @pytest.mark.parametrize("given", [
+        "Contract", "contract to hire", "C2H", "Full time", "Permanent", "Lateral", "Walk-in", "Internship", "Remote",
+    ])
+    def test_an_employment_type_is_not_a_company(self, given):
+        """'Contract' was stored as a company and shown on Daily Ops (19 Oct)."""
+        assert clean_company_name(given) == ""
+
+    @pytest.mark.parametrize("given", [
+        # The shapes of the invite subjects stored as the role on production rows (names invented).
+        "R1 Interview - Asha Rao",
+        "Round 1 Interview |Full Stack Developer |Asha Rao",
+        "Interview Scheduled for Specialist, AI SRE Engineer - Asha Rao",
+        "L1 Interview : Asha Rao || ServiceNow Developer",
+        "Screening call || Infosys || CTH",
+        "HCLTech | Interview Schedule - TP1",
+        "Technical Round 1 interview scheduled",
+        "Interview with Cognizant",
+        "L2 Discussion",
+    ])
+    def test_a_meeting_title_is_not_a_company(self, given):
+        assert clean_company_name(given) == ""
+
+    @pytest.mark.parametrize("given", [
+        "NAVIKENZ INDIA PRIVATE LIMITED", "Virtusa", "2COMS Consulting Pvt. Ltd.", "LT Mindtree", "Synergy Technologies LLC",
+        "Vidhai Technologies Pvt Ltd", "Persistent Systems", "Canada Life", "ValueLabs", "InterviewBit",
+    ])
+    def test_the_companies_on_production_rows_are_still_companies(self, given):
+        assert clean_company_name(given) == given
+
 
 class TestWhatComesBackFromAReading:
     def _read(self, **fields):

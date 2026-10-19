@@ -111,11 +111,12 @@ afterEach(() => {
 })
 
 describe('company', () => {
-  it('names the company, and the role under it, on the row', async () => {
+  it('names the company and nothing else on the row', async () => {
     await renderPanel()
     const company = cellOf('Asha Rao', 'Company')
     expect(company.querySelector('.ops-interview-company__name').textContent).toBe('Example Systems Pvt Ltd')
-    expect(company.querySelector('.ops-interview-company__role').textContent).toBe('Senior Test Engineer')
+    expect(company.textContent).toBe('Example Systems Pvt Ltd')
+    expect(company.textContent).not.toContain('Senior Test Engineer')
   })
 
   it('shows a compact dash when no company was recorded, still named for a reader', async () => {
@@ -126,12 +127,11 @@ describe('company', () => {
     expect(none.getAttribute('title')).toBe('No company recorded for this interview')
   })
 
-  it('still shows the role when only the role was recorded', async () => {
-    // In production the role is on far more rows than the company is.
+  it('shows only the dash when just the role was recorded: a role is not a company', async () => {
     await renderPanel()
     const company = cellOf('Meera Iyer', 'Company')
-    expect(company.querySelector('.ops-interview-company__none').textContent).toBe('—')
-    expect(company.querySelector('.ops-interview-company__role').textContent).toBe('Java Developer')
+    expect(company.textContent).toBe('—')
+    expect(company.querySelector('.ops-interview-company__role')).toBeNull()
   })
 
   it('sits in its own column right after the candidate', async () => {

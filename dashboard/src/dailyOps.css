@@ -2076,7 +2076,6 @@
 /* Company: the name, and the role under it when one was recorded. */
 .ops-interview-company{overflow:hidden}
 .ops-interview-company__name{display:block;color:#e2e8f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ops-interview-company__role{display:block;margin-top:1px;color:#94a3b8;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ops-interview-company__none{color:#64748b}
 
 /* Booking source: a small chip on the phone-number line rather than a third
@@ -2163,12 +2162,10 @@
   .ops-dash-table--v3 tbody td { font-size: 12px; line-height: 1.35; padding-top: 6px; padding-bottom: 6px; }
   .ops-dash-table--v3 tbody td .ops-interview-phone { font-size: 11px; }
   .ops-dash-table--v3 tbody td[data-label="Candidate"] strong,
-  .ops-dash-table--v3 tbody td .ops-interview-company__name,
-  .ops-dash-table--v3 tbody td .ops-interview-company__role {
+  .ops-dash-table--v3 tbody td .ops-interview-company__name {
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
     white-space: normal; overflow: hidden; overflow-wrap: break-word; text-overflow: clip;
   }
-  .ops-dash-table--v3 tbody td .ops-interview-company__role { font-size: 11px; }
   .ops-dash-table--v3 tbody td.ops-interview-time { white-space: normal; }
 }
 /* With the sidebar open a 1024px window leaves the table about 700px -- less
@@ -2822,10 +2819,8 @@
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Company"] {
     flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px;
   }
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__role { flex-basis: 100%; }
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Company"]::before { flex: 0 0 auto; }
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__name,
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__role { white-space: normal; overflow-wrap: anywhere; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__name { white-space: normal; overflow-wrap: anywhere; }
   .ops-roster-controls__actions .ops-roster-refresh svg { width: 18px; height: 18px; }
 }
 
