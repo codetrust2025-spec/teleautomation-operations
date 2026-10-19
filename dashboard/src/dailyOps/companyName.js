@@ -68,7 +68,12 @@ export function companyName(value, people = []) {
   if (MEETING_TITLE.test(text) || SEPARATOR.test(text)) return ''
   for (const person of people) {
     const name = companyKey(person)
-    if (name && (key === name || (name.includes(' ') && ` ${key} `.includes(` ${name} `)))) return ''
+    if (!name) continue
+    // Only words of the person's name ("Gangadhar" for "Gangadhar Nagarale"), or the whole multi-word name
+    // inside it, is the person. Whole words only: "Infosys" survives a person called "Info".
+    const nameWords = new Set(name.split(' '))
+    if (words.every(word => nameWords.has(word))) return ''
+    if (name.includes(' ') && ` ${key} `.includes(` ${name} `)) return ''
   }
   return text
 }

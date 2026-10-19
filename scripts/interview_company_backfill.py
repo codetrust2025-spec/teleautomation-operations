@@ -523,9 +523,10 @@ def _model_on(model: str, installed: list[str]) -> bool:
     return any(str(name or "").removesuffix(":latest") == wanted for name in installed)
 
 
-def ask_nodes(model: str, b64: str, prompt: str, order: list[str], *, timeout: int = CALL_TIMEOUT,
+def ask_nodes(model: str, b64: str | None, prompt: str, order: list[str], *, timeout: int = CALL_TIMEOUT,
               request=None, parse=None) -> dict:
-    """One question about one image, on the first node in `order` that carries `model` and answers it.
+    """One question (about one image, or about text alone when `b64` is None) on the first node in `order` that
+    carries `model` and answers it.
 
     -> {"answer", "node", "error", "unavailable", "tried"}. A node that is unreachable, lacks the model, or fails while
     answering (timeout, HTTP 500) is passed over for the next one. `unavailable` is True only when no node could even
@@ -551,8 +552,9 @@ def ask_nodes(model: str, b64: str, prompt: str, order: list[str], *, timeout: i
             tried.append(f"{node}: no {model}")
             continue
         reached = True
+        message = {"role": "user", "content": prompt, **({"images": [b64]} if b64 else {})}
         payload = {"model": model, "stream": False, "keep_alive": (os.getenv("OLLAMA_KEEP_ALIVE") or "30m").strip(),
-                   "format": "json", "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+                   "format": "json", "messages": [message],
                    "options": {"temperature": 0.1, "num_predict": 200, "num_ctx": ai_gateway.resolved_num_ctx()}}
         if model.startswith("qwen3"):
             payload["think"] = False      # only models that know the option are sent it

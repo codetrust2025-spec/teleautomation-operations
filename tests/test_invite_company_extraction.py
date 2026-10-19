@@ -110,6 +110,15 @@ class TestWhatCountsAsACompany:
         assert clean_company_name("Ram Systems", people=("Ram S",)) == "Ram Systems"
         assert clean_company_name("Infosys", people=("Info",)) == "Infosys"
 
+    @pytest.mark.parametrize("given", ["Asha", "Rao", "RAO ASHA", "asha  rao"])
+    def test_a_word_of_the_candidates_name_is_not_a_company(self, given):
+        """An invite read on 19 Oct gave the candidate's first name as the company."""
+        assert clean_company_name(given, people=("Asha Rao",)) == ""
+
+    def test_a_company_that_only_shares_a_word_with_the_name_is_kept(self):
+        assert clean_company_name("Rao Technologies", people=("Asha Rao",)) == "Rao Technologies"
+        assert clean_company_name("Asha Infotech", people=("Asha Rao", "Bhavana")) == "Asha Infotech"
+
     @pytest.mark.parametrize("given", [
         "Contract", "contract to hire", "C2H", "Full time", "Permanent", "Lateral", "Walk-in", "Internship", "Remote",
     ])

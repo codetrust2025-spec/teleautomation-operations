@@ -641,8 +641,12 @@ def clean_company_name(value: Any, *, people: tuple[str, ...] = ()) -> str:
         return ""
     for person in people:
         name = _company_key(person or "")
-        # A one-word name is refused only as the whole value, so a company that shares it survives.
-        if name and (key == name or (" " in name and f" {name} " in f" {key} ")):
+        if not name:
+            continue
+        # A value made only of words of the person's name ("Gangadhar" for "Gangadhar Nagarale", read off an invite on
+        # 19 Oct), or one that carries the whole multi-word name, is the person. Whole words only, so a company that
+        # merely starts like a name survives ("Infosys" for a person called "Info").
+        if set(words) <= set(name.split()) or (" " in name and f" {name} " in f" {key} "):
             return ""
     return text
 

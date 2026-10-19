@@ -62,6 +62,11 @@ describe('companyName', () => {
     expect(companyName('Ram Systems', ['Ram S'])).toBe('Ram Systems')
   })
 
+  it("is never just a word of the candidate's name", () => {
+    for (const value of ['Asha', 'Rao', 'RAO ASHA']) expect(companyName(value, ['Asha Rao'])).toBe('')
+    expect(companyName('Rao Technologies', ['Asha Rao'])).toBe('Rao Technologies')
+  })
+
   it('reads the row, never its role, subject, email or notes', () => {
     const row = {
       name: 'Asha Rao', interview_attendee: 'Bhavana', interview_company: '',
