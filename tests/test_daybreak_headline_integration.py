@@ -107,3 +107,10 @@ def test_existing_headline_reaches_model_as_data_for_factual_rewriting(monkeypat
     assert "does not authorize claims absent from APPROVED_FACTS" in prompt
     assert "return the existing headline unchanged" in prompt
     assert calls[0]["workload"] == "daybreak_headline"
+
+
+def test_rewriting_prioritizes_explicit_approved_experience_without_inflation():
+    text = integration._prompt(integration.DaybreakHeadlineRequest.model_validate(payload() | {"previous_headline": "React developer - JavaScript, React.js"}))
+    assert "include that exact experience" in text
+    assert "Never round it or add a plus sign" in text
+    assert '"experience":"6 years"' in text
