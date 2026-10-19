@@ -360,7 +360,8 @@ def get_credentials() -> dict:
         "service_accounts": [_public_service_account(row) for row in service_accounts],
         "prompts": prompts,
         "resources": resources,
-        "offer_letters": offer_letters,
+        # Each with what its stored file holds (`file`), read from the file and never saved with the row.
+        "offer_letters": [{**row, "file": offer_file_facts(row)} for row in offer_letters],
         "updated_at": data.get("updated_at"),
         "count": (1 if admin else 0) + len(handlers),
     }
@@ -958,6 +959,58 @@ def _drive_file_id_from_row(row: dict) -> str:
     return ""
 
 
+# What a stored offer letter holds, read from the file: its kind, its pages, whether it needs a password to open,
+# and whether it is the photo of one page that the WhatsApp import of 5 Oct stored in place of the PDF it names
+# (`source_file`). Kept per file version, so a list request only stats the files it has already read.
+_OFFER_FACTS: dict[tuple[str, int, int], dict] = {}
+
+
+def offer_file_facts(row: dict) -> dict:
+    """{"stored": False} for a letter with no file on the server, else
+    {"stored", "kind", "pages", "password_protected", "photo_of_one_page", "original_name"}.
+
+    `pages` is None when the PDF cannot be read at all. `photo_of_one_page` is only claimed for a row that records the
+    photo it came from; a scanned one-page PDF uploaded by hand is just a one-page PDF."""
+    item_id = str((row or {}).get("id") or "")
+    stored = _stored_offer_file(item_id) if item_id else None
+    if not stored:
+        return {"stored": False}
+    path, media_type = stored
+    try:
+        status = os.stat(path)
+    except OSError:
+        return {"stored": False}
+    key = (path, status.st_mtime_ns, status.st_size)
+    facts = _OFFER_FACTS.get(key)
+    if facts is None:
+        facts = {"kind": "pdf" if media_type == "application/pdf" else "image", "pages": 1,
+                 "password_protected": False, "single_image_page": False}
+        if facts["kind"] == "pdf":
+            try:
+                import pymupdf
+
+                with pymupdf.open(path) as doc:
+                    facts["pages"] = doc.page_count
+                    facts["password_protected"] = bool(doc.needs_pass)
+                    if doc.page_count == 1 and not doc.needs_pass:
+                        page = doc[0]
+                        facts["single_image_page"] = len(page.get_images()) == 1 and not page.get_text().strip()
+            except Exception:  # noqa: BLE001 - an unreadable PDF is reported as such, not hidden
+                facts["pages"] = None
+        for stale in [k for k in _OFFER_FACTS if k[0] == path]:
+            del _OFFER_FACTS[stale]
+        _OFFER_FACTS[key] = facts
+    from_photo = bool(row.get("source_photo")) and (facts["kind"] == "image" or facts["single_image_page"])
+    return {
+        "stored": True,
+        "kind": facts["kind"],
+        "pages": facts["pages"],
+        "password_protected": facts["password_protected"],
+        "photo_of_one_page": from_photo,
+        "original_name": str(row.get("source_file") or "") if from_photo else "",
+    }
+
+
 def resolve_offer_letter_file(item_id: str) -> tuple[str, str, dict]:
     """(path, media type, row) of the offer letter's file, exactly as it was uploaded. A letter known only by its Drive
     id is fetched from Drive, as a PDF, the first time it is opened."""
@@ -1002,25 +1055,29 @@ def resolve_offer_letter_pdf(item_id: str) -> tuple[str, dict]:
     return cache, row
 
 
-def save_offer_letter_file(item_id: str, data: bytes) -> dict:
+def save_offer_letter_file(item_id: str, data: bytes, filename: str = "") -> dict:
     """Store or replace the file of an existing offer letter: a PDF or an image, kept as uploaded.
 
+    The letter takes the new file's name, so a download is named for what it is; the name it replaces is kept in
+    `replaced_filename`. Everything else on the row -- candidate, company, notes, provenance -- is left as it was.
     `has_pdf` keeps its name for the rows and pages that read it; it means a file is stored."""
     extension, media_type = _checked_offer_file(data)
     row = find_offer_letter(item_id)
     if not row:
         raise FileNotFoundError("Offer letter not found")
     _write_offer_letter_file(item_id, data, extension)
-    updated = update_vault_item(
-        "offer_letters",
-        item_id,
-        {
-            "has_pdf": True,
-            "file_type": "pdf" if extension == "pdf" else "image",
-            "uploaded_at": _now_iso(),
-            "size_kb": max(1, (len(data) + 1023) // 1024),
-        },
-    )
+    changes = {
+        "has_pdf": True,
+        "file_type": "pdf" if extension == "pdf" else "image",
+        "uploaded_at": _now_iso(),
+        "size_kb": max(1, (len(data) + 1023) // 1024),
+    }
+    new_name = Path(str(filename or "")).name.strip()
+    if new_name and new_name != row.get("filename"):
+        changes["filename"] = new_name[:200]
+        if row.get("filename"):
+            changes["replaced_filename"] = row["filename"]
+    updated = update_vault_item("offer_letters", item_id, changes)
     return find_offer_letter(item_id) if updated else row
 
 

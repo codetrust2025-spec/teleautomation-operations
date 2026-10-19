@@ -290,6 +290,8 @@ def _offer_letter_file_response(item_id: str, request: Request, disposition: str
         name = f"{os.path.splitext(name)[0] or 'offer-letter'}{extension}"
     # A header is Latin-1: an ASCII name for every browser, the real one for those that read filename*.
     plain = name.encode("ascii", "ignore").decode("ascii").strip() or f"offer-letter{extension}"
+    # What the file holds, read from it, so the preview can say "1 of 4" and notice if it shows fewer.
+    facts = row.get("file") or creds.offer_file_facts(row)
     return FileResponse(
         path,
         media_type=media_type,
@@ -297,6 +299,9 @@ def _offer_letter_file_response(item_id: str, request: Request, disposition: str
             "Content-Disposition": f"{disposition}; filename=\"{plain}\"; filename*=UTF-8''{quote(name)}",
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
+            "X-Offer-Page-Count": "" if facts.get("pages") is None else str(facts.get("pages")),
+            "X-Offer-Password-Protected": "1" if facts.get("password_protected") else "0",
+            "Access-Control-Expose-Headers": "X-Offer-Page-Count, X-Offer-Password-Protected",
         },
     )
 
@@ -324,7 +329,7 @@ async def data_room_offer_letter_upload(
     require_fleet_admin(request)
     try:
         raw = await file.read()
-        row = creds.save_offer_letter_file(item_id, raw)
+        row = creds.save_offer_letter_file(item_id, raw, file.filename or "")
     except FileNotFoundError as exc:
         return {"status": "error", "message": str(exc)}
     except ValueError as exc:

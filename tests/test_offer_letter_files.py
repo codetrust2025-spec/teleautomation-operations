@@ -115,7 +115,8 @@ class TestThePreview:
 
 
 class TestImages:
-    @pytest.mark.parametrize("data, media, ext", [(PNG, "image/png", "png"), (JPEG, "image/jpeg", "jpg"), (WEBP, "image/webp", "webp")])
+    @pytest.mark.parametrize("data, media, ext", [(PNG, "image/png", "png"), (JPEG, "image/jpeg", "jpg"), (WEBP, "image/webp", "webp")],
+                             ids=["png", "jpeg", "webp"])
     def test_an_image_replaces_the_pdf_and_is_served_exactly(self, api, store, data, media, ext):
         client, _ = api
         res = client.post("/data-room/offer-letters/offer_asha_example/upload", files={"file": (f"letter.{ext}", data, "application/octet-stream")})
@@ -125,13 +126,14 @@ class TestImages:
         assert sorted(os.listdir(store)) == [f"offer_asha_example.{ext}"]          # the PDF it replaced is gone
         saved = row("offer_asha_example")
         assert saved["file_type"] == "image" and saved["has_pdf"] is True
-        # everything else on the row is untouched
-        for key in ("candidate", "company_name", "notes", "source_photo", "verification", "filename"):
+        # the letter takes the new file's name and remembers the one it replaced; everything else is untouched
+        assert saved["filename"] == f"letter.{ext}" and saved["replaced_filename"] == "Asha_Example_Offer.pdf"
+        for key in ("candidate", "company_name", "notes", "source_photo", "verification"):
             assert saved[key] == ROWS[0][key]
-        # the download is named for what it is
+        # the download is the new file, named for it
         download = client.get("/data-room/offer-letters/offer_asha_example/download")
         assert download.content == data
-        assert f'filename="Asha_Example_Offer.{ext}"' in download.headers["content-disposition"]
+        assert f'filename="letter.{ext}"' in download.headers["content-disposition"]
 
     def test_a_pdf_can_replace_an_image_again(self, api, store):
         client, _ = api

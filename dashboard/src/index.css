@@ -15700,6 +15700,18 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   color: #e2e8f0;
 }
 .dr-offer-view-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.dr-offer-pages { white-space: nowrap; }
+.dr-offer-pages > span + span { margin-left: 6px; }
+.dr-offer-flag {
+  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 650; border: 1px solid transparent; vertical-align: middle;
+}
+.dr-offer-flag--lock { color: #c4b5fd; background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.35); }
+.dr-offer-flag--photo { color: #fbbf24; background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.32); }
+.dr-offer-photo-notice {
+  margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 0.82rem; line-height: 1.45;
+  color: #fde68a; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3);
+}
 
 /* Offer letter preview (19 Oct): the letter itself, on the page. A large sheet
    on a desktop, the whole screen on a phone; the letter scrolls inside its own
@@ -15740,6 +15752,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   flex: 1 1 auto; min-height: 0; padding: 16px;
   overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   touch-action: pan-x pan-y; background: #1e293b;
+  /* The scrollbar's room is kept, so the width -- and every page drawn to it -- does not change when it appears. */
+  scrollbar-gutter: stable;
 }
 .offer-preview__body:focus { outline: none; }
 .offer-preview__content { width: max-content; min-width: 100%; }
@@ -15751,6 +15765,29 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .offer-preview__image { height: auto; }
 .offer-preview__status { margin: 48px auto; max-width: 420px; text-align: center; color: #cbd5e1; font-size: 0.9rem; }
 .offer-preview__status--error { color: #fca5a5; }
+.offer-preview__notice {
+  margin: 0 auto 12px; max-width: 720px; padding: 10px 12px; border-radius: 10px; font-size: 0.82rem; line-height: 1.45;
+  color: #fde68a; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.32);
+}
+.offer-preview__notice--warn { color: #fecaca; background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.36); }
+.offer-preview__page--pending { background: #f1f5f9; opacity: 0.85; }
+.offer-preview__page--failed {
+  display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center;
+  color: #475569; font-size: 0.9rem; background: #f8fafc; border: 2px dashed #94a3b8;
+}
+.offer-preview__password {
+  display: flex; flex-direction: column; gap: 12px; max-width: 440px; margin: 40px auto; padding: 18px;
+  border-radius: 12px; background: #0f172a; border: 1px solid rgba(148, 163, 184, 0.25); font-size: 0.88rem; line-height: 1.45;
+}
+.offer-preview__password p { margin: 0; }
+.offer-preview__password label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+.offer-preview__password input { font-size: 16px; }
+.offer-preview__password-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: #94a3b8; font-size: 0.78rem; }
+.offer-preview__pager {
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex: 0 0 auto;
+  padding: 8px 12px; border-top: 1px solid rgba(148, 163, 184, 0.16); background: #0f172a;
+}
+.offer-preview__page-of { min-width: 110px; text-align: center; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
   .offer-preview-backdrop { padding: 0; }
@@ -15760,7 +15797,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .offer-preview__tools { order: 3; width: 100%; justify-content: space-between; }
   .offer-preview__btn { min-width: 44px; height: 44px; }
   .offer-preview__download { flex: 1 1 auto; }
-  .offer-preview__body { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+  .offer-preview__body { padding: 8px; }
+  .offer-preview__pager { padding: 6px 10px max(6px, env(safe-area-inset-bottom)); }
   /* Offers as cards: candidate on top, then labelled lines, actions last. */
   .dr-page .dr-offers-tab .dr-tab-table-wrap { overflow-x: visible; border: 0; background: transparent; }
   .dr-page .dr-offers-tab .dr-tab-table, .dr-page .dr-offers-tab .dr-tab-table tbody,

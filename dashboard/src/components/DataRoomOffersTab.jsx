@@ -57,6 +57,16 @@ const isOfferFile = file => ['application/pdf', 'image/png', 'image/jpeg', 'imag
 const viewLabel = row => (offerIsImage(row) ? 'View image' : 'View PDF')
 const rowName = row => row.candidate || row.filename || row.id
 
+/** How many pages the stored file holds, as the server read it from the file. */
+function pagesLabel(row) {
+  const file = row.file
+  if (!file) return '—'
+  if (!file.stored) return 'No file'
+  if (file.kind === 'image') return 'Image'
+  if (file.pages === null || file.pages === undefined) return 'Unreadable'
+  return `${file.pages} page${file.pages === 1 ? '' : 's'}`
+}
+
 // `suspended` while the letter's preview is open over this dialog, so the two
 // do not both answer Escape or both hold the Tab key.
 function VaultModal({ title, fields, form, onChange, onSave, onClose, error, uploadPanel, saving, suspended = false }) {
@@ -258,6 +268,17 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
       </div>
 
       {uploadError && <p className="dr-error">{uploadError}</p>}
+      {(() => {
+        const photos = offers.filter(row => row.file?.photo_of_one_page)
+        if (!photos.length) return null
+        return (
+          <p className="dr-offer-photo-notice" role="note">
+            {photos.length === 1 ? '1 offer letter is a photo' : `${photos.length} offer letters are photos`} of
+            one page, stored by the WhatsApp import in place of the PDF {photos.length === 1 ? 'it names' : 'each names'}.
+            Their other pages and annexures are not on the server. Upload each original PDF with ↑ to replace its photo.
+          </p>
+        )
+      })()}
 
       <div className="dr-tab-table-wrap">
         <table className="dr-tab-table">
@@ -267,13 +288,14 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
               <th>File</th>
               <th>Company</th>
               <th>Modified</th>
+              <th>Pages</th>
               <th>Size</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {offers.length === 0 && (
-              <tr><td colSpan={6} className="dr-empty">No offer letters yet.</td></tr>
+              <tr><td colSpan={7} className="dr-empty">No offer letters yet.</td></tr>
             )}
             {offers.map(row => (
               <tr key={row.id}>
@@ -281,6 +303,20 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
                 <td data-label="File"><strong className="dr-offer-filename">{row.filename || row.id}</strong></td>
                 <td data-label="Company">{row.company_name || '—'}</td>
                 <td data-label="Modified">{row.date_modified || '—'}</td>
+                <td data-label="Pages" className="dr-offer-pages">
+                  <span>{pagesLabel(row)}</span>
+                  {row.file?.password_protected && (
+                    <span className="dr-offer-flag dr-offer-flag--lock" title="Uploaded with a password: the preview asks for it">Password</span>
+                  )}
+                  {row.file?.photo_of_one_page && (
+                    <span
+                      className="dr-offer-flag dr-offer-flag--photo"
+                      title={`A photo of one page. The original PDF${row.file.original_name ? ` (${row.file.original_name})` : ''} was not stored.`}
+                    >
+                      Photo of page 1
+                    </span>
+                  )}
+                </td>
                 <td data-label="Size">{row.size_kb ? `${row.size_kb} KB` : '—'}</td>
                 <td data-label="Actions">
                   <div className="dr-acct-actions dr-offer-actions">
