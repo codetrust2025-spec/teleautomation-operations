@@ -164,7 +164,7 @@ describe('the candidate stays in charge', () => {
 })
 
 describe('round-wise', () => {
-  it('never fills the client name; it offers the read name to type', async () => {
+  it('never fills the client name by itself; it offers the read name to use or type', async () => {
     const calls = stubFetch('Ira Testwala')
     render(<SubmitSlotPage />)
     await screen.findByRole('button', { name: /Confirm booking/i })
@@ -174,8 +174,11 @@ describe('round-wise', () => {
     const typed = screen.getByPlaceholderText('Type client name')
     expect(typed.value).toBe('')
     expect(typed.closest('label').querySelector('.sbs-hint').textContent)
-      .toBe('The invite names “Ira Testwala”. Type the client name to confirm.')
+      .toBe('The invite names “Ira Testwala”. Use this name or type it.')
     expect(calls.confirms).toHaveLength(0)
+    // One tap enters it, exactly as typing it would.
+    fireEvent.click(screen.getByRole('button', { name: 'Use this name' }))
+    expect(typed.value).toBe('Ira Testwala')
   })
 })
 

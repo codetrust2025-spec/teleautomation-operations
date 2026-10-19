@@ -2,10 +2,10 @@
  * The Book Interview Slot form shows its original fields only: Service type, Client name, Interview invite
  * screenshot, Company, Interview round, Confirm booking.
  *
- * The invite is still read in the background: it fills Company and Interview round when it names them clearly,
- * and the date and times it found are booked as they were read. What it read is not shown back as a panel, and
- * there are no extra detail fields. When the date or time is missing or uncertain, the manual date and time
- * appear as before (the fallback), with the reader's reason.
+ * The invite fills Company and Interview round when it names them clearly, and the date and times it read
+ * confidently. Since 19 Oct what it read is shown back before confirmation -- a "Read from invite" summary and
+ * editable Date, Start and End (IST) fields -- so it can be checked and corrected. No other detail fields
+ * (time zone, platform, meeting link) appear.
  */
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -76,13 +76,17 @@ describe('the form shows its original fields only', () => {
     expect(screen.getByRole('button', { name: /Confirm booking/i })).toBeInTheDocument()
   })
 
-  it('and after the invite has been read: no detail fields, no result panel', async () => {
+  it('and after the invite has been read: the read summary and editable date and times, nothing else', async () => {
     await readyForm()
-    expect(labels()).toEqual(ORIGINAL)
-    for (const gone of ['End time', 'Time zone', 'Platform', 'Meeting link']) expect(screen.queryByLabelText(gone)).toBeNull()
+    expect(labels()).toEqual([
+      'Interview invite screenshot', 'Interview date', 'Start time (IST)', 'End time (IST)',
+      'Service type', 'Client name', 'Company *', 'Interview round *',
+    ])
+    for (const gone of ['Time zone', 'Platform', 'Meeting link']) expect(screen.queryByLabelText(gone)).toBeNull()
     expect(document.querySelector('.sbs-detected-compact')).toBeNull()
     expect(document.querySelector('.sbs-details')).toBeNull()
-    expect(document.querySelector('.sbs-manual')).toBeNull()          // a confident read needs no manual date and time
+    expect(document.querySelector('.sbs-read')).not.toBeNull()
+    expect(document.querySelector('.sbs-manual--confident')).not.toBeNull()   // a confident read, already filled
   })
 
   it('still says the invite was read, and by which node, as its status line', async () => {

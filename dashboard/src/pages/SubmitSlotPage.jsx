@@ -69,6 +69,23 @@ function to24h(val) {
 
 
 /**
+ * Whether the invite's date and start time were read with confidence: the
+ * reader says no manual entry is needed, its confidence is at least 70, and it
+ * did not refuse automatic booking. Only then are they filled in; anything
+ * less is shown as read but left for the candidate to enter. The end time is
+ * filled only alongside a confident date and start (the reader already drops
+ * an end time it could not confirm). Every time here is IST: the reader
+ * refuses an invite whose time zone it cannot confirm as IST.
+ */
+export function inviteSlotConfident(ext) {
+  if (!ext) return false
+  if (ext.manual_fields_required) return false
+  if (ext.auto_booking_safe === false) return false
+  const score = Number(ext.confidence_score)
+  return Number.isFinite(score) && score >= 70
+}
+
+/**
  * Correct a year the AI/OCR got wrong (2023 for 2026) without moving a real
  * past date. A date past in this year too stays past -- an interview recorded
  * late -- unless it falls in the first weeks of next year ("5 Jan" read in late
@@ -426,6 +443,36 @@ function SlotCandidatePicker({ candidates, value, onChange, disabled }) {
   )
 }
 
+const READ_STATUS = {
+  filled: { label: 'Filled', tone: 'ok' },
+  kept: { label: 'Kept yours', tone: 'muted' },
+  changed: { label: 'Corrected', tone: 'muted' },
+  confirm: { label: 'Check below', tone: 'warn' },
+  unconfirmed: { label: 'Not confirmed', tone: 'warn' },
+  missing: { label: 'Not on invite', tone: 'muted' },
+}
+
+/** What the invite reader found, field by field, before anything is confirmed. */
+function InviteReadSummary({ rows }) {
+  return (
+    <section className="sbs-read" aria-label="Read from invite">
+      <h3 className="sbs-read__title">Read from invite</h3>
+      <dl className="sbs-read__list">
+        {rows.map(row => {
+          const status = READ_STATUS[row.status] || READ_STATUS.missing
+          return (
+            <div key={row.key} className="sbs-read__row" data-field={row.key} data-status={row.status}>
+              <dt className="sbs-read__label">{row.label}</dt>
+              <dd className="sbs-read__value">{row.value || '—'}</dd>
+              <dd className={`sbs-read__status sbs-read__status--${status.tone}`}>{status.label}</dd>
+            </div>
+          )
+        })}
+      </dl>
+    </section>
+  )
+}
+
 function formatFriendlyShortDate(iso) {
   if (!iso) return ''
   try {
@@ -548,7 +595,14 @@ export function SubmitSlotPage() {
   const [sessionPreview, setSessionPreview] = useState('')
   const [manualDate, setManualDate] = useState('')
   const [manualTime, setManualTime] = useState('')
+  // End time (IST) -- optional, and booked only as filled in here.
+  const [manualEnd, setManualEnd] = useState('')
+  // What the invite reader returned, shown back before confirmation: each
+  // field's read value and whether the date and times were read confidently.
+  const [inviteRead, setInviteRead] = useState(null)
   const [interviewRound, setInterviewRound] = useState('')
+  // True while the round shown is the one the invite named, so it is labelled.
+  const [roundFromInviteRead, setRoundFromInviteRead] = useState(false)
   const [technology, setTechnology] = useState('')
   // The company the interview is with. Required: it is read from the invite
   // when the invite names it, and typed when it does not. Saved with the
@@ -651,14 +705,17 @@ export function SubmitSlotPage() {
   const effectiveTechnology = (technology || parsedSlot?.technology || '').trim()
 
   const bookingSlot = useMemo(() => {
-    const effectiveDate = manualDate || parsedSlot?.date || ''
-    const effectiveTime = manualTime || parsedSlot?.time || ''
-    const effectiveEnd = parsedSlot?.time_end || ''
+    // The date and times booked are exactly what the fields hold: a confident
+    // reading fills them, a doubtful one does not, and the candidate can always
+    // correct them. Nothing falls back to an unconfirmed reading.
+    const effectiveDate = manualDate
+    const effectiveTime = normalizeTo12h(manualTime)
+    const effectiveEnd = normalizeTo12h(manualEnd)
     if (effectiveDate && effectiveTime) return { ...parsedSlot, date: effectiveDate, time: to24h(effectiveTime), time_end: to24h(effectiveEnd), interview_round: interviewRound }
     return null
-  }, [parsedSlot, manualDate, manualTime, interviewRound])
+  }, [parsedSlot, manualDate, manualTime, manualEnd, interviewRound])
 
-  const effectiveBookingDate = manualDate || parsedSlot?.date || ''
+  const effectiveBookingDate = manualDate
   const isPastDate = (() => {
     if (!effectiveBookingDate) return false
     const today = new Date(); today.setHours(0,0,0,0)
@@ -666,9 +723,15 @@ export function SubmitSlotPage() {
     return d < today
   })()
 
-  const showManualSlotFields = Boolean(
-    slotFile && !parsing && (!aiExtraction || aiExtraction.manual_fields_required || aiExtraction.confidence_score < 70 || isPastDate)
-  )
+  // Once the invite has been read, its date and times are always shown as
+  // fields, filled when read confidently and empty otherwise, so they can be
+  // checked and corrected before Confirm.
+  const showSlotFields = Boolean(slotFile && !parsing && !aiBlocked)
+  const endBeforeStart = (() => {
+    const start = to24h(normalizeTo12h(manualTime))
+    const end = to24h(normalizeTo12h(manualEnd))
+    return /^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end) && end <= start
+  })()
   // Uploading a proof is no longer the same as having paid: instalments only
   // clear the fee once they add up, and the server decides when they do.
   const paymentComplete = Boolean(paymentProofIds.length && paymentTotals?.payment_complete)
@@ -816,10 +879,43 @@ export function SubmitSlotPage() {
     resetPaymentProofs()
   }
 
+  // One row per field the invite can fill, for the "Read from invite" summary:
+  // what was read, and whether it was filled, needs confirming, or was absent.
+  const inviteSummaryRows = (() => {
+    const read = inviteRead
+    if (!read) return []
+    const slotStatus = (readValue, current, edited) => {
+      if (!readValue) return 'missing'
+      if (!read.confident) return 'unconfirmed'
+      if (edited && current !== readValue) return 'changed'
+      return 'filled'
+    }
+    return [
+      { key: 'client', label: 'Client name', value: read.client,
+        status: !read.client ? 'missing'
+          : nameFromInvite ? 'filled'
+          : name.trim() ? (inviteNamesAnotherClient(read.client, name) ? 'confirm' : 'kept')
+          : 'confirm' },
+      { key: 'company', label: 'Company', value: read.company,
+        status: !read.company ? 'missing' : companyFromInvite ? 'filled' : company.trim() ? 'kept' : 'confirm' },
+      { key: 'round', label: 'Interview round', value: read.round,
+        status: !read.round ? 'missing' : roundFromInviteRead ? 'filled' : interviewRound ? (interviewRound === read.round ? 'filled' : 'kept') : 'confirm' },
+      { key: 'date', label: 'Date', value: formatDisplayDate(read.date),
+        status: slotStatus(read.date, manualDate, userEditedFields.date) },
+      { key: 'start', label: 'Start (IST)', value: read.start,
+        status: slotStatus(read.start, normalizeTo12h(manualTime), userEditedFields.time) },
+      { key: 'end', label: 'End (IST)', value: read.confident ? read.end : (parsedSlot?.time_end || ''),
+        status: read.confident
+          ? slotStatus(read.end, normalizeTo12h(manualEnd), userEditedFields.time_end)
+          : parsedSlot?.time_end ? 'unconfirmed' : 'missing' },
+    ]
+  })()
+
   const resetBookForm = useCallback(() => {
     setName(''); setRoundWisePhone(''); setServiceType('profile_service'); setShowServiceDrop(false)
     setSlotFile(null); setSlotPreview(''); setParsedSlot(null)
-    setManualDate(''); setManualTime(''); setInterviewRound(''); setTechnology(''); setCompany('')
+    setManualDate(''); setManualTime(''); setManualEnd(''); setInviteRead(null); setRoundFromInviteRead(false)
+    setInterviewRound(''); setTechnology(''); setCompany('')
     setCompanyFromInvite(false); companyTypedRef.current = false
     setNameFromInvite(false); setInviteNameHint(''); nameTypedRef.current = false
     setInviteReadName(''); setInviteNameChecked(false)
@@ -889,12 +985,16 @@ export function SubmitSlotPage() {
           return
         }
 
-        // Auto-fill fields (only if user hasn't manually edited them)
+        // What was read. The date and times are filled only when read
+        // confidently, and never over what the candidate has typed.
         const slot = {}
         const fixedDate = fixPastYear(ext.interview_date)
-        if (fixedDate && !userEditedFields.date) slot.date = fixedDate
-        if ((ext.start_time || ext.time) && !userEditedFields.time) slot.time = normalizeTo12h(ext.start_time || ext.time)
-        if ((ext.end_time || ext.time_end) && !userEditedFields.time_end) slot.time_end = normalizeTo12h(ext.end_time || ext.time_end)
+        const readStart = normalizeTo12h(ext.start_time || ext.time || '')
+        const readEnd = normalizeTo12h(ext.end_time || ext.time_end || '')
+        const confident = inviteSlotConfident(ext)
+        if (fixedDate) slot.date = fixedDate
+        if (readStart) slot.time = readStart
+        if (readEnd) slot.time_end = readEnd
         if (ext.meeting_platform) slot.platform = ext.meeting_platform
         if (ext.technology) slot.technology = ext.technology
         if (ext.technology && !technology && !userEditedFields.technology) {
@@ -902,18 +1002,30 @@ export function SubmitSlotPage() {
         }
         // The reader is asked for the company and returns it only when the invite
         // names one. Empty clears an earlier reading; a typed company stays.
-        applyInviteCompany((ext.company && ext.company.name) || (typeof ext.company === 'string' ? ext.company : ''))
+        const readCompany = (ext.company && ext.company.name) || (typeof ext.company === 'string' ? ext.company : '')
+        applyInviteCompany(readCompany)
         applyInviteClient(ext.candidate_name)
         const readRound = roundFromInvite(ext.interview_round)
         if (readRound && !interviewRound && !userEditedFields.round) {
           setInterviewRound(readRound)
+          setRoundFromInviteRead(true)
           slot.interview_round = readRound
         }
 
-        console.log('[Invite extraction]', { raw: ext, mapped: slot })
+        console.log('[Invite extraction]', { raw: ext, mapped: slot, confident })
         setParsedSlot(slot)
-        if (!userEditedFields.date) setManualDate(fixedDate || '')
-        if (!userEditedFields.time) setManualTime(normalizeTo12h(ext.start_time || ext.time || ''))
+        setInviteRead({
+          client: String(ext.candidate_name || '').trim(),
+          company: String(readCompany || '').trim(),
+          round: readRound || '',
+          date: fixedDate || '',
+          start: readStart,
+          end: confident ? readEnd : '',
+          confident,
+        })
+        if (!userEditedFields.date) setManualDate(confident ? (fixedDate || '') : '')
+        if (!userEditedFields.time) setManualTime(confident ? readStart : '')
+        if (!userEditedFields.time_end) setManualEnd(confident ? readEnd : '')
         run.finish(data.analysis)
         setParsing(false)
         return
@@ -946,8 +1058,18 @@ export function SubmitSlotPage() {
         if (slot.time_end) slot.time_end = normalizeTo12h(slot.time_end)
       }
       setParsedSlot(slot)
-      if (!interviewRound) setInterviewRound(roundFromInvite(slot?.interview_round))
-      setManualDate(''); setManualTime('')
+      const fallbackRound = roundFromInvite(slot?.interview_round)
+      if (!interviewRound) {
+        setInterviewRound(fallbackRound)
+        setRoundFromInviteRead(Boolean(fallbackRound))
+      }
+      // The fallback reader is not cross-checked, so what it found is shown
+      // but nothing is filled: the candidate enters the date and times.
+      setInviteRead({
+        client: '', company: '', round: fallbackRound || '',
+        date: slot?.date || '', start: slot?.time || '', end: '', confident: false,
+      })
+      setManualDate(''); setManualTime(''); setManualEnd('')
       run.finish(null)
     } catch {
       setParsedSlot(null); setError('Network error while reading screenshot')
@@ -958,7 +1080,8 @@ export function SubmitSlotPage() {
 
   async function onSlotFileChange(file) {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
-    setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
+    setSlotFile(file || null); setParsedSlot(null); setManualDate(''); setManualTime(''); setManualEnd(''); setInviteRead(null); setSuccess(''); setAiExtraction(null); setAiBlocked(''); setUserEditedFields({})
+    setRoundFromInviteRead(false)
     setInviteNameHint('')   // a name already in the box stays: a payment may already be filed under it
     setInviteReadName(''); setInviteNameChecked(false)
     applyInviteCompany('')
@@ -1315,27 +1438,41 @@ export function SubmitSlotPage() {
               </div>
 
               {/* The node reading the invite, and once it is done who read it and
-                  how long it took. What it read is not shown back: it fills
-                  Company and Interview round, and the date and time it found are
-                  booked as read. Only when those are missing or uncertain does the
-                  manual date and time below appear, with the reader's reason. */}
+                  how long it took. */}
               {slotFile && inviteAnalysis && (
                 <AiNodeProgress analysis={inviteAnalysis} idle="Reading invite…" finishedLabel="Invite read" />
               )}
 
               {aiBlocked && <div className="sbs-alert sbs-alert--error" role="alert">{aiBlocked}</div>}
 
-              {showManualSlotFields && (
-                <div className="sbs-manual">
-                  <p className="sbs-manual__hint">{parsedSlot?.date ? 'Verify detected date & time — correct below if wrong.' : 'Include the date line in your screenshot or enter manually.'}</p>
+              {/* What the invite says, shown back before anything is confirmed:
+                  each field with what was read and what became of it. Only
+                  confident readings were filled in; nothing missing is guessed. */}
+              {showSlotFields && inviteRead && (
+                <InviteReadSummary rows={inviteSummaryRows} />
+              )}
+
+              {/* The interview's date and times (IST), always editable once the
+                  invite is read: filled when read confidently, empty otherwise. */}
+              {showSlotFields && (
+                <div className={`sbs-manual${inviteRead?.confident ? ' sbs-manual--confident' : ''}`}>
+                  <p className="sbs-manual__hint">
+                    {inviteRead?.confident
+                      ? 'Read from the invite (IST). Correct anything that is wrong.'
+                      : parsedSlot?.date || parsedSlot?.time
+                        ? 'The invite could not be read with confidence. Enter the date and time (IST).'
+                        : 'No date or time found on the invite. Enter them (IST).'}
+                  </p>
                   {aiExtraction?.warnings?.length > 0 && (
                     <div className="sbs-manual__warnings">{aiExtraction.warnings.map((w, i) => <span key={i} className="sbs-hint sbs-hint--warn">{w}</span>)}</div>
                   )}
                   <div className="sbs-manual__grid">
-                    <label className="sbs-field"><span className="sbs-label">Interview date</span><input className="sbs-input" type="date" value={manualDate || parsedSlot?.date || ''} onChange={e => { setManualDate(e.target.value); setUserEditedFields(f => ({...f, date: true})); }} disabled={busy || parsing} /></label>
-                    <label className="sbs-field"><span className="sbs-label">Start time</span><input className="sbs-input" type="text" placeholder="e.g. 02:00 PM" value={normalizeTo12h(manualTime || parsedSlot?.time || '')} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} disabled={busy || parsing} /></label>
+                    <label className="sbs-field sbs-manual__date"><span className="sbs-label">Interview date</span><input className="sbs-input" type="date" value={manualDate} onChange={e => { setManualDate(e.target.value); setUserEditedFields(f => ({...f, date: true})); }} disabled={busy || parsing} /></label>
+                    <label className="sbs-field"><span className="sbs-label">Start time (IST)</span><input className="sbs-input" type="text" placeholder="02:00 PM" value={manualTime} onChange={e => { setManualTime(e.target.value); setUserEditedFields(f => ({...f, time: true})); }} onBlur={e => setManualTime(normalizeTo12h(e.target.value))} disabled={busy || parsing} /></label>
+                    <label className="sbs-field"><span className="sbs-label">End time (IST)</span><input className="sbs-input" type="text" placeholder="Optional" value={manualEnd} onChange={e => { setManualEnd(e.target.value); setUserEditedFields(f => ({...f, time_end: true})); }} onBlur={e => setManualEnd(normalizeTo12h(e.target.value))} disabled={busy || parsing} /></label>
                   </div>
                   {isPastDate && <span className="sbs-hint sbs-hint--warn">Interview date is in the past. Please select today or a future date.</span>}
+                  {endBeforeStart && <span className="sbs-hint sbs-hint--warn">End time is before the start time. Check it.</span>}
                 </div>
               )}
 
@@ -1367,8 +1504,8 @@ export function SubmitSlotPage() {
                   : nameFromInvite
                     ? <span className="sbs-hint">Matched from the invite. Check it.</span>
                     : inviteNameHint && !name.trim()
-                      ? <span className="sbs-hint">{serviceType === "round_wise"
-                          ? `The invite names “${inviteNameHint}”. Type the client name to confirm.`
+                      ? <span className="sbs-hint sbs-name-offer">{serviceType === "round_wise"
+                          ? <>{`The invite names “${inviteNameHint}”. `}<button type="button" className="sbs-link-btn" onClick={e => { e.preventDefault(); typeClientName(inviteNameHint) }} disabled={busy || parsing}>Use this name</button>{' or type it.'}</>
                           : `The invite names “${inviteNameHint}”. Pick the client to confirm.`}</span>
                       : <span className="sbs-hint">{serviceType === "round_wise" ? "Type the client name for this round." : "Pick from the list or type a new client name."}</span>}
                 {inviteNamesAnotherClient(inviteReadName, name) && (
@@ -1459,12 +1596,16 @@ export function SubmitSlotPage() {
               <label className="sbs-field">
                 <span className="sbs-label">Interview round <span className="sbs-required" aria-hidden="true">*</span></span>
                 <div className={`sbs-select-wrap${missingField === 'round' ? ' sbs-select-wrap--required' : ''}`}>
-                  <select ref={roundRef} className="sbs-select" value={interviewRound} onChange={e => setInterviewRound(e.target.value)} disabled={busy || parsing}>
+                  <select ref={roundRef} className="sbs-select" value={interviewRound} onChange={e => { setInterviewRound(e.target.value); setRoundFromInviteRead(false); setUserEditedFields(f => ({ ...f, round: true })) }} disabled={busy || parsing}>
                     <option value="">Select round (L1, L2…)</option>
                     {ROUND_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
-                {missingField === 'round' && <span className="sbs-hint sbs-hint--warn" role="alert">Choose the interview round.</span>}
+                {missingField === 'round'
+                  ? <span className="sbs-hint sbs-hint--warn" role="alert">Choose the interview round.</span>
+                  : roundFromInviteRead && interviewRound
+                    ? <span className="sbs-hint">Read from the invite. Check it.</span>
+                    : null}
               </label>
               </div>
 
@@ -1589,7 +1730,8 @@ export function SubmitSlotPage() {
                     <span className="sbs-slot-preview__label">Detected slot (IST)</span>
                     <span className="sbs-slot-preview__value">
                       {formatDisplayDate(bookingSlot.date)}
-                      {manualTime && <> · {manualTime}</>}
+                      {' · '}{normalizeTo12h(bookingSlot.time)}
+                      {bookingSlot.time_end ? <> – {normalizeTo12h(bookingSlot.time_end)}</> : null}
                     </span>
                   </div>
                 </div>
