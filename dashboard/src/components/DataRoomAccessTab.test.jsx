@@ -212,5 +212,7 @@ describe('the sub-tab styles', () => {
     const phone = block.slice(block.indexOf('@media (max-width: 640px)'))
     expect(phone).toMatch(/\.dr-subpanel \.dr-creds-table button,\n  \.dr-page \.dr-subpanel \.dr-acct-table button \{ min-height: 40px; \}/)
     expect(phone).toMatch(/\.dr-subpanel \.dr-copy-btn--icon \{ flex: 0 0 40px; width: 40px; height: 40px; \}/)
+    // The header buttons too: Add handler, Add account, Download all accounts.
+    expect(phone).toMatch(/\.dr-page \.dr-subpanel \.dr-add-btn \{ min-height: 40px; \}/)
   })
 })

@@ -14939,6 +14939,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-subpanel .dr-creds-table button,
   .dr-page .dr-subpanel .dr-acct-table button { min-height: 40px; }
   .dr-page .dr-subpanel .dr-copy-btn--icon { flex: 0 0 40px; width: 40px; height: 40px; }
+  /* The header's Add handler, Add account and Download all (35px live). */
+  .dr-page .dr-subpanel .dr-add-btn { min-height: 40px; }
 }
 .dr-page .dr-section {
   margin-bottom: 0;
