@@ -14983,7 +14983,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   gap: 10px;
 }
 
-/* Download all accounts (19 Oct): format chips, the separate password option. */
+/* Download all accounts (19 Oct): format chips, the warning, the confirmation. */
 .dr-export-lead { margin: 6px 0 14px; color: #cbd5e1; font-size: 0.85rem; line-height: 1.45; }
 .dr-export-formats { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 0; border: 0; }
 .dr-export-formats legend { padding: 0; margin-bottom: 8px; font-size: 0.8rem; color: #cbd5e1; }
@@ -14993,13 +14993,14 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 }
 .dr-export-format input { margin: 0; accent-color: #818cf8; }
 .dr-export-format--on { border-color: rgba(129, 140, 248, 0.6); background: rgba(99, 102, 241, 0.16); }
-.dr-export-passwords {
-  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; margin-bottom: 4px;
-  border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; background: rgba(245, 158, 11, 0.06); cursor: pointer;
+.dr-export-warning {
+  margin: 0 0 16px; padding: 10px 12px; border-radius: 10px; font-size: 0.8rem; line-height: 1.45;
+  color: #fde68a; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3);
 }
-.dr-export-passwords input { margin-top: 3px; accent-color: #f59e0b; }
-.dr-export-passwords > span { display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; color: #e2e8f0; }
-.dr-export-note { font-size: 0.75rem; color: #94a3b8; line-height: 1.4; margin: 0; }
+/* The confirmation before the download: what the file holds, said once, plainly. */
+.dr-export-confirm { margin-top: 10px; padding: 14px; border-radius: 12px; border: 1px solid rgba(248, 113, 113, 0.35); background: rgba(248, 113, 113, 0.07); }
+.dr-export-confirm__title { margin: 0 0 6px; font-size: 0.95rem; color: #fecaca; }
+.dr-export-confirm__text { margin: 0 0 14px; font-size: 0.82rem; line-height: 1.5; color: #e2e8f0; }
 .dr-export-done { margin: 0 0 12px; font-size: 0.8rem; color: #6ee7b7; }
 .dr-export-modal .dr-error { margin: 10px 0 12px; }
 

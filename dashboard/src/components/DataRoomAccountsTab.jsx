@@ -135,7 +135,6 @@ const EXPORT_FORMATS = [
   { value: 'csv', label: 'CSV (.csv)' },
   { value: 'txt', label: 'Text (.txt)' },
 ]
-const MIN_FILE_PASSWORD = 10
 
 /** The file name the server chose (Content-Disposition), or the fallback. */
 export function downloadName(disposition, fallback) {
@@ -151,27 +150,26 @@ function saveBlob(blob, name) {
   document.body.appendChild(link)
   link.click()
   link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  // Released once the browser has taken the file; guarded, as not every environment has it.
+  window.setTimeout(() => URL.revokeObjectURL?.(url), 1000)
 }
 
 /**
- * Download All Accounts (19 Oct). The ordinary export -- Excel, CSV or text --
- * carries account name, type, username and status, never a password. Passwords
- * come only as an Excel workbook encrypted with a password chosen here, after
- * the admin's own sign-in password is entered again; the server checks it,
- * records the export and locks it after repeated wrong passwords. Neither
- * password is kept: both boxes are emptied after every attempt that sends them.
+ * Download All Accounts. Every account with its complete details -- account
+ * name, type, username, password, status, last used and notes -- as Excel, CSV
+ * or text, for the admin. The file holds the passwords in plain text, so the
+ * download waits for one explicit confirmation that says so; the server builds
+ * it in memory, records who took it, and keeps no copy.
  */
 function AccountsExportModal({ count, onClose }) {
   const dialogRef = useDialogA11y(true, onClose)
   const [format, setFormat] = useState('xlsx')
-  const [withPasswords, setWithPasswords] = useState(false)
-  const [adminPassword, setAdminPassword] = useState('')
-  const [filePassword, setFilePassword] = useState('')
-  const [filePasswordAgain, setFilePasswordAgain] = useState('')
+  const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
+  const formatLabel = EXPORT_FORMATS.find(f => f.value === format)?.label || format
+  const plural = count === 1 ? '' : 's'
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -187,40 +185,21 @@ function AccountsExportModal({ count, onClose }) {
   const download = async () => {
     setError('')
     setDone('')
-    if (withPasswords) {
-      if (!adminPassword) { setError('Enter your sign-in password.'); return }
-      if (filePassword.length < MIN_FILE_PASSWORD) { setError(`Choose a file password of at least ${MIN_FILE_PASSWORD} characters.`); return }
-      if (filePassword !== filePasswordAgain) { setError('The two file passwords are not the same.'); return }
-    }
     setBusy(true)
     try {
-      const res = withPasswords
-        ? await fetch(`${API_BASE}/data-room/credentials/service-accounts/export-with-passwords`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ admin_password: adminPassword, file_password: filePassword }),
-          })
-        : await fetch(`${API_BASE}/data-room/credentials/service-accounts/export?format=${format}`, { credentials: 'include' })
+      const res = await fetch(`${API_BASE}/data-room/credentials/service-accounts/export?format=${format}`, { credentials: 'include' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || 'The download failed. Try again.')
       }
       const blob = await res.blob()
-      const ext = withPasswords ? 'xlsx' : format
-      saveBlob(blob, downloadName(res.headers.get('content-disposition'), `teleautomation-accounts.${ext}`))
-      if (withPasswords) {
-        setFilePassword('')
-        setFilePasswordAgain('')
-        setDone('Encrypted workbook downloaded. Excel asks for the file password to open it.')
-      } else {
-        setDone('Downloaded.')
-      }
+      saveBlob(blob, downloadName(res.headers.get('content-disposition'), `teleautomation-accounts.${format}`))
+      setDone(`Downloaded ${count} account${plural}. Keep the file safe and delete it when you are done.`)
     } catch (err) {
       setError(err instanceof TypeError ? 'Network error. Try again.' : err.message)
     } finally {
-      setAdminPassword('')
       setBusy(false)
+      setConfirming(false)
     }
   }
 
@@ -234,54 +213,48 @@ function AccountsExportModal({ count, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="dr-export-modal-title" className="cand-title">Download all accounts</h2>
-        <p className="dr-export-lead">
-          {withPasswords
-            ? `All ${count} account${count === 1 ? '' : 's'} with their passwords, as an encrypted Excel workbook.`
-            : `Account name, type, username and status of all ${count} account${count === 1 ? '' : 's'}. No passwords.`}
-        </p>
-        {!withPasswords && (
-          <fieldset className="dr-export-formats">
-            <legend>Format</legend>
-            {EXPORT_FORMATS.map(f => (
-              <label key={f.value} className={`dr-export-format${format === f.value ? ' dr-export-format--on' : ''}`}>
-                <input type="radio" name="dr-export-format" value={f.value} checked={format === f.value} onChange={() => setFormat(f.value)} />
-                {f.label}
-              </label>
-            ))}
-          </fieldset>
-        )}
-        <label className="dr-export-passwords">
-          <input type="checkbox" checked={withPasswords} onChange={e => { setWithPasswords(e.target.checked); setError(''); setDone('') }} />
-          <span>
-            <strong>Include passwords</strong>
-            <span className="dr-export-note">Encrypted Excel only. Confirm with your sign-in password and set a password for the file.</span>
-          </span>
-        </label>
-        {withPasswords && (
-          <div className="dr-form-grid">
-            <label className="dr-form-full">
-              Your sign-in password
-              <input className="cand-input" type="password" autoComplete="current-password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} />
-            </label>
-            <label>
-              File password
-              <input className="cand-input" type="password" autoComplete="new-password" value={filePassword} onChange={e => setFilePassword(e.target.value)} placeholder={`At least ${MIN_FILE_PASSWORD} characters`} />
-            </label>
-            <label>
-              Repeat file password
-              <input className="cand-input" type="password" autoComplete="new-password" value={filePasswordAgain} onChange={e => setFilePasswordAgain(e.target.value)} />
-            </label>
-            <p className="dr-export-note dr-form-full">The file password is not stored anywhere. Without it the workbook cannot be opened.</p>
+        {confirming ? (
+          <div className="dr-export-confirm" role="alertdialog" aria-labelledby="dr-export-confirm-title" aria-describedby="dr-export-confirm-text">
+            <h3 id="dr-export-confirm-title" className="dr-export-confirm__title">Download every password?</h3>
+            <p id="dr-export-confirm-text" className="dr-export-confirm__text">
+              This {formatLabel} file will contain all {count} password{plural} in plain text. Anyone who has the file can
+              sign in to these accounts. Save it only on a device you trust, never share it, and delete it when you are done.
+            </p>
+            <div className="dr-modal-actions">
+              <button type="button" className="cand-btn" onClick={() => setConfirming(false)} disabled={busy}>Back</button>
+              <button type="button" className="cand-btn cand-btn--danger" onClick={download} disabled={busy}>
+                {busy ? 'Preparing…' : 'Yes, download'}
+              </button>
+            </div>
           </div>
+        ) : (
+          <>
+            <p className="dr-export-lead">
+              All {count} account{plural} with their complete details: account name, type, username, password, status,
+              last used and notes.
+            </p>
+            <p className="dr-export-warning" role="note">
+              The file holds every password in plain text. It is made for you when you download it and is not kept on the server.
+            </p>
+            <fieldset className="dr-export-formats">
+              <legend>Format</legend>
+              {EXPORT_FORMATS.map(f => (
+                <label key={f.value} className={`dr-export-format${format === f.value ? ' dr-export-format--on' : ''}`}>
+                  <input type="radio" name="dr-export-format" value={f.value} checked={format === f.value} onChange={() => { setFormat(f.value); setDone('') }} />
+                  {f.label}
+                </label>
+              ))}
+            </fieldset>
+            {error && <p className="dr-error" role="alert">{error}</p>}
+            {done && <p className="dr-export-done" role="status">{done}</p>}
+            <div className="dr-modal-actions">
+              <button type="button" className="cand-btn" onClick={onClose}>Close</button>
+              <button type="button" className="cand-btn cand-btn--primary" onClick={() => { setError(''); setDone(''); setConfirming(true) }} disabled={count === 0}>
+                Download all
+              </button>
+            </div>
+          </>
         )}
-        {error && <p className="dr-error" role="alert">{error}</p>}
-        {done && <p className="dr-export-done" role="status">{done}</p>}
-        <div className="dr-modal-actions">
-          <button type="button" className="cand-btn" onClick={onClose}>Close</button>
-          <button type="button" className="cand-btn cand-btn--primary" onClick={download} disabled={busy || count === 0}>
-            {busy ? 'Preparing…' : withPasswords ? 'Download encrypted workbook' : 'Download'}
-          </button>
-        </div>
       </div>
     </div>,
     document.body,

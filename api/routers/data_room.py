@@ -53,8 +53,9 @@ async def data_room_credentials(request: Request):
 
 
 def _require_account_export_admin(request: Request) -> dict:
-    """The admin, by role. The Data Room's own gate admits every signed-in
-    operator (handlers too); taking every account out at once is the admin's."""
+    """A signed-in admin, by role. The Data Room's own gate admits every
+    signed-in operator (handlers too); taking every account out at once,
+    passwords included, is the admin's."""
     from core import dashboard_auth_vps as auth
     from core.dashboard_access import operator_profile
 
@@ -64,33 +65,24 @@ def _require_account_export_admin(request: Request) -> dict:
     return profile
 
 
-def _record_account_export(request: Request, profile: dict, *, fmt: str, count: int, with_passwords: bool) -> None:
-    """Who took the accounts out, when, how many and whether with passwords -- never what was in them."""
+def _record_account_export(request: Request, profile: dict, *, fmt: str, count: int) -> None:
+    """Who took the accounts out, when, in which format and how many -- never what was in them."""
     from core import recruitment_mail_store
 
     recruitment_mail_store.audit(
         actor=str(profile.get("username") or ""), role=str(profile.get("role") or ""),
-        action="data_room_accounts_export_with_passwords" if with_passwords else "data_room_accounts_export",
-        new={"format": fmt, "accounts": count, "with_passwords": with_passwords},
+        action="data_room_accounts_export",
+        new={"format": fmt, "accounts": count, "with_passwords": True},
         source_ip=request.client.host if request.client else None,
-    )
-
-
-def _export_response(content: bytes, fmt: str, name: str):
-    from fastapi.responses import Response
-    from features import data_room_account_export as export
-
-    return Response(
-        content=content,
-        media_type=export.MEDIA_TYPES[fmt],
-        headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"},
     )
 
 
 @router.get("/data-room/credentials/service-accounts/export")
 async def data_room_accounts_export(request: Request, format: str = Query(default="xlsx")):
-    """Every Data Room account -- name, type, username, status -- as .xlsx, .csv or .txt. No passwords."""
-    import logging
+    """Every Data Room account with its complete details -- name, type, username, password, status, last used,
+    notes -- as .xlsx, .csv or .txt. The admin's only; every download is recorded, and one that cannot be recorded
+    is not made. The file is built in memory and sent: nothing is written to the server, and nothing may cache it."""
+    from fastapi.responses import Response
 
     from features import data_room_account_export as export
     from features import data_room_credentials_store
@@ -101,47 +93,19 @@ async def data_room_accounts_export(request: Request, format: str = Query(defaul
         raise HTTPException(status_code=400, detail="format must be xlsx, csv or txt")
     rows = export.account_rows(data_room_credentials_store.get_credentials().get("service_accounts") or [])
     try:
-        _record_account_export(request, profile, fmt=fmt, count=len(rows), with_passwords=False)
-    except Exception:  # noqa: BLE001 - the record is wanted, not a condition of a password-free export
-        logging.getLogger(__name__).exception("Could not record a Data Room accounts export")
-    return _export_response(export.render(rows, fmt), fmt, export.filename(fmt))
-
-
-@router.post("/data-room/credentials/service-accounts/export-with-passwords")
-async def data_room_accounts_export_with_passwords(request: Request, body: dict | None = None):
-    """Every account with its password, only as an encrypted Excel workbook, only after the admin signs in again.
-
-    Body: {"admin_password": the admin's own sign-in password, "file_password": the password the workbook is
-    encrypted with}. Neither is stored or logged. Five wrong sign-in passwords lock this export for 15 minutes.
-    """
-    from core import dashboard_auth_vps as auth
-    from features import data_room_account_export as export
-    from features import data_room_credentials_store
-
-    profile = _require_account_export_admin(request)
-    if not auth.auth_enabled():
-        raise HTTPException(status_code=403, detail="Passwords can only be exported when dashboard sign-in is enabled")
-    payload = body or {}
-    admin_password = str(payload.get("admin_password") or "")
-    file_password = str(payload.get("file_password") or "")
-    key = str(profile.get("username") or "admin")
-    if export.reauth_limiter.blocked(key):
-        raise HTTPException(status_code=429, detail="Too many wrong passwords. Try again in 15 minutes.")
-    if not admin_password or not auth.admin_password_matches(admin_password):
-        export.reauth_limiter.failed(key)
-        # 403, not 401: the dashboard treats any 401 as an ended session and signs the admin out.
-        raise HTTPException(status_code=403, detail="Your sign-in password is not correct")
-    export.reauth_limiter.succeeded(key)
-    problem = export.file_password_problem(file_password, admin_password)
-    if problem:
-        raise HTTPException(status_code=400, detail=problem)
-    rows = export.account_rows(data_room_credentials_store.get_credentials().get("service_accounts") or [], with_passwords=True)
-    try:
-        _record_account_export(request, profile, fmt="xlsx", count=len(rows), with_passwords=True)
+        _record_account_export(request, profile, fmt=fmt, count=len(rows))
     except Exception as exc:  # noqa: BLE001 - passwords never leave unrecorded
-        raise HTTPException(status_code=503, detail="The export could not be recorded, so it was not made. Try again.") from exc
-    content = export.encrypt_xlsx(export.render(rows, "xlsx", with_passwords=True), file_password)
-    return _export_response(content, "xlsx", export.filename("xlsx", with_passwords=True))
+        raise HTTPException(status_code=503, detail="The download could not be recorded, so it was not made. Try again.") from exc
+    return Response(
+        content=export.render(rows, fmt),
+        media_type=export.MEDIA_TYPES[fmt],
+        headers={
+            "Content-Disposition": f'attachment; filename="{export.filename(fmt)}"',
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 @router.patch("/data-room/credentials/handlers/{username}")
 async def data_room_update_handler(username: str, body: dict, request: Request):
     from core.dashboard_access import require_fleet_admin
