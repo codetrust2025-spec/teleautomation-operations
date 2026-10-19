@@ -16989,6 +16989,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .sbs-input::placeholder { color: #64748b; opacity: 1; }
+/* The date and time wait for the invite to be read: visibly not yet open. */
+.sbs-input:disabled { opacity: 0.5; cursor: not-allowed; }
 .sbs-input:focus { border-color: rgba(99,102,241,0.55); box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
 /* A field the browser has autofilled -- Client name, most often -- is repainted
  * by the browser's own stylesheet in a light blue with dark text, which put a
@@ -17206,45 +17208,9 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   border: 1px solid rgba(129,140,248,0.25);
 }
 .sbs-chip--muted { color: var(--text-muted,#a8b4c4); background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.15); }
-/* Manual fields */
-.sbs-manual {
-  padding: 0.5rem 0.65rem;
-  border-radius: 0.55rem;
-  border: 1px solid rgba(248,113,113,0.22);
-  background: rgba(248,113,113,0.04);
-}
-.sbs-manual__hint { font-size: 0.68rem; color: #f87171; margin: 0 0 0.4rem; }
-.sbs-manual__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
-/* Read confidently from the invite: an ordinary checked result, not an alarm. */
-.sbs-manual--confident { border-color: rgba(16,185,129,0.25); background: rgba(16,185,129,0.04); }
-.sbs-manual--confident .sbs-manual__hint { color: #6ee7b7; }
-/* Date takes its own row so Start and End sit side by side on a phone. */
-.sbs-manual__date { grid-column: 1 / -1; }
-/* "Read from invite": what the reader found, field by field. */
-.sbs-read {
-  padding: 0.55rem 0.7rem;
-  border-radius: 0.55rem;
-  border: 1px solid rgba(129,140,248,0.22);
-  background: rgba(99,102,241,0.06);
-}
-.sbs-read__title { margin: 0 0 0.35rem; font-size: 0.75rem; font-weight: 650; color: var(--text,#eef2f7); }
-.sbs-read__list { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
-.sbs-read__row {
-  display: grid;
-  grid-template-columns: minmax(5.5rem, auto) 1fr auto;
-  align-items: baseline;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-}
-.sbs-read__label { color: var(--text-muted,#a8b4c4); }
-.sbs-read__value { margin: 0; color: var(--text,#eef2f7); font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
-.sbs-read__status { margin: 0; font-size: 0.68rem; white-space: nowrap; }
-.sbs-read__status--ok { color: #6ee7b7; }
-.sbs-read__status--warn { color: #fbbf24; }
-.sbs-read__status--muted { color: var(--text-muted,#a8b4c4); }
-@media (max-width: 400px) {
-  .sbs-read__row { grid-template-columns: 5.5rem 1fr auto; gap: 0.4rem; }
-}
+/* What the date and time fields still need (19 Oct): the reader could not
+   settle them, or what is typed cannot be booked. */
+.sbs-slot-hints { display: flex; flex-direction: column; gap: 0.25rem; margin-top: -0.25rem; }
 /* A text-sized button inside a hint (round-wise "Use this name"). */
 .sbs-link-btn {
   background: none; border: 0; padding: 0; font: inherit; font-weight: 600;

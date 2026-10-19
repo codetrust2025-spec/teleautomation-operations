@@ -3,9 +3,9 @@
  * screenshot, Company, Interview round, Confirm booking.
  *
  * The invite fills Company and Interview round when it names them clearly, and the date and times it read
- * confidently. Since 19 Oct what it read is shown back before confirmation -- a "Read from invite" summary and
- * editable Date, Start and End (IST) fields -- so it can be checked and corrected. No other detail fields
- * (time zone, platform, meeting link) appear.
+ * confidently, straight into editable Interview date, Start and End (IST) fields that follow the round. There is
+ * no separate summary of what was read and no separate date box (19 Oct). No other detail fields (time zone,
+ * platform, meeting link) appear.
  */
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -66,7 +66,10 @@ async function readyForm(read) {
 
 describe('the form shows its original fields only', () => {
   // The invite moved to the top on 19 Oct; the other fields keep their order.
-  const ORIGINAL = ['Interview invite screenshot', 'Service type', 'Client name', 'Company *', 'Interview round *']
+  const ORIGINAL = [
+    'Interview invite screenshot', 'Service type', 'Client name', 'Company *', 'Interview round *',
+    'Interview date', 'Start time (IST)', 'End time (IST)',
+  ]
 
   it('before an invite is attached', async () => {
     stubFetch()
@@ -74,19 +77,20 @@ describe('the form shows its original fields only', () => {
     await screen.findByLabelText('Company')
     expect(labels()).toEqual(ORIGINAL)
     expect(screen.getByRole('button', { name: /Confirm booking/i })).toBeInTheDocument()
+    // The date and times wait for the invite: a later upload must never wipe what was typed.
+    for (const label of ['Interview date', 'Start time (IST)', 'End time (IST)']) expect(screen.getByLabelText(label).disabled).toBe(true)
   })
 
-  it('and after the invite has been read: the read summary and editable date and times, nothing else', async () => {
+  it('and after the invite has been read: the same fields, filled and open, and nothing else', async () => {
     await readyForm()
-    expect(labels()).toEqual([
-      'Interview invite screenshot', 'Interview date', 'Start time (IST)', 'End time (IST)',
-      'Service type', 'Client name', 'Company *', 'Interview round *',
-    ])
+    expect(labels()).toEqual(ORIGINAL)
+    for (const label of ['Interview date', 'Start time (IST)', 'End time (IST)']) expect(screen.getByLabelText(label).disabled).toBe(false)
     for (const gone of ['Time zone', 'Platform', 'Meeting link']) expect(screen.queryByLabelText(gone)).toBeNull()
     expect(document.querySelector('.sbs-detected-compact')).toBeNull()
     expect(document.querySelector('.sbs-details')).toBeNull()
-    expect(document.querySelector('.sbs-read')).not.toBeNull()
-    expect(document.querySelector('.sbs-manual--confident')).not.toBeNull()   // a confident read, already filled
+    // No "Read from invite" summary and no separate green date box: the fields are the result.
+    expect(screen.queryByText('Read from invite')).toBeNull()
+    expect(document.querySelector('.sbs-read, .sbs-manual')).toBeNull()
   })
 
   it('still says the invite was read, and by which node, as its status line', async () => {
@@ -135,16 +139,16 @@ describe('the invite still works in the background', () => {
 })
 
 describe('the manual fallback is unchanged', () => {
-  it('appears when the reader could not give a date, with its reason, and the typed date and time are booked', async () => {
+  it('says why when the reader could not give a date, and the typed date and time are booked', async () => {
     const { confirm, calls } = await readyForm({
       ...READ, interview_date: '', start_time: '', end_time: '', confidence_score: 40, manual_fields_required: true,
       warnings: ['The AI could not read the interview date. Enter it to continue.'],
     })
-    const manual = document.querySelector('.sbs-manual')
-    expect(manual).not.toBeNull()
-    expect(manual.textContent).toContain('The AI could not read the interview date. Enter it to continue.')
-    fireEvent.change(manual.querySelector('input[type="date"]'), { target: { value: upcomingDate(9) } })
-    fireEvent.change(manual.querySelector('input[type="text"]'), { target: { value: '03:30 PM' } })
+    const hints = document.querySelector('.sbs-slot-hints')
+    expect(hints.textContent).toContain('The AI could not read the interview date. Enter it to continue.')
+    expect(hints.textContent).toContain('No date or time found on the invite. Enter them (IST).')
+    fireEvent.change(screen.getByLabelText('Interview date'), { target: { value: upcomingDate(9) } })
+    fireEvent.change(screen.getByLabelText('Start time (IST)'), { target: { value: '03:30 PM' } })
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -152,9 +156,12 @@ describe('the manual fallback is unchanged', () => {
     expect(calls.confirms[0].get('time')).toBe('15:30')
   })
 
-  it('appears for an uncertain read too, so the candidate can check the date and time', async () => {
+  it('asks for the date and time after an uncertain read, and leaves them empty', async () => {
     await readyForm({ ...READ, confidence_score: 50 })
-    expect(document.querySelector('.sbs-manual')).not.toBeNull()
+    expect(screen.getByLabelText('Interview date').value).toBe('')
+    expect(screen.getByLabelText('Start time (IST)').value).toBe('')
+    expect(document.querySelector('.sbs-slot-hints').textContent)
+      .toContain('The invite could not be read with confidence. Enter the date and time (IST).')
   })
 })
 

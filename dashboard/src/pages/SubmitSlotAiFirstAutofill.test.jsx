@@ -2,16 +2,15 @@
  * AI-first booking (19 Oct).
  *
  * After the invite is read, every field it read with confidence is filled in:
- * client name, company, interview round, date, start and end time (IST). What
- * it read is shown back in a "Read from invite" summary before Confirm, every
- * filled value can be corrected, and nothing missing or doubtful is guessed:
- * a date or time the reader was not confident about is shown as read but left
- * for the candidate to enter.
+ * client name, company, interview round, date, start and end time (IST), right
+ * in the editable fields -- there is no separate summary (19 Oct). Every filled
+ * value can be corrected, and nothing missing or doubtful is guessed: a date or
+ * time the reader was not confident about is left for the candidate to enter.
  */
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { SubmitSlotPage, inviteSlotConfident } from './SubmitSlotPage.jsx'
+import { SubmitSlotPage, detectedSlotText, inviteSlotConfident } from './SubmitSlotPage.jsx'
 
 afterEach(() => {
   cleanup()
@@ -52,8 +51,6 @@ function stubFetch(invite) {
 
 const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
 const field = label => screen.getByLabelText(label)
-const statusOf = key => document.querySelector(`.sbs-read__row[data-field="${key}"]`)?.dataset.status
-const valueOf = key => document.querySelector(`.sbs-read__row[data-field="${key}"] .sbs-read__value`)?.textContent
 
 async function openAndRead(invite) {
   const calls = stubFetch(invite)
@@ -62,7 +59,7 @@ async function openAndRead(invite) {
   await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
   Object.defineProperty(inviteInput(), 'files', { value: [new File(['x'], 'invite.jpg', { type: 'image/jpeg' })], configurable: true })
   fireEvent.change(inviteInput())
-  await waitFor(() => expect(document.querySelector('.sbs-read')).not.toBeNull())
+  await waitFor(() => expect(document.querySelector('.ai-node-progress')?.textContent || '').toMatch(/^✓/))
   return { confirm, calls }
 }
 
@@ -102,15 +99,19 @@ describe('a confident reading fills every field it found', () => {
     expect(body.get('time_end')).toBe('15:45')
   })
 
-  it('shows what was read before Confirm, each field marked filled', async () => {
-    await openAndRead(CONFIDENT())
-    await waitFor(() => expect(statusOf('client')).toBe('filled'))
-    for (const key of ['company', 'round', 'date', 'start', 'end']) expect(statusOf(key)).toBe('filled')
-    expect(valueOf('company')).toBe('Contoso Ltd')
-    expect(valueOf('start')).toBe('03:00 PM')
-    expect(valueOf('end')).toBe('03:45 PM')
-    // The slot about to be booked, with its end time, above Confirm.
-    expect(screen.getByRole('status', { name: 'Detected interview slot' }).textContent).toMatch(/03:00 PM – 03:45 PM/)
+  it('shows what was read in the fields themselves: no summary box, one status line, one slot preview', async () => {
+    const { confirm } = await openAndRead(CONFIDENT())
+    expect(screen.queryByText('Read from invite')).toBeNull()
+    expect(document.querySelector('.sbs-read, .sbs-manual')).toBeNull()
+    const status = document.querySelectorAll('.ai-node-progress')
+    expect(status).toHaveLength(1)
+    expect(status[0].textContent).toMatch(/^✓ (Invite read|Analysed by .+) in \d+\.\ds$/)
+    // The slot about to be booked -- date and the whole range -- once, directly above Confirm.
+    const preview = screen.getByRole('status', { name: 'Detected interview slot' })
+    expect(preview.textContent).toContain(detectedSlotText({ date: upcomingDate(), time: '15:00', time_end: '15:45' }))
+    expect(preview.textContent).toMatch(/03:00 PM – 03:45 PM/)
+    expect(preview.nextElementSibling).toBe(confirm)
+    expect(document.querySelectorAll('.sbs-slot-preview')).toHaveLength(1)
   })
 
   it('lets every filled value be corrected, and books the correction', async () => {
@@ -118,7 +119,6 @@ describe('a confident reading fills every field it found', () => {
     fireEvent.change(field('Start time (IST)'), { target: { value: '04:00 PM' } })
     fireEvent.change(field('End time (IST)'), { target: { value: '04:30 PM' } })
     fireEvent.change(field('Company'), { target: { value: 'Contoso India' } })
-    expect(statusOf('start')).toBe('changed')
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -132,7 +132,7 @@ describe('nothing missing or doubtful is guessed', () => {
   it('an end time the invite does not give stays empty and is not booked', async () => {
     const { confirm, calls } = await openAndRead({ ...CONFIDENT(), end_time: '' })
     expect(field('End time (IST)').value).toBe('')
-    expect(statusOf('end')).toBe('missing')
+    expect(screen.getByRole('status', { name: 'Detected interview slot' }).textContent).toMatch(/03:00 PM · no end time/)
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -143,8 +143,6 @@ describe('nothing missing or doubtful is guessed', () => {
     await openAndRead({ ...CONFIDENT(), company: '', interview_round: '' })
     expect(field('Company').value).toBe('')
     expect(screen.getByRole('combobox').value).toBe('')
-    expect(statusOf('company')).toBe('missing')
-    expect(statusOf('round')).toBe('missing')
   })
 
   it('a date and time read without confidence are shown but not filled, and Confirm waits for them', async () => {
@@ -155,9 +153,10 @@ describe('nothing missing or doubtful is guessed', () => {
     expect(field('Interview date').value).toBe('')
     expect(field('Start time (IST)').value).toBe('')
     expect(field('End time (IST)').value).toBe('')
-    expect(statusOf('date')).toBe('unconfirmed')
-    expect(statusOf('start')).toBe('unconfirmed')
-    expect(valueOf('start')).toBe('03:00 PM')                    // what was read is still shown
+    expect(document.querySelector('.sbs-slot-hints').textContent)
+      .toContain('The invite could not be read with confidence. Enter the date and time (IST).')
+    expect(document.querySelector('.sbs-slot-hints').textContent)
+      .toContain('OCR and AI did not independently agree on the booking date/time.')
     expect(screen.queryByRole('status', { name: 'Detected interview slot' })).toBeNull()
     expect(confirm.disabled).toBe(true)
 
@@ -174,5 +173,20 @@ describe('nothing missing or doubtful is guessed', () => {
     await openAndRead(CONFIDENT())
     fireEvent.change(field('End time (IST)'), { target: { value: '02:00 PM' } })
     expect(screen.getByText('End time is before the start time. Check it.')).toBeInTheDocument()
+  })
+})
+
+describe('the detected slot line', () => {
+  it('names the weekday, the date and the whole time range', () => {
+    expect(detectedSlotText({ date: '2026-10-26', time: '15:00', time_end: '15:45' })).toBe('Mon, 26 Oct 2026 · 03:00 PM – 03:45 PM')
+  })
+
+  it('says when there is no end time instead of looking cut off', () => {
+    expect(detectedSlotText({ date: '2026-10-26', time: '09:30' })).toBe('Mon, 26 Oct 2026 · 09:30 AM · no end time')
+  })
+
+  it('is empty until both a date and a start are known', () => {
+    expect(detectedSlotText({ date: '2026-10-26' })).toBe('')
+    expect(detectedSlotText(null)).toBe('')
   })
 })
