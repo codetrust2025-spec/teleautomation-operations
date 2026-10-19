@@ -17118,6 +17118,14 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   transition: border-color 0.15s;
 }
 .sbs-select--custom:focus, .sbs-select--custom:hover { border-color: rgba(99,102,241,0.45); }
+/* Service type and Interview date & time are buttons: as tall as the inputs
+   beside them, and a full touch target on a phone (19 Oct mockup). */
+.sbs-select--custom { min-height: 2.75rem; }
+@media (max-width: 1024px) {
+  /* On a phone the inputs are 16px (no iOS zoom); the selects and select-like
+     buttons beside them read at the same size, as in the mockup. */
+  .sbs-form .sbs-select, .sbs-form .sbs-select--custom { font-size: 1rem; }
+}
 .sbs-select__arrow { flex-shrink: 0; opacity: 0.6; }
 .sbs-dropdown {
   position: absolute;
