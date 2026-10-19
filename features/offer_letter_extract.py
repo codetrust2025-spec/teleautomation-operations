@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 from datetime import date
 from pathlib import Path
@@ -102,13 +103,18 @@ def _notes(text: str) -> str:
     return " · ".join(facts)
 
 
-def extract_offer_letter_fields(pdf_data: bytes, filename: str = "") -> dict[str, Any]:
-    """Return editable catalog fields; OCR is used for scanned first pages."""
-    text = (_extract_text_from_pdf(pdf_data) or "").strip()
-    method = "embedded_text"
-    if len(text) < 40:
-        image = _pdf_first_page_to_image(pdf_data)
-        text = (_ocr_text_from_image_base64(image) if image else "").strip()
+def extract_offer_letter_fields(pdf_data: bytes, filename: str = "", *, image: bool = False) -> dict[str, Any]:
+    """Return editable catalog fields; OCR is used for scanned first pages, and for a photo or scan of the letter
+    (`image`), which has no text of its own."""
+    if image:
+        text = (_ocr_text_from_image_base64(base64.b64encode(pdf_data).decode("ascii")) or "").strip()
+        method = "local_ocr" if text else "unreadable"
+    else:
+        text = (_extract_text_from_pdf(pdf_data) or "").strip()
+        method = "embedded_text"
+    if not image and len(text) < 40:
+        image_base64 = _pdf_first_page_to_image(pdf_data)
+        text = (_ocr_text_from_image_base64(image_base64) if image_base64 else "").strip()
         method = "local_ocr" if text else "unreadable"
     candidate = _candidate_name(text)
     company = _company_name(text, filename)

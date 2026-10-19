@@ -70,7 +70,7 @@ def test_create_offer_letter_saves_pdf_and_catalog(monkeypatch, tmp_path):
         },
     )
 
-    row = store.create_offer_letter_from_pdf("Infosys Offer.pdf", b"%PDF-test")
+    row = store.create_offer_letter_from_file("Infosys Offer.pdf", b"%PDF-test")
 
     assert row["id"] == "infosys_offer"
     assert row["candidate"] == "Dinesh"

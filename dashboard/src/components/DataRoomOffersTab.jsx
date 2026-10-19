@@ -1,6 +1,9 @@
 import React, { useState } from 'react'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
+import { offerLetterDownloadApiUrl, offerLetterPreviewApiUrl } from '../utils/offerLetterUrls.js'
+import { OfferPreviewModal, offerIsImage } from './OfferPreviewModal.jsx'
+import { Icon } from './ui/Icon.jsx'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -14,7 +17,7 @@ async function readApiResponse(response) {
   if (contentType.includes('application/json')) return response.json()
   const text = await response.text()
   if (response.status === 413) {
-    throw new Error('The PDF is too large for the server. Maximum file size is 25 MB.')
+    throw new Error('The file is too large for the server. Maximum file size is 25 MB.')
   }
   throw new Error(
     response.ok
@@ -45,9 +48,20 @@ const OFFER_FIELDS = [
 // Only these three are ever sent. Everything else on the row is the upload's.
 const EDITABLE_KEYS = ['candidate', 'company_name', 'notes']
 
-function VaultModal({ title, fields, form, onChange, onSave, onClose, error, uploadPanel, saving }) {
+// An offer letter is the PDF, or a photo or scan of the letter. The server
+// decides from the bytes; this only saves a wasted upload.
+const OFFER_FILE_ACCEPT = 'application/pdf,.pdf,image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp'
+const isOfferFile = file => ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+  /\.(pdf|png|jpe?g|webp)$/i.test(file.name || '')
+
+const viewLabel = row => (offerIsImage(row) ? 'View image' : 'View PDF')
+const rowName = row => row.candidate || row.filename || row.id
+
+// `suspended` while the letter's preview is open over this dialog, so the two
+// do not both answer Escape or both hold the Tab key.
+function VaultModal({ title, fields, form, onChange, onSave, onClose, error, uploadPanel, saving, suspended = false }) {
   // Mounted only while open, so the dialog is open for its whole life.
-  const dialogRef = useDialogA11y(true, onClose)
+  const dialogRef = useDialogA11y(!suspended, onClose)
   return (
     <div className="dr-modal-backdrop" role="presentation" onClick={onClose}>
       <div className="dr-modal cand-card" ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
@@ -87,6 +101,7 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [analysisMessage, setAnalysisMessage] = useState('')
+  const [preview, setPreview] = useState(null)
 
   const openAdd = () => {
     setModalError('')
@@ -115,7 +130,7 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
     // the row and switches this modal to edit, so reaching Save in create mode
     // means no PDF was chosen and there is nothing to catalogue.
     if (mode === 'create') {
-      setModalError('Choose the offer letter PDF first.')
+      setModalError('Choose the offer letter file first.')
       return
     }
     // Only the editable keys. update_vault_item merges, so everything the
@@ -141,12 +156,12 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
 
   const handleInitialUpload = async (file) => {
     if (!file) return
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      setModalError('Please upload a PDF offer letter.')
+    if (!isOfferFile(file)) {
+      setModalError('Upload the offer letter as a PDF, PNG, JPG or WebP file.')
       return
     }
     if (file.size > 25 * 1024 * 1024) {
-      setModalError('PDF is too large. Maximum size is 25 MB.')
+      setModalError('The file is too large. Maximum size is 25 MB.')
       return
     }
     setAnalyzing(true)
@@ -186,6 +201,10 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
 
   const handleUpload = async (rowId, file) => {
     if (!file) return
+    if (!isOfferFile(file)) {
+      setUploadError('Upload the offer letter as a PDF, PNG, JPG or WebP file.')
+      return
+    }
     setUploadId(rowId)
     setUploading(true)
     setUploadError('')
@@ -258,20 +277,36 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
             )}
             {offers.map(row => (
               <tr key={row.id}>
-                <td>{row.candidate || '—'}</td>
-                <td><strong className="dr-offer-filename">{row.filename || row.id}</strong></td>
-                <td>{row.company_name || '—'}</td>
-                <td>{row.date_modified || '—'}</td>
-                <td>{row.size_kb ? `${row.size_kb} KB` : '—'}</td>
-                <td>
-                  <div className="dr-acct-actions">
-                    <a href={`${API_BASE}/data-room/offer-letters/${row.id}/preview`} target="_blank" rel="noopener noreferrer" className="dr-offer-icon-btn" title="View">👁</a>
-                    <a href={`${API_BASE}/data-room/offer-letters/${row.id}/download`} download className="dr-offer-icon-btn" title="Download">⬇</a>
+                <td data-label="Candidate" className="dr-offer-candidate">{row.candidate || '—'}</td>
+                <td data-label="File"><strong className="dr-offer-filename">{row.filename || row.id}</strong></td>
+                <td data-label="Company">{row.company_name || '—'}</td>
+                <td data-label="Modified">{row.date_modified || '—'}</td>
+                <td data-label="Size">{row.size_kb ? `${row.size_kb} KB` : '—'}</td>
+                <td data-label="Actions">
+                  <div className="dr-acct-actions dr-offer-actions">
+                    <button
+                      type="button"
+                      className="cand-btn cand-btn--sm cand-btn--primary dr-offer-view-btn"
+                      onClick={() => setPreview(row)}
+                      aria-label={`${viewLabel(row)} for ${rowName(row)}`}
+                    >
+                      <Icon name="file" size={14} />
+                      {viewLabel(row)}
+                    </button>
+                    <a
+                      href={offerLetterDownloadApiUrl(row, API_BASE)}
+                      download
+                      className="dr-offer-icon-btn"
+                      title="Download"
+                      aria-label={`Download ${offerIsImage(row) ? 'image' : 'PDF'} for ${rowName(row)}`}
+                    >
+                      <Icon name="download" size={14} />
+                    </a>
                     <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)}>Edit</button>
                     <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)}>Delete</button>
-                    <label className={`cand-btn cand-btn--sm${uploading && uploadId === row.id ? ' cand-btn--disabled' : ''}`} title="Upload PDF">
+                    <label className={`cand-btn cand-btn--sm${uploading && uploadId === row.id ? ' cand-btn--disabled' : ''}`} title="Upload a new PDF or image">
                       {uploading && uploadId === row.id ? '…' : '↑'}
-                      <input type="file" accept="application/pdf" style={{ display: 'none' }} onChange={(e) => handleUpload(row.id, e.target.files[0])} />
+                      <input type="file" accept={OFFER_FILE_ACCEPT} style={{ display: 'none' }} onChange={(e) => { const chosen = e.target.files[0]; e.target.value = ''; handleUpload(row.id, chosen) }} />
                     </label>
                   </div>
                 </td>
@@ -291,21 +326,22 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
           onClose={() => setModal(null)}
           error={modalError}
           saving={saving}
+          suspended={Boolean(preview)}
           uploadPanel={modal.mode === 'create' ? (
             <div className={`dr-offer-upload-panel${analyzing ? ' dr-offer-upload-panel--busy' : ''}`}>
               <div className="dr-offer-upload-copy">
-                <strong>{analyzing ? 'Saving and analyzing PDF…' : 'Upload offer letter PDF'}</strong>
+                <strong>{analyzing ? 'Saving and reading the offer letter…' : 'Upload the offer letter'}</strong>
                 <span>
-                  The PDF is stored first, then the candidate and company are
-                  filled in from it for you to check. Filename, size and date are
-                  read from the file.
+                  A PDF, or a photo or scan of the letter (PNG, JPG or WebP). The
+                  file is stored as it is, then the candidate and company are
+                  filled in from it for you to check.
                 </span>
               </div>
               <label className={`cand-btn cand-btn--primary${analyzing ? ' cand-btn--disabled' : ''}`}>
-                {analyzing ? 'Analyzing…' : 'Choose PDF'}
+                {analyzing ? 'Analyzing…' : 'Choose file'}
                 <input
                   type="file"
-                  accept="application/pdf,.pdf"
+                  accept={OFFER_FILE_ACCEPT}
                   disabled={analyzing}
                   style={{ display: 'none' }}
                   onChange={(event) => {
@@ -325,21 +361,25 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
               <span className="dr-offer-attached-file">
                 {modal.row?.filename
                   ? `${modal.row.filename}${modal.row.size_kb ? ` · ${modal.row.size_kb} KB` : ''}${modal.row.date_modified ? ` · ${modal.row.date_modified}` : ''}`
-                  : 'No PDF attached to this record.'}
+                  : 'No file attached to this record.'}
               </span>
               {modal.row?.has_pdf && (
-                <a
-                  className="cand-btn cand-btn--sm"
-                  href={`${API_BASE}/data-room/offer-letters/${modal.id}/preview`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View PDF
-                </a>
+                <button type="button" className="cand-btn cand-btn--sm" onClick={() => setPreview(modal.row)}>
+                  {viewLabel(modal.row)}
+                </button>
               )}
               {analysisMessage && <p className="dr-offer-analysis-ok">{analysisMessage}</p>}
             </div>
           )}
+        />
+      )}
+
+      {preview && (
+        <OfferPreviewModal
+          offer={preview}
+          previewUrl={offerLetterPreviewApiUrl(preview, API_BASE)}
+          downloadUrl={offerLetterDownloadApiUrl(preview, API_BASE)}
+          onClose={() => setPreview(null)}
         />
       )}
     </section>

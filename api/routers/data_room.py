@@ -267,48 +267,51 @@ async def data_room_service_account_image_delete(item_id: str, request: Request)
     return {"status": "ok", "service_account": row}
 
 
+def _offer_letter_file_response(item_id: str, request: Request, disposition: str):
+    """The offer letter's file exactly as uploaded -- PDF or image, typed from its bytes -- for the preview (inline)
+    or the download (attachment). Never cached: these are candidates' documents."""
+    from urllib.parse import quote
+
+    from fastapi import HTTPException
+
+    from features import data_room_credentials_store as creds
+
+    if not _data_room_admin_only(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        path, media_type, row = creds.resolve_offer_letter_file(item_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    name = str(row.get("filename") or row.get("id") or "offer-letter").replace('"', "").replace("\\", "")
+    extension = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[media_type]
+    if not name.lower().endswith((extension, ".jpeg") if extension == ".jpg" else extension):
+        name = f"{os.path.splitext(name)[0] or 'offer-letter'}{extension}"
+    # A header is Latin-1: an ASCII name for every browser, the real one for those that read filename*.
+    plain = name.encode("ascii", "ignore").decode("ascii").strip() or f"offer-letter{extension}"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"{disposition}; filename=\"{plain}\"; filename*=UTF-8''{quote(name)}",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get("/data-room/offer-letters/{item_id}/preview")
 async def data_room_offer_letter_preview(item_id: str, request: Request):
-    from fastapi import HTTPException
+    return _offer_letter_file_response(item_id, request, "inline")
 
-    from features import data_room_credentials_store as creds
 
-    if not _data_room_admin_only(request):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    try:
-        path, row = creds.resolve_offer_letter_pdf(item_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    name = (row.get("filename") or row.get("id") or "offer-letter.pdf").replace('"', "")
-    return FileResponse(
-        path,
-        media_type="application/pdf",
-        filename=name,
-        headers={"Content-Disposition": f'inline; filename="{name}"'},
-    )
 @router.get("/data-room/offer-letters/{item_id}/download")
 async def data_room_offer_letter_download(item_id: str, request: Request):
-    from fastapi import HTTPException
+    return _offer_letter_file_response(item_id, request, "attachment")
 
-    from features import data_room_credentials_store as creds
 
-    if not _data_room_admin_only(request):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    try:
-        path, row = creds.resolve_offer_letter_pdf(item_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    name = (row.get("filename") or row.get("id") or "offer-letter.pdf").replace('"', "")
-    return FileResponse(
-        path,
-        media_type="application/pdf",
-        filename=name,
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
-    )
+
 @router.post("/data-room/offer-letters/{item_id}/upload")
 async def data_room_offer_letter_upload(
     item_id: str,
@@ -321,7 +324,7 @@ async def data_room_offer_letter_upload(
     require_fleet_admin(request)
     try:
         raw = await file.read()
-        row = creds.save_offer_letter_pdf(item_id, raw)
+        row = creds.save_offer_letter_file(item_id, raw)
     except FileNotFoundError as exc:
         return {"status": "error", "message": str(exc)}
     except ValueError as exc:
@@ -332,20 +335,20 @@ async def data_room_offer_letter_upload_analyze(
     request: Request,
     file: UploadFile = File(...),
 ):
-    """Save a new offer-letter PDF and return editable extracted metadata."""
+    """Save a new offer letter (PDF or image) and return editable extracted metadata."""
     from core.dashboard_access import require_fleet_admin
     from features import data_room_credentials_store as creds
 
     require_fleet_admin(request)
     try:
         raw = await file.read()
-        row = creds.create_offer_letter_from_pdf(file.filename or "offer-letter.pdf", raw)
+        row = creds.create_offer_letter_from_file(file.filename or "offer-letter.pdf", raw)
     except (FileNotFoundError, ValueError) as exc:
         return {"status": "error", "message": str(exc)}
     return {
         "status": "ok",
         "offer_letter": row,
-        "message": "PDF saved and fields auto-filled. Review the values, then save.",
+        "message": "File saved and fields auto-filled. Review the values, then save.",
     }
 @router.get("/data-room/{oid}")
 async def data_room_get(oid: str):

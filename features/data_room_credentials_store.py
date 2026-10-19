@@ -518,10 +518,7 @@ def delete_vault_item(section: str, item_id: str) -> dict | None:
     data[sec] = filtered
     _save(data)
     if sec == "offer_letters":
-        try:
-            os.remove(_offer_letter_cache_path(rid))
-        except FileNotFoundError:
-            pass
+        _remove_offer_letter_files(rid)
     return get_credentials()
 
 
@@ -870,8 +867,84 @@ def find_offer_letter(item_id: str) -> dict | None:
     return None
 
 
-def _offer_letter_cache_path(item_id: str) -> str:
-    return os.path.join(_OFFER_CACHE_DIR, f"{item_id}.pdf")
+def _offer_letter_cache_path(item_id: str, extension: str = "pdf") -> str:
+    return os.path.join(_OFFER_CACHE_DIR, f"{item_id}.{extension}")
+
+
+# An offer letter is kept as the file that was uploaded -- a PDF, or a photo or
+# scan of the letter -- byte for byte. What it is comes from its first bytes,
+# never from a name or a browser's claim.
+_OFFER_FILE_KINDS = (
+    ("pdf", "application/pdf"),
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("webp", "image/webp"),
+)
+
+
+def offer_file_kind(data: bytes) -> tuple[str, str] | None:
+    """(extension, media type) of a PDF, PNG, JPEG or WebP file, from its bytes; None for anything else."""
+    head = bytes(data[:16])
+    if head.startswith(b"%PDF"):
+        return _OFFER_FILE_KINDS[0]
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return _OFFER_FILE_KINDS[1]
+    if head.startswith(b"\xff\xd8\xff"):
+        return _OFFER_FILE_KINDS[2]
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return _OFFER_FILE_KINDS[3]
+    return None
+
+
+def _stored_offer_file(item_id: str) -> tuple[str, str] | None:
+    """(path, media type) of the file stored for an offer letter, if there is one."""
+    for extension, _ in _OFFER_FILE_KINDS:
+        path = _offer_letter_cache_path(item_id, extension)
+        if not os.path.isfile(path):
+            continue
+        # A PDF of a few hundred bytes is a failed Drive download, not a letter.
+        if extension == "pdf" and os.path.getsize(path) <= 400:
+            continue
+        with open(path, "rb") as handle:
+            kind = offer_file_kind(handle.read(16))
+        if kind:
+            return path, kind[1]
+    return None
+
+
+def _remove_offer_letter_files(item_id: str) -> None:
+    for extension, _ in _OFFER_FILE_KINDS:
+        try:
+            os.remove(_offer_letter_cache_path(item_id, extension))
+        except FileNotFoundError:
+            pass
+
+
+def _write_offer_letter_file(item_id: str, data: bytes, extension: str) -> None:
+    """Store the file as uploaded, replacing whatever was stored before, of any kind."""
+    os.makedirs(_OFFER_CACHE_DIR, exist_ok=True)
+    path = _offer_letter_cache_path(item_id, extension)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as handle:
+        handle.write(data)
+    for other, _ in _OFFER_FILE_KINDS:
+        if other != extension:
+            try:
+                os.remove(_offer_letter_cache_path(item_id, other))
+            except FileNotFoundError:
+                pass
+    os.replace(tmp, path)
+
+
+def _checked_offer_file(data: bytes) -> tuple[str, str]:
+    if not data:
+        raise ValueError("Empty upload")
+    if len(data) > _MAX_OFFER_PDF_BYTES:
+        raise ValueError(f"File too large (max {_MAX_OFFER_PDF_BYTES // (1024 * 1024)} MB)")
+    kind = offer_file_kind(data)
+    if kind is None:
+        raise ValueError("Only PDF, PNG, JPG or WebP offer letters are supported")
+    return kind
 
 
 def _drive_file_id_from_row(row: dict) -> str:
@@ -885,6 +958,19 @@ def _drive_file_id_from_row(row: dict) -> str:
     return ""
 
 
+def resolve_offer_letter_file(item_id: str) -> tuple[str, str, dict]:
+    """(path, media type, row) of the offer letter's file, exactly as it was uploaded. A letter known only by its Drive
+    id is fetched from Drive, as a PDF, the first time it is opened."""
+    row = find_offer_letter(item_id)
+    if not row:
+        raise FileNotFoundError("Offer letter not found")
+    stored = _stored_offer_file(item_id)
+    if stored:
+        return stored[0], stored[1], row
+    path, row = resolve_offer_letter_pdf(item_id)
+    return path, "application/pdf", row
+
+
 def resolve_offer_letter_pdf(item_id: str) -> tuple[str, dict]:
     """Return cached PDF path + catalog row. Downloads from Drive on first view."""
     row = find_offer_letter(item_id)
@@ -896,7 +982,7 @@ def resolve_offer_letter_pdf(item_id: str) -> tuple[str, dict]:
     file_id = _drive_file_id_from_row(row)
     if not file_id:
         raise FileNotFoundError(
-            "No PDF on server — upload via View or add a Drive file ID in Edit"
+            "No file on the server yet. Upload the PDF or image with the ↑ button on this offer."
         )
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
     data = _fetch_url_bytes(url)
@@ -916,28 +1002,21 @@ def resolve_offer_letter_pdf(item_id: str) -> tuple[str, dict]:
     return cache, row
 
 
-def save_offer_letter_pdf(item_id: str, data: bytes) -> dict:
-    """Store/replace cached PDF for a vault offer letter row."""
-    if not data:
-        raise ValueError("Empty upload")
-    if len(data) > _MAX_OFFER_PDF_BYTES:
-        raise ValueError(f"File too large (max {_MAX_OFFER_PDF_BYTES // (1024 * 1024)} MB)")
-    if not data.startswith(b"%PDF"):
-        raise ValueError("Only PDF files are supported for offer letter preview")
+def save_offer_letter_file(item_id: str, data: bytes) -> dict:
+    """Store or replace the file of an existing offer letter: a PDF or an image, kept as uploaded.
+
+    `has_pdf` keeps its name for the rows and pages that read it; it means a file is stored."""
+    extension, media_type = _checked_offer_file(data)
     row = find_offer_letter(item_id)
     if not row:
         raise FileNotFoundError("Offer letter not found")
-    os.makedirs(_OFFER_CACHE_DIR, exist_ok=True)
-    cache = _offer_letter_cache_path(item_id)
-    tmp = cache + ".tmp"
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, cache)
+    _write_offer_letter_file(item_id, data, extension)
     updated = update_vault_item(
         "offer_letters",
         item_id,
         {
             "has_pdf": True,
+            "file_type": "pdf" if extension == "pdf" else "image",
             "uploaded_at": _now_iso(),
             "size_kb": max(1, (len(data) + 1023) // 1024),
         },
@@ -961,18 +1040,14 @@ def _offer_slug(filename: str) -> str:
             return candidate
 
 
-def create_offer_letter_from_pdf(filename: str, pdf_data: bytes) -> dict:
-    """Persist a new PDF and create its editable, auto-filled catalog row."""
-    if not pdf_data:
-        raise ValueError("Empty upload")
-    if len(pdf_data) > _MAX_OFFER_PDF_BYTES:
-        raise ValueError(f"File too large (max {_MAX_OFFER_PDF_BYTES // (1024 * 1024)} MB)")
-    if not pdf_data.startswith(b"%PDF"):
-        raise ValueError("Only PDF offer letters are supported")
+def create_offer_letter_from_file(filename: str, data: bytes) -> dict:
+    """Persist a new offer letter -- a PDF, or a photo or scan of one -- and create its editable, auto-filled row."""
+    extension, _ = _checked_offer_file(data)
 
     from features.offer_letter_extract import extract_offer_letter_fields
 
-    fields = extract_offer_letter_fields(pdf_data, filename)
+    fields = (extract_offer_letter_fields(data, filename) if extension == "pdf"
+              else extract_offer_letter_fields(data, filename, image=True))
     item_id = _offer_slug(filename)
     row = {
         "id": item_id,
@@ -984,23 +1059,16 @@ def create_offer_letter_from_pdf(filename: str, pdf_data: bytes) -> dict:
         "drive_file_id": "",
         "notes": fields["notes"],
         "has_pdf": True,
+        "file_type": "pdf" if extension == "pdf" else "image",
         "uploaded_at": _now_iso(),
         "analysis_method": fields["analysis_method"],
         "analysis_confidence": fields["analysis_confidence"],
     }
 
-    os.makedirs(_OFFER_CACHE_DIR, exist_ok=True)
-    cache = _offer_letter_cache_path(item_id)
-    tmp = cache + ".tmp"
-    with open(tmp, "wb") as handle:
-        handle.write(pdf_data)
-    os.replace(tmp, cache)
+    _write_offer_letter_file(item_id, data, extension)
     _, error = create_vault_item("offer_letters", row)
     if error:
-        try:
-            os.remove(cache)
-        except OSError:
-            pass
+        _remove_offer_letter_files(item_id)
         raise ValueError(error)
     return find_offer_letter(item_id) or row
 

@@ -113,20 +113,20 @@ describe('offer letter dialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Add offer' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    expect(await screen.findByText('Choose the offer letter PDF first.')).toBeInTheDocument()
+    expect(await screen.findByText('Choose the offer letter file first.')).toBeInTheDocument()
     expect(calls).toHaveLength(0)
   })
 
-  it('offers the PDF chooser when adding, and not when editing', () => {
+  it('offers the file chooser (PDF or image) when adding, and not when editing', () => {
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: '+ Add offer' }))
-    expect(screen.getByRole('dialog').textContent).toContain('Choose PDF')
+    expect(screen.getByRole('dialog').textContent).toContain('Choose file')
 
     fireEvent.keyDown(document, { key: 'Escape' })
     cleanup()
 
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-    expect(screen.getByRole('dialog').textContent).not.toContain('Choose PDF')
+    expect(screen.getByRole('dialog').textContent).not.toContain('Choose file')
   })
 })

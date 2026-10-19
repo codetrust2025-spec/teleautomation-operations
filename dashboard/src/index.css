@@ -15699,6 +15699,92 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   background: rgba(255, 255, 255, 0.08);
   color: #e2e8f0;
 }
+.dr-offer-view-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* Offer letter preview (19 Oct): the letter itself, on the page. A large sheet
+   on a desktop, the whole screen on a phone; the letter scrolls inside its own
+   box in both directions and the toolbar stays put. */
+.offer-preview-backdrop {
+  position: fixed; inset: 0; z-index: 1300;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(2, 6, 23, 0.72);
+}
+.offer-preview {
+  display: flex; flex-direction: column;
+  width: min(1040px, 100%); height: min(92vh, 100%);
+  background: #0f172a; color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5); overflow: hidden;
+}
+.offer-preview__bar {
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+.offer-preview__title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.offer-preview__title strong, .offer-preview__title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.offer-preview__title strong { font-size: 0.95rem; }
+.offer-preview__title span { font-size: 0.78rem; color: #94a3b8; }
+.offer-preview__tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.offer-preview__btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: 40px; height: 40px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0; font: inherit; font-size: 1.05rem; line-height: 1; text-decoration: none; cursor: pointer;
+}
+.offer-preview__btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.offer-preview__btn:disabled { opacity: 0.4; cursor: default; }
+.offer-preview__zoom { min-width: 64px; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.offer-preview__download { font-size: 0.85rem; font-weight: 600; }
+.offer-preview__close { font-size: 1.5rem; flex: 0 0 auto; }
+.offer-preview__body {
+  flex: 1 1 auto; min-height: 0; padding: 16px;
+  overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  touch-action: pan-x pan-y; background: #1e293b;
+}
+.offer-preview__body:focus { outline: none; }
+.offer-preview__content { width: max-content; min-width: 100%; }
+.offer-preview__pages { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.offer-preview__page, .offer-preview__image {
+  display: block; max-width: none; margin: 0 auto;
+  background: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+.offer-preview__image { height: auto; }
+.offer-preview__status { margin: 48px auto; max-width: 420px; text-align: center; color: #cbd5e1; font-size: 0.9rem; }
+.offer-preview__status--error { color: #fca5a5; }
+
+@media (max-width: 640px) {
+  .offer-preview-backdrop { padding: 0; }
+  .offer-preview { width: 100%; height: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .offer-preview__bar { flex-wrap: wrap; padding: max(8px, env(safe-area-inset-top)) 10px 8px; }
+  .offer-preview__title { flex: 1 1 0; }
+  .offer-preview__tools { order: 3; width: 100%; justify-content: space-between; }
+  .offer-preview__btn { min-width: 44px; height: 44px; }
+  .offer-preview__download { flex: 1 1 auto; }
+  .offer-preview__body { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+  /* Offers as cards: candidate on top, then labelled lines, actions last. */
+  .dr-page .dr-offers-tab .dr-tab-table-wrap { overflow-x: visible; border: 0; background: transparent; }
+  .dr-page .dr-offers-tab .dr-tab-table, .dr-page .dr-offers-tab .dr-tab-table tbody,
+  .dr-page .dr-offers-tab .dr-tab-table tr, .dr-page .dr-offers-tab .dr-tab-table td { display: block; width: 100%; }
+  .dr-offers-tab .dr-tab-table thead { display: none; }
+  .dr-page .dr-offers-tab .dr-tab-table tbody tr {
+    margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--surface-card, rgba(255, 255, 255, 0.02));
+  }
+  .dr-page .dr-offers-tab .dr-tab-table tbody td {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 4px 0; border: 0; min-width: 0; text-align: right; overflow-wrap: anywhere;
+  }
+  .dr-page .dr-offers-tab .dr-tab-table tbody td[data-label]::before {
+    content: attr(data-label); flex: 0 0 auto; font-size: 0.72rem; color: #94a3b8; text-align: left;
+  }
+  .dr-page .dr-offers-tab .dr-tab-table td.dr-offer-candidate { font-weight: 650; font-size: 0.95rem; text-align: left; }
+  .dr-page .dr-offers-tab .dr-tab-table td.dr-offer-candidate::before,
+  .dr-page .dr-offers-tab .dr-tab-table td[data-label="Actions"]::before,
+  .dr-page .dr-offers-tab .dr-tab-table td.dr-empty::before { display: none; }
+  .dr-page .dr-offers-tab .dr-offer-actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; gap: 8px; padding-top: 6px; }
+  .dr-page .dr-offers-tab .dr-offer-actions .cand-btn, .dr-page .dr-offers-tab .dr-offer-icon-btn { min-height: 40px; min-width: 40px; }
+  .dr-page .dr-offers-tab .dr-offer-view-btn { flex: 1 1 100%; justify-content: center; }
+}
 
 /* Key links — 2-column mini card grid */
 .dr-resource-mini-grid {
