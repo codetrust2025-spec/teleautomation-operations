@@ -34,7 +34,9 @@ function formatDisplayDate(isoDate) {
 /**
  * The one line the slot preview shows above Confirm: the date with its weekday
  * and the whole time range, "Mon, 26 Oct 2026 · 03:00 PM – 03:45 PM". Without
- * an end time it says so rather than looking cut off.
+ * an end time it says so rather than looking cut off. The date and each time
+ * hold together (no-break spaces), so a narrow phone wraps the line at "·" or
+ * "–", never between "03:45" and "PM".
  */
 export function detectedSlotText(slot) {
   if (!slot?.date || !slot?.time) return ''
@@ -42,9 +44,10 @@ export function detectedSlotText(slot) {
   const day = y && m && d
     ? new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' })
     : ''
-  const date = [day, formatDisplayDate(slot.date)].filter(Boolean).join(', ')
-  const start = normalizeTo12h(slot.time)
-  const range = slot.time_end ? `${start} – ${normalizeTo12h(slot.time_end)}` : `${start} · no end time`
+  const whole = text => String(text || '').replace(/ /g, ' ')
+  const date = whole([day, formatDisplayDate(slot.date)].filter(Boolean).join(', '))
+  const start = whole(normalizeTo12h(slot.time))
+  const range = slot.time_end ? `${start} – ${whole(normalizeTo12h(slot.time_end))}` : `${start} · no end time`
   return `${date} · ${range}`
 }
 

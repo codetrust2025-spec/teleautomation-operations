@@ -81,9 +81,12 @@ describe('SubmitSlotPage - Detected Interview Slot Preview', () => {
     await waitFor(() => {
       const preview = screen.getByLabelText('Detected interview slot')
       expect(preview).toBeInTheDocument()
-      expect(preview.textContent).toContain('Detected slot (IST)')
-      expect(preview.textContent).toContain('25 Oct 2026')
-      expect(preview.textContent).toContain('02:30 PM')
+      // The date and times are held together with no-break spaces (a phone
+      // wraps the line only at its separators); read them as plain spaces.
+      const text = preview.textContent.replace(/ /g, ' ')
+      expect(text).toContain('Detected slot (IST)')
+      expect(text).toContain('25 Oct 2026')
+      expect(text).toContain('02:30 PM')
     })
 
     // Verify it is located above the Confirm booking button

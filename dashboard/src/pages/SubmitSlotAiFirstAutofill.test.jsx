@@ -109,7 +109,7 @@ describe('a confident reading fills every field it found', () => {
     // The slot about to be booked -- date and the whole range -- once, directly above Confirm.
     const preview = screen.getByRole('status', { name: 'Detected interview slot' })
     expect(preview.textContent).toContain(detectedSlotText({ date: upcomingDate(), time: '15:00', time_end: '15:45' }))
-    expect(preview.textContent).toMatch(/03:00 PM – 03:45 PM/)
+    expect(preview.textContent).toMatch(/03:00\sPM – 03:45\sPM/)
     expect(preview.nextElementSibling).toBe(confirm)
     expect(document.querySelectorAll('.sbs-slot-preview')).toHaveLength(1)
   })
@@ -132,7 +132,7 @@ describe('nothing missing or doubtful is guessed', () => {
   it('an end time the invite does not give stays empty and is not booked', async () => {
     const { confirm, calls } = await openAndRead({ ...CONFIDENT(), end_time: '' })
     expect(field('End time (IST)').value).toBe('')
-    expect(screen.getByRole('status', { name: 'Detected interview slot' }).textContent).toMatch(/03:00 PM · no end time/)
+    expect(screen.getByRole('status', { name: 'Detected interview slot' }).textContent).toMatch(/03:00\sPM · no\send\stime/)
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -177,12 +177,19 @@ describe('nothing missing or doubtful is guessed', () => {
 })
 
 describe('the detected slot line', () => {
+  const plain = text => text.replace(/ /g, ' ')
+
   it('names the weekday, the date and the whole time range', () => {
-    expect(detectedSlotText({ date: '2026-10-26', time: '15:00', time_end: '15:45' })).toBe('Mon, 26 Oct 2026 · 03:00 PM – 03:45 PM')
+    expect(plain(detectedSlotText({ date: '2026-10-26', time: '15:00', time_end: '15:45' }))).toBe('Mon, 26 Oct 2026 · 03:00 PM – 03:45 PM')
   })
 
   it('says when there is no end time instead of looking cut off', () => {
-    expect(detectedSlotText({ date: '2026-10-26', time: '09:30' })).toBe('Mon, 26 Oct 2026 · 09:30 AM · no end time')
+    expect(plain(detectedSlotText({ date: '2026-10-26', time: '09:30' }))).toBe('Mon, 26 Oct 2026 · 09:30 AM · no end time')
+  })
+
+  it('wraps on a phone only at the separators, never inside a date or a time', () => {
+    const text = detectedSlotText({ date: '2026-10-22', time: '15:00', time_end: '15:45' })
+    expect(text.split(/ /)).toEqual(['Thu, 22 Oct 2026', '·', '03:00 PM', '–', '03:45 PM'])
   })
 
   it('is empty until both a date and a start are known', () => {
