@@ -54,17 +54,22 @@ def to_csv(rows: list[dict]) -> bytes:
 
 
 def to_txt(rows: list[dict]) -> bytes:
-    """A header line and one line per account, in aligned columns. Only padding is added: the last value on a line
-    is written as it is, so a password keeps every character, trailing spaces included."""
-    table = [[title for _, title in COLUMNS]] + [[row.get(key) or "" for key, _ in COLUMNS] for row in rows]
-    widths = [max(len(line[i]) for line in table) for i in range(len(COLUMNS))]
+    """One block per account, a blank line between blocks:
 
-    def line(cells: list[str]) -> str:
-        last = max((i for i, cell in enumerate(cells) if cell), default=0)
-        return "  ".join(cell.ljust(widths[i]) if i < last else cell for i, cell in enumerate(cells[:last + 1]))
+        Account Name: ...
+        Username: ...
+        Password: ...
 
+    No columns to line up, so it reads the same in any font on a phone or a desktop. Each value follows its label
+    exactly as stored; an empty one leaves the label alone ("Password:"). Windows line endings, which every phone
+    and desktop viewer reads."""
     newline = chr(13) + chr(10)
-    return (newline.join(line(cells) for cells in table) + newline).encode("utf-8")
+
+    def line(title: str, value: str) -> str:
+        return f"{title}: {value}" if value else f"{title}:"
+
+    blocks = [newline.join(line(title, row.get(key) or "") for key, title in COLUMNS) for row in rows]
+    return (newline.join([block + newline for block in blocks])).encode("utf-8") if blocks else b""
 
 
 _XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")

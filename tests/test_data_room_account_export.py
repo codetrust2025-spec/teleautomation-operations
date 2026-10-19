@@ -65,19 +65,36 @@ class TestTheFormats:
         rows = list(csv.reader(io.StringIO(data.decode("utf-8-sig"))))
         assert rows == [HEADER] + EXPECTED                               # no prefix, no trimming, nothing missing
 
-    def test_text_is_a_header_and_one_aligned_line_per_account(self):
+    def test_text_is_one_block_per_account_with_a_blank_line_between(self):
         text = export.render(export.account_rows(ACCOUNTS), "txt").decode("utf-8")
-        lines = text.split(CRLF)
-        assert lines[-1] == "" and len(lines) == len(ACCOUNTS) + 2         # header, the accounts, the final newline
-        assert lines[0].split() == ["Account", "Name", "Username", "Password"]
-        assert lines[1] == "Karthik Gmail (current)  karthik@example.com   Pa55-karthik-SECRET"
-        # columns line up: every password starts where the Password heading does
-        start = lines[0].index("Password")
-        for line, (_, _, password) in zip(lines[1:], EXPECTED):
-            assert line[start:] == password                              # exact, trailing spaces included
-        assert lines[5] == "No password yet          empty@example.com"   # no padding after the last value
-        for gone in ("Type", "Status", "Last used", "Notes", "Exported", "1. "):
+        blocks = text.split(CRLF + CRLF)
+        assert len(blocks) == len(ACCOUNTS)
+        assert blocks[0] == CRLF.join(["Account Name: Karthik Gmail (current)", "Username: karthik@example.com",
+                                       "Password: Pa55-karthik-SECRET"])
+        assert blocks[-1] == CRLF.join(["Account Name: No password yet", "Username: empty@example.com", "Password:"]) + CRLF
+        assert text.endswith("Password:" + CRLF) and not text.endswith(CRLF + CRLF)   # no trailing blank line
+
+    def test_every_value_follows_its_label_exactly(self):
+        text = export.render(export.account_rows(ACCOUNTS), "txt").decode("utf-8")
+        for block, (name, username, password) in zip(text.split(CRLF + CRLF), EXPECTED):
+            lines = block.rstrip(CRLF).split(CRLF) if block.endswith(CRLF) else block.split(CRLF)
+            assert lines == [f"Account Name: {name}", f"Username: {username}" if username else "Username:",
+                             f"Password: {password}" if password else "Password:"]
+        # the password with a formula sign, spaces at both ends, a comma and quotes comes through untouched
+        assert "Password:  =SUM(1,2) \"x\" " + CRLF in text
+
+    def test_text_has_no_table_and_nothing_else(self):
+        text = export.render(export.account_rows(ACCOUNTS), "txt").decode("utf-8")
+        for gone in ("Type", "Status", "Last used", "Notes", "Exported", "1. ", "|", "  Username", "\t"):
             assert gone not in text
+        # every line is a labelled value or the blank line between accounts
+        for line in text.split(CRLF):
+            assert line == "" or line.split(":", 1)[0] in ("Account Name", "Username", "Password")
+        # plain line endings only: no lone CR or LF for a viewer to trip on
+        assert text.replace(CRLF, "").count(chr(10)) == 0 and text.replace(CRLF, "").count(chr(13)) == 0
+
+    def test_no_accounts_is_an_empty_file(self):
+        assert export.render([], "txt") == b""
 
     def test_excel_is_three_text_columns_with_a_bold_frozen_header(self):
         data = export.render(export.account_rows(ACCOUNTS), "xlsx")
@@ -145,6 +162,7 @@ class TestTheRoute:
         elif fmt == "csv":
             assert list(csv.reader(io.StringIO(res.content.decode("utf-8-sig")))) == [HEADER] + EXPECTED
         else:
+            assert res.content.decode("utf-8").count("Account Name: ") == len(ACCOUNTS)
             assert all(password in res.content.decode("utf-8") for _, _, password in EXPECTED)
 
     def test_every_download_is_recorded_without_its_contents(self, api):
