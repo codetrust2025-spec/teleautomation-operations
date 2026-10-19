@@ -80,6 +80,13 @@ def _invite_model_timeout() -> int:
 
 
 OLLAMA_TIMEOUT = _invite_model_timeout()
+#: Output budget for one invite read. The answer is a small JSON object of the
+#: fields the booking form uses (about 150 tokens); every output token costs
+#: ~0.2s on the vision node, so the schema asks for nothing else.
+INVITE_NUM_PREDICT = 256
+#: The prompt asks for a confidence below 80 when the date or time is
+#: ambiguous, so below this the reading is not filled in.
+MODEL_SURE_SCORE = 80
 OLLAMA_TEXT_TIMEOUT = min(int(os.environ.get("OLLAMA_TEXT_TIMEOUT", "60")), OLLAMA_TIMEOUT)
 _last_vision_error: str = ""
 
@@ -149,15 +156,14 @@ IMPORTANT: Today's date is {today}. Use this to resolve relative dates:
   resolve it from the server date or guess.
 
 Schema:
-{{"candidate_name": "", "candidate_phone": "", "client_name": "", "technology": "", "company": "", "service_type": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "timezone_written": "", "meeting_platform": "", "screenshot_source": "", "meeting_link": "", "attendee_name": "", "confidence_score": 0, "missing_fields": [], "warnings": [], "raw_detected_text": "", "is_payment_screenshot": false, "looks_like_interview_invite": true}}
+{{"candidate_name": "", "company": "", "technology": "", "interview_round": "", "interview_date": "YYYY-MM-DD", "start_time": "hh:mm AM/PM", "end_time": "hh:mm AM/PM", "timezone": "Asia/Kolkata", "timezone_written": "", "meeting_platform": "", "confidence_score": 0, "is_payment_screenshot": false, "looks_like_interview_invite": true}}
 
 Rules:
 - Extract only visible information.
 - Do not guess.
 - If a field is not visible, keep it empty.
-- Add missing required fields to missing_fields.
-- Required booking fields are interview_date, start_time, and interview_round.
 - Convert all dates to YYYY-MM-DD.
+- When the invite writes a year, copy that year exactly. Never change a written year.
 - Convert all times to 12-hour hh:mm AM/PM format only.
 - Never return 24-hour time.
 - If screenshot shows 14:30, return 02:30 PM.
@@ -170,17 +176,17 @@ Rules:
 - For "2:00 PM – 2:30 PM": start_time = "02:00 PM", end_time = "02:30 PM"
 - If end time is not visible and duration is not visible, keep end_time empty. Do not guess end_time.
 - If date/time is ambiguous, keep confidence_score below 80.
-- screenshot_source is the app the screenshot was taken FROM (WhatsApp, Gmail, Teams, Telegram, etc.)
-- meeting_platform is the ACTUAL interview platform (FloCareer, HirePro, Zoom, Teams, Google Meet, BarRaiser, etc.)
-- Do NOT confuse screenshot_source with meeting_platform. They are different fields.
+- meeting_platform is the ACTUAL interview platform (FloCareer, HirePro, Zoom, Teams, Google Meet, BarRaiser, etc.), not the app the screenshot was taken from.
+- candidate_name is the person being interviewed: the name after "Dear" or "Hi", after "with" in an interview title ("Interview ... with Asha Rao"), or the person named in a subject such as "Asha Rao - React JS - L1".
+  Never the sender, recruiter, interviewers or a signature.
+- interview_round is the round exactly as the invite writes it, for example "L1", "Level I", "Round 2", "2nd Round", "Interview 2", "Manager Round" or "HR". If no round is written, keep it empty.
 - technology should be the job role or tech stack (Java, React JS, Data Engineer, Sr Data Reliability Engineer, etc.)
 - Do NOT put meeting platform names in technology field.
 - timezone_written is the time zone exactly as the invite writes it (for example IST, GMT+5:30, EST). If no time zone is written, keep it empty. Never assume one.
-- meeting_link is the full meeting URL only if it is completely visible. If it is cut off or shortened with ..., keep it empty.
 - company is the organisation the interview is for (the hiring company or end client, for example Capgemini, Infosys or Wipro), written as the invite names it.
-  Look for a Company, Client, Organisation or Customer label, a subject such as "Interview with X" or "X | Java | L1", or the sender's signature.
+  Look for a Company, Client, Organisation or Customer label, a role "at X", a subject such as "Interview with X", "X Interview Confirmation" or "X | Java | L1", or the sender's signature.
   Return only the name, never a sentence.
-- Do NOT put the meeting platform, the app the screenshot came from, a job role, a person's name or an email address in company.
+- Do NOT put the meeting platform, the app the screenshot came from, a job role, a city or location, a person's name or an email address in company.
   Do not infer it from an email domain or a logo. If the invite does not name the company, keep company empty.
 - If the screenshot is a payment receipt, UPI screenshot, bank transfer screenshot, transaction proof, or payment confirmation, set is_payment_screenshot=true.
 - If it is not an interview invite, set looks_like_interview_invite=false.
@@ -366,15 +372,30 @@ def _is_ollama_available() -> bool:
     return bool(status.get("endpoint_reachable") and status.get("model_available"))
 
 
-def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 768) -> tuple[bytes, bool]:
-    """Resize high-res screenshots to optimal vision resolution (max_edge=768).
+#: Pixel budget for a screenshot sent to the vision model. Reading the image is
+#: cheap on these nodes (2,233 prompt tokens in 0.25s on 19 Oct); generating the
+#: answer is what costs time. So the image keeps enough pixels for small text:
+#: a 1080x2400 phone screenshot is sent at ~670x1490 rather than the 345x768 a
+#: fixed 768px edge gave (13 Oct), which left its text unreadable. ~1 MP is
+#: ~1,000 image tokens; with the prompt and answer that fits MIN_NUM_CTX.
+VISION_MAX_PIXELS = 1_000_000
+VISION_MAX_EDGE = 2048
 
-    At 768px max edge:
-      - Text remains legible for vision extraction of interview invites.
-      - Image patch tokens drop to ~450-550 (vs ~2190 at 1024px on qwen3-vl).
-      - KV cache shrinks ~4x, letting qwen3-vl:8b fit 100% in RTX 4060 8GB VRAM.
-      - Converts PNG/uncompressed to JPEG to minimize base64 SSH transfer latency.
-      - Combined with num_ctx=1536, total context comfortably fits prompt+response.
+
+def _vision_size(width: int, height: int) -> tuple[int, int]:
+    """The size a screenshot is sent at: within the pixel budget and edge cap."""
+    scale = min(
+        1.0,
+        (VISION_MAX_PIXELS / float(max(1, width * height))) ** 0.5,
+        VISION_MAX_EDGE / float(max(width, height, 1)),
+    )
+    return max(1, int(width * scale)), max(1, int(height * scale))
+
+
+def _optimize_image_for_vision(image_data: bytes) -> tuple[bytes, bool]:
+    """Fit a screenshot to the vision pixel budget, as JPEG.
+
+    Returns (bytes, changed). Anything that cannot be decoded is sent as it is.
     """
     if not image_data or len(image_data) < 100:
         return image_data, False
@@ -383,11 +404,10 @@ def _optimize_image_for_vision(image_data: bytes, *, max_edge: int = 768) -> tup
         import io
         img = Image.open(io.BytesIO(image_data))
         w, h = img.size
-        needs_resize = max(w, h) > max_edge
+        new_w, new_h = _vision_size(w, h)
+        needs_resize = (new_w, new_h) != (w, h)
         needs_convert = getattr(img, "format", "") != "JPEG"
         if needs_resize or needs_convert:
-            scale = min(1.0, max_edge / max(w, h)) if needs_resize else 1.0
-            new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
             if needs_resize:
@@ -419,8 +439,12 @@ def call_ollama_vision_model(
             messages=[{"role": "user", "content": prompt}],
             images=[image_base64],
             timeout=timeout,
+            # The whole read -- waiting for the node and the model's answer --
+            # ends within `timeout`, so a request the endpoint has already
+            # given up on never takes the node afterwards.
+            deadline_monotonic=time.monotonic() + timeout,
             temperature=0.1,
-            num_predict=384,
+            num_predict=INVITE_NUM_PREDICT,
             format="json",
             # Qwen3-VL can consume the complete output budget in its hidden
             # reasoning field and leave message.content empty. Screenshot
@@ -696,7 +720,16 @@ def validate_invite_extraction(extracted: dict[str, Any]) -> dict[str, Any]:
 
     # ── Fix wrong year: if extracted date is in the past, correct year ──────
     if extracted.get("interview_date"):
-        extracted["interview_date"] = _fix_past_year(extracted["interview_date"])
+        read_date = str(extracted["interview_date"])
+        extracted["interview_date"] = _fix_past_year(read_date)
+        # A moved year is a correction, not a reading: "20 Nov 2025" became
+        # 20 Nov 2026 and was filled as if the invite said so (19 Oct). It is
+        # kept for the candidate to check, never filled on its own.
+        if extracted["interview_date"] != read_date:
+            extracted["year_adjusted"] = True
+            extracted.setdefault("warnings", []).append(
+                f"The invite's date reads {read_date}. Check the interview date before confirming."
+            )
 
     # The company is read like any other field, but a placeholder, a platform
     # or a person is not one, so it is checked before anything shows it.
@@ -736,7 +769,10 @@ def validate_invite_extraction(extracted: dict[str, Any]) -> dict[str, Any]:
         not extracted.get("interview_date")
         or not extracted.get("start_time")
         or score < 70
+        or extracted.get("year_adjusted")
     )
+    if extracted.get("year_adjusted"):
+        extracted["auto_booking_safe"] = False
 
     # Ensure boolean fields
     extracted.setdefault("is_payment_screenshot", False)
@@ -1343,6 +1379,10 @@ def _extract_with_ai_only(
     raw_end = str(
         extracted.get("_model_raw_end_time", extracted.get("end_time")) or ""
     )
+    try:
+        model_score = int(extracted.get("confidence_score") or 0)
+    except (TypeError, ValueError):
+        model_score = 0
     normalized_start = normalize_model_time_to_12h(raw_start)
     normalized_end = normalize_model_time_to_12h(raw_end) if raw_end else ""
     ambiguous_start = bool(raw_start and not normalized_start)
@@ -1364,7 +1404,10 @@ def _extract_with_ai_only(
 
     has_date = bool(str(extracted.get("interview_date") or "").strip())
     has_start = validate_12h_time_format(str(extracted.get("start_time") or ""))
-    if has_date and has_start and not ollama_only:
+    # The model is told to score an ambiguous date or time below 80; that is
+    # its own word that the reading is a guess, so it is not filled.
+    model_sure = model_score >= MODEL_SURE_SCORE
+    if has_date and has_start and model_sure and not extracted.get("year_adjusted") and not ollama_only:
         extracted["auto_booking_safe"] = True
         extracted["manual_fields_required"] = False
         extracted["failure_stage"] = ""
@@ -1384,8 +1427,16 @@ def _extract_with_ai_only(
         extracted["failure_reason"] = (
             "The AI did not return a complete " + " and ".join(missing) + "."
             if missing
+            else "The AI was not sure of the date or time."
+            if not model_sure
+            else "The invite's year was corrected; the date needs checking."
+            if extracted.get("year_adjusted")
             else "Automatic booking is disabled for this run."
         )
+        if not missing and not model_sure:
+            extracted.setdefault("warnings", []).append(
+                "The AI was not sure of the date or time. Check them before confirming."
+            )
         if missing:
             extracted.setdefault("warnings", []).append(
                 "The AI could not read the interview "

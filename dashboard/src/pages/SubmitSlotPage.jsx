@@ -133,7 +133,11 @@ export function roundFromInvite(text) {
   const value = String(text || '')
   if (!value.trim()) return ''
   const found = new Set()
-  for (const m of value.matchAll(/\b(?:L|LEVEL|ROUND|R)\s*-?\s*([12])\b/gi)) found.add(`L${m[1]}`)
+  const level = n => (/^(?:1|I|1st|first)$/i.test(n) ? 'L1' : 'L2')
+  // "L1", "Level 2", "Level I", "Round 2", "R1", "Interview 2"
+  for (const m of value.matchAll(/\b(?:L|LEVEL|ROUND|R|INTERVIEW)\s*-?\s*(1|2|II|I)\b/gi)) found.add(level(m[1]))
+  // "2nd Round", "First Level", "2nd Interview Round", "Second technical round"
+  for (const m of value.matchAll(/\b(1st|2nd|first|second)\s+(?:(?:technical|interview)\s+)?(?:round|level|interview)\b/gi)) found.add(level(m[1]))
   if (/\bscreening\b/i.test(value)) found.add('Screening')
   if (/\bfinal\b/i.test(value)) found.add('Final')
   if (/\bHR\b/.test(value) || /\bhuman resources\b/i.test(value)) found.add('HR')

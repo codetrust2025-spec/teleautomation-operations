@@ -145,6 +145,22 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+#: How long a candidate's own request (an invite or a payment screenshot) waits
+#: for its machine. One vision read takes about a minute on these nodes, and
+#: the old 30s shared with background work meant a candidate who arrived while
+#: a read was running always got OLLAMA_QUEUE_TIMEOUT (19 Oct). Interactive
+#: requests are served first once the slot frees, so waiting out one read is
+#: enough; the request's own deadline still bounds it.
+INTERACTIVE_QUEUE_WAIT_SECONDS = 150
+
+
+def queue_wait_seconds(interactive: bool) -> float:
+    """Seconds a request may wait for its machine's slot."""
+    if interactive:
+        return _env_float("AI_INTERACTIVE_QUEUE_WAIT_SECONDS", INTERACTIVE_QUEUE_WAIT_SECONDS)
+    return _env_float("AI_RECRUITMENT_QUEUE_WAIT_SECONDS", 30)
+
+
 #: The smallest context window any request is sent with. Below this the
 #: invite prompt, its screenshot and the answer do not fit (see _chat).
 MIN_NUM_CTX = 4096
@@ -340,8 +356,8 @@ def _chat(
         deadline_monotonic,
         _env_float("OLLAMA_HEALTH_TIMEOUT_SECONDS", 10),
     )
-    wait = _env_float("AI_RECRUITMENT_QUEUE_WAIT_SECONDS", 30)
     interactive = workload in INTERACTIVE_WORKLOADS
+    wait = queue_wait_seconds(interactive)
     started = time.monotonic()
     # Time spent queued for a machine, kept out of duration_ms so the latency
     # it reports is still the model's, as it was when the one slot was taken

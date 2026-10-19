@@ -162,11 +162,15 @@ describe('the interview round the invite names', () => {
   it.each([
     ['L1', 'L1'], ['L1 Technical', 'L1'], ['Technical Round 1', 'L1'], ['Round 2', 'L2'], ['L2 - Managerial', 'L2'],
     ['Screening call', 'Screening'], ['Final round', 'Final'], ['HR discussion', 'HR'],
+    // 19 Oct: how real invites write it.
+    ['Interview 2', 'L2'], ['2nd Round', 'L2'], ['2nd Interview Round', 'L2'], ['Level I', 'L1'],
+    ['Level II', 'L2'], ['First round', 'L1'], ['Second technical round', 'L2'], ['Round I', 'L1'],
   ])('%s -> %s', (text, option) => {
     expect(roundFromInvite(text)).toBe(option)
   })
 
-  it.each(['', 'Technical', 'L3', 'L1 / Final', 'Round 1 and Round 2', 'Candidate ID 123', 'hrs'])('names none of the options, or more than one: %s', text => {
+  it.each(['', 'Technical', 'L3', 'L1 / Final', 'Round 1 and Round 2', 'Candidate ID 123', 'hrs',
+    'Interview 3', '3rd Round', 'Manager Round', 'Level I and Level II', 'Interview'])('names none of the options, or more than one: %s', text => {
     expect(roundFromInvite(text)).toBe('')
   })
 })
