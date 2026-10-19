@@ -89,3 +89,21 @@ def test_daybreak_prompt_requires_grounded_terms():
     text = integration._prompt(integration.DaybreakHeadlineRequest.model_validate(payload()))
     assert "Every non-neutral word must appear verbatim in the approved facts" in text
     assert "experienced, strong, expertise" in text
+
+def test_existing_headline_reaches_model_as_data_for_factual_rewriting(monkeypatch):
+    import json
+    calls = []
+    def fake_chat(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(content='{"headline":"React developer building applications using JavaScript and React.js"}', node_id="node", node_label="node", model="model", duration_ms=1)
+    monkeypatch.setattr("core.ai_gateway.chat_structured", fake_chat)
+    c = client(monkeypatch)
+    previous = "React developer - JavaScript, React.js"
+    response = c.post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=payload() | {"previous_headline": previous})
+    assert response.status_code == 200
+    prompt = calls[0]["messages"][1]["content"]
+    assert "EXISTING_HEADLINE=" + json.dumps(previous) in prompt
+    assert "improve its clarity and wording" in prompt
+    assert "does not authorize claims absent from APPROVED_FACTS" in prompt
+    assert "return the existing headline unchanged" in prompt
+    assert calls[0]["workload"] == "daybreak_headline"
