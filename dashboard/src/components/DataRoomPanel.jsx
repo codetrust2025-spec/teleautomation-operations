@@ -8,6 +8,7 @@ import { DataRoomAccountsTab } from './DataRoomAccountsTab.jsx'
 import { DataRoomPromptsTab } from './DataRoomPromptsTab.jsx'
 import { DataRoomLinksTab } from './DataRoomLinksTab.jsx'
 import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
+import { DataRoomSubTabs } from './DataRoomSubTabs.jsx'
 import { OPERATIONS_PUBLIC_URL } from '../config.js'
 
 const API_BASE =
@@ -330,9 +331,10 @@ function CredentialsSection({ creds, loading, active, onReload }) {
     >
       <div className="dr-section-head dr-section-head--row">
         <div className="dr-creds-head-text">
-          <h2 id="dr-creds-title" className="dr-section-title">Dashboard logins</h2>
+          {/* Named on screen by its sub-tab; the heading stays for screen readers. */}
+          <h2 id="dr-creds-title" className="dr-section-title sr-only">Dashboard logins</h2>
           <p className="dr-section-desc">
-            Admin and handler credentials for the configured Operations site. Use Copy username, Copy password, or Copy all on each row.
+            Admin and handler credentials for the Operations site. Use Copy username, Copy password, or Copy all on each row.
           </p>
           <span className="dr-creds-site" title={site || undefined}>
             <span className="dr-creds-site-label">Site</span>
@@ -415,10 +417,11 @@ function CredentialsSection({ creds, loading, active, onReload }) {
   )
 }
 
+// Logins and Accounts were two tabs of credentials; they are one since 20 Oct,
+// each kind a sub-tab of its own (see DataRoomSubTabs below).
 const DATA_ROOM_TABS = [
-  { id: 'logins', label: 'Logins', adminOnly: false },
+  { id: 'access', label: 'Accounts & Logins', adminOnly: false },
   { id: 'partners', label: 'Opportunities', adminOnly: false },
-  { id: 'accounts', label: 'Accounts', adminOnly: false },
   { id: 'prompts', label: 'Prompts', adminOnly: false },
   { id: 'links', label: 'Key Links', adminOnly: false },
   { id: 'offers', label: 'Offers', adminOnly: false },
@@ -440,7 +443,9 @@ export function DataRoomPanel() {
   const [editor, setEditor] = useState(null)
   const closeEditor = useCallback(() => setEditor(null), [])
   const editorDialogRef = useDialogA11y(Boolean(editor), closeEditor)
-  const [activeTab, setActiveTab] = useState('accounts')
+  const [activeTab, setActiveTab] = useState('access')
+  // Service Accounts first, as the Accounts tab was; kept while other tabs are visited.
+  const [accessTab, setAccessTab] = useState('accounts')
 
   const visibleTabs = useMemo(
     () => DATA_ROOM_TABS.filter(tab => isAdmin || !tab.adminOnly),
@@ -452,8 +457,10 @@ export function DataRoomPanel() {
     const prompts = credentials?.prompts || []
     const resources = credentials?.resources || []
     const offers = credentials?.offer_letters || []
+    const logins = (credentials?.handlers?.length || 0) + (credentials?.admin ? 1 : 0)
     return {
-      logins: (credentials?.handlers?.length || 0) + (credentials?.admin ? 1 : 0),
+      access: logins + accounts.length,
+      logins,
       partners: stats?.total ?? rows.length,
       accounts: accounts.length,
       prompts: prompts.length,
@@ -621,12 +628,27 @@ export function DataRoomPanel() {
 
       {error && <p className="dr-error dr-page-error" role="alert">{error}</p>}
 
-      {activeTab === 'logins' && (
-        <CredentialsSection creds={credentials} loading={credsLoading} active onReload={loadCredentials} />
-      )}
-
-      {activeTab === 'accounts' && credentials && (
-        <DataRoomAccountsTab accounts={credentials.service_accounts || []} onReload={loadCredentials} canExport={role === 'admin'} />
+      {/* Two kinds of credential under one tab, never in one table: the
+          dashboard's own logins (hashed, nothing to reveal) and the service
+          accounts (encrypted, revealed one at a time on request). */}
+      {activeTab === 'access' && (
+        <DataRoomSubTabs
+          label="Accounts & Logins"
+          idPrefix="dr-access"
+          active={accessTab}
+          onChange={setAccessTab}
+          tabs={[
+            { id: 'logins', label: 'Dashboard Logins', count: tabCounts.logins, hint: 'Admin and handler credentials' },
+            { id: 'accounts', label: 'Service Accounts', count: tabCounts.accounts, hint: 'Naukri, Gmail, Telegram and other accounts' },
+          ]}
+        >
+          {accessTab === 'logins' && (
+            <CredentialsSection creds={credentials} loading={credsLoading} active onReload={loadCredentials} />
+          )}
+          {accessTab === 'accounts' && (credentials
+            ? <DataRoomAccountsTab accounts={credentials.service_accounts || []} onReload={loadCredentials} canExport={role === 'admin'} />
+            : credsLoading && <p className="dr-muted">Loading accounts…</p>)}
+        </DataRoomSubTabs>
       )}
 
       {activeTab === 'prompts' && credentials && (

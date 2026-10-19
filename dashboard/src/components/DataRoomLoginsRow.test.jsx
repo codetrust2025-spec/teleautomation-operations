@@ -1,5 +1,5 @@
 /**
- * Data Room → Logins: every row on the same grid.
+ * Data Room → Accounts & Logins → Dashboard Logins: every row on the same grid.
  *
  * The bugs this locks out:
  *   - the admin password rendered in clear while handler rows showed nothing,
@@ -62,14 +62,8 @@ afterEach(() => {
 
 async function openLogins() {
   render(<DataRoomPanel />)
-  // Wait for the tabs to render, then switch to the Logins tab by clicking its
-  // tab chip (the label text also appears in the page subtitle, so scope to it).
-  const tab = await waitFor(() => {
-    const label = [...document.querySelectorAll('.dr-tab .dr-tab-label')].find(l => l.textContent === 'Logins')
-    expect(label).toBeTruthy()
-    return label.closest('.dr-tab')
-  })
-  fireEvent.click(tab)
+  // Logins is a sub-tab of Accounts & Logins since 20 Oct, which opens first.
+  fireEvent.click(await screen.findByRole('tab', { name: /^Dashboard Logins/ }))
   await screen.findByText('Dashboard logins')
 }
 

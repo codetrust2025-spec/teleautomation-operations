@@ -511,8 +511,9 @@ export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false
       {/* Header */}
       <div className="dr-tab-header">
         <div>
-          <h2 className="dr-section-title">Accounts</h2>
-          <p className="dr-section-desc">Naukri, Gmail and Telegram logins used across operations.</p>
+          {/* Named on screen by its sub-tab under Accounts & Logins. */}
+          <h2 className="dr-section-title sr-only">Service accounts</h2>
+          <p className="dr-section-desc">Naukri, Gmail, Telegram and other accounts.</p>
         </div>
         <div className="dr-tab-header-actions">
           <div className="dr-search-wrap">

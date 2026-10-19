@@ -45,7 +45,7 @@ describe('the Data Room tabs', () => {
     render(<DataRoomPanel />)
     await screen.findByText('Ops Gmail (current)')
     const labels = [...document.querySelectorAll('.dr-tab .dr-tab-label')].map(l => l.textContent)
-    expect(labels).toEqual(['Logins', 'Opportunities', 'Accounts', 'Prompts', 'Key Links', 'Offers'])
+    expect(labels).toEqual(['Accounts & Logins', 'Opportunities', 'Prompts', 'Key Links', 'Offers'])
     expect(screen.queryByText(/Interview Data/i)).toBeNull()
   })
 
@@ -54,7 +54,7 @@ describe('the Data Room tabs', () => {
     await screen.findByText('Ops Gmail (current)')
     const open = document.querySelector('.dr-tab--active')
     expect(open).toHaveAttribute('aria-current', 'page')
-    expect(open.querySelector('.dr-tab-label').textContent).toBe('Accounts')
+    expect(open.querySelector('.dr-tab-label').textContent).toBe('Accounts & Logins')
     expect(open.querySelector('.dr-tab-count').textContent).toBe('1')
     expect(document.querySelectorAll('.dr-tab[aria-current]')).toHaveLength(1)
   })
