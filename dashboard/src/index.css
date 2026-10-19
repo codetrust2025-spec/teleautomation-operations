@@ -14983,6 +14983,26 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   gap: 10px;
 }
 
+/* Download all accounts (19 Oct): format chips, the separate password option. */
+.dr-export-lead { margin: 6px 0 14px; color: #cbd5e1; font-size: 0.85rem; line-height: 1.45; }
+.dr-export-formats { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 0; border: 0; }
+.dr-export-formats legend { padding: 0; margin-bottom: 8px; font-size: 0.8rem; color: #cbd5e1; }
+.dr-export-format {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
+  border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 0.85rem; color: #e2e8f0;
+}
+.dr-export-format input { margin: 0; accent-color: #818cf8; }
+.dr-export-format--on { border-color: rgba(129, 140, 248, 0.6); background: rgba(99, 102, 241, 0.16); }
+.dr-export-passwords {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; margin-bottom: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 10px; background: rgba(245, 158, 11, 0.06); cursor: pointer;
+}
+.dr-export-passwords input { margin-top: 3px; accent-color: #f59e0b; }
+.dr-export-passwords > span { display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; color: #e2e8f0; }
+.dr-export-note { font-size: 0.75rem; color: #94a3b8; line-height: 1.4; margin: 0; }
+.dr-export-done { margin: 0 0 12px; font-size: 0.8rem; color: #6ee7b7; }
+.dr-export-modal .dr-error { margin: 10px 0 12px; }
+
 /* Offer-letter upload panel.
  *
  * These class names were already in the markup and had no rules at all, so the
@@ -18945,6 +18965,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-tab-header { align-items: center; margin-bottom: 12px; gap: 12px; }
   .dr-page .dr-tab-header .dr-section-desc { margin: 2px 0 0; }
   .dr-page .dr-tab-header-actions { gap: 8px; flex-wrap: nowrap; }
+  .dr-page .dr-export-btn { white-space: nowrap; }
   .dr-page .dr-tab-header-actions .cand-input,
   .dr-page .dr-tab-header-actions .cand-btn {
     height: 34px;
@@ -19069,6 +19090,12 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   /* A tighter section: the table box carries the panel, not a tall empty card. */
   .dr-page .dr-credentials-section { padding-bottom: 4px; }
   .dr-page .dr-credentials-section .cand-table-wrap { margin-top: 2px; }
+}
+
+/* Three controls beside the Accounts title once Download all accounts is there:
+   they wrap under it rather than overflow while the content column is narrow. */
+@media (min-width: 768px) and (max-width: 1180px) {
+  .dr-page .dr-tab-header-actions { flex-wrap: wrap; justify-content: flex-end; }
 }
 
 /* Confirmed slots: one interview booked twice (12 Oct). */
@@ -19541,3 +19568,4 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-modal--compact .cand-panel .cand-proofs .cand-proof-card:has(.cand-proof-thumb--lost) .cand-proof-meta,
   .cand-modal--compact .cand-panel .cand-proofs .cand-proof-card:has(.cand-proof-thumb--lost) .cand-proof-actions { grid-column: 1 / -1; }
 }
+

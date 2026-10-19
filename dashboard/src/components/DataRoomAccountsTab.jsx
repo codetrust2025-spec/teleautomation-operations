@@ -130,12 +130,172 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error, ima
   )
 }
 
-export function DataRoomAccountsTab({ accounts = [], onReload }) {
+const EXPORT_FORMATS = [
+  { value: 'xlsx', label: 'Excel (.xlsx)' },
+  { value: 'csv', label: 'CSV (.csv)' },
+  { value: 'txt', label: 'Text (.txt)' },
+]
+const MIN_FILE_PASSWORD = 10
+
+/** The file name the server chose (Content-Disposition), or the fallback. */
+export function downloadName(disposition, fallback) {
+  const match = /filename="?([^";]+)"?/i.exec(disposition || '')
+  return match ? match[1] : fallback
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/**
+ * Download All Accounts (19 Oct). The ordinary export -- Excel, CSV or text --
+ * carries account name, type, username and status, never a password. Passwords
+ * come only as an Excel workbook encrypted with a password chosen here, after
+ * the admin's own sign-in password is entered again; the server checks it,
+ * records the export and locks it after repeated wrong passwords. Neither
+ * password is kept: both boxes are emptied after every attempt that sends them.
+ */
+function AccountsExportModal({ count, onClose }) {
+  const dialogRef = useDialogA11y(true, onClose)
+  const [format, setFormat] = useState('xlsx')
+  const [withPasswords, setWithPasswords] = useState(false)
+  const [adminPassword, setAdminPassword] = useState('')
+  const [filePassword, setFilePassword] = useState('')
+  const [filePasswordAgain, setFilePasswordAgain] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState('')
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKeyDown = (event) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  const download = async () => {
+    setError('')
+    setDone('')
+    if (withPasswords) {
+      if (!adminPassword) { setError('Enter your sign-in password.'); return }
+      if (filePassword.length < MIN_FILE_PASSWORD) { setError(`Choose a file password of at least ${MIN_FILE_PASSWORD} characters.`); return }
+      if (filePassword !== filePasswordAgain) { setError('The two file passwords are not the same.'); return }
+    }
+    setBusy(true)
+    try {
+      const res = withPasswords
+        ? await fetch(`${API_BASE}/data-room/credentials/service-accounts/export-with-passwords`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ admin_password: adminPassword, file_password: filePassword }),
+          })
+        : await fetch(`${API_BASE}/data-room/credentials/service-accounts/export?format=${format}`, { credentials: 'include' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || 'The download failed. Try again.')
+      }
+      const blob = await res.blob()
+      const ext = withPasswords ? 'xlsx' : format
+      saveBlob(blob, downloadName(res.headers.get('content-disposition'), `teleautomation-accounts.${ext}`))
+      if (withPasswords) {
+        setFilePassword('')
+        setFilePasswordAgain('')
+        setDone('Encrypted workbook downloaded. Excel asks for the file password to open it.')
+      } else {
+        setDone('Downloaded.')
+      }
+    } catch (err) {
+      setError(err instanceof TypeError ? 'Network error. Try again.' : err.message)
+    } finally {
+      setAdminPassword('')
+      setBusy(false)
+    }
+  }
+
+  return createPortal(
+    <div className="dr-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="dr-modal cand-card dr-export-modal"
+        ref={dialogRef} role="dialog"
+        aria-modal="true"
+        aria-labelledby="dr-export-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="dr-export-modal-title" className="cand-title">Download all accounts</h2>
+        <p className="dr-export-lead">
+          {withPasswords
+            ? `All ${count} account${count === 1 ? '' : 's'} with their passwords, as an encrypted Excel workbook.`
+            : `Account name, type, username and status of all ${count} account${count === 1 ? '' : 's'}. No passwords.`}
+        </p>
+        {!withPasswords && (
+          <fieldset className="dr-export-formats">
+            <legend>Format</legend>
+            {EXPORT_FORMATS.map(f => (
+              <label key={f.value} className={`dr-export-format${format === f.value ? ' dr-export-format--on' : ''}`}>
+                <input type="radio" name="dr-export-format" value={f.value} checked={format === f.value} onChange={() => setFormat(f.value)} />
+                {f.label}
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <label className="dr-export-passwords">
+          <input type="checkbox" checked={withPasswords} onChange={e => { setWithPasswords(e.target.checked); setError(''); setDone('') }} />
+          <span>
+            <strong>Include passwords</strong>
+            <span className="dr-export-note">Encrypted Excel only. Confirm with your sign-in password and set a password for the file.</span>
+          </span>
+        </label>
+        {withPasswords && (
+          <div className="dr-form-grid">
+            <label className="dr-form-full">
+              Your sign-in password
+              <input className="cand-input" type="password" autoComplete="current-password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} />
+            </label>
+            <label>
+              File password
+              <input className="cand-input" type="password" autoComplete="new-password" value={filePassword} onChange={e => setFilePassword(e.target.value)} placeholder={`At least ${MIN_FILE_PASSWORD} characters`} />
+            </label>
+            <label>
+              Repeat file password
+              <input className="cand-input" type="password" autoComplete="new-password" value={filePasswordAgain} onChange={e => setFilePasswordAgain(e.target.value)} />
+            </label>
+            <p className="dr-export-note dr-form-full">The file password is not stored anywhere. Without it the workbook cannot be opened.</p>
+          </div>
+        )}
+        {error && <p className="dr-error" role="alert">{error}</p>}
+        {done && <p className="dr-export-done" role="status">{done}</p>}
+        <div className="dr-modal-actions">
+          <button type="button" className="cand-btn" onClick={onClose}>Close</button>
+          <button type="button" className="cand-btn cand-btn--primary" onClick={download} disabled={busy || count === 0}>
+            {busy ? 'Preparing…' : withPasswords ? 'Download encrypted workbook' : 'Download'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+export function DataRoomAccountsTab({ accounts = [], onReload, canExport = false }) {
   const { confirm } = useConfirm()
   const [activeKey, setActiveKey] = useState(null)
   const [modal, setModal] = useState(null)
   const [modalError, setModalError] = useState('')
   const [search, setSearch] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const closeExport = useCallback(() => setExporting(false), [])
   // The chosen screenshot is held here until Save. A new account has no id to
   // upload against yet, so the file waits for the row to exist; an edit uses
   // the same path so both behave identically.
@@ -263,12 +423,20 @@ export function DataRoomAccountsTab({ accounts = [], onReload }) {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          {/* The admin's, by role: the server refuses everyone else too. */}
+          {canExport && (
+            <button type="button" className="cand-btn dr-add-btn dr-export-btn" onClick={() => setExporting(true)}>
+              <Icon name="download" size={14} strokeWidth={2.2} />
+              Download all accounts
+            </button>
+          )}
           <button type="button" className="cand-btn cand-btn--primary dr-add-btn" onClick={openAdd}>
             <Icon name="plus" size={14} strokeWidth={2.2} />
             Add account
           </button>
         </div>
       </div>
+      {exporting && <AccountsExportModal count={accounts.length} onClose={closeExport} />}
 
       {/* Stats row */}
       <div className="dr-tab-stats">

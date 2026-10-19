@@ -644,7 +644,7 @@ export function DataRoomPanel() {
       )}
 
       {activeTab === 'accounts' && credentials && (
-        <DataRoomAccountsTab accounts={credentials.service_accounts || []} onReload={loadCredentials} />
+        <DataRoomAccountsTab accounts={credentials.service_accounts || []} onReload={loadCredentials} canExport={role === 'admin'} />
       )}
 
       {activeTab === 'prompts' && credentials && (
