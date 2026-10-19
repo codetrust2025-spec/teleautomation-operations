@@ -269,3 +269,27 @@ def test_invalid_image_logs_failure_and_exposes_manual_fields(monkeypatch, caplo
     assert result["failure_stage"] == "vision"
     assert result["failure_reason"]
     assert "vision_failed" in caplog.text
+
+
+# 19 Oct: in AI-only mode an invite the AI could not read came back as "not an
+# invite", which the booking form refuses outright, so the manual date and time
+# could not be entered. Unread is not judged: the form must offer manual entry.
+def test_ai_only_vision_failure_is_unread_not_judged_not_an_invite(monkeypatch):
+    monkeypatch.delenv("INVITE_EXTRACTION_MODE", raising=False)
+    monkeypatch.setattr(invite_extract, "processing_mode", lambda: "ai")
+    monkeypatch.setattr(invite_extract, "_is_ollama_available", lambda: True)
+    monkeypatch.setattr(invite_extract, "call_ollama_vision_model", lambda *_a, **_k: None)
+    result = invite_extract.extract_interview_invite_with_ollama(b"image", "image/jpeg")
+    assert result["failure_stage"] == "vision"
+    assert result["manual_fields_required"] is True
+    assert result["auto_booking_safe"] is False
+    assert result["looks_like_interview_invite"] is True
+
+
+def test_ai_only_unavailable_model_is_unread_not_judged_not_an_invite(monkeypatch):
+    monkeypatch.delenv("INVITE_EXTRACTION_MODE", raising=False)
+    monkeypatch.setattr(invite_extract, "processing_mode", lambda: "ai")
+    monkeypatch.setattr(invite_extract, "_is_ollama_available", lambda: False)
+    result = invite_extract.extract_interview_invite_with_ollama(b"image", "image/jpeg")
+    assert result["failure_stage"] == "ollama_unavailable"
+    assert result["looks_like_interview_invite"] is True

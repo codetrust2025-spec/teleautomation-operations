@@ -1309,6 +1309,10 @@ def _extract_with_ai_only(
         result["manual_fields_required"] = True
         result["failure_stage"] = "ollama_unavailable"
         result["failure_reason"] = "The AI model is unavailable."
+        # Unread is not "not an invite": the booking form refuses an image it
+        # is told is not an invite, so the manual date and time could not be
+        # entered. Every other fallback says the same.
+        result["looks_like_interview_invite"] = True
         result["warnings"] = [
             "The AI could not be reached, so the invite was not read. "
             "Enter the interview date and start time to continue."
@@ -1326,6 +1330,7 @@ def _extract_with_ai_only(
         result["manual_fields_required"] = True
         result["failure_stage"] = "vision"
         result["failure_reason"] = _last_vision_error or "The AI could not read this screenshot."
+        result["looks_like_interview_invite"] = True   # unread, not judged (see above)
         result["warnings"] = [
             "The AI could not read this screenshot. "
             "Enter the interview date and start time to continue."

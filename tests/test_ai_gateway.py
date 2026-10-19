@@ -261,3 +261,44 @@ def test_structured_chat_rejects_schema_mismatch(monkeypatch):
             workload="test",
         )
     assert error.value.code == "OLLAMA_SCHEMA_VALIDATION_FAILED"
+
+
+# 19 Oct: num_ctx=1536 (13 Oct) could not hold the invite prompt (~1,200 tokens),
+# its screenshot and the answer, and Ollama rejected every invite read with
+# HTTP 400 (OLLAMA_BAD_REQUEST). The context is now never below MIN_NUM_CTX.
+def _capture_options(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(ai_gateway, "health", lambda **kwargs: {
+        "endpoint_reachable": True, "model_available": True,
+        "error_message": None, "error_code": None,
+    })
+
+    def respond(*args, **kwargs):
+        captured.update(json.loads(kwargs["body"]))
+        return {"message": {"content": '{"ok": true}'}}
+
+    monkeypatch.setattr(ai_gateway, "_request_json", respond)
+    return captured
+
+
+def test_chat_context_holds_an_invite_prompt_and_its_screenshot(monkeypatch):
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    captured = _capture_options(monkeypatch)
+    ai_gateway.chat(messages=[{"role": "user", "content": "test"}], model="qwen3-vl:8b",
+                    images=["aGk="], think=False)
+    assert captured["options"]["num_ctx"] >= 4096
+
+
+@pytest.mark.parametrize("configured", ["1536", "2048", "0", "-1", "nonsense"])
+def test_a_configured_context_is_never_below_the_minimum(monkeypatch, configured):
+    monkeypatch.setenv("OLLAMA_NUM_CTX", configured)
+    captured = _capture_options(monkeypatch)
+    ai_gateway.chat(messages=[{"role": "user", "content": "test"}], model="qwen3-vl:8b")
+    assert captured["options"]["num_ctx"] == ai_gateway.MIN_NUM_CTX
+
+
+def test_a_larger_configured_context_is_kept(monkeypatch):
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "8192")
+    captured = _capture_options(monkeypatch)
+    ai_gateway.chat(messages=[{"role": "user", "content": "test"}], model="qwen3-vl:8b")
+    assert captured["options"]["num_ctx"] == 8192

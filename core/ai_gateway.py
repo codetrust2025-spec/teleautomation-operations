@@ -145,6 +145,16 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+#: The smallest context window any request is sent with. Below this the
+#: invite prompt, its screenshot and the answer do not fit (see _chat).
+MIN_NUM_CTX = 4096
+
+
+def resolved_num_ctx() -> int:
+    """The context window every Ollama request is sent with."""
+    return max(_env_int("OLLAMA_NUM_CTX", MIN_NUM_CTX), MIN_NUM_CTX)
+
+
 def _model_available(configured: str, installed: list[str]) -> bool:
     wanted = configured.removesuffix(":latest")
     return any(str(name or "").removesuffix(":latest") == wanted for name in installed)
@@ -346,14 +356,13 @@ def _chat(
         "stream": False,
         "options": {"temperature": temperature},
     }
-    # Bound context window so 8 GB GPU nodes (RTX 4060) can fit 100% of layers in VRAM
-    # without partial CPU offloading or excessive KV cache allocation.
-    # At 768px max_edge (default), qwen3-vl generates ~500 image patch tokens.
-    # Adding ~300 prompt tokens + ~384 output = ~1184 total → fits in 1536 with headroom.
-    # KV cache at 1536 ctx is ~375MB vs ~1GB at 4096, freeing VRAM for model weights.
-    num_ctx = _env_int("OLLAMA_NUM_CTX", 1536)
-    if num_ctx > 0:
-        request_payload["options"]["num_ctx"] = num_ctx
+    # Context window. It must hold the whole request: the invite prompt alone is
+    # ~1,200 tokens, a 768px screenshot adds ~350 image tokens, and the answer
+    # needs its num_predict on top. 1536 (13 Oct) did not fit, and Ollama
+    # rejects an image request that overflows its context with HTTP 400, so
+    # every invite read failed as OLLAMA_BAD_REQUEST (19 Oct). OLLAMA_NUM_CTX
+    # can raise it; it is never set below MIN_NUM_CTX.
+    request_payload["options"]["num_ctx"] = resolved_num_ctx()
     if schema is not None:
         request_payload["format"] = schema
     elif format is not None:
