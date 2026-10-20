@@ -24,7 +24,7 @@ Schema (one row):
         "slot_confirmed_at": ISO timestamp when slot was confirmed (blank ok),
         "slots_group_posted": true after slot screenshot posted in Interview slots WA group,
         "interview_attendee": "Nikhila | Bhavana | Tool — who supported the live interview (set when marking attendance)",
-        "interview_attendance_status": "attended | not_attended | cancelled | rescheduled | released_for_reschedule | re_service | blank (pending)",
+        "interview_attendance_status": "attended | not_attended | technical_issue | cancelled | rescheduled | released_for_reschedule | re_service | blank (pending)",
         "interview_attendance_remark": "optional note when logging attendance",
         "interview_attended": legacy bool — true when status is attended,
         "interview_attended_at": ISO timestamp when attendance was logged,
@@ -247,10 +247,19 @@ VALID_INTERVIEW_ROUNDS = frozenset({
 #: The sitting is off and the hour is free, but no replacement has been booked
 #: yet: "Awaiting new slot" in Daily Ops.
 RELEASED_FOR_RESCHEDULE_STATUS = "released_for_reschedule"
+#: The sitting went ahead but could not be completed for a technical reason --
+#: UltraViewer failing, a microphone, the connection dropping: "Technical issue"
+#: in Daily Ops. It was recorded as Attended with the problem in the note, which
+#: counted a failed sitting as an attended one. Like Attended and Not attended it
+#: reports what happened at the sitting, so it names who was there and can only
+#: be logged on or after the interview date. Awaiting new slot stays the status
+#: for a sitting that is off and waits for a replacement.
+TECHNICAL_ISSUE_STATUS = "technical_issue"
 
 INTERVIEW_ATTENDANCE_STATUSES = frozenset({
     "attended",
     "not_attended",
+    TECHNICAL_ISSUE_STATUS,
     "cancelled",
     "rescheduled",
     RELEASED_FOR_RESCHEDULE_STATUS,
@@ -971,6 +980,10 @@ def row_interview_attendance_status(row: dict) -> str:
 #: Mail about the interview still reaches the row: see `_confirmed_slots` in
 #: services/interview_auto_booking.py.
 ENDED_INTERVIEW_STATUSES = frozenset({"cancelled", "rescheduled", RELEASED_FOR_RESCHEDULE_STATUS})
+
+#: The outcomes of a sitting that took place: who was there is recorded with
+#: them, and none can be logged before the interview date.
+SITTING_OUTCOME_STATUSES = frozenset({"attended", "not_attended", TECHNICAL_ISSUE_STATUS})
 
 
 def slot_still_stands(row: dict) -> bool:
@@ -4741,7 +4754,7 @@ def clear_future_interview_attendance(*, by: str = "system") -> int:
         if not slot_date or slot_date <= today:
             continue
         status = row_interview_attendance_status(raw)
-        if status not in {"attended", "not_attended"}:
+        if status not in SITTING_OUTCOME_STATUSES:
             continue
         r = dict(raw)
         r["interview_attendance_status"] = ""
@@ -5019,7 +5032,7 @@ def set_interview_attendance(
             resolved_status = normalise_interview_attendance_status(status)
         if (
             not allow_future
-            and resolved_status in {"attended", "not_attended"}
+            and resolved_status in SITTING_OUTCOME_STATUSES
             and _interview_slot_is_future(r)
         ):
             raise ValueError("Attendance can only be logged on or after the interview date")
@@ -5072,7 +5085,7 @@ def set_interview_attendance(
                 r["interview_result"] = normalise_interview_result(result)
         else:
             r["interview_result"] = ""
-        if resolved_status in {"attended", "not_attended"}:
+        if resolved_status in SITTING_OUTCOME_STATUSES:
             r["interview_attendance_remark"] = remark_text
             r["interview_attended_at"] = _now_iso()
             r["interview_attended_by"] = (by or "").strip()[:120]

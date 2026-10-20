@@ -34,6 +34,11 @@ export const INTERVIEW_STATUSES = [
   { value: '', filterValue: 'pending', label: 'Pending', tone: 'pending', countKey: 'pending_count', kpiTone: 'amber' },
   { value: 'attended', filterValue: 'attended', label: 'Attended', tone: 'done', countKey: 'attended_count', kpiTone: 'green' },
   { value: 'not_attended', filterValue: 'not_attended', label: 'Not attended', tone: 'missed', countKey: 'not_attended_count', kpiTone: 'red' },
+  // The sitting went ahead but failed for a technical reason (UltraViewer, the
+  // microphone, the connection). Like Attended and Not attended it names who
+  // was there; the note says what went wrong. It used to be recorded as
+  // Attended with the problem in the note, counting a failed sitting as done.
+  { value: 'technical_issue', filterValue: 'technical_issue', label: 'Technical issue', tone: 'technical', countKey: 'technical_issue_count', kpiTone: 'orange' },
   { value: 'cancelled', filterValue: 'cancelled', label: 'Cancelled', tone: 'cancelled', countKey: 'cancelled_count', kpiTone: 'slate' },
   { value: 'rescheduled', filterValue: 'rescheduled', label: 'Rescheduled', tone: 'rescheduled', countKey: 'rescheduled_count', kpiTone: 'purple' },
   // The sitting is off and the hour is free again, with no replacement booked
@@ -44,6 +49,9 @@ export const INTERVIEW_STATUSES = [
   // but it is a stored status and so it counts and filters like the rest.
   { value: 're_service', filterValue: 're_service', label: 'Re-Service', tone: 'reservice', countKey: 're_service_count', kpiTone: 'yellow' },
 ]
+
+/** The outcomes of a sitting that took place: each records who attended. */
+export const SITTING_OUTCOMES = ['attended', 'not_attended', 'technical_issue']
 
 /** What the row dropdown offers — every status, Pending first. */
 export const STATUS_OPTIONS = INTERVIEW_STATUSES.map(({ value, label, tone }) => ({ value, label, tone }))

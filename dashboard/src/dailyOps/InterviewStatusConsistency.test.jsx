@@ -1,5 +1,6 @@
 /**
- * The same six statuses, everywhere.
+ * The same statuses, everywhere (six when this was written; Technical issue,
+ * 21 Oct, is the seventh).
  *
  * They were declared twice: the row dropdown listed all six, and the KPI tabs
  * above the table named four of them inline. Cancelled, Rescheduled and
@@ -40,7 +41,7 @@ const NOW = '2026-09-08T06:00:00Z'
 const TODAY = '2026-09-08'
 
 /** What the backend actually stores, mirrored from candidate_store.py. */
-const BACKEND_STATUSES = ['attended', 'not_attended', 'cancelled', 'rescheduled',
+const BACKEND_STATUSES = ['attended', 'not_attended', 'technical_issue', 'cancelled', 'rescheduled',
   'released_for_reschedule', 're_service']
 
 let calls
@@ -70,6 +71,7 @@ function oneOfEach() {
     interviewRow('Pending Priya', ''),
     interviewRow('Attended Asha', 'attended'),
     interviewRow('Missed Vikas', 'not_attended'),
+    interviewRow('Glitch Gita', 'technical_issue'),
     interviewRow('Cancelled Chandra', 'cancelled'),
     interviewRow('Moved Meera', 'rescheduled'),
     interviewRow('Waiting Wasim', 'released_for_reschedule'),
@@ -82,6 +84,7 @@ function oneOfEach() {
     pending_count: 1,
     attended_count: 1,
     not_attended_count: 1,
+    technical_issue_count: 1,
     cancelled_count: 1,
     rescheduled_count: 1,
     released_for_reschedule_count: 1,

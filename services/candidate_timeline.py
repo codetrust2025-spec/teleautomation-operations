@@ -29,6 +29,7 @@ BOOKED_FROM_DAILY_OPS = "Daily Ops"
 ATTENDANCE_TITLES = {
     "attended": "Marked attended",
     "not_attended": "Marked not attended",
+    candidate_store.TECHNICAL_ISSUE_STATUS: "Marked technical issue",
     "cancelled": "Interview cancelled",
     "rescheduled": "Marked rescheduled",
     candidate_store.RELEASED_FOR_RESCHEDULE_STATUS: "Released to wait for a new slot",

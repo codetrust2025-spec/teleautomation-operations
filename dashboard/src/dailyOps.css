@@ -53,6 +53,9 @@
 .ops-interview-row--rescheduled{position:relative;border-left:5px solid rgba(59,130,246,.8);background:linear-gradient(90deg,rgba(59,130,246,.14) 0%,rgba(59,130,246,.04) 52%,transparent 100%)}
 .ops-interview-row--rescheduled:after{content:"RESCHEDULED";position:absolute;right:6%;top:50%;transform:translateY(-50%) rotate(-10deg);font-size:clamp(12px,1.4vw,18px);font-weight:800;letter-spacing:.08em;color:#60a5fa29;pointer-events:none;-webkit-user-select:none;user-select:none;z-index:0}
 .ops-interview-row--rescheduled td{position:relative;z-index:1}
+.ops-interview-row--technical{position:relative;border-left:5px solid rgba(249,115,22,.8);background:linear-gradient(90deg,rgba(249,115,22,.14) 0%,rgba(249,115,22,.04) 52%,transparent 100%)}
+.ops-interview-row--technical:after{content:"TECH ISSUE";position:absolute;right:6%;top:50%;transform:translateY(-50%) rotate(-10deg);font-size:clamp(12px,1.4vw,18px);font-weight:800;letter-spacing:.08em;color:#f9731629;pointer-events:none;-webkit-user-select:none;user-select:none;z-index:0}
+.ops-interview-row--technical td{position:relative;z-index:1}
 .ops-interview-attendance-cell{min-width:280px}
 .ops-interview-notes-cell{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ops-interview-notes-text{display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
@@ -152,6 +155,8 @@
 .ops-dash-kpi--purple .ops-dash-kpi__value{color:#a78bfa}
 .ops-dash-kpi--slate .ops-dash-kpi__value{color:#94a3b8}
 .ops-dash-kpi--yellow .ops-dash-kpi__value{color:#fde047}
+.ops-dash-kpi--orange .ops-dash-kpi__value{color:#fb923c}
+.ops-dash-kpi--active.ops-dash-kpi--orange{border-color:#f97316}
 .ops-dash-grid{display:none}
 .ops-dash-col--primary .ops-dash-roster{background:#ffffff08;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;min-width:0}
 .ops-dash-card{background:#ffffff08;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;min-width:0;display:flex;flex-direction:column;gap:6px}
@@ -502,7 +507,10 @@
 .ops-dash-table--v3 tbody tr.ops-interview-row--rescheduled{border-left-color:#3b82f6d9;background:linear-gradient(90deg,#3b82f629,#3b82f60d 48%,#0f172a59)}
 .ops-dash-table--v3 tbody tr.ops-interview-row--rescheduled:after{content:"RESCHEDULED";position:absolute;right:5%;top:50%;transform:translateY(-50%) rotate(-10deg);font-size:clamp(11px,1.3vw,17px);font-weight:800;letter-spacing:.06em;color:#60a5fa29;pointer-events:none;-webkit-user-select:none;user-select:none;z-index:0}
 .ops-dash-table--v3 tbody tr.ops-interview-row--rescheduled td{position:relative;z-index:1}
-.ops-dash-table--v3 tbody tr.ops-interview-row--done .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--missed .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--pending .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--cancelled .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--rescheduled .ops-interview-time{color:#fbbf24}
+.ops-dash-table--v3 tbody tr.ops-interview-row--technical{border-left-color:#f97316d9;background:linear-gradient(90deg,#f9731629,#f973160d 48%,#0f172a59)}
+.ops-dash-table--v3 tbody tr.ops-interview-row--technical:after{content:"TECH ISSUE";position:absolute;right:5%;top:50%;transform:translateY(-50%) rotate(-10deg);font-size:clamp(11px,1.3vw,17px);font-weight:800;letter-spacing:.06em;color:#f9731629;pointer-events:none;-webkit-user-select:none;user-select:none;z-index:0}
+.ops-dash-table--v3 tbody tr.ops-interview-row--technical td{position:relative;z-index:1}
+.ops-dash-table--v3 tbody tr.ops-interview-row--done .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--missed .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--pending .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--cancelled .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--rescheduled .ops-interview-time,.ops-dash-table--v3 tbody tr.ops-interview-row--technical .ops-interview-time{color:#fbbf24}
 .ops-dash-table--v3 tbody tr.ops-interview-row--cancelled td[data-label=Candidate] strong,.ops-dash-table--v3 tbody tr.ops-interview-row--cancelled .ops-dash-tech-cell{color:#94a3b8;text-decoration:line-through;text-decoration-color:#94a3b88c}
 .ops-dash-table__actions-col{display:none}
 .ops-dash-status--compact{font-size:9px;padding:2px 6px;max-width:72px}
@@ -1109,6 +1117,7 @@
   .ops-interview-row--missed:after,
   .ops-interview-row--cancelled:after,
   .ops-interview-row--rescheduled:after,
+  .ops-interview-row--technical:after,
   .ops-interview-row--awaiting-update:after,
   .ops-dash-table--v3 tbody tr:after {
     display: none;
@@ -1903,6 +1912,7 @@
 .ops-attendance-status--cancelled{color:#94a3b8}
 .ops-attendance-status--rescheduled{color:#c4b5fd;border-color:rgba(196,181,253,.35)}
 .ops-attendance-status--reservice{color:#fde047;border-color:rgba(253,224,71,.35)}
+.ops-attendance-status--technical{color:#fb923c;border-color:rgba(251,146,60,.4)}
 .ops-dash-table--v3 th.ops-col-actions-head{text-align:left;white-space:nowrap;padding-left:2px;padding-right:2px}
 /* Laptop and desktop table only (phones lay rows out as cards).
    The Actions cell was display:flex, which takes a <td> out of the row: it
