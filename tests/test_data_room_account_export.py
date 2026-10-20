@@ -239,7 +239,7 @@ class TestTheRoute:
         record = state["audits"][0]
         assert record["action"] == "data_room_accounts_export" and record["actor"] == "admin"
         assert record["new"] == {"format": "csv", "credentials": 33, "dashboard_logins": 6, "service_accounts": 27,
-                                 "with_passwords": True}
+                                 "with_passwords": True, "type": "all", "searched": False}
         assert "SECRET" not in json.dumps(record) and "example.com" not in json.dumps(record)
 
     def test_no_download_is_made_unrecorded(self, api):
@@ -258,3 +258,113 @@ class TestTheRoute:
     def test_an_unknown_format_is_refused(self, api):
         client, _ = api
         assert client.get(f"{URL}?format=pdf").status_code == 400
+
+
+# ---------------------------------------------------------------------------------------------
+# What the table shows (20 Oct): the type filter and the search decide what is downloaded
+# ---------------------------------------------------------------------------------------------
+
+def key(kind, ident):
+    return {"kind": kind, "id": ident}
+
+
+LOGIN_KEYS = [key("login", u) for u in ("operations_admin", "asha", "kiran", "meera", "ravi", "sunil")]
+ACCOUNT_KEYS = [key("account", a["id"]) for a in ACCOUNTS]
+ALL_KEYS = LOGIN_KEYS + ACCOUNT_KEYS
+BY_TYPE = {
+    "all": EXPECTED,
+    "login": [r for r in EXPECTED if r[1] == "Dashboard / Tool Login"],
+    "Naukri": [r for r in EXPECTED if r[1] == "Naukri"],
+    "Gmail": [],
+    "Telegram": [r for r in EXPECTED if r[1] == "Telegram"],
+    "unset": [r for r in EXPECTED if r[1] == "Not Set"],
+}
+PARSE = {"xlsx": lambda d: sheet_rows(d)[1:], "csv": lambda d: csv_rows(d)[1:], "txt": txt_rows}
+
+
+class TestWhatTheTableShows:
+    @pytest.mark.parametrize("fmt", export.FORMATS)
+    @pytest.mark.parametrize("type_filter, scope", [
+        ("all", "all"), ("login", "dashboard-tool-logins"), ("Naukri", "naukri"), ("Telegram", "telegram"), ("unset", "not-set"),
+    ])
+    def test_each_type_downloads_only_its_own_credentials(self, api, fmt, type_filter, scope):
+        client, state = api
+        # The page names what it shows; here, everything, so the type alone must narrow it.
+        res = client.post(URL, json={"format": fmt, "type": type_filter, "credentials": ALL_KEYS})
+        assert res.status_code == 200
+        assert PARSE[fmt](res.content) == BY_TYPE[type_filter]                    # same fields, formatting, passwords
+        assert res.headers["x-credential-count"] == str(len(BY_TYPE[type_filter]))
+        assert res.headers["content-disposition"].startswith(f'attachment; filename="teleautomation-credentials-{scope}-')
+        assert res.headers["content-disposition"].endswith(f'.{fmt}"')
+        assert res.headers["cache-control"] == "no-store"
+        assert state["audits"][-1]["new"]["credentials"] == len(BY_TYPE[type_filter])
+        assert state["audits"][-1]["new"]["type"] == type_filter
+
+    def test_the_types_add_up_to_all(self, api):
+        client, _ = api
+        counts = {t: len(PARSE["csv"](client.post(URL, json={"format": "csv", "type": t, "credentials": ALL_KEYS}).content))
+                  for t in ("all", "login", "Naukri", "Telegram", "unset")}
+        # This invented set: 6 logins and a tool login, 24 Naukri, 1 Telegram, 1 with no type -- 33.
+        assert counts == {"all": 33, "login": 7, "Naukri": 24, "Telegram": 1, "unset": 1}
+        assert sum(n for t, n in counts.items() if t != "all") == counts["all"]
+
+    def test_a_type_with_none_has_nothing_to_download_and_nothing_is_recorded(self, api):
+        client, state = api
+        res = client.post(URL, json={"format": "txt", "type": "Gmail", "credentials": ALL_KEYS})
+        assert res.status_code == 400 and res.json()["detail"] == "No credentials to download"
+        res = client.post(URL, json={"format": "txt", "type": "all", "credentials": []})
+        assert res.status_code == 400 and res.json()["detail"] == "No credentials to download"
+        assert state["audits"] == []
+
+    def test_a_search_downloads_only_the_credentials_it_shows(self, api):
+        client, state = api
+        shown = [key("account", "amy_sn"), key("account", "zed_naukri")]               # what a search left on screen
+        for fmt in export.FORMATS:
+            res = client.post(URL, json={"format": fmt, "type": "Naukri", "searched": True, "credentials": shown})
+            assert PARSE[fmt](res.content) == [EXPECTED[6], EXPECTED[-1]]
+            assert 'filename="teleautomation-credentials-naukri-search-' in res.headers["content-disposition"]
+        assert state["audits"][-1]["new"] == {"format": "txt", "credentials": 2, "dashboard_logins": 0,
+                                              "service_accounts": 2, "with_passwords": True, "type": "Naukri", "searched": True}
+
+    def test_a_credential_of_another_type_is_never_written_whatever_is_asked_for(self, api):
+        client, _ = api
+        # Asked for an admin login and a Telegram account under Naukri: neither is Naukri.
+        res = client.post(URL, json={"format": "csv", "type": "Naukri",
+                                     "credentials": [key("login", "operations_admin"), key("account", "tg_ops"), key("account", "zed_naukri")]})
+        assert PARSE["csv"](res.content) == [EXPECTED[-1]]
+
+    def test_unknown_or_repeated_keys_add_nothing_and_the_table_order_is_kept(self, api):
+        client, _ = api
+        res = client.post(URL, json={"format": "csv", "type": "all", "credentials": [
+            key("account", "zed_naukri"), key("account", "nobody"), key("login", "intruder"), key("account", "zed_naukri"),
+            key("login", "operations_admin"), "not-a-key", key("account", "amy_sn")]})
+        assert PARSE["csv"](res.content) == [EXPECTED[0], EXPECTED[6], EXPECTED[-1]]
+
+    def test_logins_still_say_not_available_and_no_hash_is_ever_written(self, api):
+        client, _ = api
+        res = client.post(URL, json={"format": "txt", "type": "login", "credentials": LOGIN_KEYS})
+        assert [r[3] for r in PARSE["txt"](res.content)] == ["Not available (hashed)"] * 6
+        for digest in HASHES:
+            assert digest.encode() not in res.content
+
+    @pytest.mark.parametrize("body", [
+        {"format": "pdf", "type": "all", "credentials": []},
+        {"format": "csv", "type": "LinkedIn", "credentials": ALL_KEYS},
+        {"format": "csv", "type": "all", "credentials": "everything"},
+    ])
+    def test_a_malformed_request_is_refused(self, api, body):
+        client, state = api
+        assert client.post(URL, json=body).status_code == 400 and state["audits"] == []
+
+    def test_only_the_admin_and_never_unrecorded(self, api):
+        client, state = api
+        state["audit_fails"] = True
+        assert client.post(URL, json={"format": "csv", "type": "all", "credentials": ALL_KEYS}).status_code == 503
+        state["audit_fails"] = False
+        state["profile"] = {"username": "ravi", "role": "handler"}
+        res = client.post(URL, json={"format": "csv", "type": "all", "credentials": ALL_KEYS})
+        assert res.status_code == 403 and b"SECRET" not in res.content
+
+    def test_the_full_download_still_holds_all_33(self, api):
+        client, _ = api
+        assert len(csv_rows(client.get(f"{URL}?format=csv").content)) == 34

@@ -53,25 +53,58 @@ def login_name(login: dict, *, admin: bool = False) -> str:
     return standard_credential_name(login.get("reference"), drop_type=False) or str(login.get("username") or "")
 
 
-def credential_rows(admin: dict | None, handlers: list[dict] | None, service_accounts: list[dict] | None) -> list[dict]:
-    """One row per credential: the admin, the handlers, then the service accounts by name.
+# The Credentials table's type filter, as the page sends it, and how a file made under it is named (20 Oct).
+FILTER_SCOPES = {
+    "all": "all", "login": "dashboard-tool-logins", "Naukri": "naukri", "Gmail": "gmail", "Telegram": "telegram",
+    "unset": "not-set",
+}
+MAX_SELECTED = 2000
+
+
+def credential_records(admin: dict | None, handlers: list[dict] | None,
+                       service_accounts: list[dict] | None) -> list[tuple[tuple[str, str], str, dict]]:
+    """(key, filter, row) for every credential, in the table's order: the admin, the handlers, then the service
+    accounts by name. The key is how the page names a credential -- ("login", username) or ("account", id) -- and
+    the filter the type it is listed under (login, Naukri, Gmail, Telegram or unset; a tool login is a login).
 
     A login's row is made from its name and username only -- never from any password field, so a hash cannot be
     copied into it even if one were handed in."""
-    rows = []
+    records = []
     if isinstance(admin, dict):
-        rows.append({"name": login_name(admin, admin=True), "type": LOGINS_TYPE,
-                     "username": str(admin.get("username") or ""), "password": HASHED})
+        records.append((("login", str(admin.get("username") or "")), "login",
+                        {"name": login_name(admin, admin=True), "type": LOGINS_TYPE,
+                         "username": str(admin.get("username") or ""), "password": HASHED}))
     for login in handlers or []:
         if isinstance(login, dict):
-            rows.append({"name": login_name(login), "type": LOGINS_TYPE,
-                         "username": str(login.get("username") or ""), "password": HASHED})
+            records.append((("login", str(login.get("username") or "")), "login",
+                            {"name": login_name(login), "type": LOGINS_TYPE,
+                             "username": str(login.get("username") or ""), "password": HASHED}))
     accounts = sorted((r for r in service_accounts or [] if isinstance(r, dict)), key=lambda r: account_name(r).casefold())
     for row in accounts:
-        rows.append({"name": account_name(row), "type": credential_type(row.get("service")),
-                     "username": str(row.get("username") or ""),
-                     "password": str(row.get("password") or "") or NOT_STORED})
-    return rows
+        service = str(row.get("service") or "")
+        listed_as = "login" if service == "Tool" else service if service in ("Naukri", "Gmail", "Telegram") else "unset"
+        records.append((("account", str(row.get("id") or "")), listed_as,
+                        {"name": account_name(row), "type": credential_type(service),
+                         "username": str(row.get("username") or ""),
+                         "password": str(row.get("password") or "") or NOT_STORED}))
+    return records
+
+
+def credential_rows(admin: dict | None, handlers: list[dict] | None, service_accounts: list[dict] | None) -> list[dict]:
+    """One row per credential, in the table's order (credential_records)."""
+    return [row for _, _, row in credential_records(admin, handlers, service_accounts)]
+
+
+def select_credentials(records: list[tuple[tuple[str, str], str, dict]], keys, type_filter: str = "all") -> list[dict]:
+    """The rows of the credentials the page shows: those it names by key, and of them only the ones listed under
+    the chosen type -- so a file made under Naukri holds Naukri credentials and nothing else, whatever is asked for.
+    Unknown keys are ignored, a key named twice gives one row, and the table's order is kept."""
+    wanted = {
+        (str(k.get("kind") or ""), str(k.get("id") or ""))
+        for k in (keys or [])[:MAX_SELECTED] if isinstance(k, dict)
+    }
+    return [row for key, listed_as, row in records
+            if key in wanted and (type_filter == "all" or listed_as == type_filter)]
 
 
 def to_csv(rows: list[dict]) -> bytes:
@@ -200,6 +233,8 @@ def render(rows: list[dict], fmt: str) -> bytes:
     return to_xlsx(rows)
 
 
-def filename(fmt: str, *, now: datetime | None = None) -> str:
+def filename(fmt: str, *, now: datetime | None = None, scope: str = "", searched: bool = False) -> str:
+    """teleautomation-credentials[-<type>][-search]-<time>.<ext>: a file says which credentials it holds."""
     stamp = (now or datetime.now(timezone.utc)).astimezone(IST).strftime("%Y%m%d-%H%M")
-    return f"teleautomation-credentials-{stamp}.{fmt}"
+    parts = ["teleautomation-credentials"] + ([scope] if scope else []) + (["search"] if searched else []) + [stamp]
+    return f"{'-'.join(parts)}.{fmt}"

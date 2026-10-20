@@ -101,7 +101,7 @@ describe('the Credentials table', () => {
     expect(screen.getByRole('heading', { name: 'Credentials' })).toBeInTheDocument()
     expect(screen.getByRole('searchbox', { name: 'Search credentials' })).toHaveAttribute('placeholder', 'Search credentials...')
     expect(screen.getByRole('combobox', { name: 'Credential type' }).options[0].textContent).toBe('All Credentials (6)')
-    expect(screen.getByRole('button', { name: /Download all credentials/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Download \(6\)$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Add credential/ })).toBeInTheDocument()
     expect(document.querySelector('.dr-tab-stat-title').textContent).toBe('Total credentials')
   })

@@ -98,8 +98,9 @@ def _require_account_export_admin(request: Request) -> dict:
     return profile
 
 
-def _record_account_export(request: Request, profile: dict, *, fmt: str, rows: list[dict]) -> None:
-    """Who took the credentials out, when, in which format and how many -- never what was in them."""
+def _record_account_export(request: Request, profile: dict, *, fmt: str, rows: list[dict],
+                           type_filter: str = "all", searched: bool = False) -> None:
+    """Who took the credentials out, when, in which format, which type, and how many -- never what was in them."""
     from core import recruitment_mail_store
     from features import data_room_account_export as export
 
@@ -108,9 +109,64 @@ def _record_account_export(request: Request, profile: dict, *, fmt: str, rows: l
         actor=str(profile.get("username") or ""), role=str(profile.get("role") or ""),
         action="data_room_accounts_export",
         new={"format": fmt, "credentials": len(rows), "dashboard_logins": logins,
-             "service_accounts": len(rows) - logins, "with_passwords": True},
+             "service_accounts": len(rows) - logins, "with_passwords": True,
+             "type": type_filter, "searched": searched},
         source_ip=request.client.host if request.client else None,
     )
+
+
+def _credentials_file(rows: list[dict], fmt: str, name: str):
+    from fastapi.responses import Response
+
+    from features import data_room_account_export as export
+
+    return Response(
+        content=export.render(rows, fmt),
+        media_type=export.MEDIA_TYPES[fmt],
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            # Read by the page to name the download and to say how many it holds.
+            "X-Credential-Count": str(len(rows)),
+            "Access-Control-Expose-Headers": "Content-Disposition, X-Credential-Count",
+        },
+    )
+
+
+@router.post("/data-room/credentials/service-accounts/export")
+async def data_room_credentials_export_shown(request: Request, body: dict):
+    """The credentials the Credentials table shows -- under its type filter and its search -- as .xlsx, .csv or .txt
+    (20 Oct). The page names them by key in the body (never in the URL); only stored credentials of the chosen type
+    are written, in the table's order, formatted as the full export. The admin's only, recorded like it, and an empty
+    selection is refused: there is nothing to download."""
+    from features import data_room_account_export as export
+    from features import data_room_credentials_store
+
+    profile = _require_account_export_admin(request)
+    payload = body if isinstance(body, dict) else {}
+    fmt = str(payload.get("format") or "").strip().lower()
+    if fmt not in export.FORMATS:
+        raise HTTPException(status_code=400, detail="format must be xlsx, csv or txt")
+    type_filter = str(payload.get("type") or "all")
+    if type_filter not in export.FILTER_SCOPES:
+        raise HTTPException(status_code=400, detail="Unknown credential type")
+    keys = payload.get("credentials")
+    if not isinstance(keys, list):
+        raise HTTPException(status_code=400, detail="credentials must be a list")
+    searched = bool(payload.get("searched"))
+    listed = data_room_credentials_store.get_credentials()
+    records = export.credential_records(listed.get("admin"), listed.get("handlers"),
+                                        data_room_credentials_store.service_accounts_with_passwords())
+    rows = export.select_credentials(records, keys, type_filter)
+    if not rows:
+        raise HTTPException(status_code=400, detail="No credentials to download")
+    try:
+        _record_account_export(request, profile, fmt=fmt, rows=rows, type_filter=type_filter, searched=searched)
+    except Exception as exc:  # noqa: BLE001 - passwords never leave unrecorded
+        raise HTTPException(status_code=503, detail="The download could not be recorded, so it was not made. Try again.") from exc
+    return _credentials_file(rows, fmt, export.filename(fmt, scope=export.FILTER_SCOPES[type_filter], searched=searched))
 
 
 @router.get("/data-room/credentials/service-accounts/export")
@@ -119,8 +175,6 @@ async def data_room_accounts_export(request: Request, format: str = Query(defaul
     dashboard logins (their passwords "Not available (hashed)") and the service accounts (passwords exactly as
     stored). The admin's only; every download is recorded, and one that cannot be recorded is not made. The file is
     built in memory and sent: nothing is written to the server, and nothing may cache it."""
-    from fastapi.responses import Response
-
     from features import data_room_account_export as export
     from features import data_room_credentials_store
 
@@ -136,16 +190,7 @@ async def data_room_accounts_export(request: Request, format: str = Query(defaul
         _record_account_export(request, profile, fmt=fmt, rows=rows)
     except Exception as exc:  # noqa: BLE001 - passwords never leave unrecorded
         raise HTTPException(status_code=503, detail="The download could not be recorded, so it was not made. Try again.") from exc
-    return Response(
-        content=export.render(rows, fmt),
-        media_type=export.MEDIA_TYPES[fmt],
-        headers={
-            "Content-Disposition": f'attachment; filename="{export.filename(fmt)}"',
-            "Cache-Control": "no-store",
-            "Pragma": "no-cache",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return _credentials_file(rows, fmt, export.filename(fmt))
 @router.patch("/data-room/credentials/handlers/{username}")
 async def data_room_update_handler(username: str, body: dict, request: Request):
     from core.dashboard_access import require_fleet_admin

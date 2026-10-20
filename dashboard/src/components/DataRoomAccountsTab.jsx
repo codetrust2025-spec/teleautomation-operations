@@ -291,7 +291,18 @@ function saveBlob(blob, name) {
  * download waits for one explicit confirmation that says so; the server builds
  * it in memory, records who took it, and keeps no copy.
  */
-function AccountsExportModal({ count, passwordCount, onClose }) {
+// How a type is named in a sentence about the credentials it holds.
+const TYPE_NOUN = { login: 'dashboard / tool login', unset: 'unclassified' }
+const typeNoun = type => TYPE_NOUN[type] || type
+const credentialKey = item => ({ kind: item.kind, id: item.kind === 'login' ? item.row.username : item.row.id })
+
+/**
+ * Download what the table shows (20 Oct): under its type filter and its search,
+ * exactly the credentials on screen -- named by key in the request body, never
+ * in the URL -- as Excel, CSV or text. With nothing shown there is nothing to
+ * download, and it says so rather than offering an empty file.
+ */
+function AccountsExportModal({ items, typeFilter = 'all', query = '', onClose }) {
   const dialogRef = useDialogA11y(true, onClose)
   const [format, setFormat] = useState('xlsx')
   const [confirming, setConfirming] = useState(false)
@@ -299,7 +310,20 @@ function AccountsExportModal({ count, passwordCount, onClose }) {
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
   const formatLabel = EXPORT_FORMATS.find(f => f.value === format)?.label || format
+  const count = items.length
+  const passwordCount = items.filter(item => item.kind === 'account' && item.row.has_password).length
   const plural = count === 1 ? '' : 's'
+  const everything = typeFilter === 'all' && !query
+  const title = count === 0 ? 'No credentials to download'
+    : everything ? 'Download all credentials' : `Download ${count} credential${plural}`
+  const which = everything
+    ? `All ${count} credential${plural}`
+    : query
+      ? `The ${count} credential${plural} shown for \u201c${query}\u201d${typeFilter === 'all' ? '' : ` under ${typeNoun(typeFilter)}`}`
+      : `The ${count} ${typeNoun(typeFilter)} credential${plural}`
+  const nothing = query
+    ? `Nothing shown matches \u201c${query}\u201d${typeFilter === 'all' ? '' : ` under ${typeNoun(typeFilter)}`}. Clear the search or choose another type.`
+    : `There are no ${typeNoun(typeFilter)} credentials. Choose another type.`
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -317,14 +341,20 @@ function AccountsExportModal({ count, passwordCount, onClose }) {
     setDone('')
     setBusy(true)
     try {
-      const res = await fetch(`${API_BASE}/data-room/credentials/service-accounts/export?format=${format}`, { credentials: 'include' })
+      const res = await fetch(`${API_BASE}/data-room/credentials/service-accounts/export`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format, type: typeFilter, searched: Boolean(query), credentials: items.map(credentialKey) }),
+      })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || 'The download failed. Try again.')
       }
       const blob = await res.blob()
       saveBlob(blob, downloadName(res.headers.get('content-disposition'), `teleautomation-credentials.${format}`))
-      setDone(`Downloaded ${count} credential${plural}. Keep the file safe and delete it when you are done.`)
+      const written = Number(res.headers.get('x-credential-count')) || count
+      setDone(`Downloaded ${written} credential${written === 1 ? '' : 's'}. Keep the file safe and delete it when you are done.`)
     } catch (err) {
       setError(err instanceof TypeError ? 'Network error. Try again.' : err.message)
     } finally {
@@ -342,14 +372,30 @@ function AccountsExportModal({ count, passwordCount, onClose }) {
         aria-labelledby="dr-export-modal-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="dr-export-modal-title" className="cand-title">Download all credentials</h2>
-        {confirming ? (
+        <h2 id="dr-export-modal-title" className="cand-title">{title}</h2>
+        {count === 0 ? (
+          <>
+            <p className="dr-export-lead dr-export-empty" role="status">No credentials to download. {nothing}</p>
+            <div className="dr-modal-actions">
+              <button type="button" className="cand-btn" onClick={onClose}>Close</button>
+            </div>
+          </>
+        ) : confirming ? (
           <div className="dr-export-confirm" role="alertdialog" aria-labelledby="dr-export-confirm-title" aria-describedby="dr-export-confirm-text">
-            <h3 id="dr-export-confirm-title" className="dr-export-confirm__title">Download every password?</h3>
-            <p id="dr-export-confirm-text" className="dr-export-confirm__text">
-              This {formatLabel} file will contain {passwordCount} password{passwordCount === 1 ? '' : 's'} in plain text. Anyone who has the file can
-              sign in to these accounts. Save it only on a device you trust, never share it, and delete it when you are done.
-            </p>
+            <h3 id="dr-export-confirm-title" className="dr-export-confirm__title">
+              {passwordCount ? 'Download every password?' : 'Download these credentials?'}
+            </h3>
+            {passwordCount ? (
+              <p id="dr-export-confirm-text" className="dr-export-confirm__text">
+                This {formatLabel} file will contain {passwordCount} password{passwordCount === 1 ? '' : 's'} in plain text. Anyone who has the file can
+                sign in to these accounts. Save it only on a device you trust, never share it, and delete it when you are done.
+              </p>
+            ) : (
+              <p id="dr-export-confirm-text" className="dr-export-confirm__text">
+                This {formatLabel} file holds no passwords in plain text: a dashboard login&rsquo;s reads Not available (hashed),
+                and one with none stored reads Not stored. It still names every account and username, so keep it safe.
+              </p>
+            )}
             <div className="dr-modal-actions">
               <button type="button" className="cand-btn" onClick={() => setConfirming(false)} disabled={busy}>Back</button>
               <button type="button" className="cand-btn cand-btn--danger" onClick={download} disabled={busy}>
@@ -360,7 +406,7 @@ function AccountsExportModal({ count, passwordCount, onClose }) {
         ) : (
           <>
             <p className="dr-export-lead">
-              All {count} credential{plural}: credential name, type, username and password.
+              {which}: credential name, type, username and password.
               A dashboard login&rsquo;s password is stored hashed, so it reads Not available (hashed).
               One with no password stored reads Not stored.
             </p>
@@ -380,8 +426,8 @@ function AccountsExportModal({ count, passwordCount, onClose }) {
             {done && <p className="dr-export-done" role="status">{done}</p>}
             <div className="dr-modal-actions">
               <button type="button" className="cand-btn" onClick={onClose}>Close</button>
-              <button type="button" className="cand-btn cand-btn--primary" onClick={() => { setError(''); setDone(''); setConfirming(true) }} disabled={count === 0}>
-                Download all
+              <button type="button" className="cand-btn cand-btn--primary" onClick={() => { setError(''); setDone(''); setConfirming(true) }}>
+                Download ({count})
               </button>
             </div>
           </>
@@ -697,9 +743,15 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
           </select>
           {/* The admin's, by role: the server refuses everyone else too. */}
           {canExport && (
-            <button type="button" className="cand-btn dr-add-btn dr-export-btn" onClick={() => setExporting(true)}>
+            // What is shown is what is downloaded: the count follows the type filter and the search.
+            <button
+              type="button"
+              className="cand-btn dr-add-btn dr-export-btn"
+              onClick={() => setExporting(true)}
+              title={`Download the ${filtered.length} credential${filtered.length === 1 ? '' : 's'} shown`}
+            >
               <Icon name="download" size={14} strokeWidth={2.2} />
-              Download all credentials
+              Download ({filtered.length})
             </button>
           )}
           <button type="button" className="cand-btn cand-btn--primary dr-add-btn" onClick={openAdd}>
@@ -708,7 +760,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
           </button>
         </div>
       </div>
-      {exporting && <AccountsExportModal count={items.length} passwordCount={accounts.filter(a => a.has_password).length} onClose={closeExport} />}
+      {exporting && <AccountsExportModal items={filtered} typeFilter={activeFilter} query={search.trim()} onClose={closeExport} />}
       {unsetCount > 0 && activeFilter !== UNSET_SERVICE && (
         <div className="dr-svc-notice" role="status">
           <span>

@@ -353,7 +353,7 @@ describe('the header', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy SSH host' }))
     await waitFor(() => expect(copyToClipboard).toHaveBeenCalledWith('root@vps.example.net'))
     expect(screen.getByRole('searchbox', { name: 'Search credentials' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Download all credentials/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Download \(33\)$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Add credential/ })).toBeInTheDocument()
   })
 })
