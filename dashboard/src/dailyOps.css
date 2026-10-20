@@ -1,19 +1,4 @@
 /* Daily ops + interview roster — ported from production CSS */
-.pending-works-strip{margin-bottom:10px;padding:8px 10px;border:1px solid rgba(251,191,36,.35);border-radius:10px;background:#fbbf2412}
-.pending-works-strip__row{display:flex;align-items:center;gap:8px;min-height:28px}
-.pending-works-strip__pulse{width:7px;height:7px;border-radius:50%;background:#fbbf24;flex-shrink:0;animation:pending-works-pulse 1.8s ease-out infinite}
-.pending-works-strip__text{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;min-width:0;flex:1}
-.pending-works-strip__title{font-size:13px;font-weight:600;color:#fde68a}
-.pending-works-strip__meta{font-size:11px;color:#94a3b8}
-.pending-works-strip__cta{flex-shrink:0;border:1px solid rgba(251,191,36,.45);background:#fbbf241f;color:#fde68a;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer}
-.pending-works-strip__cta:hover{background:#fbbf2438}
-.pending-works-strip__error{margin:4px 0 0;font-size:11px;color:#fca5a5}
-.pending-works-strip__chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(251,191,36,.15)}
-.pending-works-strip__chip{border:1px solid rgba(255,255,255,.1);background:#0f172a80;color:#e2e8f0;border-radius:999px;padding:3px 10px;font-size:11px;line-height:1.35;cursor:pointer;font-family:inherit;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pending-works-strip__chip:hover{border-color:#fbbf2473;color:#fde68a}
-.pending-works-strip__chip--more{color:#fbbf24;border-style:dashed}
-.daily-ops-page--dashboard .pending-works-strip{margin:0 0 10px}
-.desk-dash .pending-works-strip{margin:0 0 10px}
 .ta-table-responsive--cards table,.ta-table-responsive--cards .cand-table,.ta-table-responsive--cards .ops-interview-table,.ta-table-responsive--cards .admin-table,.ta-table-responsive--cards .fleet-health-table,.ta-table-responsive--cards .dr-table{min-width:0!important;display:block;width:100%}
 .ta-table-responsive--cards .ops-interview-attendance-form{flex-direction:column;align-items:stretch}
 .ta-table-responsive--cards .ops-interview-attendance-cell{min-width:0!important}
@@ -884,15 +869,6 @@
     align-items: flex-start;
   }
 
-  /* Pending strip */
-  .pending-works-strip__row {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .pending-works-strip__chips {
-    flex-wrap: wrap;
-  }
 }
 
 /* ── Mobile phones (≤ 767px): fully stacked ────────────────────────────── */
@@ -900,26 +876,6 @@
   /* Page padding */
   .daily-ops-page--dashboard {
     padding: 4px 4px 8px;
-  }
-
-  /* Pending strip */
-  .pending-works-strip {
-    padding: 8px;
-  }
-
-  .pending-works-strip__row {
-    flex-wrap: wrap;
-    gap: 6px;
-    min-height: auto;
-  }
-
-  .pending-works-strip__chips {
-    flex-wrap: wrap;
-  }
-
-  .pending-works-strip__chip {
-    font-size: 11px;
-    max-width: calc(50% - 4px);
   }
 
   /* Toolbar: fully stacked */
@@ -1479,51 +1435,10 @@
   min-width: 1.2ch;
 }
 
-/* Pending pill */
+/* Bookings by technology, at the right of the status counters */
 .ops-topbar__right {
   flex-shrink: 0;
   margin-left: auto;
-}
-
-.pending-works-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(251,191,36,.4);
-  background: rgba(251,191,36,.1);
-  color: #fde68a;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background .15s;
-}
-
-.pending-works-pill:hover {
-  background: rgba(251,191,36,.2);
-}
-
-.pending-works-pill__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #fbbf24;
-  flex-shrink: 0;
-  animation: pending-works-pulse 1.8s ease-out infinite;
-}
-
-.pending-works-pill__label {
-  font-weight: 600;
-}
-
-.pending-works-pill__count {
-  background: rgba(251,191,36,.25);
-  border-radius: 999px;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 700;
 }
 
 /* ── Table area: fill remaining space ─────────────────────────────────── */
@@ -1597,11 +1512,6 @@
   .ops-topbar__right {
     order: 2;
     margin-left: 0;
-  }
-
-  .pending-works-pill {
-    font-size: 10px;
-    padding: 3px 8px;
   }
 }
 

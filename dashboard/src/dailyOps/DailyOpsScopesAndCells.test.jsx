@@ -1,10 +1,9 @@
 /**
  * Daily Ops desktop polish, second pass.
  *
- * - The status counters and the pill beside them both said "pending": "5
- *   Pending" counts interviews in the current view with no status, "12
- *   pending" counted open candidate tasks across the whole roster. The pill now
- *   says "Candidate tasks" and explains itself; each counter names its scope.
+ * - Each status counter names its scope: "5 Pending" counts interviews in the
+ *   current view with no status. The "Candidate tasks" pill that once sat beside
+ *   them was removed from Daily Ops (20 Oct); candidate tasks are on Candidates.
  * - Every Screenshot cell is the same centred box: a thumbnail, a file that
  *   will not load, or a dash when there is none.
  * - The Actions cell is a table cell again (it was display:flex, which took it
@@ -30,7 +29,6 @@ vi.mock('./PendingWorksProvider.jsx', async (importOriginal) => ({
 }))
 
 import { DailyOpsPanel, kpiScope } from './DailyOpsPanel.jsx'
-import { PendingWorksStrip } from './PendingWorksStrip.jsx'
 import { STATUS_TABS } from './interviewStatuses.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -92,15 +90,25 @@ async function renderPanel() {
   await act(async () => { await Promise.resolve() })
 }
 
-describe('the two "pending" counts say what they count', () => {
-  it('calls the pill Candidate tasks and keeps "pending" out of it', () => {
-    render(<PendingWorksStrip compact onOpenCandidates={() => {}} />)
-    const pill = screen.getByRole('button', { name: /^Candidate tasks:/ })
-    expect(pill.textContent).toBe('Candidate tasks12')
-    expect(pill.textContent.toLowerCase()).not.toContain('pending')
-    expect(pill.getAttribute('aria-label')).toBe('Candidate tasks: 12 open across 9 candidates. Opens Candidates.')
-    expect(pill.getAttribute('title')).toMatch(/across 9 candidates, not limited to this view/)
+describe('Candidate tasks are not on Daily Ops (20 Oct)', () => {
+  it('shows no Candidate tasks pill, count or button, even with tasks open', async () => {
+    await renderPanel()                                   // the provider says 12 tasks across 9 candidates
+    expect(screen.queryByRole('button', { name: /candidate tasks/i })).toBeNull()
+    expect(screen.queryByText(/candidate tasks/i)).toBeNull()
+    expect(document.querySelector('.pending-works-pill, .pending-works-strip')).toBeNull()
+    expect(document.querySelector('.ops-topbar__right').textContent).not.toMatch(/12/)
+    // What stays: the status counters, the bookings by technology, the roster.
+    expect(screen.getByRole('button', { name: /^Scheduled/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Pending/ })).toBeInTheDocument()
+    expect(screen.getByText('Asha Rao')).toBeInTheDocument()
   })
+
+  it('carries no styles for it, on a phone or a desktop', () => {
+    expect(CSS).not.toMatch(/pending-works/)
+  })
+})
+
+describe('every status counter says what it counts', () => {
 
   it('gives every status counter its scope', async () => {
     await renderPanel()

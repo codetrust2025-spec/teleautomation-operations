@@ -4,7 +4,6 @@ import { STATUS_TABS } from './interviewStatuses.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { InterviewRoster } from './InterviewRoster.jsx'
 import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } from './rosterSort.js'
-import { PendingWorksStrip } from './PendingWorksStrip.jsx'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu } from './DailyOpsFilterMenu.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
@@ -29,10 +28,8 @@ function KpiCard({ label, value, tone = 'default', loading = false, active = fal
 }
 
 /**
- * What a status counter counts. The tabs and the "Candidate tasks" pill beside
- * them both used to say "pending" -- one for interviews in this view without a
- * status, the other for open work across every candidate -- with nothing on
- * screen to tell the two apart.
+ * What a status counter counts: each names its scope, so "Pending" reads as
+ * interviews in this view with no status recorded, and nothing else.
  */
 export function kpiScope(tab) {
   if (tab.id === 'scheduled') return 'Every interview in the current view'
@@ -117,7 +114,6 @@ export function DailyOpsPanel({
   onStartAll,
   startAllBusy = false,
   showFleetControls = false,
-  onNavCandidates,
 }) {
   const { role, reference } = useAuth()
   // Daily Ops is shared across all authenticated operators.  Do not prefill
@@ -262,8 +258,10 @@ export function DailyOpsPanel({
   return (
     <div className="daily-ops-page daily-ops-page--dashboard">
 
-      {/* ── Compact top bar: KPIs + pending pill. The page title lives in
-          the shell header alone; repeating it here named the page twice. ── */}
+      {/* ── Compact top bar: status KPIs + bookings by technology. The page
+          title lives in the shell header alone; repeating it here named the
+          page twice. Candidate tasks are on Candidates (Pending Works), not
+          here (20 Oct). ── */}
       <div className="ops-topbar">
         {/* One tab per status the backend stores, built from the same list the
             row dropdown uses so the two cannot disagree. Scheduled stays first
@@ -291,7 +289,6 @@ export function DailyOpsPanel({
 
         <div className="ops-topbar__right">
           <BookingPie overview={globalStats?.booking_overview} selectedTechnology={technologyFilter} onTechnologySelect={setTechnologyFilter} />
-          <PendingWorksStrip compact onOpenCandidates={onNavCandidates} />
         </div>
       </div>
 

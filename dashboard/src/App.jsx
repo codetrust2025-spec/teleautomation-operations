@@ -288,7 +288,7 @@ function OperationsShell({ view, onNavigate }) {
 
         <main className={`desktop-body business-body${view === 'daily-ops' ? ' desktop-body--daily-ops' : ''}`}>
           {view === 'candidates' && <CandidatesPanel />}
-          {view === 'daily-ops' && <DailyOpsPanel onNavCandidates={() => navigate('candidates')} />}
+          {view === 'daily-ops' && <DailyOpsPanel />}
           {view === 'attendance' && <AttendancePanel />}
           {view === 'ai-recruitment' && <RecruitmentMailPanel />}
           {view === 'mail-notifications' && <MailMonitoringNotifications />}

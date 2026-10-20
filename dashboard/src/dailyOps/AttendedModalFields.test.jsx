@@ -27,7 +27,6 @@ vi.mock('../context/AuthContext.jsx', () => ({
 vi.mock('../context/ConfirmContext.jsx', () => ({
   useConfirm: () => ({ confirm: vi.fn(async () => true) }),
 }))
-vi.mock('./PendingWorksStrip.jsx', () => ({ PendingWorksStrip: () => null }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
 import { openRowEdit, saveButton, setAttendance, setNote } from './rowEditTestHelpers.js'
