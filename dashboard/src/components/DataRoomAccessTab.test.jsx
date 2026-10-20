@@ -3,8 +3,10 @@
  *
  * The dashboard's logins (the admin and the handlers) and the service accounts
  * are listed together -- 33 in production -- with one Account type filter (All
- * Accounts, Dashboard Login, Naukri, Gmail, Telegram, Tool) whose counts come
- * from the records. Each row keeps the columns and actions of its kind: a login
+ * Accounts, Dashboard / Tool Logins, Naukri, Gmail, Telegram) whose counts come
+ * from the records. A tool login and a dashboard login are one type since 20 Oct:
+ * one option, one badge, counted once each -- but each is still its own record,
+ * saved where it always was. Each row keeps the columns and actions of its kind: a login
  * is stored hashed, so it has nothing to reveal and is saved to the handlers
  * endpoint; a service account keeps Show password and its own endpoint. A
  * handler is still sent neither.
@@ -26,7 +28,7 @@ vi.mock('../utils/copyToClipboard.js', () => ({ copyToClipboard: vi.fn(() => Pro
 
 import { captureLayout } from '../test/captureLayout.js'
 import { copyToClipboard } from '../utils/copyToClipboard.js'
-import { DataRoomAccountsTab, LOGIN_TYPE } from './DataRoomAccountsTab.jsx'
+import { DataRoomAccountsTab, LOGIN_TYPE, SERVICE_FILTER_KEY } from './DataRoomAccountsTab.jsx'
 import { DataRoomPanel } from './DataRoomPanel.jsx'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -121,21 +123,21 @@ describe('the one table', () => {
     expect(names().slice(6)).toEqual(ACCOUNTS.map((a) => a.label))
     expect(rows().slice(0, 6).every((r) => r.classList.contains('dr-acct-login-row'))).toBe(true)
     expect(document.querySelector('.dr-tab-stat-value').textContent).toBe('33')
-    expect(document.querySelector('.dr-tab-stat-sub').textContent).toBe('6 dashboard logins · 27 service accounts')
+    expect(document.querySelector('.dr-tab-stat-sub').textContent).toBe('6 dashboard / tool logins · 27 other accounts')
   })
 
   it('has one Account type filter whose counts come from the records and add up to All Accounts', () => {
     renderTable()
     expect([...filter().options].map((o) => [o.value, o.textContent])).toEqual([
-      ['all', 'All Accounts (33)'], [LOGIN_TYPE, 'Dashboard Login (6)'], ['Naukri', 'Naukri (26)'],
-      ['Gmail', 'Gmail (0)'], ['Telegram', 'Telegram (1)'], ['Tool', 'Tool (0)'],
+      ['all', 'All Accounts (33)'], [LOGIN_TYPE, 'Dashboard / Tool Logins (6)'], ['Naukri', 'Naukri (26)'],
+      ['Gmail', 'Gmail (0)'], ['Telegram', 'Telegram (1)'],
     ])
     const [[, all], ...rest] = [...filter().options].map((o) => [o.value, Number(/\((\d+)\)$/.exec(o.textContent)[1])])
     expect(rest.reduce((sum, [, n]) => sum + n, 0)).toBe(all)
   })
 
   it.each([
-    [LOGIN_TYPE, 6, 'Dashboard'], ['Naukri', 26, 'Naukri'], ['Telegram', 1, 'Telegram'],
+    [LOGIN_TYPE, 6, 'Dashboard / Tool'], ['Naukri', 26, 'Naukri'], ['Telegram', 1, 'Telegram'],
   ])('shows only %s records when that type is chosen', (type, count, badge) => {
     renderTable()
     choose(type)
@@ -143,18 +145,29 @@ describe('the one table', () => {
     for (const r of rows()) expect(r.querySelector('.dr-acct-svc').textContent).toBe(badge)
   })
 
-  it('says there are no tool logins yet rather than inventing any, and counts them once there are', () => {
-    renderTable()
-    choose('Tool')
-    expect(rows()).toHaveLength(0)
-    expect(screen.getByText('No tool logins yet. Choose Tool as the account type when you add or edit one.')).toBeInTheDocument()
-    cleanup()
+  it('counts tool logins under Dashboard / Tool Logins, once each, with no Tool option of its own', () => {
     const tools = ['Interview helper', 'Screen recorder', 'Notes app', 'Code pad'].map((label, i) => ({ id: `tool_${i}`, label, service: 'Tool', username: `t${i}@example.com`, has_password: true }))
     renderTable({ accounts: [...ACCOUNTS, ...tools] })
-    expect(filter().querySelector('option[value="Tool"]').textContent).toBe('Tool (4)')
+    expect(filter().querySelector('option[value="Tool"]')).toBeNull()
+    expect(filter().querySelector(`option[value="${LOGIN_TYPE}"]`).textContent).toBe('Dashboard / Tool Logins (10)')
     expect(filter().querySelector('option[value="all"]').textContent).toBe('All Accounts (37)')
-    choose('Tool')
-    expect(names()).toEqual(tools.map((t) => t.label))
+    expect(rows()).toHaveLength(37)                                                     // nothing listed twice
+    choose(LOGIN_TYPE)
+    expect(names()).toEqual(['Admin', 'Asha', 'Kiran', 'Meera', 'Ravi', 'Sunil', ...tools.map((t) => t.label)])
+    for (const r of rows()) expect(r.querySelector('.dr-acct-svc').textContent).toBe('Dashboard / Tool')
+    // Still a service account underneath: its own role line and its password to show.
+    const tool = rowOf('Code pad')
+    expect(tool.querySelector('.dr-acct-role').textContent).toBe('Tool login')
+    expect(within(tool).getByRole('button', { name: 'Show password for Code pad' })).toBeInTheDocument()
+    expect(rowOf('Kiran').querySelector('.dr-acct-role').textContent).toBe('Handler')
+  })
+
+  it('says there are none rather than inventing any, and opens it for a Tool chosen before the change', () => {
+    window.sessionStorage.setItem(SERVICE_FILTER_KEY, 'Tool')
+    renderTable({ logins: { admin: null, handlers: [] } })
+    expect(filter().value).toBe(LOGIN_TYPE)
+    expect(rows()).toHaveLength(0)
+    expect(screen.getByText('No dashboard or tool logins.')).toBeInTheDocument()
   })
 
   it('searches logins and accounts together', () => {
@@ -180,7 +193,7 @@ describe('a dashboard login row', () => {
     renderTable()
     for (const name of ['Admin', 'Kiran']) {
       const row = rowOf(name)
-      expect(row.querySelector('.dr-acct-svc').textContent).toBe('Dashboard')
+      expect(row.querySelector('.dr-acct-svc').textContent).toBe('Dashboard / Tool')
       expect(row.querySelector('.dr-creds-pass').textContent.trim()).toBe('Hashed')
       expect(within(row).queryByRole('button', { name: /Show password|Copy password/ })).toBeNull()
     }
@@ -272,8 +285,13 @@ describe('Add', () => {
     renderTable({ onReload })
     fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
     expect([...field('Account type').options].map((o) => [o.value, o.textContent])).toEqual([
-      ['Naukri', 'Naukri'], ['Gmail', 'Gmail'], ['Telegram', 'Telegram'], ['Tool', 'Tool'], [LOGIN_TYPE, 'Dashboard login'],
+      ['Naukri', 'Naukri'], ['Gmail', 'Gmail'], ['Telegram', 'Telegram'],
+      ['Tool', 'Tool login (another tool or site)'], [LOGIN_TYPE, 'Dashboard login (signs in here)'],
     ])
+    // Both under the one type, which says which record each makes.
+    const group = field('Account type').querySelector('optgroup')
+    expect(group.label).toBe('Dashboard / Tool Login')
+    expect([...group.querySelectorAll('option')].map((o) => o.value)).toEqual(['Tool', LOGIN_TYPE])
     fireEvent.change(field('Account name'), { target: { value: 'Divya' } })
     fireEvent.change(field('Account type'), { target: { value: LOGIN_TYPE } })
     expect(screen.getByRole('dialog', { name: 'Add dashboard login' })).toBeInTheDocument()
@@ -293,16 +311,20 @@ describe('Add', () => {
     }])
   })
 
-  it('starts from the type the list is narrowed to: a login under Dashboard Login, a tool under Tool', async () => {
+  it('starts from the type the list is narrowed to: under Dashboard / Tool Logins a tool login, a dashboard login only by choice', async () => {
     renderTable()
-    choose(LOGIN_TYPE)
+    choose('Telegram')
     fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
-    expect(screen.getByRole('dialog', { name: 'Add dashboard login' })).toBeInTheDocument()
+    expect(field('Account type').value).toBe('Telegram')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    choose('Tool')
+    choose(LOGIN_TYPE)
     fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
     expect(screen.getByRole('dialog', { name: 'Add service account' })).toBeInTheDocument()
     expect(field('Account type').value).toBe('Tool')
+    fireEvent.change(field('Account type'), { target: { value: LOGIN_TYPE } })
+    expect(screen.getByRole('dialog', { name: 'Add dashboard login' })).toBeInTheDocument()
+    fireEvent.change(field('Account type'), { target: { value: 'Tool' } })
+    expect(screen.getByRole('dialog', { name: 'Add service account' })).toBeInTheDocument()
     fireEvent.change(field('Account name'), { target: { value: 'Interview helper' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(writes()).toHaveLength(1))
@@ -368,8 +390,8 @@ describe('the styles', () => {
     expect([...login.querySelectorAll('td.dr-acct-cell--empty')].map((td) => td.dataset.label)).toEqual(['Status', 'Last used'])
     expect(rowOf('Ops Telegram').querySelector('td[data-label="Status"]').classList.contains('dr-acct-cell--empty')).toBe(false)
   })
-  it('give the Dashboard and Tool badges a colour of their own', () => {
+  it('give Dashboard / Tool one badge colour, the same on a phone and a desktop', () => {
     expect(CSS).toMatch(/\.dr-acct-svc--dashboard \{/)
-    expect(CSS).toMatch(/\.dr-acct-svc--tool \{/)
+    expect(CSS).not.toMatch(/\.dr-acct-svc--tool\b/)
   })
 })

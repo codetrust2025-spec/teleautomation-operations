@@ -61,25 +61,35 @@ function isPrimary(row) {
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
-// Tool (20 Oct): the logins of tools the team works with.
+// Tool (20 Oct): the logins of tools the team works with. Stored as a service
+// account's service, as the others are.
 export const SERVICE_TYPES = ['Naukri', 'Gmail', 'Telegram', 'Tool']
+// The services that are categories of their own. Tool is not: a tool login and
+// a dashboard login are one category, Dashboard / Tool Logins (20 Oct).
+export const SEPARATE_SERVICES = ['Naukri', 'Gmail', 'Telegram']
+export const LOGINS_LABEL = 'Dashboard / Tool Logins'
+const LOGIN_BADGE = 'Dashboard / Tool'
 const DEFAULT_SERVICE = 'Naukri'
 export const SERVICE_FILTER_KEY = 'ta.dataRoom.accountsService'
 // The filter value for accounts with no service yet, so that All Accounts is
 // always the sum of the options below it.
 export const UNSET_SERVICE = 'unset'
-// The admin's and the handlers' logins to this dashboard: an Account type of
-// their own, in the filter and in Add, kept and saved apart from the services.
+// The admin's and the handlers' logins to this dashboard, with the tool logins:
+// one Account type, Dashboard / Tool Logins, in the filter and on every row.
+// Only the category is shared. A dashboard login is still a handler, saved and
+// signed in with as before; a tool login is still a service account. Neither is
+// turned into the other, so nothing is copied and no one signs in differently.
 export const LOGIN_TYPE = 'login'
 
 /** The account's service when it is one of the four, otherwise ''. */
 const serviceOf = row => (SERVICE_TYPES.includes(row.service) ? row.service : '')
 
-/** The Account type filter remembered for this browser session, or All Accounts. */
+/** The Account type filter remembered for this browser session, or All Accounts. A Tool remembered from before is now the logins. */
 function readServiceFilter() {
   try {
     const saved = window.sessionStorage.getItem(SERVICE_FILTER_KEY)
-    return saved === 'all' || saved === UNSET_SERVICE || saved === LOGIN_TYPE || SERVICE_TYPES.includes(saved) ? saved : 'all'
+    if (saved === 'Tool') return LOGIN_TYPE
+    return saved === 'all' || saved === UNSET_SERVICE || saved === LOGIN_TYPE || SEPARATE_SERVICES.includes(saved) ? saved : 'all'
   } catch {
     return 'all'
   }
@@ -105,6 +115,7 @@ async function copyFetched(getText) {
 
 const SERVICE_HINT = 'A Naukri login is Naukri even when its username is a Gmail address.'
 const LOGIN_HINT = 'Signs in to this dashboard as a handler. The password is stored hashed: it cannot be shown again.'
+const TOOL_HINT = 'A login to another tool or site, kept here with its password.'
 
 /**
  * The fields of the Add / Edit dialog. A service account: name, Account type,
@@ -115,11 +126,21 @@ const LOGIN_HINT = 'Signs in to this dashboard as a handler. The password is sto
 /** A dialog for a dashboard login (a handler) or for a service account. */
 const modalKind = modal => (modal?.kind === 'login' || (modal?.mode === 'create' && modal?.form?.service === LOGIN_TYPE) ? 'login' : 'account')
 
-function accountFields({ kind, mode }) {
+function accountFields({ kind, mode, service }) {
+  // Dashboard / Tool Login is one type with two kinds of record behind it, so
+  // Add says which: a tool login (a service account) or a login to this dashboard
+  // (a handler). Editing a service account offers only what it can be.
+  const loginGroup = {
+    group: `${LOGINS_LABEL.replace(/s$/, '')}`,
+    options: [
+      { value: 'Tool', label: 'Tool login (another tool or site)' },
+      ...(mode === 'create' ? [{ value: LOGIN_TYPE, label: 'Dashboard login (signs in here)' }] : []),
+    ],
+  }
   const typeField = {
     key: 'service', label: 'Account type', type: 'select', placeholder: 'Choose an account type',
-    options: mode === 'create' ? [...SERVICE_TYPES, { value: LOGIN_TYPE, label: 'Dashboard login' }] : SERVICE_TYPES,
-    hint: kind === 'login' ? LOGIN_HINT : SERVICE_HINT,
+    options: [...SEPARATE_SERVICES, loginGroup],
+    hint: kind === 'login' ? LOGIN_HINT : service === 'Tool' ? TOOL_HINT : SERVICE_HINT,
   }
   if (kind === 'login') {
     return [
@@ -182,8 +203,13 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error, ima
                   >
                     {!form[f.key] && <option value="" disabled>{f.placeholder}</option>}
                     {f.options.map(option => {
-                      const { value, label } = typeof option === 'string' ? { value: option, label: option } : option
-                      return <option key={value} value={value}>{label}</option>
+                      const toOption = (o) => {
+                        const { value, label } = typeof o === 'string' ? { value: o, label: o } : o
+                        return <option key={value} value={value}>{label}</option>
+                      }
+                      return option.group
+                        ? <optgroup key={option.group} label={option.group}>{option.options.map(toOption)}</optgroup>
+                        : toOption(option)
                     })}
                   </select>
                   {f.hint && <small id={`dr-field-hint-${f.key}`} className="dr-field-hint">{f.hint}</small>}
@@ -456,8 +482,9 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
   const openAdd = () => {
     setModalError('')
     clearImageState()
-    // The type the list is narrowed to, so Add under Tool adds a tool login.
-    const service = activeFilter === LOGIN_TYPE || SERVICE_TYPES.includes(activeFilter) ? activeFilter : DEFAULT_SERVICE
+    // The type the list is narrowed to. Under Dashboard / Tool Logins that is a
+    // tool login: a new sign-in to this dashboard is chosen on purpose, not by default.
+    const service = activeFilter === LOGIN_TYPE ? 'Tool' : SEPARATE_SERVICES.includes(activeFilter) ? activeFilter : DEFAULT_SERVICE
     setModal({ mode: 'create', form: { id: '', label: '', reference: '', service, username: '', password: '', notes: '' } })
   }
 
@@ -551,7 +578,6 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     onReload()
   }
 
-  const totalAccounts = accounts.length
   const activeAccounts = accounts.filter(r => accountStatus(r) === 'active').length
   const oldAccounts = accounts.filter(r => accountStatus(r) === 'old').length
   const primaryAccounts = accounts.filter(r => isPrimary(r)).length
@@ -565,16 +591,17 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     ...handlers.map(h => ({ kind: 'login', key: `login:${h.username}`, isAdmin: false, row: h })),
     ...accounts.map(row => ({ kind: 'account', key: row.id, row })),
   ], [admin, handlers, accounts])
-  const typeOf = item => (item.kind === 'login' ? LOGIN_TYPE : serviceOf(item.row) || UNSET_SERVICE)
-  const loginCount = items.length - accounts.length
+  // A dashboard login and a tool login are one Account type.
+  const typeOf = item => (item.kind === 'login' || serviceOf(item.row) === 'Tool' ? LOGIN_TYPE : serviceOf(item.row) || UNSET_SERVICE)
 
-  // Every record is counted exactly once: a dashboard login, a service, or Not
-  // set until someone chooses one. All Accounts is always the sum.
+  // Every record is counted exactly once: a dashboard or tool login, Naukri,
+  // Gmail, Telegram, or Not set until someone chooses one. All Accounts is always the sum.
   const serviceCounts = useMemo(() => {
-    const counts = { [LOGIN_TYPE]: 0, ...Object.fromEntries(SERVICE_TYPES.map(name => [name, 0])), [UNSET_SERVICE]: 0 }
+    const counts = { [LOGIN_TYPE]: 0, ...Object.fromEntries(SEPARATE_SERVICES.map(name => [name, 0])), [UNSET_SERVICE]: 0 }
     for (const item of items) counts[typeOf(item)] += 1
     return counts
   }, [items])
+  const loginCount = serviceCounts[LOGIN_TYPE]
   const unsetCount = serviceCounts[UNSET_SERVICE]
   // Not set is offered only while some account has no service; once none is
   // left, a remembered Not set falls back to All Accounts.
@@ -585,8 +612,8 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
   const matches = (item) => {
     const r = item.row
     const words = item.kind === 'login'
-      ? [r.reference, r.username, item.isAdmin ? 'admin' : 'handler', 'dashboard login']
-      : [r.label, r.username, serviceOf(r)]
+      ? [r.reference, r.username, item.isAdmin ? 'admin' : 'handler', 'dashboard login', LOGINS_LABEL]
+      : [r.label, r.username, serviceOf(r), ...(serviceOf(r) === 'Tool' ? ['tool login', LOGINS_LABEL] : [])]
     return words.some(w => String(w || '').toLowerCase().includes(query))
   }
   const filtered = items
@@ -594,12 +621,11 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     .filter(item => !query || matches(item))
   const filterName = activeFilter === UNSET_SERVICE ? 'unclassified' : activeFilter
   const emptyText = activeFilter === LOGIN_TYPE
-    ? (query ? 'No dashboard logins match your search.' : 'No dashboard logins.')
+    ? (query ? 'No dashboard or tool logins match your search.' : 'No dashboard or tool logins.')
     : activeFilter !== 'all'
       ? (query ? `No ${filterName} accounts match your search.`
         : activeFilter === 'Gmail' ? 'No Gmail accounts. Naukri logins that use a Gmail address are under Naukri.'
-          : activeFilter === 'Tool' ? 'No tool logins yet. Choose Tool as the account type when you add or edit one.'
-            : `No ${filterName} accounts.`)
+          : `No ${filterName} accounts.`)
       : (query ? 'No accounts match your search.' : 'No accounts found.')
 
   return (
@@ -609,7 +635,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
         <div>
           {/* Named on screen by its tab, Accounts & Logins. */}
           <h2 className="dr-section-title sr-only">Accounts and logins</h2>
-          <p className="dr-section-desc">Dashboard logins, and Naukri, Gmail, Telegram and tool accounts.</p>
+          <p className="dr-section-desc">Dashboard and tool logins, and Naukri, Gmail and Telegram accounts.</p>
           {logins && (
             <p className="dr-acct-meta">
               <span className="dr-creds-site" title={site || undefined}>
@@ -647,8 +673,8 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
             onChange={(e) => chooseServiceFilter(e.target.value)}
           >
             <option value="all">All Accounts ({items.length})</option>
-            <option value={LOGIN_TYPE}>Dashboard Login ({serviceCounts[LOGIN_TYPE]})</option>
-            {SERVICE_TYPES.map(name => <option key={name} value={name}>{name} ({serviceCounts[name]})</option>)}
+            <option value={LOGIN_TYPE}>{LOGINS_LABEL} ({serviceCounts[LOGIN_TYPE]})</option>
+            {SEPARATE_SERVICES.map(name => <option key={name} value={name}>{name} ({serviceCounts[name]})</option>)}
             {unsetCount > 0 && <option value={UNSET_SERVICE}>Not set ({unsetCount})</option>}
           </select>
           {/* The admin's, by role: the server refuses everyone else too. */}
@@ -669,7 +695,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
         <div className="dr-svc-notice" role="status">
           <span>
             {unsetCount === 1 ? '1 account has' : `${unsetCount} accounts have`} no service type yet.
-            Choose Naukri, Gmail, Telegram or Tool with Edit so {unsetCount === 1 ? 'it is' : 'they are'} counted under {unsetCount === 1 ? 'its' : 'their'} type.
+            Choose Naukri, Gmail, Telegram or Dashboard / Tool Login with Edit so {unsetCount === 1 ? 'it is' : 'they are'} counted under {unsetCount === 1 ? 'its' : 'their'} type.
           </span>
           <button type="button" className="cand-btn cand-btn--sm" onClick={() => chooseServiceFilter(UNSET_SERVICE)}>
             Show {unsetCount === 1 ? 'it' : 'them'}
@@ -686,7 +712,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
           <div className="dr-tab-stat-value">{items.length}</div>
           <div className="dr-tab-stat-sub">
             {logins
-              ? `${loginCount} dashboard login${loginCount === 1 ? '' : 's'} · ${totalAccounts} service account${totalAccounts === 1 ? '' : 's'}`
+              ? `${loginCount} dashboard / tool login${loginCount === 1 ? '' : 's'} · ${items.length - loginCount} other account${items.length - loginCount === 1 ? '' : 's'}`
               : `${activeAccounts} active · ${oldAccounts} deprecated`}
           </div>
         </div>
@@ -749,7 +775,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                       </div>
                     </td>
                     <td data-label="Type">
-                      <span className="dr-acct-svc dr-acct-svc--dashboard" title="Signs in to this dashboard">Dashboard</span>
+                      <span className="dr-acct-svc dr-acct-svc--dashboard" title="Dashboard login: signs in to this dashboard">{LOGIN_BADGE}</span>
                     </td>
                     <td data-label="Username">
                       <div className="dr-acct-cred-cell">
@@ -805,12 +831,15 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                       <span className={`dr-acct-dot dr-acct-dot--${status}`} />
                       <div>
                         <span className="dr-acct-name">{row.label || row.id}</span>
+                        {serviceOf(row) === 'Tool' && <span className="dr-acct-role">Tool login</span>}
                         {primary && <span className="dr-acct-primary-badge">★ Primary</span>}
                       </div>
                     </div>
                   </td>
                   <td data-label="Type">
-                    <span className={`dr-acct-svc dr-acct-svc--${(serviceOf(row) || 'none').toLowerCase()}`}>{serviceOf(row) || 'Not set'}</span>
+                    {serviceOf(row) === 'Tool'
+                      ? <span className="dr-acct-svc dr-acct-svc--dashboard" title="Tool login: a login to another tool or site">{LOGIN_BADGE}</span>
+                      : <span className={`dr-acct-svc dr-acct-svc--${(serviceOf(row) || 'none').toLowerCase()}`}>{serviceOf(row) || 'Not set'}</span>}
                   </td>
                   <td data-label="Username">
                     <div className="dr-acct-cred-cell">
@@ -883,7 +912,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
             : (modal.mode === 'create' ? 'Add service account' : 'Edit service account')}
           // `id` stays on the form object so an edit preserves what a row
           // already has; it is simply not asked for.
-          fields={accountFields({ kind: modalKind(modal), mode: modal.mode })}
+          fields={accountFields({ kind: modalKind(modal), mode: modal.mode, service: modal.form?.service })}
           form={modal.form}
           onChange={(f) => setModal(s => {
             // Switching Add between a service account and a dashboard login

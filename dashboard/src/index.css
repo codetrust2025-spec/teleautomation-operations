@@ -14837,7 +14837,6 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
    A login row says what it is: a Dashboard badge, its role under the name,
    and "Hashed" where a service account has its password controls. */
 .dr-acct-svc--dashboard { color: #c4b5fd; background: rgba(139, 92, 246, 0.14); border-color: rgba(139, 92, 246, 0.4); }
-.dr-acct-svc--tool { color: #86efac; background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.34); }
 .dr-acct-role {
   display: block;
   margin-top: 1px;

@@ -1,7 +1,7 @@
 /**
  * Data Room -> Accounts by type (19 Oct; one table with the dashboard logins since 20 Oct).
  *
- * Every account is Naukri, Gmail, Telegram or Tool (or "Not set" until someone says which). An Account type filter
+ * Every account is Naukri, Gmail, Telegram or a Dashboard / Tool Login (or "Not set" until someone says which). An Account type filter
  * beside the search narrows the list to one type, with the count of each in the dropdown -- and every account is counted
  * once, so All Accounts is always the sum of the options below it. Search and filter work together, and the choice
  * holds for the browser session. A new account is Naukri unless another is chosen. The list
@@ -64,8 +64,8 @@ describe('the Account type filter', () => {
     renderTab()
     expect(filter().previousElementSibling).toBe(screen.getByRole('searchbox').closest('.dr-search-wrap'))
     expect([...filter().options].map(o => [o.value, o.textContent])).toEqual([
-      ['all', 'All Accounts (5)'], [LOGIN_TYPE, 'Dashboard Login (0)'], ['Naukri', 'Naukri (2)'], ['Gmail', 'Gmail (1)'],
-      ['Telegram', 'Telegram (1)'], ['Tool', 'Tool (0)'], [UNSET_SERVICE, 'Not set (1)'],
+      ['all', 'All Accounts (5)'], [LOGIN_TYPE, 'Dashboard / Tool Logins (0)'], ['Naukri', 'Naukri (2)'], ['Gmail', 'Gmail (1)'],
+      ['Telegram', 'Telegram (1)'], [UNSET_SERVICE, 'Not set (1)'],
     ])
     expect(filter().value).toBe('all')
     expect(shownNames()).toHaveLength(5)
@@ -80,7 +80,7 @@ describe('the Account type filter', () => {
       { id: 'blank', label: '', service: '', username: 'blank@example.com' },
     ]
     renderTab({ accounts: production })
-    expect(optionCounts()).toEqual([['all', 28], [LOGIN_TYPE, 0], ['Naukri', 26], ['Gmail', 0], ['Telegram', 1], ['Tool', 0], [UNSET_SERVICE, 1]])
+    expect(optionCounts()).toEqual([['all', 28], [LOGIN_TYPE, 0], ['Naukri', 26], ['Gmail', 0], ['Telegram', 1], [UNSET_SERVICE, 1]])
     const [[, all], ...rest] = optionCounts()
     expect(rest.reduce((sum, [, n]) => sum + n, 0)).toBe(all)
     expect(document.querySelector('.dr-tab-stat-value').textContent).toBe(String(all))   // the Total accounts card agrees
@@ -100,7 +100,7 @@ describe('the Account type filter', () => {
   it('offers Not set only while an account has no service, and forgets it once none is left', () => {
     window.sessionStorage.setItem(SERVICE_FILTER_KEY, UNSET_SERVICE)
     renderTab({ accounts: ACCOUNTS.filter(a => a.service) })
-    expect([...filter().options].map(o => o.value)).toEqual(['all', LOGIN_TYPE, 'Naukri', 'Gmail', 'Telegram', 'Tool'])
+    expect([...filter().options].map(o => o.value)).toEqual(['all', LOGIN_TYPE, 'Naukri', 'Gmail', 'Telegram'])
     expect(filter().value).toBe('all')
     expect(shownNames()).toHaveLength(4)
     expect(document.querySelector('.dr-svc-notice')).toBeNull()
@@ -129,7 +129,7 @@ describe('the Account type filter', () => {
 
   it('lists an account with no service under Not set and All Accounts, never under a service', () => {
     renderTab()
-    for (const service of ['Naukri', 'Gmail', 'Telegram', 'Tool', LOGIN_TYPE]) {
+    for (const service of ['Naukri', 'Gmail', 'Telegram', LOGIN_TYPE]) {
       choose(service)
       expect(screen.queryByText('someone@example.com')).toBeNull()
     }
