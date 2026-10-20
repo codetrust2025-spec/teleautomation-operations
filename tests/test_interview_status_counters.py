@@ -28,9 +28,9 @@ def rows(*statuses: str) -> list[dict]:
 
 
 class TestTheStatusSetIsTheSourceOfTruth:
-    def test_the_six_statuses_are_what_the_dashboard_shows(self):
+    def test_the_seven_statuses_are_what_the_dashboard_shows(self):
         assert cs.INTERVIEW_ATTENDANCE_STATUSES == frozenset({
-            "attended", "not_attended", "cancelled", "rescheduled",
+            "attended", "not_attended", "technical_issue", "cancelled", "rescheduled",
             "released_for_reschedule", "re_service",
         })
 
@@ -50,12 +50,13 @@ class TestTheStatusSetIsTheSourceOfTruth:
 class TestCountingIsExact:
     def test_each_status_counts_once(self):
         counts = cs._interview_attendance_counts(rows(
-            "attended", "attended", "not_attended", "cancelled",
+            "attended", "attended", "not_attended", "technical_issue", "cancelled",
             "rescheduled", "released_for_reschedule", "re_service", "",
         ))
         assert counts == {
             "attended_count": 2,
             "not_attended_count": 1,
+            "technical_issue_count": 1,
             "cancelled_count": 1,
             "rescheduled_count": 1,
             "released_for_reschedule_count": 1,
