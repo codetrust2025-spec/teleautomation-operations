@@ -3,7 +3,7 @@ import { API } from "../config.js";
 import { subscribeMailEvents, subscribeMailStatus, traceMailAlert } from "../notifications/mailEventStream.js";
 import { fetchMailSummary, publishMailUnread } from "../notifications/mailUnread.js";
 import { useDialogA11y } from "../hooks/useDialogA11y.js";
-import { formatIstDateTime, formatScheduleDateTime, formatScheduleIstDateTime } from "../utils/istTime.js";
+import { formatIstDate, formatIstDateTime, formatIstTime, formatScheduleDateTime, formatScheduleIstDateTime } from "../utils/istTime.js";
 import { useConfirm } from "../context/ConfirmContext.jsx";
 import { OverlayLoader } from "../Loader.jsx";
 import { OriginalEmail } from "./OriginalEmail.jsx";
@@ -70,6 +70,18 @@ const when = (value) => formatIstDateTime(value, {
   second: undefined,
 });
 const confidence = (value) => `${Math.round(Number(value || 0) * 100)}%`;
+
+// A time in the table: its date over its time of day. On one line
+// ("16 Oct 2026, 10:33 am") it was wider than its column and ran into the next.
+// The whole of it stays the tooltip.
+export function AlertTime({ value }) {
+  const date = formatIstDate(value);
+  if (date === "—") return <span className="mail-when">—</span>;
+  return <span className="mail-when" title={when(value)}>
+    <span className="mail-when__date">{date}</span>
+    <span className="mail-when__time">{formatIstTime(value, { second: undefined })}</span>
+  </span>;
+}
 
 // A status or automation label as the table shows it. The server's wording is
 // kept; only its case is evened out, because 37 alerts said "Needs reading"
@@ -612,7 +624,7 @@ export function MailMonitoringNotifications() {
           className="mail-status__reason"
           title={reason.action ? `What to do: ${reason.action}` : undefined}
         >Reason: {reason.reason}</span>;
-      })()}</td><td className="mail-cell mail-cell--subject" title={item.email_subject || undefined}>{item.email_subject || "(no subject)"}</td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received">{when(item.email_received_at)}</td><td className="mail-cell mail-cell--detected">{when(item.created_at)}</td><td className="mail-cell mail-cell--automation"><span className={`mail-automation mail-automation--${automationTone(item)}`} title={automationLabel(item)}>{automationLabel(item)}</span></td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}>
+      })()}</td><td className="mail-cell mail-cell--subject" title={item.email_subject || undefined}><span className="mail-cell__subject">{item.email_subject || "(no subject)"}</span></td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received"><AlertTime value={item.email_received_at} /></td><td className="mail-cell mail-cell--detected"><AlertTime value={item.created_at} /></td><td className="mail-cell mail-cell--automation"><span className={`mail-automation mail-automation--${automationTone(item)}`} title={automationLabel(item)}>{automationLabel(item)}</span></td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}>
         <button type="button" className="mail-action" aria-label="Open alert" title="Open alert" onClick={() => openNotification(item)}><Icon name="eye" size={15} /></button>
         <button type="button" className="mail-action" aria-label={item.is_read ? "Mark as unread" : "Mark as read"} title={item.is_read ? "Mark as unread" : "Mark as read"} onClick={() => act(item, item.is_read ? "unread" : "read")}><Icon name={item.is_read ? "mail" : "check"} size={15} /></button>
         <button type="button" className="mail-action mail-action--dismiss" aria-label="Dismiss alert" title="Dismiss alert" onClick={() => act(item, "dismiss")}><Icon name="x" size={15} /></button>

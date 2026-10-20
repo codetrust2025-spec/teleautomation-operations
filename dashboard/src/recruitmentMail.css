@@ -2684,19 +2684,22 @@
 .mail-filters select option[value="interview"] { color: #7dd3fc; }
 .mail-filters select option[value="selection"] { color: #c4b5fd; }
 
-/* ── Mail Alerts, compact (20 Oct) ───────────────────────────────────────────
-   Measured live at 1920px before this: the page ran to 1,430px in an 873px
-   frame, so the table scrolled with the page and its sticky header never held;
-   rows were 44-106px; a 1,180px minimum width made anything under about
-   1,460px scroll sideways; Confidence took 116px for "92%" while Automation,
-   93px, wrapped "Booking Removed"; Open / Read / Dismiss were three text
-   buttons; and the automation outcome was plain text, 50 of them "AUTOMATED".
-
-   From 641px the page fills the shell's frame and the table box takes the
-   rest of it, scrolling inside with its header held. Every value is one line,
-   cut with a tooltip; Email subject takes what the fixed columns leave; the
-   actions are three icon buttons; the automation outcome is a badge in the
-   status badge's tones. Phones keep their cards (the 640px block below). */
+/* ── Mail Alerts, readable (20 Oct, second pass) ───────────────────────────────
+   The compact pass before this one filled the screen and packed the table:
+   four unread alerts sat in a 718px box, the text was 12.5px in 7px of
+   padding, and a mail time ("16 Oct 2026, 10:33 am", about 150px) ran into the
+   next column, which was 118px. This pass puts reading first:
+   - The table is as tall as its rows. Only once it reaches the bottom of the
+     screen does it scroll, inside its box, with its header held.
+   - 13.5px text in 12px x 14px cells, and every time is its date over its
+     time of day.
+   - 1500px and wider: a table whose columns hold their content -- all nine
+     from 1800px; between 1500 and 1800px Confidence and Tool detected step
+     aside (both are in the alert itself). Under 1500px a table could only
+     squeeze or scroll, so each alert is a two-line row instead.
+   - Status and automation badges wrap rather than being cut; the subject has
+     two lines; actions are 36px, 44px under a finger.
+   Phones keep their cards (the 640px block below), at reading size too. */
 
 /* Tabs and the page's two controls on one row; on a narrow screen the
    controls wrap above the tabs, still on the right. */
@@ -2710,40 +2713,47 @@
 .mail-topbar .mail-tabs { flex: 1 1 520px; min-width: 0; }
 .mail-table-wrap { position: relative; overscroll-behavior: contain; scroll-behavior: smooth; }
 
-/* The outcome of automatic booking, as a badge in the status badge's tones. */
+/* Badges: the status and what automatic booking did, in the same tones and
+   at the same size; a long one wraps onto a second line instead of being cut. */
+.mail-table .mail-status,
+.mail-automation {
+  max-width: 100%;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+  vertical-align: middle;
+}
 .mail-automation {
   display: inline-block;
-  max-width: 100%;
-  padding: 2px 8px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.1);
   color: #cbd5e1;
-  font-size: 11px;
   font-weight: 600;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: middle;
 }
 .mail-automation--success { border-color: rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.12); color: #86efac; }
 .mail-automation--info { border-color: rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.12); color: #7dd3fc; }
 .mail-automation--warning { border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
 .mail-automation--danger { border-color: rgba(248, 113, 113, 0.38); background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
-.mail-table .mail-status { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+
+/* A time: its date, and its time of day beneath it. */
+.mail-when { display: inline-flex; flex-direction: column; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.35; }
+.mail-when__date { color: #e2e8f0; }
+.mail-when__time { color: #94a3b8; font-size: 12px; }
 
 /* Open, Mark as read / unread, Dismiss: square icon buttons, each named. */
 .mail-table .mail-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin: 0 0 0 4px;
+  width: 36px;
+  height: 36px;
+  margin: 0 0 0 6px;
   padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
   background: rgba(148, 163, 184, 0.08);
   color: #cbd5e1;
   vertical-align: middle;
@@ -2752,67 +2762,66 @@
 .mail-table .mail-action--dismiss:hover { border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
 .mail-table .mail-action:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
 
-/* Nothing to show: say why, and offer the way back when filters did it. The
-   row keeps its own height; it is not stretched to fill the box. */
+/* Nothing to show: say why, and offer the way back when filters did it. */
 .mail-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 28px 16px;
+  gap: 8px;
+  padding: 32px 16px;
   text-align: center;
 }
-.mail-empty-state strong { color: #e2e8f0; font-size: 14px; font-weight: 650; }
-.mail-empty-state span { max-width: 440px; color: #94a3b8; font-size: 12.5px; line-height: 1.4; }
+.mail-empty-state strong { color: #e2e8f0; font-size: 15px; font-weight: 650; }
+.mail-empty-state span { max-width: 460px; color: #94a3b8; font-size: 13.5px; line-height: 1.45; }
 /* Under .mail-table, or the table's own `td button` rule shrinks it to 23px. */
 .mail-table .mail-empty-state__clear {
-  min-height: 34px;
+  min-height: 38px;
   margin-top: 4px;
-  padding: 7px 14px;
+  padding: 8px 16px;
   border: 1px solid rgba(139, 92, 246, 0.45);
   border-radius: 8px;
   background: rgba(139, 92, 246, 0.14);
   color: #ddd6fe;
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
 }
 .mail-table .mail-empty-state__clear:hover { background: rgba(139, 92, 246, 0.24); }
 .mail-table .mail-empty-state__clear:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
 
-/* From 641px: the page is the frame's height, and the table box the rest.
-   The lower bounds are 640.02px and 1180.02px, not 641 and 1181: a zoomed
-   page can be 640.5px wide, which matched neither the phone cards (640px and
-   under) nor these, and got a table of nine equal 65px columns. */
+/* From 641px: the page at most the frame's height and the table as tall as
+   its rows -- a page of four alerts is a short table, not a tall empty box.
+   The bounds are 640.02px and 1499.98px rather than 641 and 1499, so a zoomed
+   page between two whole pixels still gets one of the layouts. */
 @media (min-width: 640.02px) {
   .mail-monitoring-page {
     box-sizing: border-box;
-    height: 100%;
-    min-height: 420px;
+    max-height: max(100%, 560px);
     max-width: none;
     padding: 0;
-    gap: 10px;
+    gap: 12px;
   }
-  .mail-table-wrap { flex: 1 1 auto; min-height: 160px; }
+  .mail-table-wrap { flex: 0 1 auto; min-height: 0; }
+  .mail-table { font-size: 13.5px; }
   .mail-table th,
-  .mail-table td { padding: 7px 10px; line-height: 1.3; }
-  .mail-table th { z-index: 2; }
+  .mail-table td { padding: 12px 14px; line-height: 1.35; }
+  .mail-table th { z-index: 2; padding-top: 10px; padding-bottom: 10px; font-size: 11px; }
+  .mail-table td small { margin-top: 3px; font-size: 12px; }
+  .mail-table .mail-cell--candidate strong { font-size: 14px; font-weight: 650; }
 }
 
-/* A desktop: one line per alert. Email subject takes what is left after the
-   fixed columns; Tool detected, then Confidence, give way on a narrower
-   screen (both stay in the alert itself). */
-@media (min-width: 1180.02px) {
+/* 1500px and wider: a table whose columns hold their content. */
+@media (min-width: 1500px) {
   .mail-table { table-layout: fixed; width: 100%; }
-  .mail-table .mail-col--candidate { width: 13%; }
-  .mail-table .mail-col--company { width: 10%; }
-  .mail-table .mail-col--status { width: 15%; }
+  .mail-table .mail-col--candidate { width: 190px; }
+  .mail-table .mail-col--company { width: 160px; }
+  .mail-table .mail-col--status { width: 236px; }
   .mail-table .mail-col--subject { width: auto; }
-  .mail-table .mail-col--confidence { width: 84px; text-align: center; }
+  .mail-table .mail-col--confidence { width: 104px; text-align: center; }
   .mail-table .mail-col--received,
-  .mail-table .mail-col--detected { width: 118px; }
-  .mail-table .mail-col--automation { width: 128px; }
-  .mail-table .mail-col--actions { width: 112px; text-align: right; }
+  .mail-table .mail-col--detected { width: 128px; }
+  .mail-table .mail-col--automation { width: 156px; }
+  .mail-table .mail-col--actions { width: 148px; text-align: right; }
   .mail-table .mail-cell--candidate strong,
   .mail-table .mail-cell--candidate small,
   .mail-table .mail-cell--company .mail-cell__text,
@@ -2822,30 +2831,31 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .mail-table .mail-cell--company,
-  .mail-table .mail-cell--subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mail-table .mail-cell--confidence { text-align: center; }
-  .mail-table .mail-cell--received,
-  .mail-table .mail-cell--detected { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .mail-table .mail-cell--actions { text-align: right; }
-  .mail-table .mail-status__reason { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mail-table .mail-cell__subject {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .mail-table .mail-cell--confidence { text-align: center; font-variant-numeric: tabular-nums; }
+  .mail-table .mail-cell--actions { text-align: right; white-space: nowrap; }
+  .mail-table .mail-status__reason { margin-top: 4px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
-@media (min-width: 1180.02px) and (max-width: 1440px) {
+@media (min-width: 1500px) and (max-width: 1799.98px) {
+  .mail-table .mail-col--confidence,
+  .mail-table .mail-cell--confidence,
   .mail-table .mail-col--detected,
   .mail-table .mail-cell--detected { display: none; }
 }
-@media (min-width: 1180.02px) and (max-width: 1366px) {
-  .mail-table .mail-col--confidence,
-  .mail-table .mail-cell--confidence { display: none; }
-}
-@media (min-width: 1180.02px) and (pointer: coarse) {
-  .mail-table .mail-col--actions { width: 148px; }
+@media (min-width: 1500px) and (pointer: coarse) {
+  .mail-table .mail-col--actions { width: 172px; }
 }
 
-/* A tablet or a narrow desktop: nine columns do not fit, so each alert is two
-   lines of one grid -- candidate, subject, received time; company, status,
-   automation -- with its actions at the end of both, and no sideways scroll. */
-@media (min-width: 640.02px) and (max-width: 1180px) {
+/* 641 to 1500px: each alert two lines of one grid -- candidate, subject,
+   received; company, status, automation -- with its actions at the end of
+   both. No sideways scroll, nothing squeezed. */
+@media (min-width: 640.02px) and (max-width: 1499.98px) {
   .mail-table,
   .mail-table tbody,
   .mail-table tbody > tr.mail-group__head,
@@ -2855,34 +2865,35 @@
   .mail-table thead { display: none; }
   .mail-table tr.mail-notification-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto auto;
+    grid-template-columns: minmax(150px, 1fr) minmax(0, 2fr) auto auto;
     grid-template-areas:
       "candidate subject received actions"
       "company status automation actions";
     align-items: center;
-    gap: 3px 12px;
-    padding: 7px 10px;
+    gap: 6px 20px;
+    padding: 12px 16px;
     border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   }
   .mail-table tr.mail-notification-row > td { display: block; min-width: 0; padding: 0; border: 0; }
   .mail-table tr.mail-notification-row > .mail-cell--candidate { grid-area: candidate; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mail-table tr.mail-notification-row > .mail-cell--candidate small { display: none; }
   .mail-table tr.mail-notification-row > .mail-cell--candidate.mail-row__nested { display: none; }
-  .mail-table tr.mail-notification-row > .mail-cell--company { grid-area: company; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94a3b8; }
+  .mail-table tr.mail-notification-row > .mail-cell--company { grid-area: company; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94a3b8; font-size: 12.5px; }
   .mail-table tr.mail-notification-row > .mail-cell--company small { display: inline; margin: 0 0 0 6px; }
   .mail-table tr.mail-notification-row > .mail-cell--subject { grid-area: subject; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mail-table tr.mail-notification-row > .mail-cell--status { grid-area: status; overflow: hidden; }
-  .mail-table tr.mail-notification-row > .mail-cell--status .mail-status__reason { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mail-table tr.mail-notification-row > .mail-cell--received { grid-area: received; justify-self: end; white-space: nowrap; font-size: 11.5px; color: #94a3b8; }
+  .mail-table tr.mail-notification-row > .mail-cell--status { grid-area: status; min-width: 0; }
+  .mail-table tr.mail-notification-row > .mail-cell--status .mail-status__reason { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  .mail-table tr.mail-notification-row > .mail-cell--received { grid-area: received; justify-self: end; }
+  .mail-table tr.mail-notification-row > .mail-cell--received .mail-when { flex-direction: row; gap: 6px; color: #cbd5e1; font-size: 12.5px; }
   .mail-table tr.mail-notification-row > .mail-cell--automation { grid-area: automation; justify-self: end; }
   .mail-table tr.mail-notification-row > .mail-cell--actions { grid-area: actions; display: flex; align-items: center; }
   .mail-table tr.mail-notification-row > .mail-cell--confidence,
   .mail-table tr.mail-notification-row > .mail-cell--detected { display: none; }
 }
-/* Under a finger the actions are 40px targets. */
+/* Under a finger every action is a 44px target. */
 @media (pointer: coarse) {
-  .mail-table .mail-action { width: 40px; height: 40px; }
-  .mail-table .mail-empty-state__clear { min-height: 40px; }
+  .mail-table .mail-action { width: 44px; height: 44px; }
+  .mail-table .mail-empty-state__clear { min-height: 44px; }
 }
 
 /* ── Compact Gmail operations layout ──────────────────────────────────────
@@ -3252,7 +3263,7 @@
 
   /* Tab strip — stack vertically so each tab gets a full-width row */
   .mail-tabs { flex-direction: column; gap: 2px; border-radius: 10px; }
-  .mail-tab { justify-content: flex-start; padding: 9px 12px; font-size: 12px; }
+  .mail-tab { justify-content: flex-start; padding: 11px 14px; font-size: 13.5px; }
   .mail-tab__count { margin-left: auto; }
 
   .mail-filters--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -3275,9 +3286,9 @@
       "status status"
       "subject subject"
       "automation actions";
-    gap: 3px 10px;
-    margin: 0 0 8px;
-    padding: 10px 12px;
+    gap: 6px 12px;
+    margin: 0 0 10px;
+    padding: 14px;
     border: 1px solid var(--border-color, rgba(148, 163, 184, 0.18));
     border-radius: 10px;
     background: var(--panel-bg, rgba(15, 23, 42, 0.55));
@@ -3287,10 +3298,11 @@
   .mail-table tr.mail-notification-row--interview { box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.55); }
   .mail-table tr.mail-notification-row--selection { box-shadow: inset 3px 0 0 rgba(167, 139, 250, 0.6); }
   .mail-table tr.mail-notification-row > td { display: block; min-width: 0; padding: 0; border: 0; box-shadow: none; }
-  .mail-table tr.mail-notification-row > .mail-cell--candidate { grid-area: candidate; font-size: 14px; }
-  .mail-table tr.mail-notification-row > .mail-cell--candidate small { margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-  .mail-table tr.mail-notification-row > .mail-cell--received { grid-area: received; justify-self: end; white-space: nowrap; font-size: 11px; color: var(--muted, #94a3b8); }
-  .mail-table tr.mail-notification-row > .mail-cell--company { grid-area: company; font-size: 12px; overflow-wrap: anywhere; }
+  .mail-table tr.mail-notification-row > .mail-cell--candidate { grid-area: candidate; font-size: 15px; }
+  .mail-table tr.mail-notification-row > .mail-cell--candidate small { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+  .mail-table tr.mail-notification-row > .mail-cell--received { grid-area: received; justify-self: end; white-space: nowrap; font-size: 12.5px; color: var(--muted, #94a3b8); }
+  .mail-table tr.mail-notification-row > .mail-cell--received .mail-when { align-items: flex-end; }
+  .mail-table tr.mail-notification-row > .mail-cell--company { grid-area: company; font-size: 13.5px; overflow-wrap: anywhere; }
   .mail-table tr.mail-notification-row > .mail-cell--company small { display: inline; margin: 0 0 0 6px; }
   .mail-table tr.mail-notification-row > .mail-cell--status { grid-area: status; }
   .mail-table tr.mail-notification-row > .mail-cell--subject {
@@ -3300,14 +3312,15 @@
     -webkit-line-clamp: 2;
     overflow: hidden;
     overflow-wrap: anywhere;
-    font-size: 12px;
-    color: var(--muted, #94a3b8);
+    font-size: 14px;
+    line-height: 1.4;
+    color: #cbd5e1;
   }
   .mail-table tr.mail-notification-row > .mail-cell--confidence,
   .mail-table tr.mail-notification-row > .mail-cell--detected { display: none; }
   .mail-table tr.mail-notification-row > .mail-cell--automation { grid-area: automation; align-self: center; font-size: 11px; color: var(--muted, #94a3b8); }
-  .mail-table tr.mail-notification-row > .mail-cell--actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
-  .mail-table tr.mail-notification-row > .mail-cell--actions .mail-action { width: 40px; height: 40px; margin: 0; }
+  .mail-table tr.mail-notification-row > .mail-cell--actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .mail-table tr.mail-notification-row > .mail-cell--actions .mail-action { width: 44px; height: 44px; margin: 0; }
   /* Grouped by candidate: the name is on the group heading already. */
   .mail-table tr.mail-notification-row > .mail-cell--candidate.mail-row__nested { display: none; }
   .mail-table .mail-group__head th { display: block; padding: 8px 2px 6px; }

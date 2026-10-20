@@ -120,7 +120,7 @@ describe('the desktop and tablet tables', () => {
     while (at > -1) {
       const media = outside.lastIndexOf('@media', at)
       const header = outside.slice(media, outside.indexOf('{', media))
-      expect(header, `a .mail-cell-- rule outside a width-scoped block near ${outside.slice(at, at + 40)}`).toMatch(/min-width: (640\.02|1180\.02)px/)
+      expect(header, `a .mail-cell-- rule outside a width-scoped block near ${outside.slice(at, at + 40)}`).toMatch(/min-width: (640\.02|1500)px/)
       expect(outside.slice(media, at)).not.toMatch(/\n\}\n/)
       at = outside.indexOf('.mail-cell--', at + 1)
     }

@@ -1,5 +1,5 @@
 /**
- * Mail Alerts, compact (20 Oct).
+ * Mail Alerts, compact (20 Oct), then readable (the same day's second pass).
  *
  * Measured live at 1920px before this: the page ran to 1,430px in an 873px
  * frame, so the table scrolled with the page and its sticky header never held;
@@ -215,50 +215,90 @@ describe("an empty result", () => {
   });
 });
 
+describe("a time in the table", () => {
+  it("is its date over its time of day, the whole of it on hover, so it never runs into the next column", async () => {
+    renderScreen();
+    await waitFor(() => expect(rows()).toHaveLength(20));
+    const cell = rowOf("a1").querySelector(".mail-cell--received .mail-when");
+    expect(cell.querySelector(".mail-when__date").textContent).toMatch(/^\d{1,2} [A-Z][a-z]{2} 2026$/);
+    expect(cell.querySelector(".mail-when__time").textContent).toMatch(/^\d{1,2}:\d{2}\s?(am|pm)$/i);
+    expect(cell.getAttribute("title")).toContain(cell.querySelector(".mail-when__date").textContent.split(" ")[0]);
+    expect(rowOf("a1").querySelector(".mail-cell--detected .mail-when")).not.toBeNull();
+  });
+
+  it("reads as a dash when there is none", async () => {
+    install([alert("x1", { email_received_at: null })], 1);
+    renderScreen();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0].querySelector(".mail-cell--received").textContent).toBe("—");
+    captureLayout("mail-alerts-few", document.querySelector(".mail-monitoring-page"));
+  });
+});
+
 describe("the layout rules", () => {
-  const block = CSS.slice(CSS.indexOf("/* ── Mail Alerts, compact (20 Oct)"), CSS.indexOf("/* ── Compact Gmail operations layout"));
+  const block = CSS.slice(CSS.indexOf("/* ── Mail Alerts, readable"), CSS.indexOf("/* ── Compact Gmail operations layout"));
   const media = (header) => {
     const at = block.indexOf(`@media ${header} {`);
     return at < 0 ? "" : block.slice(at, block.indexOf("\n}\n", at));
   };
 
   it("never give the table a minimum width that scrolls it sideways", () => {
-    expect(CSS).not.toMatch(/\.mail-table \{ min-width: 1180px; \}/);
+    expect(block).not.toBe("");
     expect(CSS).not.toMatch(/\.mail-table[^{]*\{[^}]*min-width:\s*\d{3,}px/);
   });
 
-  it("fill the frame from 641px, the table box scrolling inside with its header held", () => {
+  it("keep the table as tall as its rows, scrolling inside only once it reaches the bottom of the screen", () => {
     const wide = media("(min-width: 640.02px)");
-    expect(wide).toMatch(/\.mail-monitoring-page \{[^}]*height: 100%;[^}]*max-width: none;[^}]*padding: 0;/);
-    expect(wide).toMatch(/\.mail-table-wrap \{ flex: 1 1 auto; min-height: 160px; \}/);
+    expect(wide).toMatch(/\.mail-monitoring-page \{[^}]*max-height: max\(100%, 560px\);/);
+    expect(wide).not.toMatch(/\.mail-monitoring-page \{[^}]*[^-]height: 100%/);
+    expect(wide).toMatch(/\.mail-table-wrap \{ flex: 0 1 auto; min-height: 0; \}/);
     expect(CSS).toMatch(/\.mail-table-wrap \{\n  overflow: auto;/);
     expect(CSS).toMatch(/\.mail-table th \{\n  position: sticky;\n  top: 0;/);
-    expect(block).toMatch(/\.mail-table-wrap \{ position: relative; overscroll-behavior: contain; scroll-behavior: smooth; \}/);
   });
 
-  it("give Email subject what the fixed columns leave, and let two columns give way", () => {
-    const desk = media("(min-width: 1180.02px)");
+  it("set the table at reading size, with room in every cell", () => {
+    const wide = media("(min-width: 640.02px)");
+    expect(wide).toMatch(/\.mail-table \{ font-size: 13\.5px; \}/);
+    expect(wide).toMatch(/\.mail-table td \{ padding: 12px 14px; line-height: 1\.35; \}/);
+    expect(wide).toMatch(/\.mail-cell--candidate strong \{ font-size: 14px;/);
+  });
+
+  it("give every column of the desktop table room for its content", () => {
+    const desk = media("(min-width: 1500px)");
     expect(desk).toMatch(/\.mail-table \{ table-layout: fixed; width: 100%; \}/);
+    for (const [col, width] of [["candidate", 190], ["company", 160], ["status", 236], ["confidence", 104], ["automation", 156], ["actions", 148]]) {
+      expect(desk).toMatch(new RegExp(`\\.mail-col--${col} \\{ width: ${width}px;`));
+    }
+    expect(desk).toMatch(/\.mail-col--received,\n  \.mail-table \.mail-col--detected \{ width: 128px; \}/);
     expect(desk).toMatch(/\.mail-col--subject \{ width: auto; \}/);
-    expect(desk).toMatch(/\.mail-col--confidence \{ width: 84px;/);
-    expect(desk).toMatch(/\.mail-col--automation \{ width: 128px; \}/);
-    expect(desk).toMatch(/\.mail-cell--subject \{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/);
-    expect(media("(min-width: 1180.02px) and (max-width: 1440px)")).toMatch(/\.mail-col--detected,\n  \.mail-table \.mail-cell--detected \{ display: none; \}/);
-    expect(media("(min-width: 1180.02px) and (max-width: 1366px)")).toMatch(/\.mail-col--confidence,\n  \.mail-table \.mail-cell--confidence \{ display: none; \}/);
+    expect(desk).toMatch(/\.mail-cell__subject \{[^}]*-webkit-line-clamp: 2;/);
+    expect(media("(min-width: 1500px) and (max-width: 1799.98px)")).toMatch(/\.mail-cell--confidence,[\s\S]*\.mail-cell--detected \{ display: none; \}/);
   });
 
-  it("make each alert two lines of one grid between a phone and a desktop", () => {
-    const mid = media("(min-width: 640.02px) and (max-width: 1180px)");
+  it("let a badge wrap rather than cut it, and keep a time on its own two lines", () => {
+    expect(block).toMatch(/\.mail-table \.mail-status,\n\.mail-automation \{[^}]*white-space: normal;/);
+    expect(block).toMatch(/\.mail-when \{ display: inline-flex; flex-direction: column; white-space: nowrap;/);
+  });
+
+  it("make each alert a two-line row under 1500px instead of squeezing or scrolling a table", () => {
+    const mid = media("(min-width: 640.02px) and (max-width: 1499.98px)");
     expect(mid).toMatch(/\.mail-table thead \{ display: none; \}/);
     expect(mid).toContain('"candidate subject received actions"');
     expect(mid).toContain('"company status automation actions"');
+    expect(mid).toMatch(/gap: 6px 20px;\n    padding: 12px 16px;/);
   });
 
-  it("make every action a 40px target on a phone and under a finger", () => {
-    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*\.mail-cell--actions \.mail-action \{ width: 40px; height: 40px; margin: 0; \}/);
-    expect(media("(pointer: coarse)")).toMatch(/\.mail-table \.mail-action \{ width: 40px; height: 40px; \}/);
-    expect(media("(pointer: coarse)")).toMatch(/\.mail-table \.mail-empty-state__clear \{ min-height: 40px; \}/);
+  it("make every action comfortable: 36px with a pointer, 44px under a finger and on a phone", () => {
+    expect(block).toMatch(/\.mail-table \.mail-action \{[^}]*width: 36px;\n  height: 36px;/);
+    expect(media("(pointer: coarse)")).toMatch(/\.mail-table \.mail-action \{ width: 44px; height: 44px; \}/);
+    expect(media("(pointer: coarse)")).toMatch(/\.mail-table \.mail-empty-state__clear \{ min-height: 44px; \}/);
+    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*\.mail-cell--actions \.mail-action \{ width: 44px; height: 44px; margin: 0; \}/);
     // Scoped under .mail-table: unscoped, the table's `td button` rule won and made it 23px.
-    expect(block).toMatch(/\n\.mail-table \.mail-empty-state__clear \{\n  min-height: 34px;/);
+    expect(block).toMatch(/\n\.mail-table \.mail-empty-state__clear \{\n  min-height: 38px;/);
+  });
+
+  it("set a phone's cards at reading size too", () => {
+    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*\.mail-cell--candidate \{ grid-area: candidate; font-size: 15px; \}/);
+    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*-webkit-line-clamp: 2;[^}]*font-size: 14px;/);
   });
 });
