@@ -4,6 +4,7 @@ import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
 import { copyToClipboard } from '../utils/copyToClipboard.js'
 import { formatCredentialBlock } from './dataRoomCredentialBlock.js'
+import { LOGINS_TYPE, credentialType, standardCredentialName } from '../utils/credentialNames.js'
 import { Icon } from './ui/Icon.jsx'
 
 const API_BASE =
@@ -84,6 +85,21 @@ export const LOGIN_TYPE = 'login'
 /** The account's service when it is one of the four, otherwise ''. */
 const serviceOf = row => (SERVICE_TYPES.includes(row.service) ? row.service : '')
 
+// A credential's name as the table, its search and every export show it
+// (utils/credentialNames.js): "kiran kumar naukri" under Naukri reads "Kiran Kumar".
+const accountName = row => standardCredentialName(row.label, serviceOf(row)) || row.id
+const loginName = (login, isAdmin) => (isAdmin
+  ? 'Admin'
+  : standardCredentialName(login.reference, '', { dropType: false }) || login.username || 'Handler')
+const byName = (a, b) => {
+  const x = accountName(a).toLowerCase()
+  const y = accountName(b).toLowerCase()
+  return x < y ? -1 : x > y ? 1 : 0
+}
+// What a password cell says when there is no password to show.
+export const HASHED_TEXT = 'Not available (hashed)'
+export const NOT_STORED_TEXT = 'Not stored'
+
 /** The Account type filter remembered for this browser session, or All Accounts. A Tool remembered from before is now the logins. */
 function readServiceFilter() {
   try {
@@ -138,7 +154,7 @@ function accountFields({ kind, mode, service }) {
     ],
   }
   const typeField = {
-    key: 'service', label: 'Account type', type: 'select', placeholder: 'Choose an account type',
+    key: 'service', label: 'Credential type', type: 'select', placeholder: 'Choose a credential type',
     options: [...SEPARATE_SERVICES, loginGroup],
     hint: kind === 'login' ? LOGIN_HINT : service === 'Tool' ? TOOL_HINT : SERVICE_HINT,
   }
@@ -152,7 +168,7 @@ function accountFields({ kind, mode, service }) {
     ]
   }
   return [
-    { key: 'label', label: 'Account name', placeholder: 'e.g. Bhavana Naukri', full: true },
+    { key: 'label', label: 'Credential name', placeholder: 'e.g. Asha Rao', full: true },
     typeField,
     { key: 'username', label: 'Username / email', placeholder: 'name@example.com' },
     { key: 'password', label: 'Password', type: 'password' },
@@ -275,7 +291,7 @@ function saveBlob(blob, name) {
  * download waits for one explicit confirmation that says so; the server builds
  * it in memory, records who took it, and keeps no copy.
  */
-function AccountsExportModal({ count, onClose }) {
+function AccountsExportModal({ count, passwordCount, onClose }) {
   const dialogRef = useDialogA11y(true, onClose)
   const [format, setFormat] = useState('xlsx')
   const [confirming, setConfirming] = useState(false)
@@ -307,8 +323,8 @@ function AccountsExportModal({ count, onClose }) {
         throw new Error(data.detail || 'The download failed. Try again.')
       }
       const blob = await res.blob()
-      saveBlob(blob, downloadName(res.headers.get('content-disposition'), `teleautomation-accounts.${format}`))
-      setDone(`Downloaded ${count} account${plural}. Keep the file safe and delete it when you are done.`)
+      saveBlob(blob, downloadName(res.headers.get('content-disposition'), `teleautomation-credentials.${format}`))
+      setDone(`Downloaded ${count} credential${plural}. Keep the file safe and delete it when you are done.`)
     } catch (err) {
       setError(err instanceof TypeError ? 'Network error. Try again.' : err.message)
     } finally {
@@ -326,12 +342,12 @@ function AccountsExportModal({ count, onClose }) {
         aria-labelledby="dr-export-modal-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="dr-export-modal-title" className="cand-title">Download all accounts</h2>
+        <h2 id="dr-export-modal-title" className="cand-title">Download all credentials</h2>
         {confirming ? (
           <div className="dr-export-confirm" role="alertdialog" aria-labelledby="dr-export-confirm-title" aria-describedby="dr-export-confirm-text">
             <h3 id="dr-export-confirm-title" className="dr-export-confirm__title">Download every password?</h3>
             <p id="dr-export-confirm-text" className="dr-export-confirm__text">
-              This {formatLabel} file will contain all {count} password{plural} in plain text. Anyone who has the file can
+              This {formatLabel} file will contain {passwordCount} password{passwordCount === 1 ? '' : 's'} in plain text. Anyone who has the file can
               sign in to these accounts. Save it only on a device you trust, never share it, and delete it when you are done.
             </p>
             <div className="dr-modal-actions">
@@ -344,8 +360,9 @@ function AccountsExportModal({ count, onClose }) {
         ) : (
           <>
             <p className="dr-export-lead">
-              All {count} service account{plural}: account name, username and password.
-              Dashboard logins are not included: their passwords are stored hashed.
+              All {count} credential{plural}: credential name, type, username and password.
+              A dashboard login&rsquo;s password is stored hashed, so it reads Not available (hashed).
+              One with no password stored reads Not stored.
             </p>
             <p className="dr-export-warning" role="note">
               The file holds every password in plain text. It is made for you when you download it and is not kept on the server.
@@ -534,7 +551,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
   }
 
   const handleDelete = async (row) => {
-    const ok = await confirm({ title: 'Delete account?', message: `Remove "${row.label || row.id}"?`, confirmLabel: 'Delete', variant: 'danger' })
+    const ok = await confirm({ title: 'Delete credential?', message: `Remove "${accountName(row)}"?`, confirmLabel: 'Delete', variant: 'danger' })
     if (!ok) return
     await fetch(`${API_BASE}/data-room/credentials/vault/service_accounts/${row.id}`, { method: 'DELETE', credentials: 'include' })
     onReload()
@@ -589,7 +606,8 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
   const items = useMemo(() => [
     ...(admin ? [{ kind: 'login', key: 'login:admin', isAdmin: true, row: admin }] : []),
     ...handlers.map(h => ({ kind: 'login', key: `login:${h.username}`, isAdmin: false, row: h })),
-    ...accounts.map(row => ({ kind: 'account', key: row.id, row })),
+    // By name, as the export lists them.
+    ...[...accounts].sort(byName).map(row => ({ kind: 'account', key: row.id, row })),
   ], [admin, handlers, accounts])
   // A dashboard login and a tool login are one Account type.
   const typeOf = item => (item.kind === 'login' || serviceOf(item.row) === 'Tool' ? LOGIN_TYPE : serviceOf(item.row) || UNSET_SERVICE)
@@ -612,8 +630,8 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
   const matches = (item) => {
     const r = item.row
     const words = item.kind === 'login'
-      ? [r.reference, r.username, item.isAdmin ? 'admin' : 'handler', 'dashboard login', LOGINS_LABEL]
-      : [r.label, r.username, serviceOf(r), ...(serviceOf(r) === 'Tool' ? ['tool login', LOGINS_LABEL] : [])]
+      ? [loginName(r, item.isAdmin), r.reference, r.username, item.isAdmin ? 'admin' : 'handler', 'dashboard login', LOGINS_LABEL, LOGINS_TYPE]
+      : [accountName(r), r.label, r.username, credentialType(serviceOf(r)), ...(serviceOf(r) === 'Tool' ? ['tool login', LOGINS_LABEL] : [])]
     return words.some(w => String(w || '').toLowerCase().includes(query))
   }
   const filtered = items
@@ -634,7 +652,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
       <div className="dr-tab-header">
         <div>
           {/* Named on screen by its tab, Accounts & Logins. */}
-          <h2 className="dr-section-title sr-only">Accounts and logins</h2>
+          <h2 className="dr-section-title sr-only">Credentials</h2>
           <p className="dr-section-desc">Dashboard and tool logins, and Naukri, Gmail and Telegram accounts.</p>
           {logins && (
             <p className="dr-acct-meta">
@@ -660,19 +678,19 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
             <input
               type="search"
               className="cand-input dr-search-input"
-              placeholder="Search accounts..."
-              aria-label="Search accounts"
+              placeholder="Search credentials..."
+              aria-label="Search credentials"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <select
             className="cand-input dr-service-select"
-            aria-label="Account type"
+            aria-label="Credential type"
             value={activeFilter}
             onChange={(e) => chooseServiceFilter(e.target.value)}
           >
-            <option value="all">All Accounts ({items.length})</option>
+            <option value="all">All Credentials ({items.length})</option>
             <option value={LOGIN_TYPE}>{LOGINS_LABEL} ({serviceCounts[LOGIN_TYPE]})</option>
             {SEPARATE_SERVICES.map(name => <option key={name} value={name}>{name} ({serviceCounts[name]})</option>)}
             {unsetCount > 0 && <option value={UNSET_SERVICE}>Not set ({unsetCount})</option>}
@@ -681,16 +699,16 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
           {canExport && (
             <button type="button" className="cand-btn dr-add-btn dr-export-btn" onClick={() => setExporting(true)}>
               <Icon name="download" size={14} strokeWidth={2.2} />
-              Download all accounts
+              Download all credentials
             </button>
           )}
           <button type="button" className="cand-btn cand-btn--primary dr-add-btn" onClick={openAdd}>
             <Icon name="plus" size={14} strokeWidth={2.2} />
-            Add account
+            Add credential
           </button>
         </div>
       </div>
-      {exporting && <AccountsExportModal count={accounts.length} onClose={closeExport} />}
+      {exporting && <AccountsExportModal count={items.length} passwordCount={accounts.filter(a => a.has_password).length} onClose={closeExport} />}
       {unsetCount > 0 && activeFilter !== UNSET_SERVICE && (
         <div className="dr-svc-notice" role="status">
           <span>
@@ -707,12 +725,12 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
       <div className="dr-tab-stats">
         <div className="dr-tab-stat">
           <div className="dr-tab-stat-header">
-            <span className="dr-tab-stat-title">Total accounts</span>
+            <span className="dr-tab-stat-title">Total credentials</span>
           </div>
           <div className="dr-tab-stat-value">{items.length}</div>
           <div className="dr-tab-stat-sub">
             {logins
-              ? `${loginCount} dashboard / tool login${loginCount === 1 ? '' : 's'} · ${items.length - loginCount} other account${items.length - loginCount === 1 ? '' : 's'}`
+              ? `${loginCount} dashboard / tool login${loginCount === 1 ? '' : 's'} · ${items.length - loginCount} other${items.length - loginCount === 1 ? '' : 's'}`
               : `${activeAccounts} active · ${oldAccounts} deprecated`}
           </div>
         </div>
@@ -744,7 +762,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
         <table className="dr-tab-table dr-acct-table">
           <thead>
             <tr>
-              <th className="dr-acct-th--account">Account</th>
+              <th className="dr-acct-th--account">Credential</th>
               <th className="dr-acct-th--type">Type</th>
               <th className="dr-acct-th--user">Username</th>
               <th className="dr-acct-th--pass">Password</th>
@@ -762,10 +780,10 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                 const login = item.row
                 // The admin's stored reference says what it can do ("Full dashboard"), which
                 // its role line already says: it is named by its role instead.
-                const name = item.isAdmin ? 'Admin' : (login.reference || login.username || 'Handler')
+                const name = loginName(login, item.isAdmin)
                 return (
                   <tr key={item.key} className="dr-acct-login-row">
-                    <td data-label="Account">
+                    <td data-label="Credential">
                       <div className="dr-acct-cell">
                         <span className="dr-acct-dot dr-acct-dot--active" />
                         <div>
@@ -789,7 +807,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                         className="dr-creds-pass dr-creds-pass--none"
                         title={item.isAdmin ? 'Stored hashed. Change it from the top-bar account menu.' : 'Stored hashed: it cannot be shown. Set a new one with Edit.'}
                       >
-                        Hashed
+                        {HASHED_TEXT}
                       </code>
                     </td>
                     {/* Nothing recorded for a login: the line is left out of its card on a phone. */}
@@ -822,15 +840,16 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                 )
               }
               const row = item.row
+              const name = accountName(row)
               const status = accountStatus(row)
               const primary = isPrimary(row)
               return (
                 <tr key={item.key}>
-                  <td data-label="Account">
+                  <td data-label="Credential">
                     <div className="dr-acct-cell">
                       <span className={`dr-acct-dot dr-acct-dot--${status}`} />
                       <div>
-                        <span className="dr-acct-name">{row.label || row.id}</span>
+                        <span className="dr-acct-name">{name}</span>
                         {serviceOf(row) === 'Tool' && <span className="dr-acct-role">Tool login</span>}
                         {primary && <span className="dr-acct-primary-badge">★ Primary</span>}
                       </div>
@@ -855,7 +874,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                           <button
                             type="button"
                             className="dr-copy-btn dr-pass-toggle"
-                            aria-label={`${shown[row.id] !== undefined ? 'Hide' : 'Show'} password for ${row.label || row.id}`}
+                            aria-label={`${shown[row.id] !== undefined ? 'Hide' : 'Show'} password for ${name}`}
                             onClick={() => toggleShown(row)}
                           >
                             {shown[row.id] !== undefined ? 'Hide' : 'Show'}
@@ -863,7 +882,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                           <CopyChip label="password" text="" copyKey={`${row.id}-pass`} activeKey={activeKey}
                             onCopy={(key) => onCopyFetched(key, () => fetchPassword(row.id))} />
                         </>
-                      ) : <code className="dr-creds-pass">—</code>}
+                      ) : <code className="dr-creds-pass dr-creds-pass--none">{NOT_STORED_TEXT}</code>}
                     </div>
                   </td>
                   <td data-label="Status">
@@ -880,14 +899,15 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                         title="Copy the account name, username, password and notes"
                         onClick={() => onCopyFetched(`${row.id}-all`, async () => {
                           const password = row.has_password ? await fetchPassword(row.id) : ''
-                          return [row.label || row.id, row.service ? `Service: ${row.service}` : '', row.username ? `Username: ${row.username}` : '', password ? `Password: ${password}` : '', row.notes || ''].filter(Boolean).join('\n')
+                          // As the export writes a credential: name, type, username, password.
+                          return [`Credential Name: ${name}`, `Type: ${credentialType(serviceOf(row))}`, `Username: ${row.username || ''}`.trimEnd(), `Password: ${password || NOT_STORED_TEXT}`, row.notes || ''].filter(Boolean).join('\n')
                         })}
                       >
                         <Icon name={activeKey === `${row.id}-all` ? 'check' : 'copy'} size={13} />
                         {activeKey === `${row.id}-all` ? 'Copied' : 'Copy all'}
                       </button>
-                      <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)} aria-label={`Edit ${row.label || row.id}`}>Edit</button>
-                      <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)} aria-label={`Delete ${row.label || row.id}`}>Delete</button>
+                      <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)} aria-label={`Edit ${name}`}>Edit</button>
+                      <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)} aria-label={`Delete ${name}`}>Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -909,7 +929,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
         <VaultModal
           title={modalKind(modal) === 'login'
             ? (modal.mode === 'create' ? 'Add dashboard login' : 'Edit dashboard login')
-            : (modal.mode === 'create' ? 'Add service account' : 'Edit service account')}
+            : (modal.mode === 'create' ? 'Add credential' : 'Edit credential')}
           // `id` stays on the form object so an edit preserves what a row
           // already has; it is simply not asked for.
           fields={accountFields({ kind: modalKind(modal), mode: modal.mode, service: modal.form?.service })}

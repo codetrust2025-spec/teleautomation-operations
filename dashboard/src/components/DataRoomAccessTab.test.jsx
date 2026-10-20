@@ -1,5 +1,8 @@
 /**
- * Data Room -> Accounts & Logins (20 Oct): one table for every credential.
+ * Data Room -> Credentials (20 Oct; "Accounts & Logins" until later that day): one table for every credential.
+ *
+ * Each credential is shown by its standard name (utils/credentialNames.js): "Candidate 1 Naukri" under Naukri reads
+ * "Candidate 1", and the service accounts are listed by name, as the export lists them.
  *
  * The dashboard's logins (the admin and the handlers) and the service accounts
  * are listed together -- 33 in production -- with one Account type filter (All
@@ -45,6 +48,8 @@ const NAUKRI = Array.from({ length: 26 }, (_, i) => ({
   id: `naukri_${i + 1}`, label: `Candidate ${i + 1} Naukri`, service: 'Naukri', username: `candidate${i + 1}@example.com`, has_password: true,
 }))
 const TELEGRAM = { id: 'tg_ops', label: 'Ops Telegram', service: 'Telegram', username: '+91 90000 00000', has_password: true }
+// The names the table shows: the type word dropped, the service accounts in name order.
+const SHOWN = [...NAUKRI.map((_, i) => `Candidate ${i + 1}`), 'Ops'].sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : 1))
 const ACCOUNTS = [...NAUKRI, TELEGRAM]
 const SITE = 'https://operations.example.online'
 const CREDS = {
@@ -87,7 +92,7 @@ const renderTable = (props = {}) => render(
     <DataRoomAccountsTab accounts={ACCOUNTS} logins={{ admin: ADMIN, handlers: HANDLERS }} site={SITE} vpsHost="vps.example.net" onReload={vi.fn()} canExport {...props} />
   </div>,
 )
-const filter = () => screen.getByRole('combobox', { name: 'Account type' })
+const filter = () => screen.getByRole('combobox', { name: 'Credential type' })
 const choose = (value) => fireEvent.change(filter(), { target: { value } })
 const rows = () => [...document.querySelectorAll('.dr-acct-table tbody tr:not(.dr-acct-empty-row)')]
 const names = () => rows().map((r) => r.querySelector('.dr-acct-name').textContent)
@@ -99,13 +104,13 @@ const field = (label) => [...dialog().querySelectorAll('.dr-form-grid label')]
 const writes = () => calls.filter((c) => c.method !== 'GET')
 
 describe('the Data Room tabs', () => {
-  it('have one Accounts & Logins tab, open first, counting all 33, and no sub-tabs inside it', async () => {
+  it('have one Credentials tab, open first, counting all 33, and no sub-tabs inside it', async () => {
     render(<DataRoomPanel />)
-    await screen.findByText('Candidate 1 Naukri')
+    await screen.findByText('Candidate 1')
     const labels = [...document.querySelectorAll('.dr-tab .dr-tab-label')].map((l) => l.textContent)
-    expect(labels).toEqual(['Accounts & Logins', 'Opportunities', 'Prompts', 'Key Links', 'Offers'])
+    expect(labels).toEqual(['Credentials', 'Opportunities', 'Prompts', 'Key Links', 'Offers'])
     const open = document.querySelector('.dr-tab[aria-current="page"]')
-    expect(open.querySelector('.dr-tab-label').textContent).toBe('Accounts & Logins')
+    expect(open.querySelector('.dr-tab-label').textContent).toBe('Credentials')
     expect(open.querySelector('.dr-tab-count').textContent).toBe('33')
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(screen.queryByRole('tab')).toBeNull()
@@ -120,16 +125,16 @@ describe('the one table', () => {
     renderTable()
     expect(rows()).toHaveLength(33)
     expect(names().slice(0, 6)).toEqual(['Admin', 'Asha', 'Kiran', 'Meera', 'Ravi', 'Sunil'])
-    expect(names().slice(6)).toEqual(ACCOUNTS.map((a) => a.label))
+    expect(names().slice(6)).toEqual(SHOWN)
     expect(rows().slice(0, 6).every((r) => r.classList.contains('dr-acct-login-row'))).toBe(true)
     expect(document.querySelector('.dr-tab-stat-value').textContent).toBe('33')
-    expect(document.querySelector('.dr-tab-stat-sub').textContent).toBe('6 dashboard / tool logins · 27 other accounts')
+    expect(document.querySelector('.dr-tab-stat-sub').textContent).toBe('6 dashboard / tool logins · 27 others')
   })
 
   it('has one Account type filter whose counts come from the records and add up to All Accounts', () => {
     renderTable()
     expect([...filter().options].map((o) => [o.value, o.textContent])).toEqual([
-      ['all', 'All Accounts (33)'], [LOGIN_TYPE, 'Dashboard / Tool Logins (6)'], ['Naukri', 'Naukri (26)'],
+      ['all', 'All Credentials (33)'], [LOGIN_TYPE, 'Dashboard / Tool Logins (6)'], ['Naukri', 'Naukri (26)'],
       ['Gmail', 'Gmail (0)'], ['Telegram', 'Telegram (1)'],
     ])
     const [[, all], ...rest] = [...filter().options].map((o) => [o.value, Number(/\((\d+)\)$/.exec(o.textContent)[1])])
@@ -150,15 +155,16 @@ describe('the one table', () => {
     renderTable({ accounts: [...ACCOUNTS, ...tools] })
     expect(filter().querySelector('option[value="Tool"]')).toBeNull()
     expect(filter().querySelector(`option[value="${LOGIN_TYPE}"]`).textContent).toBe('Dashboard / Tool Logins (10)')
-    expect(filter().querySelector('option[value="all"]').textContent).toBe('All Accounts (37)')
+    expect(filter().querySelector('option[value="all"]').textContent).toBe('All Credentials (37)')
     expect(rows()).toHaveLength(37)                                                     // nothing listed twice
     choose(LOGIN_TYPE)
-    expect(names()).toEqual(['Admin', 'Asha', 'Kiran', 'Meera', 'Ravi', 'Sunil', ...tools.map((t) => t.label)])
+    // Tool names keep every word ("Tool" is not one of their words), capitalised; listed by name.
+    expect(names()).toEqual(['Admin', 'Asha', 'Kiran', 'Meera', 'Ravi', 'Sunil', 'Code Pad', 'Interview Helper', 'Notes App', 'Screen Recorder'])
     for (const r of rows()) expect(r.querySelector('.dr-acct-svc').textContent).toBe('Dashboard / Tool')
     // Still a service account underneath: its own role line and its password to show.
-    const tool = rowOf('Code pad')
+    const tool = rowOf('Code Pad')
     expect(tool.querySelector('.dr-acct-role').textContent).toBe('Tool login')
-    expect(within(tool).getByRole('button', { name: 'Show password for Code pad' })).toBeInTheDocument()
+    expect(within(tool).getByRole('button', { name: 'Show password for Code Pad' })).toBeInTheDocument()
     expect(rowOf('Kiran').querySelector('.dr-acct-role').textContent).toBe('Handler')
   })
 
@@ -172,10 +178,10 @@ describe('the one table', () => {
 
   it('searches logins and accounts together', () => {
     renderTable()
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search accounts' }), { target: { value: 'handler' } })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search credentials' }), { target: { value: 'handler' } })
     expect(names()).toEqual(['Asha', 'Kiran', 'Meera', 'Ravi', 'Sunil'])
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search accounts' }), { target: { value: 'telegram' } })
-    expect(names()).toEqual(['Ops Telegram'])
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search credentials' }), { target: { value: 'telegram' } })
+    expect(names()).toEqual(['Ops'])
   })
 
   it('keeps the chosen type for the session', () => {
@@ -194,7 +200,7 @@ describe('a dashboard login row', () => {
     for (const name of ['Admin', 'Kiran']) {
       const row = rowOf(name)
       expect(row.querySelector('.dr-acct-svc').textContent).toBe('Dashboard / Tool')
-      expect(row.querySelector('.dr-creds-pass').textContent.trim()).toBe('Hashed')
+      expect(row.querySelector('.dr-creds-pass').textContent.trim()).toBe('Not available (hashed)')
       expect(within(row).queryByRole('button', { name: /Show password|Copy password/ })).toBeNull()
     }
     expect(document.body.textContent).not.toContain('super-secret-pw')
@@ -211,7 +217,7 @@ describe('a dashboard login row', () => {
     renderTable()
     fireEvent.click(within(rowOf('Kiran')).getByRole('button', { name: 'Copy all' }))
     await waitFor(() => expect(copyToClipboard).toHaveBeenCalled())
-    expect(copyToClipboard.mock.calls[0][0]).toBe(`Site: ${SITE}\nUsername: kiran\nPassword: not recoverable — set a new one to share it\nRole: handler\nReference: Kiran`)
+    expect(copyToClipboard.mock.calls[0][0]).toBe(`Site: ${SITE}\nUsername: kiran\nPassword: Not available (hashed)\nRole: handler\nReference: Kiran`)
   })
 
   it('gives a handler Edit and Delete, and the admin the account-menu pointer instead', () => {
@@ -267,12 +273,12 @@ describe('a dashboard login row', () => {
 describe('a service account row', () => {
   it('keeps Show password, Copy all, Edit and Delete, and reads a password only when asked', async () => {
     renderTable()
-    const row = rowOf('Ops Telegram')
-    for (const name of ['Show password for Ops Telegram', 'Copy password', 'Copy all', 'Edit Ops Telegram', 'Delete Ops Telegram']) {
+    const row = rowOf('Ops')
+    for (const name of ['Show password for Ops', 'Copy password', 'Copy all', 'Edit Ops', 'Delete Ops']) {
       expect(within(row).getByRole('button', { name })).toBeInTheDocument()
     }
     expect(calls.some((c) => c.url.includes('/password'))).toBe(false)
-    fireEvent.click(within(row).getByRole('button', { name: 'Show password for Ops Telegram' }))
+    fireEvent.click(within(row).getByRole('button', { name: 'Show password for Ops' }))
     expect(await within(row).findByText(SECRET)).toBeInTheDocument()
     expect(calls.filter((c) => c.url.includes('/password')).map((c) => c.url))
       .toEqual([expect.stringMatching(/\/service-accounts\/tg_ops\/password$/)])
@@ -283,19 +289,19 @@ describe('Add', () => {
   it('adds a dashboard login from the same dialog, saved at the handlers endpoint', async () => {
     const onReload = vi.fn()
     renderTable({ onReload })
-    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
-    expect([...field('Account type').options].map((o) => [o.value, o.textContent])).toEqual([
+    fireEvent.click(screen.getByRole('button', { name: 'Add credential' }))
+    expect([...field('Credential type').options].map((o) => [o.value, o.textContent])).toEqual([
       ['Naukri', 'Naukri'], ['Gmail', 'Gmail'], ['Telegram', 'Telegram'],
       ['Tool', 'Tool login (another tool or site)'], [LOGIN_TYPE, 'Dashboard login (signs in here)'],
     ])
     // Both under the one type, which says which record each makes.
-    const group = field('Account type').querySelector('optgroup')
+    const group = field('Credential type').querySelector('optgroup')
     expect(group.label).toBe('Dashboard / Tool Login')
     expect([...group.querySelectorAll('option')].map((o) => o.value)).toEqual(['Tool', LOGIN_TYPE])
-    fireEvent.change(field('Account name'), { target: { value: 'Divya' } })
-    fireEvent.change(field('Account type'), { target: { value: LOGIN_TYPE } })
+    fireEvent.change(field('Credential name'), { target: { value: 'Divya' } })
+    fireEvent.change(field('Credential type'), { target: { value: LOGIN_TYPE } })
     expect(screen.getByRole('dialog', { name: 'Add dashboard login' })).toBeInTheDocument()
-    expect(fieldLabels()).toEqual(['Reference (display name)', 'Account type', 'Username', 'Password', 'Notes (optional)'])
+    expect(fieldLabels()).toEqual(['Reference (display name)', 'Credential type', 'Username', 'Password', 'Notes (optional)'])
     expect(field('Reference (display name)').value).toBe('Divya')                     // the name typed so far is kept
     expect(dialog().querySelector('input[type="file"]')).toBeNull()                    // no screenshot for a login
     fireEvent.change(field('Username'), { target: { value: 'divya' } })
@@ -314,18 +320,18 @@ describe('Add', () => {
   it('starts from the type the list is narrowed to: under Dashboard / Tool Logins a tool login, a dashboard login only by choice', async () => {
     renderTable()
     choose('Telegram')
-    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
-    expect(field('Account type').value).toBe('Telegram')
+    fireEvent.click(screen.getByRole('button', { name: 'Add credential' }))
+    expect(field('Credential type').value).toBe('Telegram')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     choose(LOGIN_TYPE)
-    fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
-    expect(screen.getByRole('dialog', { name: 'Add service account' })).toBeInTheDocument()
-    expect(field('Account type').value).toBe('Tool')
-    fireEvent.change(field('Account type'), { target: { value: LOGIN_TYPE } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add credential' }))
+    expect(screen.getByRole('dialog', { name: 'Add credential' })).toBeInTheDocument()
+    expect(field('Credential type').value).toBe('Tool')
+    fireEvent.change(field('Credential type'), { target: { value: LOGIN_TYPE } })
     expect(screen.getByRole('dialog', { name: 'Add dashboard login' })).toBeInTheDocument()
-    fireEvent.change(field('Account type'), { target: { value: 'Tool' } })
-    expect(screen.getByRole('dialog', { name: 'Add service account' })).toBeInTheDocument()
-    fireEvent.change(field('Account name'), { target: { value: 'Interview helper' } })
+    fireEvent.change(field('Credential type'), { target: { value: 'Tool' } })
+    expect(screen.getByRole('dialog', { name: 'Add credential' })).toBeInTheDocument()
+    fireEvent.change(field('Credential name'), { target: { value: 'Interview helper' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(writes()).toHaveLength(1))
     expect(writes()[0]).toMatchObject({ method: 'POST', body: { id: 'interview_helper', label: 'Interview helper', service: 'Tool' } })
@@ -335,8 +341,8 @@ describe('Add', () => {
 
   it('never offers to turn a service account into a login when editing it', () => {
     renderTable()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Ops Telegram' }))
-    expect([...field('Account type').options].map((o) => o.value)).toEqual(['Naukri', 'Gmail', 'Telegram', 'Tool'])
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Ops' }))
+    expect([...field('Credential type').options].map((o) => o.value)).toEqual(['Naukri', 'Gmail', 'Telegram', 'Tool'])
   })
 })
 
@@ -346,9 +352,9 @@ describe('the header', () => {
     expect(document.querySelector('.dr-acct-meta .dr-creds-site a').textContent).toBe('operations.example.online')
     fireEvent.click(screen.getByRole('button', { name: 'Copy SSH host' }))
     await waitFor(() => expect(copyToClipboard).toHaveBeenCalledWith('root@vps.example.net'))
-    expect(screen.getByRole('searchbox', { name: 'Search accounts' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Download all accounts/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Add account/ })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: 'Search credentials' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Download all credentials/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Add credential/ })).toBeInTheDocument()
   })
 })
 
@@ -358,7 +364,7 @@ describe('a handler', () => {
     render(<DataRoomPanel />)
     await screen.findByText('Operations opportunities')
     expect(calls.some((c) => c.url.includes('/data-room/credentials'))).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: /^Accounts & Logins/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Credentials/ }))
     await waitFor(() => expect(document.querySelector('.dr-tab[aria-current="page"] .dr-tab-label').textContent).toBe('Opportunities'))
     expect(document.querySelector('.dr-acct-table')).toBeNull()
   })
@@ -371,7 +377,9 @@ describe('the styles', () => {
   })
   it('keep the account name readable between a phone and a wide desktop, Actions in reach', () => {
     const mid = block.slice(block.indexOf('@media (min-width: 641px) and (max-width: 1180px)'))
-    expect(mid).toMatch(/\.dr-accounts-tab \.dr-acct-table \{ table-layout: fixed; min-width: 940px; \}/)
+    // 996px since the Password column was widened to 184px for its dots, Show and Copy (20 Oct).
+    expect(mid).toMatch(/\.dr-accounts-tab \.dr-acct-table \{ table-layout: fixed; min-width: 996px; \}/)
+    expect(mid).toMatch(/\.dr-accounts-tab \.dr-acct-th--pass \{ width: 184px; \}/)
     expect(mid).toMatch(/\.dr-accounts-tab \.dr-acct-table th:last-child,\n[^{]*td:last-child \{\n    position: sticky;\n    right: 0;/)
   })
   it('make every control a 40px target on a phone', () => {
@@ -388,7 +396,7 @@ describe('the styles', () => {
     renderTable()
     const login = rowOf('Kiran')
     expect([...login.querySelectorAll('td.dr-acct-cell--empty')].map((td) => td.dataset.label)).toEqual(['Status', 'Last used'])
-    expect(rowOf('Ops Telegram').querySelector('td[data-label="Status"]').classList.contains('dr-acct-cell--empty')).toBe(false)
+    expect(rowOf('Ops').querySelector('td[data-label="Status"]').classList.contains('dr-acct-cell--empty')).toBe(false)
   })
   it('give Dashboard / Tool one badge colour, the same on a phone and a desktop', () => {
     expect(CSS).toMatch(/\.dr-acct-svc--dashboard \{/)

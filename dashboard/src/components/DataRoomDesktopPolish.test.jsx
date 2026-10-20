@@ -23,7 +23,7 @@ const CSS = readFileSync(join(HERE, '..', 'index.css'), 'utf8').replace(/\r\n/g,
 
 const ACCOUNTS = [
   // As the list arrives since 19 Oct: whether there is a password, never the password itself.
-  { id: 'a1', label: 'Ops Gmail (current)', service: 'Gmail', username: 'ops@example.com', has_password: true },
+  { id: 'a1', label: 'Ops Gmail (Current)', service: 'Gmail', username: 'ops@example.com', has_password: true },
 ]
 
 beforeEach(() => {
@@ -43,18 +43,18 @@ afterEach(() => {
 describe('the Data Room tabs', () => {
   it('no longer include Interview Data', async () => {
     render(<DataRoomPanel />)
-    await screen.findByText('Ops Gmail (current)')
+    await screen.findByText('Ops Gmail (Current)')
     const labels = [...document.querySelectorAll('.dr-tab .dr-tab-label')].map(l => l.textContent)
-    expect(labels).toEqual(['Accounts & Logins', 'Opportunities', 'Prompts', 'Key Links', 'Offers'])
+    expect(labels).toEqual(['Credentials', 'Opportunities', 'Prompts', 'Key Links', 'Offers'])
     expect(screen.queryByText(/Interview Data/i)).toBeNull()
   })
 
   it('mark the open tab for assistive tech as well as visually', async () => {
     render(<DataRoomPanel />)
-    await screen.findByText('Ops Gmail (current)')
+    await screen.findByText('Ops Gmail (Current)')
     const open = document.querySelector('.dr-tab--active')
     expect(open).toHaveAttribute('aria-current', 'page')
-    expect(open.querySelector('.dr-tab-label').textContent).toBe('Accounts & Logins')
+    expect(open.querySelector('.dr-tab-label').textContent).toBe('Credentials')
     expect(open.querySelector('.dr-tab-count').textContent).toBe('1')
     expect(document.querySelectorAll('.dr-tab[aria-current]')).toHaveLength(1)
   })
@@ -63,7 +63,7 @@ describe('the Data Room tabs', () => {
 describe('an Accounts row', () => {
   it('names what each copy button copies and confirms the copy', async () => {
     render(<DataRoomAccountsTab accounts={ACCOUNTS} onReload={() => {}} />)
-    const row = screen.getByText('Ops Gmail (current)').closest('tr')
+    const row = screen.getByText('Ops Gmail (Current)').closest('tr')
     const user = within(row).getByRole('button', { name: 'Copy username' })
     within(row).getByRole('button', { name: 'Copy password' })
     expect(row.querySelector('code').getAttribute('title')).toBe('ops@example.com')
@@ -73,7 +73,7 @@ describe('an Accounts row', () => {
 
   it('keeps its actions in one row, the destructive one last', () => {
     render(<DataRoomAccountsTab accounts={ACCOUNTS} onReload={() => {}} />)
-    const row = screen.getByText('Ops Gmail (current)').closest('tr')
+    const row = screen.getByText('Ops Gmail (Current)').closest('tr')
     const actions = [...row.querySelector('.dr-acct-actions').querySelectorAll('button')].map(b => b.textContent)
     expect(actions).toEqual(['Copy all', 'Edit', 'Delete'])
     expect(document.querySelector('thead th:last-child').className).toContain('dr-acct-th--actions')
@@ -82,8 +82,8 @@ describe('an Accounts row', () => {
   it('has a labelled search beside an Add account button', () => {
     render(<DataRoomAccountsTab accounts={ACCOUNTS} onReload={() => {}} />)
     const actions = document.querySelector('.dr-tab-header-actions')
-    expect(within(actions).getByRole('searchbox', { name: 'Search accounts' })).toBeInTheDocument()
-    expect(within(actions).getByRole('button', { name: 'Add account' })).toBeInTheDocument()
+    expect(within(actions).getByRole('searchbox', { name: 'Search credentials' })).toBeInTheDocument()
+    expect(within(actions).getByRole('button', { name: 'Add credential' })).toBeInTheDocument()
   })
 })
 

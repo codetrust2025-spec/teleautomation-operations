@@ -210,6 +210,57 @@ class TestTheRoutes:
     def test_the_admin_export_still_carries_every_password_exactly(self, api):
         client, _ = api
         text = client.get("/data-room/credentials/service-accounts/export?format=txt").content.decode("utf-8")
-        assert text.count("Account Name: ") == len(LEGACY)
+        assert text.count("Credential Name: ") == len(LEGACY)                   # no dashboard logins in this store
         for row in LEGACY:
             assert f"Password: {row['password']}" in text
+
+
+# ---------------------------------------------------------------------------------------------
+# Names (20 Oct): standard capitals and spacing, the type word dropped, the old name kept
+# ---------------------------------------------------------------------------------------------
+
+class TestStandardNames:
+    def test_existing_names_are_standardised_once_and_the_old_name_kept(self, store):
+        creds.migrate_service_accounts()
+        before = on_disk(store)
+        report = creds.standardize_credential_names()
+        after = on_disk(store)
+        assert {rid: row.get("label") for rid, row in after.items()} == {
+            "asha_rao_naukri": "Asha Rao", "ravi_kumar_naukri": "Ravi Kumar",
+            "telegram_login_number": "Telegram Login Number", "someone_gmail_com": "", "ops_gmail": "Ops Mailbox"}
+        assert after["ravi_kumar_naukri"]["label_before_standardization"] == "ravi kumar naukri"
+        assert report == {"service_accounts": 5, "renamed": 4}
+        # nothing else on any row changed: ids, usernames, services, notes, images, provenance, passwords
+        for rid, row in before.items():
+            kept = {k: v for k, v in row.items() if k != "label"}
+            assert {k: after[rid][k] for k in kept} == kept
+        for row in LEGACY:
+            assert creds.service_account_password(row["id"]) == row["password"]
+        assert set(after) == set(before)                                        # no record added or lost
+        # and again: nothing to do
+        assert creds.standardize_credential_names() == {"service_accounts": 5, "renamed": 0}
+        assert on_disk(store) == after
+
+    def test_a_name_that_would_read_like_another_keeps_its_type_word(self, store, monkeypatch):
+        rows = [
+            {"id": "kiran_naukri", "label": "kiran naukri", "service": "Naukri", "username": "k1@example.com"},
+            {"id": "kiran_gmail", "label": "Kiran", "service": "Gmail", "username": "k2@example.com"},
+            {"id": "meera_naukri", "label": "Meera Naukri", "service": "Naukri", "username": "m@example.com"},
+        ]
+        store.write_text(json.dumps({"service_accounts": rows, "handlers": [{"username": "meera", "reference": "Meera"}]}),
+                         encoding="utf-8")
+        creds.standardize_credential_names()
+        labels = {rid: row["label"] for rid, row in on_disk(store).items()}
+        assert labels == {"kiran_naukri": "Kiran Naukri", "kiran_gmail": "Kiran", "meera_naukri": "Meera Naukri"}
+        assert json.loads(store.read_text(encoding="utf-8"))["handlers"] == [{"username": "meera", "reference": "Meera"}]
+
+    def test_a_new_or_edited_credential_is_named_the_standard_way(self, store):
+        creds.create_service_account({"id": "kiran_kumar_naukri", "label": "kiran  kumar naukri", "username": "k@example.com",
+                                      "password": "pw-k"})
+        creds.create_service_account({"id": "tool_one", "label": "interview helper", "service": "Tool"})
+        rows = on_disk(store)
+        assert rows["kiran_kumar_naukri"]["label"] == "Kiran Kumar" and rows["tool_one"]["label"] == "Interview Helper"
+        assert creds.service_account_password("kiran_kumar_naukri") == "pw-k"   # the password as typed
+        creds.update_service_account("kiran_kumar_naukri", {"label": "Kiran Kumar Servicenow Naukri"})
+        assert on_disk(store)["kiran_kumar_naukri"]["label"] == "Kiran Kumar ServiceNow"
+        assert on_disk(store)["kiran_kumar_naukri"]["username"] == "k@example.com"

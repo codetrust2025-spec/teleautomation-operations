@@ -19,7 +19,7 @@ describe('formatCredentialBlock', () => {
     expect(block).not.toContain('undefined')
     expect(block).toContain('Username: referrer-thrilok')
     expect(block).toContain('Reference: Thrilok')
-    expect(block).toContain('not recoverable')
+    expect(block).toContain('Not available (hashed)')
   })
 
   it('still prints a password the server does return', () => {

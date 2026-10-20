@@ -14832,6 +14832,30 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .cand-page.dr-page > .dr-tabs:first-child {
   margin-top: 0;
 }
+/* Phones (20 Oct): the five tabs wrapped into a grid of pills, two to a row,
+   and "Accounts & Logins 33" broke onto two lines with its count below. They
+   are one row now that scrolls sideways, each label beside its count on one
+   line, the open one scrolled into view. */
+@media (max-width: 767px) {
+  .cand-page.dr-page > .dr-tabs {
+    flex-wrap: nowrap;
+    gap: 4px;
+    margin-bottom: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cand-page.dr-page > .dr-tabs::-webkit-scrollbar { display: none; }
+  .cand-page.dr-page > .dr-tabs .dr-tab {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 8px 12px;
+    white-space: nowrap;
+    scroll-snap-align: start;
+  }
+}
 /* Accounts & Logins (20 Oct): every credential in one table -- the dashboard's
    logins beside the service accounts -- narrowed by one Account type filter.
    A login row says what it is: a Dashboard badge, its role under the name,
@@ -14860,10 +14884,10 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
    room for the name and scrolls inside its box instead, its Actions pinned to
    the right edge so Edit and Delete never scroll out of reach. */
 @media (min-width: 641px) and (max-width: 1180px) {
-  .dr-page .dr-accounts-tab .dr-acct-table { table-layout: fixed; min-width: 940px; }
+  .dr-page .dr-accounts-tab .dr-acct-table { table-layout: fixed; min-width: 996px; }
   .dr-page .dr-accounts-tab .dr-acct-th--type { width: 100px; }
   .dr-page .dr-accounts-tab .dr-acct-th--user { width: 20%; }
-  .dr-page .dr-accounts-tab .dr-acct-th--pass { width: 128px; }
+  .dr-page .dr-accounts-tab .dr-acct-th--pass { width: 184px; }
   .dr-page .dr-accounts-tab .dr-acct-th--status { width: 76px; }
   .dr-page .dr-accounts-tab .dr-acct-th--used { width: 80px; }
   .dr-page .dr-accounts-tab .dr-acct-th--actions { width: 216px; text-align: right; }
@@ -14891,14 +14915,19 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-accounts-tab .dr-tab-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
   .dr-page .dr-accounts-tab .dr-tab-stat { gap: 2px; min-height: 0; padding: 8px 10px; border-radius: 10px; }
   .dr-page .dr-accounts-tab .dr-tab-stat-value { font-size: 1.2rem; }
-  .dr-page .dr-accounts-tab .dr-tab-stat-sub { margin-top: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The note under a figure wraps rather than being cut off with "..." (20 Oct). */
+  .dr-page .dr-accounts-tab .dr-tab-stat-sub { margin-top: 0; overflow: visible; text-overflow: clip; white-space: normal; line-height: 1.3; }
+  /* 30px stood between the tabs and the first line (three margins stacked): 14px now, and the header's own gaps 10px. */
+  /* Specific enough to beat .cand-page > :not(.cand-header):not(.cand-toolbar):not(.cand-tabs), which adds 12px. */
+  .cand-page.dr-page > .dr-section.dr-section--active.dr-accounts-tab { margin-top: 0; }
+  .dr-page .dr-accounts-tab .dr-tab-header { gap: 10px; margin-bottom: 10px; }
   .dr-page .dr-accounts-tab .dr-acct-table tbody tr:not(.dr-acct-empty-row) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: 10px;
   }
   .dr-page .dr-accounts-tab .dr-acct-table tbody td { grid-column: 1 / -1; }
-  .dr-page .dr-accounts-tab .dr-acct-table tbody td[data-label="Account"] { grid-column: 1; grid-row: 1; }
+  .dr-page .dr-accounts-tab .dr-acct-table tbody td[data-label="Credential"] { grid-column: 1; grid-row: 1; }
   .dr-page .dr-accounts-tab .dr-acct-table tbody td[data-label="Type"] { grid-column: 2; grid-row: 1; align-self: start; padding-bottom: 8px; }
   .dr-page .dr-accounts-tab .dr-acct-table tbody td[data-label="Type"]::before { display: none; }
   .dr-page .dr-accounts-tab .dr-acct-table tbody td.dr-acct-cell--empty { display: none; }
@@ -15125,8 +15154,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-acct-table tbody td[data-label]::before {
     content: attr(data-label); flex: 0 0 auto; font-size: 0.72rem; color: #94a3b8;
   }
-  .dr-page .dr-acct-table tbody td[data-label="Account"] { padding-bottom: 8px; }
-  .dr-page .dr-acct-table tbody td[data-label="Account"]::before,
+  .dr-page .dr-acct-table tbody td[data-label="Credential"] { padding-bottom: 8px; }
+  .dr-page .dr-acct-table tbody td[data-label="Credential"]::before,
   .dr-page .dr-acct-table tbody td[data-label="Actions"]::before { display: none; }
   .dr-page .dr-acct-table .dr-acct-cred-cell { min-width: 0; justify-content: flex-end; }
   .dr-page .dr-acct-table .dr-acct-cred-cell code { overflow-wrap: anywhere; text-align: right; }
@@ -19305,7 +19334,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-acct-table { table-layout: fixed; }
   .dr-page .dr-acct-th--type { width: 100px; }
   .dr-page .dr-acct-th--user { width: 21%; }
-  .dr-page .dr-acct-th--pass { width: 136px; }
+  /* Room for the eight dots with Show and Copy beside them, or "Not available (hashed)" (20 Oct). */
+  .dr-page .dr-acct-th--pass { width: 184px; }
   .dr-page .dr-acct-th--status { width: 88px; }
   .dr-page .dr-acct-th--used { width: 92px; }
   .dr-page .dr-acct-th--actions { width: 216px; text-align: right; }
@@ -19324,12 +19354,15 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-acct-name { overflow-wrap: anywhere; }
   .dr-page .dr-acct-primary-badge { margin: 2px 0 0; display: table; }
   .dr-page .dr-acct-cred-cell { gap: 6px; min-width: 0; }
+  /* A username wraps rather than being cut off with "..."; the masked dots never shrink (20 Oct). */
   .dr-page .dr-acct-cred-cell code {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
+  .dr-page .dr-acct-cred-cell code.dr-creds-pass { flex: 0 0 auto; }
+  .dr-page .dr-acct-cred-cell code.dr-creds-pass--none { flex: 0 1 auto; }
+  .dr-page .dr-accounts-tab .dr-tab-stat-sub { overflow: visible; text-overflow: clip; white-space: normal; line-height: 1.3; }
   .dr-page .dr-acct-status,
   .dr-page .dr-acct-table td.dr-muted { white-space: nowrap; }
 

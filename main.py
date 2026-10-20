@@ -206,6 +206,13 @@ async def startup() -> None:
         logging.getLogger(__name__).info("Data Room service accounts: %s", migrate_service_accounts())
     except Exception:  # noqa: BLE001 - never block startup on this; the list withholds passwords either way
         logging.getLogger(__name__).exception("Could not migrate the Data Room service accounts")
+    try:
+        from features.data_room_credentials_store import standardize_credential_names
+
+        # Credential names in the standard form, once; the old name is kept on the row. Idempotent.
+        logging.getLogger(__name__).info("Data Room credential names: %s", standardize_credential_names())
+    except Exception:  # noqa: BLE001 - never block startup on a name
+        logging.getLogger(__name__).exception("Could not standardise the Data Room credential names")
     # Started here rather than on first WebSocket connect: the tailer delivers
     # events written by any process, and it needs the loop registered before a
     # publisher runs, not after a browser happens to arrive.
