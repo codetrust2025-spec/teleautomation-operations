@@ -7517,6 +7517,35 @@ def _refuse_move_onto_held_interview(row: dict, patch: dict) -> None:
         raise DuplicateBookingError(twin, moving=True)
 
 
+def _same_profile_record_ids(row: dict, rows: list[dict]) -> set[str]:
+    """The records a Save of `row` speaks for: that person's profile, as the
+    Candidates table draws it (`_profile_group_key`), taken before the Save.
+
+    This used to be every profile record sharing the row's phone *or* its name.
+    11 Oct: a candidate's record had been given another person's number, and the
+    Save that put his own number back copied his name, phone, email, stage,
+    technology and referrer onto all 13 of that person's records -- her April
+    and May interviews then showed in Daily Ops as his, and her verified payment
+    proof, now on "his" profile, was deleted as a duplicate. A shared phone or a
+    shared name is not one person; the table already keeps them apart, and a
+    Save now writes to exactly the records the table shows as this profile.
+    """
+    profile_rows = [
+        other for other in rows
+        if other.get("id")
+        and _normalise_service_type(other.get("service_type"), other) != "round_wise"
+    ]
+    phones_by_name = _phones_by_name_key(profile_rows)
+    own_key = _profile_group_key(row, phones_by_name)
+    if not own_key:
+        return set()
+    return {
+        str(other.get("id"))
+        for other in profile_rows
+        if _profile_group_key(other, phones_by_name) == own_key
+    }
+
+
 def _update_candidate(
     cid: str,
     patch: dict,
@@ -7530,24 +7559,7 @@ def _update_candidate(
             if "date" in patch or "time" in patch:
                 _refuse_move_onto_held_interview(r, patch)
             original_phone_key = candidate_phone_identity(r.get("phone"))
-            original_name_key = _normalise_candidate_name_key(r.get("name") or "")
-            profile_identity_ids = {
-                str(other.get("id"))
-                for other in rows
-                if other.get("id")
-                and _normalise_service_type(other.get("service_type"), other) != "round_wise"
-                and (
-                    (
-                        original_phone_key
-                        and candidate_phone_identity(other.get("phone")) == original_phone_key
-                    )
-                    or (
-                        original_name_key
-                        and _normalise_candidate_name_key(other.get("name") or "")
-                        == original_name_key
-                    )
-                )
-            }
+            profile_identity_ids = _same_profile_record_ids(r, rows)
             allowed_patch = {k: v for k, v in patch.items() if k in _ALLOWED_FIELDS}
             # A typed Received amount is not authoritative. Where verified proof
             # evidence exists the proofs decide the total, so a manual edit
