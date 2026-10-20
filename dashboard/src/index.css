@@ -14844,6 +14844,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   font-size: 0.72rem;
   color: #94a3b8;
 }
+/* The admin's "Account menu" stood on two lines in the Actions column. */
+.dr-acct-nowrap { white-space: nowrap; }
 .dr-acct-meta {
   display: flex;
   flex-wrap: wrap;

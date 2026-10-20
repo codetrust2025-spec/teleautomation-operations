@@ -734,7 +734,9 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
             {filtered.map(item => {
               if (item.kind === 'login') {
                 const login = item.row
-                const name = login.reference || login.username || (item.isAdmin ? 'Admin' : 'Handler')
+                // The admin's stored reference says what it can do ("Full dashboard"), which
+                // its role line already says: it is named by its role instead.
+                const name = item.isAdmin ? 'Admin' : (login.reference || login.username || 'Handler')
                 return (
                   <tr key={item.key} className="dr-acct-login-row">
                     <td data-label="Account">
@@ -742,7 +744,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                         <span className="dr-acct-dot dr-acct-dot--active" />
                         <div>
                           <span className="dr-acct-name">{name}</span>
-                          <span className="dr-acct-role">{item.isAdmin ? 'Admin · full dashboard' : 'Handler'}</span>
+                          <span className="dr-acct-role">{item.isAdmin ? 'Full dashboard' : 'Handler'}</span>
                         </div>
                       </div>
                     </td>
@@ -779,7 +781,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                           {activeKey === `${item.key}-all` ? 'Copied' : 'Copy all'}
                         </button>
                         {item.isAdmin ? (
-                          <button type="button" className="cand-btn cand-btn--sm cand-btn--ghost" title="The admin password is changed from the top-bar account menu, not here">
+                          <button type="button" className="cand-btn cand-btn--sm cand-btn--ghost dr-acct-nowrap" title="The admin password is changed from the top-bar account menu, not here">
                             Account menu
                           </button>
                         ) : (
