@@ -77,7 +77,7 @@ describe('the dialog', () => {
   it('says what is in the file, offers Excel, CSV and text, and asks for no password', () => {
     renderTab()
     const dialog = openExport()
-    expect(dialog.textContent).toContain('All 2 accounts: account name, username and password.')
+    expect(dialog.textContent).toContain('All 2 service accounts: account name, username and password.')
     for (const gone of ['type', 'status', 'last used', 'notes']) expect(dialog.textContent).not.toContain(gone)
     expect(dialog.textContent).toContain('The file holds every password in plain text.')
     expect([...dialog.querySelectorAll('.dr-export-format')].map(l => l.textContent)).toEqual(['Excel (.xlsx)', 'CSV (.csv)', 'Text (.txt)'])

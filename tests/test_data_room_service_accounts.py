@@ -1,6 +1,6 @@
 """Data Room service accounts: their service, and their passwords.
 
-Every account is Naukri, Gmail or Telegram, decided only by what the account itself says -- never by its username's
+Every account is Naukri, Gmail, Telegram or Tool, decided only by what the account itself says -- never by its username's
 email domain -- and an account that says nothing is left for a person. Passwords are encrypted at rest, never in a
 list response, read one at a time on purpose, and still exported exactly. Driven against a real store in a temporary
 directory and through the real routes.
@@ -54,6 +54,8 @@ class TestClassification:
         ({"label": "Ops", "notes": "the Gmail inbox for alerts"}, "Gmail"),
         ({"label": "Asha", "service": "TELEGRAM"}, "Telegram"),                    # a recorded service wins, tidied
         ({"label": "Naukri profile", "service": "Gmail"}, "Gmail"),               # ... even over the name
+        ({"label": "Interview helper", "service": "tool"}, "Tool"),               # a tool login (20 Oct)
+        ({"label": "Screen share tool login"}, "Tool"),
     ])
     def test_from_what_the_account_says(self, row, service):
         assert creds.classify_service(row) == service
@@ -74,7 +76,7 @@ class TestTheMigration:
         report = creds.migrate_service_accounts()
         after = on_disk(store)
         assert report["accounts"] == 5 and report["still_plain"] == 0 and report["encrypted_now"] == 5
-        assert report["by_service"] == {"Naukri": 2, "Gmail": 1, "Telegram": 1, "not_set": 1}
+        assert report["by_service"] == {"Naukri": 2, "Gmail": 1, "Telegram": 1, "Tool": 0, "not_set": 1}
         assert set(after) == set(before)                                          # same ids, no duplicate, none lost
         assert {rid: row["service"] for rid, row in after.items()} == {
             "asha_rao_naukri": "Naukri", "ravi_kumar_naukri": "Naukri", "telegram_login_number": "Telegram",
@@ -122,11 +124,20 @@ class TestAddingAndEditing:
         assert rows["new_one"]["service"] == "Naukri" and rows["tg_two"]["service"] == "Telegram"
         assert "password" not in rows["new_one"] and creds.service_account_password("new_one") == "pw-new"
 
-    def test_only_the_three_services(self, store):
+    def test_only_the_four_services(self, store):
         _, error = creds.create_service_account({"id": "x", "label": "X", "service": "LinkedIn"})
-        assert "Naukri, Gmail, Telegram" in error and "x" not in on_disk(store)
+        assert "Naukri, Gmail, Telegram, Tool" in error and "x" not in on_disk(store)
         _, error = creds.update_service_account("ravi_kumar_naukri", {"service": ""})
         assert error
+
+    def test_a_tool_login_is_stored_as_tool_and_an_account_can_be_moved_there(self, store):
+        creds.create_service_account({"id": "helper_tool", "label": "Interview helper", "username": "ops@example.com",
+                                      "password": "tool-pw", "service": "tool"})
+        creds.update_service_account("ops_gmail", {"service": "TOOL"})
+        rows = on_disk(store)
+        assert rows["helper_tool"]["service"] == "Tool" and rows["ops_gmail"]["service"] == "Tool"
+        assert creds.service_account_password("helper_tool") == "tool-pw"
+        assert creds.migrate_service_accounts()["by_service"]["Tool"] == 2
 
     def test_an_edit_changes_the_service_and_keeps_the_password_unless_a_new_one_is_typed(self, store):
         creds.migrate_service_accounts()

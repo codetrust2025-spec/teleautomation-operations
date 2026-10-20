@@ -61,7 +61,8 @@ def _load() -> dict:
 # Service accounts: their service, and their passwords encrypted at rest
 # ---------------------------------------------------------------------------------------------
 
-SERVICE_TYPES = ("Naukri", "Gmail", "Telegram")
+# Tool (20 Oct): the logins of tools the team works with, listed beside the job-site and chat accounts.
+SERVICE_TYPES = ("Naukri", "Gmail", "Telegram", "Tool")
 DEFAULT_SERVICE = "Naukri"
 _SERVICE_WORDS = {name.lower(): name for name in SERVICE_TYPES}
 _KEY_INFO = b"teleautomation data room service account passwords"

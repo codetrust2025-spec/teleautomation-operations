@@ -1,14 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
-import { Icon } from './ui/Icon.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { formatIstDateTime } from '../utils/istTime.js'
 import { DataRoomAccountsTab } from './DataRoomAccountsTab.jsx'
 import { DataRoomPromptsTab } from './DataRoomPromptsTab.jsx'
 import { DataRoomLinksTab } from './DataRoomLinksTab.jsx'
 import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
-import { DataRoomSubTabs } from './DataRoomSubTabs.jsx'
 import { OPERATIONS_PUBLIC_URL } from '../config.js'
 
 const API_BASE =
@@ -100,325 +98,12 @@ function fmtWhen(iso) {
   return formatIstDateTime(iso)
 }
 
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    try {
-      const el = document.createElement('textarea')
-      el.value = text
-      el.style.position = 'fixed'
-      el.style.opacity = '0'
-      document.body.appendChild(el)
-      el.select()
-      document.execCommand('copy')
-      document.body.removeChild(el)
-      return true
-    } catch {
-      return false
-    }
-  }
-}
+// The table of dashboard logins and service accounts copies a login's details
+// with this; it lives in its own module and is re-exported for its tests.
+export { formatCredentialBlock } from './dataRoomCredentialBlock.js'
 
-export function formatCredentialBlock(site, row, { isAdmin = false } = {}) {
-  const lines = [
-    `Site: ${site}`,
-    `Username: ${row.username}`,
-  ]
-  // Handler passwords are hashed and the server no longer returns them, so
-  // there is nothing here to copy and nothing to read back. Printing the line
-  // anyway produced "Password: undefined", which reads as a broken row rather
-  // than as a password that deliberately cannot be recovered.
-  if (row.password) {
-    lines.push(`Password: ${row.password}`)
-  } else {
-    lines.push('Password: not recoverable — set a new one to share it')
-  }
-  if (isAdmin) {
-    lines.push('Role: admin (full dashboard)')
-  } else {
-    lines.push('Role: handler')
-    if (row.reference) lines.push(`Reference: ${row.reference}`)
-  }
-  return lines.join('\n')
-}
-
-// A square icon copy button, matching the Accounts tab. The accessible name
-// says exactly what gets copied ("Copy username", "Copy password", "Copy all"),
-// so the control is clear without a text label crowding the cell. `variant`
-// chooses the compact icon-only chip or the labelled "Copy all" button.
-function CopyChip({ label, text, copyKey, activeKey, onCopy, variant = 'icon' }) {
-  const copied = activeKey === copyKey
-  const name = copied ? `Copied ${label}` : `Copy ${label}`
-  // The labelled variants ("all" and "username") share one wide button; only
-  // the resting text differs, so the Copy column stays a single clear action
-  // whether the row has a password to bundle or just a username to grab.
-  if (variant === 'all' || variant === 'username') {
-    const resting = variant === 'all' ? 'Copy all' : 'Copy username'
-    return (
-      <button
-        type="button"
-        className={`dr-copy-btn dr-copy-btn--all${copied ? ' dr-copy-btn--copied' : ''}`}
-        title={name}
-        aria-label={name}
-        onClick={() => onCopy(copyKey, text)}
-      >
-        <Icon name={copied ? 'check' : 'copy'} size={13} />
-        {copied ? 'Copied' : resting}
-      </button>
-    )
-  }
-  return (
-    <button
-      type="button"
-      className={`dr-copy-btn dr-copy-btn--icon${copied ? ' dr-copy-btn--copied' : ''}`}
-      title={name}
-      aria-label={name}
-      onClick={() => onCopy(copyKey, text)}
-    >
-      <Icon name={copied ? 'check' : 'copy'} size={13} />
-    </button>
-  )
-}
-
-// A password is never shown in clear here — not the admin's, not anyone's. The
-// dots are a fixed-width placeholder so every Password cell lines up whether or
-// not the value exists. Every stored password is a hash and none is returned
-// (the admin's too, since 11 Oct), so the cell says so plainly.
-function MaskedPassword({ hasValue }) {
-  return hasValue
-    ? <code className="dr-creds-pass" aria-label="Password hidden">••••••••</code>
-    : <code className="dr-creds-pass dr-creds-pass--none" title="Hashed on the server — set a new one to share it">Not stored</code>
-}
-
-function CredentialRow({ rowKey, site, row, isAdmin, activeKey, onCopy, onEdit, onDelete }) {
-  const block = formatCredentialBlock(site, row, { isAdmin })
-  const hasPassword = Boolean(row.password)
-  return (
-    <tr>
-      <td><span className={`dr-creds-role${isAdmin ? ' dr-creds-role--admin' : ''}`}>{isAdmin ? 'Admin' : 'Handler'}</span></td>
-      <td>{row.reference || (isAdmin ? 'Full dashboard' : '—')}</td>
-      <td>
-        <div className="dr-creds-cell">
-          <code title={row.username || undefined}>{row.username}</code>
-          {row.username && <CopyChip label="username" text={row.username} copyKey={`${rowKey}-user`} activeKey={activeKey} onCopy={onCopy} />}
-        </div>
-      </td>
-      <td>
-        <div className="dr-creds-cell">
-          <MaskedPassword hasValue={hasPassword} />
-          {hasPassword && <CopyChip label="password" text={row.password} copyKey={`${rowKey}-pass`} activeKey={activeKey} onCopy={onCopy} />}
-        </div>
-      </td>
-      <td className="dr-creds-copy-all">
-        {hasPassword
-          ? <CopyChip label="all" text={block} copyKey={`${rowKey}-all`} activeKey={activeKey} onCopy={onCopy} variant="all" />
-          : <CopyChip label="username" text={row.username} copyKey={`${rowKey}-all`} activeKey={activeKey} onCopy={onCopy} variant="username" />}
-      </td>
-      <td className="dr-actions">
-        {onEdit ? (
-          <button type="button" className="cand-btn cand-btn--sm" onClick={onEdit}>Edit</button>
-        ) : (
-          <button type="button" className="cand-btn cand-btn--sm cand-btn--ghost" title="The admin password is changed from the top-bar account menu, not here">Account menu</button>
-        )}
-        {!isAdmin && (
-          <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={onDelete}>Delete</button>
-        )}
-      </td>
-    </tr>
-  )
-}
-
-const EMPTY_HANDLER_FORM = { username: '', password: '', reference: '', notes: '' }
-
-function HandlerModal({ mode, form, onChange, onSave, onClose, error }) {
-  // Mounted only while open, so the dialog is open for its whole life.
-  const dialogRef = useDialogA11y(true, onClose)
-  return (
-    <div className="dr-modal-backdrop" role="presentation" onClick={onClose}>
-      <div className="dr-modal cand-card" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="dr-handler-modal-title" onClick={(e) => e.stopPropagation()}>
-        <h2 id="dr-handler-modal-title" className="cand-title">
-          {mode === 'create' ? 'Add handler login' : 'Edit handler login'}
-        </h2>
-        {error && <p className="dr-error">{error}</p>}
-        <div className="dr-form-grid">
-          <label>
-            Username
-            <input className="cand-input" value={form.username} readOnly={mode === 'edit'}
-              onChange={(e) => onChange({ ...form, username: e.target.value })} />
-          </label>
-          <label>
-            Reference (display name)
-            <input className="cand-input" value={form.reference}
-              onChange={(e) => onChange({ ...form, reference: e.target.value })} />
-          </label>
-          <label>
-            Password{mode === 'edit' ? ' (leave blank to keep)' : ''}
-            <input className="cand-input" type="password" autoComplete="new-password" value={form.password}
-              onChange={(e) => onChange({ ...form, password: e.target.value })} />
-          </label>
-          <label className="dr-form-full">
-            Notes (optional)
-            <input className="cand-input" value={form.notes}
-              onChange={(e) => onChange({ ...form, notes: e.target.value })} />
-          </label>
-        </div>
-        <div className="dr-modal-actions">
-          <button type="button" className="cand-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="cand-btn cand-btn--primary" onClick={onSave}>Save</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function CredentialsSection({ creds, loading, active, onReload }) {
-  const { confirm } = useConfirm()
-  const [activeKey, setActiveKey] = useState(null)
-  const [handlerModal, setHandlerModal] = useState(null) // { mode:'create'|'edit', form, username? }
-  const [modalError, setModalError] = useState('')
-
-  const onCopy = useCallback(async (key, text) => {
-    const ok = await copyToClipboard(text)
-    setActiveKey(ok ? key : null)
-    if (ok) {
-      window.setTimeout(() => setActiveKey((k) => (k === key ? null : k)), 1600)
-    }
-  }, [])
-
-  const openAddHandler = () => {
-    setModalError('')
-    setHandlerModal({ mode: 'create', form: { ...EMPTY_HANDLER_FORM } })
-  }
-
-  const openEditHandler = (h) => {
-    setModalError('')
-    setHandlerModal({ mode: 'edit', username: h.username, form: { username: h.username, password: '', reference: h.reference || '', notes: h.notes || '' } })
-  }
-
-  const saveHandler = async () => {
-    const { mode, form, username } = handlerModal
-    const url = mode === 'create'
-      ? `${API_BASE}/data-room/credentials/handlers`
-      : `${API_BASE}/data-room/credentials/handlers/${username}`
-    const method = mode === 'create' ? 'POST' : 'PATCH'
-    const body = { ...form }
-    if (mode === 'edit' && !body.password) delete body.password
-    const res = await fetch(url, { method, credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const data = await res.json()
-    if (data.status !== 'ok') { setModalError(data.message || 'Save failed'); return }
-    setHandlerModal(null)
-    onReload()
-  }
-
-  const deleteHandler = async (h) => {
-    const ok = await confirm({ title: 'Remove handler?', message: `Delete handler "${h.reference || h.username}"?`, confirmLabel: 'Delete', variant: 'danger' })
-    if (!ok) return
-    await fetch(`${API_BASE}/data-room/credentials/handlers/${h.username}`, { method: 'DELETE', credentials: 'include' })
-    onReload()
-  }
-
-  if (loading) return <p className="dr-muted">Loading credentials…</p>
-  if (!creds) return null
-  const site = creds.site_url || OPERATIONS_PUBLIC_URL
-  const admin = creds.admin
-  const handlers = creds.handlers || []
-  return (
-    <section
-      className={`dr-section dr-credentials-section${active ? ' dr-section--active' : ''}`}
-      aria-labelledby="dr-creds-title"
-    >
-      <div className="dr-section-head dr-section-head--row">
-        <div className="dr-creds-head-text">
-          {/* Named on screen by its sub-tab; the heading stays for screen readers. */}
-          <h2 id="dr-creds-title" className="dr-section-title sr-only">Dashboard logins</h2>
-          <p className="dr-section-desc">
-            Admin and handler credentials for the Operations site. Use Copy username, Copy password, or Copy all on each row.
-          </p>
-          <span className="dr-creds-site" title={site || undefined}>
-            <span className="dr-creds-site-label">Site</span>
-            {site
-              ? <a href={site} target="_blank" rel="noopener noreferrer">{site.replace(/^https?:\/\//, '')}</a>
-              : <span className="dr-muted">not configured</span>}
-          </span>
-        </div>
-        <div className="dr-creds-head-actions">
-          <button type="button" className="cand-btn cand-btn--primary cand-btn--sm dr-add-btn" onClick={openAddHandler}>
-            <Icon name="plus" size={14} strokeWidth={2.2} />
-            Add handler
-          </button>
-        </div>
-      </div>
-      <div className="cand-table-wrap">
-        <table className="cand-table dr-table dr-creds-table">
-          <thead>
-            <tr>
-              <th>Role</th>
-              <th>Name / reference</th>
-              <th>Username</th>
-              <th>Password</th>
-              <th>Copy</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {admin && (
-              <CredentialRow
-                rowKey="admin"
-                site={site}
-                row={admin}
-                isAdmin
-                activeKey={activeKey}
-                onCopy={onCopy}
-                onEdit={null}
-                onDelete={() => {}}
-              />
-            )}
-            {handlers.map((h) => (
-              <CredentialRow
-                key={h.username}
-                rowKey={h.username}
-                site={site}
-                row={h}
-                activeKey={activeKey}
-                onCopy={onCopy}
-                onEdit={() => openEditHandler(h)}
-                onDelete={() => deleteHandler(h)}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {creds.vps_host && (
-        <p className="dr-muted dr-creds-vps">
-          VPS SSH: <code>root@{creds.vps_host}</code>
-          <CopyChip
-            label="SSH host"
-            text={`root@${creds.vps_host}`}
-            copyKey="vps-host"
-            activeKey={activeKey}
-            onCopy={onCopy}
-          />
-        </p>
-      )}
-
-      {handlerModal && (
-        <HandlerModal
-          mode={handlerModal.mode}
-          form={handlerModal.form}
-          onChange={(f) => setHandlerModal((s) => ({ ...s, form: f }))}
-          onSave={saveHandler}
-          onClose={() => setHandlerModal(null)}
-          error={modalError}
-        />
-      )}
-    </section>
-  )
-}
-
-// Logins and Accounts were two tabs of credentials; they are one since 20 Oct,
-// each kind a sub-tab of its own (see DataRoomSubTabs below).
+// Logins and Accounts were two tabs of credentials; since 20 Oct they are one
+// tab and one table, narrowed by an Account type filter (DataRoomAccountsTab).
 const DATA_ROOM_TABS = [
   { id: 'access', label: 'Accounts & Logins', adminOnly: false },
   { id: 'partners', label: 'Opportunities', adminOnly: false },
@@ -444,8 +129,6 @@ export function DataRoomPanel() {
   const closeEditor = useCallback(() => setEditor(null), [])
   const editorDialogRef = useDialogA11y(Boolean(editor), closeEditor)
   const [activeTab, setActiveTab] = useState('access')
-  // Service Accounts first, as the Accounts tab was; kept while other tabs are visited.
-  const [accessTab, setAccessTab] = useState('accounts')
 
   const visibleTabs = useMemo(
     () => DATA_ROOM_TABS.filter(tab => isAdmin || !tab.adminOnly),
@@ -628,28 +311,19 @@ export function DataRoomPanel() {
 
       {error && <p className="dr-error dr-page-error" role="alert">{error}</p>}
 
-      {/* Two kinds of credential under one tab, never in one table: the
-          dashboard's own logins (hashed, nothing to reveal) and the service
+      {/* Every credential in one table, each row by its own kind: the
+          dashboard's logins (hashed, nothing to reveal) and the service
           accounts (encrypted, revealed one at a time on request). */}
-      {activeTab === 'access' && (
-        <DataRoomSubTabs
-          label="Accounts & Logins"
-          idPrefix="dr-access"
-          active={accessTab}
-          onChange={setAccessTab}
-          tabs={[
-            { id: 'logins', label: 'Dashboard Logins', count: tabCounts.logins, hint: 'Admin and handler credentials' },
-            { id: 'accounts', label: 'Service Accounts', count: tabCounts.accounts, hint: 'Naukri, Gmail, Telegram and other accounts' },
-          ]}
-        >
-          {accessTab === 'logins' && (
-            <CredentialsSection creds={credentials} loading={credsLoading} active onReload={loadCredentials} />
-          )}
-          {accessTab === 'accounts' && (credentials
-            ? <DataRoomAccountsTab accounts={credentials.service_accounts || []} onReload={loadCredentials} canExport={role === 'admin'} />
-            : credsLoading && <p className="dr-muted">Loading accounts…</p>)}
-        </DataRoomSubTabs>
-      )}
+      {activeTab === 'access' && (credentials ? (
+        <DataRoomAccountsTab
+          accounts={credentials.service_accounts || []}
+          logins={{ admin: credentials.admin || null, handlers: credentials.handlers || [] }}
+          site={credentials.site_url || OPERATIONS_PUBLIC_URL}
+          vpsHost={credentials.vps_host || ''}
+          onReload={loadCredentials}
+          canExport={role === 'admin'}
+        />
+      ) : credsLoading && <p className="dr-muted">Loading accounts…</p>)}
 
       {activeTab === 'prompts' && credentials && (
         <DataRoomPromptsTab prompts={credentials.prompts || []} onReload={loadCredentials} />

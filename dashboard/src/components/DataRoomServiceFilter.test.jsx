@@ -1,9 +1,9 @@
 /**
- * Data Room -> Accounts by service (19 Oct).
+ * Data Room -> Accounts by type (19 Oct; one table with the dashboard logins since 20 Oct).
  *
- * Every account is Naukri, Gmail or Telegram (or "Not set" until someone says which). A Service type filter beside
- * the search narrows the list to one service, with the count of each in the dropdown -- and every account is counted
- * once, so All Services is always the sum of the options below it. Search and filter work together, and the choice
+ * Every account is Naukri, Gmail, Telegram or Tool (or "Not set" until someone says which). An Account type filter
+ * beside the search narrows the list to one type, with the count of each in the dropdown -- and every account is counted
+ * once, so All Accounts is always the sum of the options below it. Search and filter work together, and the choice
  * holds for the browser session. A new account is Naukri unless another is chosen. The list
  * carries no passwords: one is read from the server when it is shown, copied or edited.
  */
@@ -15,7 +15,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({ useConfirm: () => ({ confirm: 
 vi.mock('../utils/copyToClipboard.js', () => ({ copyToClipboard: vi.fn(() => Promise.resolve(true)) }))
 
 import { copyToClipboard } from '../utils/copyToClipboard.js'
-import { DataRoomAccountsTab, SERVICE_FILTER_KEY, UNSET_SERVICE } from './DataRoomAccountsTab.jsx'
+import { DataRoomAccountsTab, LOGIN_TYPE, SERVICE_FILTER_KEY, UNSET_SERVICE } from './DataRoomAccountsTab.jsx'
 
 // Invented names, addresses and secrets.
 const ACCOUNTS = [
@@ -52,26 +52,26 @@ afterEach(() => {
 })
 
 const renderTab = (props = {}) => render(<DataRoomAccountsTab accounts={ACCOUNTS} onReload={() => {}} {...props} />)
-const filter = () => screen.getByRole('combobox', { name: 'Service type' })
+const filter = () => screen.getByRole('combobox', { name: 'Account type' })
 const choose = value => fireEvent.change(filter(), { target: { value } })
 const search = text => fireEvent.change(screen.getByRole('searchbox', { name: 'Search accounts' }), { target: { value: text } })
 const shownNames = () => [...document.querySelectorAll('tbody .dr-acct-name')].map(n => n.textContent)
 const optionCounts = () => [...filter().options].map(o => [o.value, Number(/\((\d+)\)$/.exec(o.textContent)[1])])
 const passwordReads = () => calls.filter(c => c.url.endsWith('/password'))
 
-describe('the Service type filter', () => {
+describe('the Account type filter', () => {
   it('sits beside the search with every service and its count', () => {
     renderTab()
     expect(filter().previousElementSibling).toBe(screen.getByRole('searchbox').closest('.dr-search-wrap'))
     expect([...filter().options].map(o => [o.value, o.textContent])).toEqual([
-      ['all', 'All Services (5)'], ['Naukri', 'Naukri (2)'], ['Gmail', 'Gmail (1)'], ['Telegram', 'Telegram (1)'],
-      [UNSET_SERVICE, 'Not set (1)'],
+      ['all', 'All Accounts (5)'], [LOGIN_TYPE, 'Dashboard Login (0)'], ['Naukri', 'Naukri (2)'], ['Gmail', 'Gmail (1)'],
+      ['Telegram', 'Telegram (1)'], ['Tool', 'Tool (0)'], [UNSET_SERVICE, 'Not set (1)'],
     ])
     expect(filter().value).toBe('all')
     expect(shownNames()).toHaveLength(5)
   })
 
-  it('counts every account once, so All Services is the sum of the rest', () => {
+  it('counts every account once, so All Accounts is the sum of the rest', () => {
     // Production on 19 Oct: 26 Naukri logins, one Telegram account and one with no service -- 28 in all. The
     // dropdown said 26 + 0 + 1 = 27 against a total of 28; the 28th is now counted under Not set.
     const production = [
@@ -80,7 +80,7 @@ describe('the Service type filter', () => {
       { id: 'blank', label: '', service: '', username: 'blank@example.com' },
     ]
     renderTab({ accounts: production })
-    expect(optionCounts()).toEqual([['all', 28], ['Naukri', 26], ['Gmail', 0], ['Telegram', 1], [UNSET_SERVICE, 1]])
+    expect(optionCounts()).toEqual([['all', 28], [LOGIN_TYPE, 0], ['Naukri', 26], ['Gmail', 0], ['Telegram', 1], ['Tool', 0], [UNSET_SERVICE, 1]])
     const [[, all], ...rest] = optionCounts()
     expect(rest.reduce((sum, [, n]) => sum + n, 0)).toBe(all)
     expect(document.querySelector('.dr-tab-stat-value').textContent).toBe(String(all))   // the Total accounts card agrees
@@ -100,7 +100,7 @@ describe('the Service type filter', () => {
   it('offers Not set only while an account has no service, and forgets it once none is left', () => {
     window.sessionStorage.setItem(SERVICE_FILTER_KEY, UNSET_SERVICE)
     renderTab({ accounts: ACCOUNTS.filter(a => a.service) })
-    expect([...filter().options].map(o => o.value)).toEqual(['all', 'Naukri', 'Gmail', 'Telegram'])
+    expect([...filter().options].map(o => o.value)).toEqual(['all', LOGIN_TYPE, 'Naukri', 'Gmail', 'Telegram', 'Tool'])
     expect(filter().value).toBe('all')
     expect(shownNames()).toHaveLength(4)
     expect(document.querySelector('.dr-svc-notice')).toBeNull()
@@ -127,9 +127,9 @@ describe('the Service type filter', () => {
     for (const badge of document.querySelectorAll('tbody .dr-acct-svc')) expect(badge.textContent).toBe(service)
   })
 
-  it('lists an account with no service under Not set and All Services, never under a service', () => {
+  it('lists an account with no service under Not set and All Accounts, never under a service', () => {
     renderTab()
-    for (const service of ['Naukri', 'Gmail', 'Telegram']) {
+    for (const service of ['Naukri', 'Gmail', 'Telegram', 'Tool', LOGIN_TYPE]) {
       choose(service)
       expect(screen.queryByText('someone@example.com')).toBeNull()
     }
@@ -188,7 +188,7 @@ describe('every row', () => {
     expect(badges.map(b => b.textContent)).toEqual(['Naukri', 'Naukri', 'Gmail', 'Telegram', 'Not set'])
     expect(badges[4].className).toContain('dr-acct-svc--none')
     // labelled for the card layout on a phone
-    expect(badges[0].closest('td').getAttribute('data-label')).toBe('Service')
+    expect(badges[0].closest('td').getAttribute('data-label')).toBe('Type')
   })
 
   it('reads a password from the server only when asked, and hides it again', async () => {
@@ -237,10 +237,10 @@ describe('adding and editing', () => {
     expect(writes()[0]).toMatchObject({ method: 'POST', body: { id: 'kiran_naukri', service: 'Naukri', password: 'kiran-pw' } })
   })
 
-  it('says under the Service type that a Naukri login on a Gmail address is Naukri', () => {
+  it('says under the Account type that a Naukri login on a Gmail address is Naukri', () => {
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
-    const select = field('Service type')
+    const select = field('Account type')
     expect(document.getElementById(select.getAttribute('aria-describedby')).textContent)
       .toBe('A Naukri login is Naukri even when its username is a Gmail address.')
   })
@@ -249,7 +249,7 @@ describe('adding and editing', () => {
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
     fireEvent.change(field('Account name'), { target: { value: 'Second Telegram' } })
-    fireEvent.change(field('Service type'), { target: { value: 'Telegram' } })
+    fireEvent.change(field('Account type'), { target: { value: 'Telegram' } })
     save()
     await waitFor(() => expect(writes()).toHaveLength(1))
     expect(writes()[0].body.service).toBe('Telegram')
@@ -258,11 +258,11 @@ describe('adding and editing', () => {
   it('asks for a service before saving an account that has none, rather than guessing', async () => {
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: 'Edit unknown_one' }))   // no name: shown by its id
-    expect(field('Service type').value).toBe('')
+    expect(field('Account type').value).toBe('')
     save()
     expect(await screen.findByText('Choose a service type.')).toBeInTheDocument()
     expect(writes()).toHaveLength(0)
-    fireEvent.change(field('Service type'), { target: { value: 'Gmail' } })
+    fireEvent.change(field('Account type'), { target: { value: 'Gmail' } })
     save()
     await waitFor(() => expect(writes()).toHaveLength(1))
     expect(writes()[0]).toMatchObject({ method: 'PATCH', body: { service: 'Gmail' } })
@@ -273,7 +273,7 @@ describe('adding and editing', () => {
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: 'Edit Ops mailbox' }))
     await waitFor(() => expect(field('Password').value).toBe('ops-5'))   // read so it can be seen and changed
-    fireEvent.change(field('Service type'), { target: { value: 'Naukri' } })
+    fireEvent.change(field('Account type'), { target: { value: 'Naukri' } })
     save()
     await waitFor(() => expect(writes()).toHaveLength(1))
     expect(writes()[0].body.service).toBe('Naukri')
