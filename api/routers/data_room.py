@@ -98,23 +98,27 @@ def _require_account_export_admin(request: Request) -> dict:
     return profile
 
 
-def _record_account_export(request: Request, profile: dict, *, fmt: str, count: int) -> None:
-    """Who took the accounts out, when, in which format and how many -- never what was in them."""
+def _record_account_export(request: Request, profile: dict, *, fmt: str, rows: list[dict]) -> None:
+    """Who took the credentials out, when, in which format and how many -- never what was in them."""
     from core import recruitment_mail_store
+    from features import data_room_account_export as export
 
+    logins = sum(1 for row in rows if row.get("password") == export.HASHED)
     recruitment_mail_store.audit(
         actor=str(profile.get("username") or ""), role=str(profile.get("role") or ""),
         action="data_room_accounts_export",
-        new={"format": fmt, "accounts": count, "with_passwords": True},
+        new={"format": fmt, "credentials": len(rows), "dashboard_logins": logins,
+             "service_accounts": len(rows) - logins, "with_passwords": True},
         source_ip=request.client.host if request.client else None,
     )
 
 
 @router.get("/data-room/credentials/service-accounts/export")
 async def data_room_accounts_export(request: Request, format: str = Query(default="xlsx")):
-    """Every Data Room account -- Account Name, Username, Password, exactly as stored -- as .xlsx, .csv or .txt.
-    The admin's only; every download is recorded, and one that cannot be recorded is not made. The file is built in
-    memory and sent: nothing is written to the server, and nothing may cache it."""
+    """Every Data Room credential -- Credential Name, Type, Username, Password -- as .xlsx, .csv or .txt: the
+    dashboard logins (their passwords "Not available (hashed)") and the service accounts (passwords exactly as
+    stored). The admin's only; every download is recorded, and one that cannot be recorded is not made. The file is
+    built in memory and sent: nothing is written to the server, and nothing may cache it."""
     from fastapi.responses import Response
 
     from features import data_room_account_export as export
@@ -124,9 +128,12 @@ async def data_room_accounts_export(request: Request, format: str = Query(defaul
     fmt = (format or "").strip().lower()
     if fmt not in export.FORMATS:
         raise HTTPException(status_code=400, detail="format must be xlsx, csv or txt")
-    rows = export.account_rows(data_room_credentials_store.service_accounts_with_passwords())
+    # The logins as the table has them: get_credentials strips every password field from the admin and the handlers.
+    listed = data_room_credentials_store.get_credentials()
+    rows = export.credential_rows(listed.get("admin"), listed.get("handlers"),
+                                  data_room_credentials_store.service_accounts_with_passwords())
     try:
-        _record_account_export(request, profile, fmt=fmt, count=len(rows))
+        _record_account_export(request, profile, fmt=fmt, rows=rows)
     except Exception as exc:  # noqa: BLE001 - passwords never leave unrecorded
         raise HTTPException(status_code=503, detail="The download could not be recorded, so it was not made. Try again.") from exc
     return Response(

@@ -14,7 +14,7 @@ export function formatCredentialBlock(site, row, { isAdmin = false } = {}) {
   if (row.password) {
     lines.push(`Password: ${row.password}`)
   } else {
-    lines.push('Password: not recoverable — set a new one to share it')
+    lines.push('Password: Not available (hashed)')
   }
   if (isAdmin) {
     lines.push('Role: admin (full dashboard)')

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -105,7 +105,7 @@ export { formatCredentialBlock } from './dataRoomCredentialBlock.js'
 // Logins and Accounts were two tabs of credentials; since 20 Oct they are one
 // tab and one table, narrowed by an Account type filter (DataRoomAccountsTab).
 const DATA_ROOM_TABS = [
-  { id: 'access', label: 'Accounts & Logins', adminOnly: false },
+  { id: 'access', label: 'Credentials', adminOnly: false },
   { id: 'partners', label: 'Opportunities', adminOnly: false },
   { id: 'prompts', label: 'Prompts', adminOnly: false },
   { id: 'links', label: 'Key Links', adminOnly: false },
@@ -161,6 +161,12 @@ export function DataRoomPanel() {
       setActiveTab(visibleTabs[0]?.id || 'partners')
     }
   }, [isAdmin, activeTab, visibleTabs])
+
+  // On a phone the tabs are one row that scrolls sideways: keep the open one in view.
+  const tabsRef = useRef(null)
+  useEffect(() => {
+    tabsRef.current?.querySelector('.dr-tab--active')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [activeTab])
 
   const loadCredentials = useCallback(async () => {
     if (!isAdmin) {
@@ -294,7 +300,7 @@ export function DataRoomPanel() {
     <div className="cand-page dr-page">
       {/* No page header: the shell header already names the page. Each tab
           carries its own title and actions, Add opportunity included. */}
-      <nav className="dr-tabs" aria-label="Data room sections">
+      <nav className="dr-tabs" aria-label="Data room sections" ref={tabsRef}>
         {visibleTabs.map(tab => (
           <button
             key={tab.id}

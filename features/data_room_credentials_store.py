@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import Lock
 
 from core.config import DATA_DIR
+from features.credential_names import standard_credential_name
 
 _FILE = os.path.join(DATA_DIR, "data_room", "credentials.json")
 _lock = Lock()
@@ -601,6 +602,9 @@ def create_service_account(body: dict) -> tuple[dict | None, str | None]:
     fields, error = _service_account_fields(body or {}, creating=True)
     if error:
         return None, error
+    if "label" in fields:
+        # Named the standard way from the start: "kiran naukri" under Naukri is "Kiran".
+        fields["label"] = standard_credential_name(fields["label"], fields.get("service"))
     return create_vault_item("service_accounts", {"id": str((body or {}).get("id") or "").strip(), **fields})
 
 
@@ -608,11 +612,47 @@ def update_service_account(item_id: str, body: dict) -> tuple[dict | None, str |
     fields, error = _service_account_fields(body or {}, creating=False)
     if error:
         return None, error
+    if "label" in fields:
+        current = _find_service_row(_load(), item_id) or {}
+        fields["label"] = standard_credential_name(fields["label"], fields.get("service") or current.get("service"))
     if "password" in fields:
         # replaces the stored one; _save encrypts it
         fields["password_enc"] = None
     updated = update_vault_item("service_accounts", item_id, fields)
     return (updated, None) if updated is not None else (None, "Not found")
+
+
+def standardize_credential_names() -> dict:
+    """Give every service account's name the standard form (features/credential_names.py), once.
+
+    Only the name changes, and the name it had is kept in `label_before_standardization`. A name that would then
+    read the same as another credential's -- another account's or a dashboard login's -- keeps its type word, so
+    no two read alike. Usernames, passwords, ids, services, notes and images are untouched; dashboard logins are
+    not written at all. Running it again changes nothing.
+    """
+    data = _load()
+    rows = [row for row in data.get("service_accounts") or [] if isinstance(row, dict)]
+    proposed = [standard_credential_name(row.get("label"), row.get("service")) for row in rows]
+    taken: dict[str, int] = {}
+    for name in proposed:
+        if name:
+            taken[name.casefold()] = taken.get(name.casefold(), 0) + 1
+    logins = {"admin"} | {
+        standard_credential_name(h.get("reference") or h.get("username"), drop_type=False).casefold()
+        for h in data.get("handlers") or [] if isinstance(h, dict)
+    }
+    renamed = 0
+    for row, name in zip(rows, proposed):
+        old = str(row.get("label") or "")
+        if name and (taken.get(name.casefold(), 0) > 1 or name.casefold() in logins):
+            name = standard_credential_name(old, row.get("service"), drop_type=False)
+        if name and name != old:
+            row.setdefault("label_before_standardization", old)
+            row["label"] = name
+            renamed += 1
+    if renamed:
+        _save(data)
+    return {"service_accounts": len(rows), "renamed": renamed}
 
 
 def handler_login_rows() -> list[dict]:

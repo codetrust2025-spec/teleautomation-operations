@@ -1,12 +1,18 @@
-"""Download every Data Room service account at once: Excel, CSV or plain text.
+"""Download every Data Room credential at once: Excel, CSV or plain text.
 
-Three columns and nothing else: Account Name, Username, Password. Every value
-is written exactly as stored -- a password is never trimmed, escaped or
-prefixed -- and every account is a row; one with no name is named by its id,
-so none goes missing. The file is built in memory and handed to the browser;
-nothing is written to the server's disk. Who may download it -- the admin, by
-role -- and the record of every download are the route's
-(api/routers/data_room.py).
+Every credential (20 Oct): the dashboard's own logins -- the admin and the
+handlers -- and every service account, 33 in production. Four columns in every
+format, in the order the Credentials table lists them: Credential Name, Type,
+Username, Password. Names and types follow features/credential_names.py, as the
+table does.
+
+A service account's password is written exactly as stored -- never trimmed,
+escaped or prefixed -- and one with none stored says "Not stored". A dashboard
+login's password is kept only as a hash, so it says "Not available (hashed)":
+its row is built from the login's name, role and username alone, so no hash can
+reach a file. The file is built in memory and handed to the browser; nothing is
+written to the server's disk. Who may download it -- the admin, by role -- and
+the record of every download are the route's (api/routers/data_room.py).
 
 The Excel writer is the standard library's: an .xlsx is a zip of a few XML
 parts, and a one-sheet table needs nothing more. Its cells are text cells, so a
@@ -21,6 +27,8 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
+from features.credential_names import LOGINS_TYPE, credential_type, standard_credential_name
+
 IST = timezone(timedelta(hours=5, minutes=30))
 FORMATS = ("xlsx", "csv", "txt")
 MEDIA_TYPES = {
@@ -28,19 +36,42 @@ MEDIA_TYPES = {
     "csv": "text/csv; charset=utf-8",
     "txt": "text/plain; charset=utf-8",
 }
-COLUMNS = (("name", "Account Name"), ("username", "Username"), ("password", "Password"))
+COLUMNS = (("name", "Credential Name"), ("type", "Type"), ("username", "Username"), ("password", "Password"))
+HASHED = "Not available (hashed)"
+NOT_STORED = "Not stored"
 
 
-def account_rows(service_accounts: list[dict]) -> list[dict]:
-    """One row per account: its name (its id when it has none), username and password, as stored."""
-    return [
-        {
-            "name": str(row.get("label") or "").strip() or str(row.get("id") or ""),
-            "username": str(row.get("username") or ""),
-            "password": str(row.get("password") or ""),
-        }
-        for row in service_accounts or []
-    ]
+def account_name(row: dict) -> str:
+    """A service account's name as the table shows it: standardised, or its id when it has none."""
+    return standard_credential_name(row.get("label"), row.get("service")) or str(row.get("id") or "")
+
+
+def login_name(login: dict, *, admin: bool = False) -> str:
+    """A dashboard login's name as the table shows it: the admin by its role, a handler by its reference."""
+    if admin:
+        return "Admin"
+    return standard_credential_name(login.get("reference"), drop_type=False) or str(login.get("username") or "")
+
+
+def credential_rows(admin: dict | None, handlers: list[dict] | None, service_accounts: list[dict] | None) -> list[dict]:
+    """One row per credential: the admin, the handlers, then the service accounts by name.
+
+    A login's row is made from its name and username only -- never from any password field, so a hash cannot be
+    copied into it even if one were handed in."""
+    rows = []
+    if isinstance(admin, dict):
+        rows.append({"name": login_name(admin, admin=True), "type": LOGINS_TYPE,
+                     "username": str(admin.get("username") or ""), "password": HASHED})
+    for login in handlers or []:
+        if isinstance(login, dict):
+            rows.append({"name": login_name(login), "type": LOGINS_TYPE,
+                         "username": str(login.get("username") or ""), "password": HASHED})
+    accounts = sorted((r for r in service_accounts or [] if isinstance(r, dict)), key=lambda r: account_name(r).casefold())
+    for row in accounts:
+        rows.append({"name": account_name(row), "type": credential_type(row.get("service")),
+                     "username": str(row.get("username") or ""),
+                     "password": str(row.get("password") or "") or NOT_STORED})
+    return rows
 
 
 def to_csv(rows: list[dict]) -> bytes:
@@ -54,9 +85,10 @@ def to_csv(rows: list[dict]) -> bytes:
 
 
 def to_txt(rows: list[dict]) -> bytes:
-    """One block per account, a blank line between blocks:
+    """One block per credential, a blank line between blocks:
 
-        Account Name: ...
+        Credential Name: ...
+        Type: ...
         Username: ...
         Password: ...
 
@@ -123,7 +155,7 @@ def to_xlsx(rows: list[dict]) -> bytes:
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
             'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-            '<sheets><sheet name="Accounts" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            '<sheets><sheet name="Credentials" sheetId="1" r:id="rId1"/></sheets></workbook>'
         ),
         "xl/_rels/workbook.xml.rels": (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -170,4 +202,4 @@ def render(rows: list[dict], fmt: str) -> bytes:
 
 def filename(fmt: str, *, now: datetime | None = None) -> str:
     stamp = (now or datetime.now(timezone.utc)).astimezone(IST).strftime("%Y%m%d-%H%M")
-    return f"teleautomation-accounts-{stamp}.{fmt}"
+    return f"teleautomation-credentials-{stamp}.{fmt}"
