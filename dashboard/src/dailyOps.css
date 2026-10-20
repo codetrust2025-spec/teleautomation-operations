@@ -1719,15 +1719,19 @@
     gap: 10px;
     flex-wrap: wrap;
   }
+  /* Nine counters since Technical issue (21 Oct). Measured in the live app:
+     at 1366px the ninth pushed the booking card onto a second line (bar 66px
+     -> 110px); these 4/6/5px spacings put it back on one line there, and at
+     1440px with Geneva and 1536px with Verdana. */
   .ops-topbar__kpis {
-    gap: 6px;
+    gap: 4px;
     flex: 0 1 auto;
   }
   .ops-topbar__kpis .ops-dash-kpi {
     min-width: 0;
     max-width: none;
-    gap: 6px;
-    padding: 3px 8px;
+    gap: 5px;
+    padding: 3px 6px;
   }
   /* The booking card keeps its donut, its total and the way into the analytics
      modal. The per-candidate legend and the level chips are what made it 470px
