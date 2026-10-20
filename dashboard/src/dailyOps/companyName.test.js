@@ -67,6 +67,23 @@ describe('companyName', () => {
     expect(companyName('Rao Technologies', ['Asha Rao'])).toBe('Rao Technologies')
   })
 
+  it("is never just a word of the attendee's name", () => {
+    for (const value of ['Kiran', 'MEHTA', 'Mehta Kiran']) expect(companyName(value, ['Asha Rao', 'Kiran Mehta'])).toBe('')
+  })
+
+  it('refuses a name word only as the whole value, never inside one', () => {
+    expect(companyName('Infosys', ['Info Rao'])).toBe('Infosys')
+    expect(companyName('Raoji Systems', ['Asha Rao'])).toBe('Raoji Systems')
+    expect(companyName('Asha Infotech', ['Asha Rao', 'Bhavana'])).toBe('Asha Infotech')
+  })
+
+  it("shows unknown when a row's company is a word of the candidate's or attendee's name", () => {
+    const row = { name: 'Asha Rao', interview_attendee: 'Kiran Mehta', interview_company: 'Asha' }
+    expect(rowCompanyName(row)).toBe('')
+    expect(rowCompanyName({ ...row, interview_company: 'Mehta' })).toBe('')
+    expect(rowCompanyName({ ...row, interview_company: 'Rao Technologies' })).toBe('Rao Technologies')
+  })
+
   it('reads the row, never its role, subject, email or notes', () => {
     const row = {
       name: 'Asha Rao', interview_attendee: 'Bhavana', interview_company: '',

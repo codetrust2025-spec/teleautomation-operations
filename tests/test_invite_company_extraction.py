@@ -119,6 +119,16 @@ class TestWhatCountsAsACompany:
         assert clean_company_name("Rao Technologies", people=("Asha Rao",)) == "Rao Technologies"
         assert clean_company_name("Asha Infotech", people=("Asha Rao", "Bhavana")) == "Asha Infotech"
 
+    @pytest.mark.parametrize("given", ["Kiran", "MEHTA", "Mehta Kiran"])
+    def test_a_word_of_the_attendees_name_is_not_a_company(self, given):
+        assert clean_company_name(given, people=("Asha Rao", "", "Kiran Mehta")) == ""
+
+    def test_a_name_word_must_be_the_value_not_inside_it(self):
+        """A word of the name refuses the value only when the value is that word: "Info" is not "Infosys"."""
+        assert clean_company_name("Infosys", people=("Info Rao",)) == "Infosys"
+        assert clean_company_name("Raoji Systems", people=("Asha Rao",)) == "Raoji Systems"
+        assert clean_company_name("Kiranmayi Labs", people=("", "Kiran Mehta")) == "Kiranmayi Labs"
+
     @pytest.mark.parametrize("given", [
         "Contract", "contract to hire", "C2H", "Full time", "Permanent", "Lateral", "Walk-in", "Internship", "Remote",
     ])
@@ -168,6 +178,13 @@ class TestWhatComesBackFromAReading:
         assert self._read(company="Asha Rao", candidate_name="Asha Rao")["company"] == ""
         assert self._read(company="Asha Rao", client_name="Asha Rao")["company"] == ""
 
+    def test_a_word_of_a_persons_name_on_the_invite_comes_back_empty(self):
+        """The booking form fills the company from this reading, so a first name must never reach it (19 Oct)."""
+        assert self._read(company="Asha", candidate_name="Asha Rao")["company"] == ""
+        assert self._read(company="Rao", client_name="Asha Rao")["company"] == ""
+        assert self._read(company="Kiran", candidate_name="Asha Rao", attendee_name="Kiran Mehta")["company"] == ""
+        assert self._read(company="Rao Technologies", candidate_name="Asha Rao")["company"] == "Rao Technologies"
+
     def test_a_company_is_not_a_required_booking_field_of_the_reading(self):
         """Date, start time and round decide whether the reading is usable; the company is asked of the person."""
         result = self._read()
@@ -207,6 +224,11 @@ class TestThroughTheWholeReader:
     def test_a_model_that_answers_with_a_placeholder_or_the_platform_gives_an_empty_company(self, monkeypatch):
         assert self._vision(monkeypatch, company="N/A")["company"] == ""
         assert self._vision(monkeypatch, company="Microsoft Teams", meeting_platform="Teams")["company"] == ""
+
+    def test_a_model_that_answers_with_a_word_of_the_candidates_name_gives_an_empty_company(self, monkeypatch):
+        assert self._vision(monkeypatch, company="Asha", candidate_name="Asha Rao")["company"] == ""
+        assert self._vision(monkeypatch, company="Mehta", attendee_name="Kiran Mehta")["company"] == ""
+        assert self._vision(monkeypatch, company="Infosys", candidate_name="Info Rao")["company"] == "Infosys"
 
     def test_the_company_never_blocks_an_otherwise_good_reading(self, monkeypatch):
         result = self._vision(monkeypatch, company="")
