@@ -161,6 +161,14 @@ const PATHS = {
     </>
   ),
   'chevron-down': <path d="m6 9 6 6 6-6" />,
+  // Mail Alerts row actions: open an alert, dismiss it.
+  eye: (
+    <>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  x: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
 }
 
 export const ICON_NAMES = Object.keys(PATHS)

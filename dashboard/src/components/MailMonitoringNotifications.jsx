@@ -7,6 +7,7 @@ import { formatIstDateTime, formatScheduleDateTime, formatScheduleIstDateTime } 
 import { useConfirm } from "../context/ConfirmContext.jsx";
 import { OverlayLoader } from "../Loader.jsx";
 import { OriginalEmail } from "./OriginalEmail.jsx";
+import { Icon } from "./ui/Icon.jsx";
 
 // Important candidate employment outcomes and actionable interview activity.
 export const TRACKED_CLASSIFICATIONS = [
@@ -69,6 +70,28 @@ const when = (value) => formatIstDateTime(value, {
   second: undefined,
 });
 const confidence = (value) => `${Math.round(Number(value || 0) * 100)}%`;
+
+// A status or automation label as the table shows it. The server's wording is
+// kept; only its case is evened out, because 37 alerts said "Needs reading"
+// beside "Interview Automatically Booked" and 50 said "AUTOMATED" beside
+// "Auto Booked": every word starts with a capital, a word in capitals of four
+// letters or more is written as a word, and a short acronym (BGV, HR, AI)
+// stays as it is.
+const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "via"]);
+export function displayLabel(value) {
+  return String(value || "").replaceAll("_", " ").trim().split(/\s+/).filter(Boolean)
+    .map((word, index) => {
+      if (/^[A-Z]{4,}$/.test(word)) return word[0] + word.slice(1).toLowerCase();
+      if (/^[a-z]/.test(word) && !(index > 0 && SMALL_WORDS.has(word))) return word[0].toUpperCase() + word.slice(1);
+      return word;
+    })
+    .join(" ");
+}
+/** What automatic booking did with the alert; "Automated" when it changed no booking. */
+export const automationLabel = (item = {}) => displayLabel(item.booking_status || item.automation_state || "Automated");
+/** The same tones as the status badge, so "Auto Booked" and "Blocked" read the same in both columns. */
+export const automationTone = (item = {}) => mailStatusTone({ booking_status: automationLabel(item) });
+const statusLabel = (item = {}) => displayLabel(item.candidate_status || human(item.classification));
 
 // Which of the two filter groups an alert belongs to, for colour.
 //
@@ -419,6 +442,16 @@ export function MailMonitoringNotifications() {
   // Switching tabs resets page only — user's candidate/alert-type/search/booking
   // filters are preserved so they keep working within the new tab view.
   const switchTab = (tabId) => { setActiveTab(tabId); setPage(0); };
+  // The filters a person set, as opposed to the tab's own.
+  const filtersActive = Boolean(filters.search || filters.candidateId || filters.classificationGroup || filters.bookingResult);
+  const clearFilters = () => { setPage(0); setCandidateQuery(""); setFilters(EMPTY_FILTERS); };
+  // The table scrolls inside its own box on a desktop, so another page, tab or
+  // filter starts that box at the top rather than wherever the last one was.
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    const box = wrapRef.current;
+    if (box && typeof box.scrollTo === "function") box.scrollTo({ top: 0 });
+  }, [query]);
   const openNotification = useCallback(async (item) => {
     setSelected({ ...item, is_read: true, detail_loading: true, detail_error: "" });
     if (!item.is_read) {
@@ -481,8 +514,9 @@ export function MailMonitoringNotifications() {
     all:    summary.visible_total || 0,
   };
   return <section className="mail-monitoring-page">
-    {/* The page is named once, in the shell header; this row holds only its controls. */}
-    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
+    {/* The tabs and the page's two controls share one row: the page is named
+        once, in the shell header, so the controls needed no row of their own. */}
+    <div className="mail-topbar">
     <nav className="mail-tabs" role="tablist" aria-label="Mail alerts filter tabs">
       {MAIL_TABS.map((tab) => {
         const count = tabCounts[tab.id] ?? 0;
@@ -502,6 +536,8 @@ export function MailMonitoringNotifications() {
         );
       })}
     </nav>
+    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
+    </div>
     <div className="mail-filters mail-filters--compact">
       <input aria-label="Search notifications" placeholder="Search candidate, email, company or subject" value={filters.search} onChange={set("search")} />
       {/* Beyond this many options a native select is unusable, so switch to a
@@ -541,7 +577,7 @@ export function MailMonitoringNotifications() {
         {BOOKING_RESULTS.map((result) => <option value={result.value} key={result.value}>{result.label}</option>)}
       </select>
     </div>
-    <div className={`mail-table-wrap${loading ? " is-loading" : ""}`}>{loading && <OverlayLoader label="Loading notifications…" />}<table className={`mail-table${grouped ? " mail-table--grouped" : ""}`}><thead><tr><th>Candidate</th><th>Company</th><th>Detected status</th><th>Email subject</th><th>Confidence</th><th>Mail received</th><th>Tool detected</th><th>Automation</th><th>Action</th></tr></thead>
+    <div ref={wrapRef} className={`mail-table-wrap${loading ? " is-loading" : ""}`}>{loading && <OverlayLoader label="Loading notifications…" />}<table className={`mail-table${grouped ? " mail-table--grouped" : ""}`}><thead><tr><th className="mail-col mail-col--candidate">Candidate</th><th className="mail-col mail-col--company">Company</th><th className="mail-col mail-col--status">Detected status</th><th className="mail-col mail-col--subject">Email subject</th><th className="mail-col mail-col--confidence">Confidence</th><th className="mail-col mail-col--received">Mail received</th><th className="mail-col mail-col--detected">Tool detected</th><th className="mail-col mail-col--automation">Automation</th><th className="mail-col mail-col--actions">Action</th></tr></thead>
       {/* One <tbody> per candidate when grouped, so the parent is a real table
           section rather than a row pretending to be a heading. The row itself is
           the same in both modes - only the candidate cell differs, because in
@@ -563,9 +599,11 @@ export function MailMonitoringNotifications() {
           event.preventDefault();
           openNotification(item);
         }}
-      ><td className={`mail-cell mail-cell--candidate${grouped ? " mail-row__nested" : ""}`}>{grouped
+      >{/* Every long value is cut to one line on a desktop and carries its whole
+          text as a tooltip; the alert itself shows everything. */}
+      <td className={`mail-cell mail-cell--candidate${grouped ? " mail-row__nested" : ""}`}>{grouped
         ? <span className="mail-row__thread" aria-hidden="true" />
-        : <><strong>{item.candidate_name || "Candidate"}</strong><small>{item.candidate_email || ""}</small></>}</td><td className="mail-cell mail-cell--company">{item.company_name || "—"}<small>{item.job_role || ""}</small></td><td className="mail-cell mail-cell--status"><span className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{item.candidate_status || human(item.classification)}</span>{(() => {
+        : <><strong title={[item.candidate_name, item.candidate_email].filter(Boolean).join(" · ") || undefined}>{item.candidate_name || "Candidate"}</strong><small title={item.candidate_email || undefined}>{item.candidate_email || ""}</small></>}</td><td className="mail-cell mail-cell--company"><span className="mail-cell__text" title={item.company_name || undefined}>{item.company_name || "—"}</span><small title={item.job_role || undefined}>{item.job_role || ""}</small></td><td className="mail-cell mail-cell--status"><span title={statusLabel(item)} className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{statusLabel(item)}</span>{(() => {
         const reason = blockingReason(item);
         if (!reason) return null;
         // Shown in the row itself: a blocked booking is unusable information
@@ -574,18 +612,32 @@ export function MailMonitoringNotifications() {
           className="mail-status__reason"
           title={reason.action ? `What to do: ${reason.action}` : undefined}
         >Reason: {reason.reason}</span>;
-      })()}</td><td className="mail-cell mail-cell--subject">{item.email_subject || "(no subject)"}</td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received">{when(item.email_received_at)}</td><td className="mail-cell mail-cell--detected">{when(item.created_at)}</td><td className="mail-cell mail-cell--automation">{human(item.booking_status || item.automation_state || "AUTOMATED")}</td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}><button onClick={() => openNotification(item)}>Open</button><button onClick={() => act(item,item.is_read ? "unread" : "read")}>{item.is_read ? "Unread" : "Read"}</button><button onClick={() => act(item,"dismiss")}>Dismiss</button></td></tr>)}
+      })()}</td><td className="mail-cell mail-cell--subject" title={item.email_subject || undefined}>{item.email_subject || "(no subject)"}</td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received">{when(item.email_received_at)}</td><td className="mail-cell mail-cell--detected">{when(item.created_at)}</td><td className="mail-cell mail-cell--automation"><span className={`mail-automation mail-automation--${automationTone(item)}`} title={automationLabel(item)}>{automationLabel(item)}</span></td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="mail-action" aria-label="Open alert" title="Open alert" onClick={() => openNotification(item)}><Icon name="eye" size={15} /></button>
+        <button type="button" className="mail-action" aria-label={item.is_read ? "Mark as unread" : "Mark as read"} title={item.is_read ? "Mark as unread" : "Mark as read"} onClick={() => act(item, item.is_read ? "unread" : "read")}><Icon name={item.is_read ? "mail" : "check"} size={15} /></button>
+        <button type="button" className="mail-action mail-action--dismiss" aria-label="Dismiss alert" title="Dismiss alert" onClick={() => act(item, "dismiss")}><Icon name="x" size={15} /></button>
+      </td></tr>)}
       </tbody>)}
-      {!loading && !items.length && <tbody><tr><td colSpan={9} className="mail-empty">{
-        // When advanced filters (search, candidate, alert-type, booking) are set, the
-        // generic message is always correct regardless of tab. Tab-specific friendly
-        // messages only fire when the tab itself is the sole filter applied.
-        (filters.search || filters.candidateId || filters.classificationGroup || filters.bookingResult)
-          ? "No notifications match these filters."
-          : activeTab === "unread" ? "No unread invitations. All caught up!"
-          : activeTab === "retry"  ? "No alerts are waiting for AI retry."
-          : "No notifications match these filters."
-      }</td></tr></tbody>}
+      {!loading && !items.length && <tbody><tr className="mail-empty-row"><td colSpan={9} className="mail-empty">
+        <div className="mail-empty-state">
+          <strong>{
+            // When advanced filters (search, candidate, alert-type, booking) are set, the
+            // generic message is always correct regardless of tab. Tab-specific friendly
+            // messages only fire when the tab itself is the sole filter applied.
+            filtersActive
+              ? "No notifications match these filters."
+              : activeTab === "unread" ? "No unread invitations. All caught up!"
+              : activeTab === "retry"  ? "No alerts are waiting for AI retry."
+              : "No notifications match these filters."
+          }</strong>
+          <span>{filtersActive
+            ? "Try another search, or clear the filters to see every alert in this tab."
+            : activeTab === "unread" ? "New invitations appear here as soon as they arrive."
+            : activeTab === "retry" ? "Mails the AI could not read yet appear here until a retry succeeds."
+            : "Mail alerts appear here as they arrive."}</span>
+          {filtersActive && <button type="button" className="mail-empty-state__clear" onClick={clearFilters}>Clear filters</button>}
+        </div>
+      </td></tr></tbody>}
     </table></div>
     {total > 20 && <footer className="mail-pagination"><span>{total} {grouped ? "candidates" : "notifications"}</span><button disabled={page===0} onClick={() => setPage((value) => value-1)}>Previous</button><span>Page {page+1}</span><button disabled={(page+1)*20>=total} onClick={() => setPage((value) => value+1)}>Next</button></footer>}
     {selected && <NotificationDetail item={selected} onClose={() => setSelected(null)} />}

@@ -166,7 +166,7 @@ describe("the mails underneath are not deduplicated", () => {
       "Invitation - Digital Employment BGV",
     ]);
     expect(cells.map((c) => c[4])).toEqual(["95%", "100%", "85%"]);
-    expect(cells.map((c) => c[7])).toEqual(["AUTOMATED", "AUTOMATED", "AUTOMATED"]);
+    expect(cells.map((c) => c[7])).toEqual(["Automated", "Automated", "Automated"]);
   });
 
   it("keeps two mails that share a candidate and a company as two rows", async () => {
@@ -181,8 +181,8 @@ describe("the mails underneath are not deduplicated", () => {
     await showSelection();
     await waitFor(() => expect(groups().length).toBe(2));
     for (const tr of within(groups()[0]).getAllByRole("row").slice(1)) {
-      expect(within(tr).getByText("Open")).toBeTruthy();
-      expect(within(tr).getByText("Dismiss")).toBeTruthy();
+      expect(within(tr).getByRole("button", { name: "Open alert" })).toBeTruthy();
+      expect(within(tr).getByRole("button", { name: "Dismiss alert" })).toBeTruthy();
     }
   });
 
@@ -190,7 +190,7 @@ describe("the mails underneath are not deduplicated", () => {
     await showSelection();
     await waitFor(() => expect(groups().length).toBe(2));
     const mails = within(groups()[0]).getAllByRole("row").slice(1);
-    fireEvent.click(within(mails[2]).getByText("Open"));
+    fireEvent.click(within(mails[2]).getByRole("button", { name: "Open alert" }));
     await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
     expect(within(screen.getByRole("dialog")).getByText(
       "Invitation - Digital Employment BGV")).toBeTruthy();

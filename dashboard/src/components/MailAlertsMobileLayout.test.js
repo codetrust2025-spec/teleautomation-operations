@@ -110,10 +110,20 @@ describe('Mail Alerts on a phone', () => {
   })
 })
 
-describe('the desktop table is left alone', () => {
-  it('styles the cell classes only inside the phone block', () => {
+describe('the desktop and tablet tables', () => {
+  it('style the cell classes only in blocks wider than a phone, so a phone keeps its cards', () => {
+    // The desktop table has column rules of its own since 20 Oct (widths, one
+    // line per value, columns that give way); none of them may reach a phone.
     const outside = CSS.replace(PHONE, '')
-    expect(outside).not.toMatch(/\.mail-cell--/)
+    let at = outside.indexOf('.mail-cell--')
+    expect(at, 'the desktop table has no cell rules').toBeGreaterThan(-1)
+    while (at > -1) {
+      const media = outside.lastIndexOf('@media', at)
+      const header = outside.slice(media, outside.indexOf('{', media))
+      expect(header, `a .mail-cell-- rule outside a width-scoped block near ${outside.slice(at, at + 40)}`).toMatch(/min-width: (640\.02|1180\.02)px/)
+      expect(outside.slice(media, at)).not.toMatch(/\n\}\n/)
+      at = outside.indexOf('.mail-cell--', at + 1)
+    }
   })
 
   it('gives every column of the row its class, in table order', () => {
