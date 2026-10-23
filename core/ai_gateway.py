@@ -410,12 +410,12 @@ def _chat(
     # order is deterministic.
     excluded_nodes: set[str] = set()
     if workload == "daybreak_headline":
-        # Daybreak is owned by these two dedicated machines. Reuse the shared
-        # health/model router and failover, but never borrow Praveen or a VPS
-        # fallback. Other Operations workloads retain their existing pool.
+        # Praveen owns Naukri execution; the existing RTX service supplies AI.
+        # Fail closed when RTX is unavailable: Jagadeesh is not authorized for
+        # Daybreak. Other Operations workloads retain their existing pool.
         excluded_nodes = {
             node["id"] for node in ollama_nodes.configured_nodes()
-            if node["id"] not in {"rtx4060", "jagadeesh"}
+            if node["id"] != "rtx4060"
         }
     node_budget = max(1, len(ollama_nodes.candidate_order(chosen)))
     for _node_attempt in range(node_budget):

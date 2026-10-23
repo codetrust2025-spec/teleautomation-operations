@@ -23,10 +23,11 @@ def test_daybreak_uses_rtx_instead_of_another_workloads_primary(monkeypatch, tmp
     assert 'our_machine' not in probes
 
 
-def test_daybreak_fails_over_to_jagadeesh_only(monkeypatch, tmp_path):
+def test_daybreak_rtx_outage_never_uses_healthy_jagadeesh(monkeypatch, tmp_path):
     probes = configure(monkeypatch, tmp_path, offline={'rtx4060'})
-    result = ai_gateway.chat(messages=[{'role':'user','content':'fixture'}], model='qwen2.5:7b', workload='daybreak_headline', max_retries=0)
-    assert result.node_id == 'jagadeesh'
+    with pytest.raises(ai_gateway.AIGatewayError):
+        ai_gateway.chat(messages=[{'role':'user','content':'fixture'}], model='qwen2.5:7b', workload='daybreak_headline', max_retries=0)
+    assert 'jagadeesh' not in probes
     assert 'our_machine' not in probes
 
 
