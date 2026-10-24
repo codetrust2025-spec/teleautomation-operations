@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 const SRC = dirname(fileURLToPath(import.meta.url))
 const read = (rel) => readFileSync(join(SRC, rel), 'utf8')
 
-const SIDEBAR = ['Daily Ops', 'Mail Alerts', 'AI Mail Review', 'Candidates', 'Data Room', 'Attendance', 'Slot Booking']
+const SIDEBAR = ['Daily Ops', 'Bookings Analytics', 'Mail Alerts','AI Mail Review', 'Candidates', 'Data Room', 'Attendance', 'Slot Booking']
 
 const REMOVED_MODULES = [
   'components/DailyBriefingCard.jsx',
