@@ -200,3 +200,37 @@ def test_render_drops_whole_skills_instead_of_clipping_words(monkeypatch):
     response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=request)
     assert response.status_code==200
     assert response.json()['headline']=='React developer | 6 years | JavaScript, React.js'
+
+
+def test_core_terms_are_deduplicated_by_case_and_alias_without_changing_facts():
+    request=integration.DaybreakHeadlineRequest(candidate_ref='own',facts={'target_role':'','experience':'3 Years 5 Months','skills':['Identityiq','IIQ','IAM','Rules','Connectors'],'profile_facts':'SailPoint IAM Engineer | 3.5 YOE | IdentityIQ | IAM'},previous_headline='SailPoint IAM Engineer | 3.5 YOE | IdentityIQ | IAM')
+    brief=integration._brief(request)
+    assert brief['skills'].count('IdentityIQ')==1
+    assert 'Identityiq' not in brief['skills'] and 'IIQ' not in brief['skills']
+    headline=integration._render(request,{'skills':['Rules','Connectors'],'use_existing':False})
+    assert headline.lower().count('identityiq')==1
+    assert '3 Years 5 Months' in headline
+    assert request.facts.skills==['Identityiq','IIQ','IAM','Rules','Connectors']
+
+
+def test_cloud_and_role_aliases_never_create_a_false_factual_gain():
+    previous='GCP Data Engineer | 4 Yrs 5 Mos | BigQuery | Dataflow'
+    request=integration.DaybreakHeadlineRequest(candidate_ref='own',facts={'target_role':'GCP Data Engineer','experience':'4 Years 5 Months','skills':['Data Engineering','gcp','Bigquery','google cloud platforms','GCP Dataflow','Bigtable'],'profile_facts':'GCP Data Engineer | 4 Yrs 5 Mos | BigQuery | Dataflow'},previous_headline=previous)
+    brief=integration._brief(request)
+    assert brief['missing']==['Bigtable']
+    assert integration._render(request,{'skills':['Data Engineering','gcp','GCP Dataflow'],'use_existing':False})==previous
+    assert 'Bigtable' in integration._render(request,{'skills':['Bigtable'],'use_existing':False})
+
+
+def test_missing_title_uses_approved_work_focus_not_an_invented_job_title():
+    request=integration.DaybreakHeadlineRequest(candidate_ref='own',facts={'target_role':'','experience':'4 Years 5 Months','skills':['React.js','TypeScript','Frontend Development','Tailwind CSS'],'profile_facts':'4 Years 5 Months of experience in web technologies with JavaScript and React.js and TypeScript'},previous_headline='4 Years 5 Months of experience in web technologies with React.js and TypeScript')
+    assert integration._brief(request)['role_context']=='Frontend Development'
+    headline=integration._render(request,{'skills':['Tailwind CSS'],'use_existing':False})
+    assert headline.startswith('Frontend Development | 4 Years 5 Months |')
+    assert 'Developer' not in headline
+
+
+def test_ambiguous_source_terms_are_omitted_not_silently_corrected():
+    request=integration.DaybreakHeadlineRequest(candidate_ref='own',facts={'target_role':'Web Developer','experience':'5 Years','skills':['React.js','Pas Services','Restfull API','Snow','GraphQL'],'profile_facts':''})
+    assert integration._selection_schema(request)['properties']['skills']['items']['enum']==['React.js','GraphQL']
+    assert request.facts.skills==['React.js','Pas Services','Restfull API','Snow','GraphQL']

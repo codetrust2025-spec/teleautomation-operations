@@ -52,12 +52,33 @@ def _authorized(authorization: str | None) -> bool:
 def _normalized(value: str) -> str:
     value = re.sub(r"(?i)\bIAM\b", "Identity Access Management", value)
     value = re.sub(r"(?i)\bIIQ\b", "IdentityIQ", value)
-    return re.sub(r"[^a-z0-9]", "", value.lower())
+    value = re.sub(r"(?i)\bGCP\b", "Google Cloud Platforms", value)
+    value = re.sub(r"(?i)\bGCS\b", "Google Cloud Storage", value)
+    value = re.sub(r"(?i)\bPOM\b", "Page Object Model", value)
+    value = re.sub(r"(?i)\bREST(?:ful)?\s+APIs?\b", "RESTAPI", value)
+    result = re.sub(r"[^a-z0-9]", "", value.lower())
+    return result.replace("googlegooglecloudstorage", "googlecloudstorage").replace("responsiveness", "responsive")
+
+
+def _unique_terms(values: list[str]) -> list[str]:
+    seen, result = set(), []
+    for value in values:
+        key = _normalized(value)
+        if key not in seen:
+            seen.add(key)
+            result.append(value)
+    return result
 
 
 def _skill_present(skill: str, headline: str) -> bool:
     needle, haystack = _normalized(skill), _normalized(headline)
     if needle in haystack:
+        return True
+    for ending, counterpart in (("engineering", "engineer"), ("development", "developer")):
+        if needle.endswith(ending) and needle[:-len(ending)] + counterpart in haystack:
+            return True
+    provider = "googlecloudplatforms"
+    if needle.startswith(provider) and provider in haystack and needle[len(provider):] in haystack:
         return True
     role_root = re.sub(r"(?:development|developer|engineering|engineer)$", "", needle)
     return role_root != needle and len(role_root) >= 6 and role_root in haystack
@@ -78,18 +99,19 @@ def _brief(request: DaybreakHeadlineRequest) -> dict:
             r"developer|engineer|analyst|tester|consultant|administrator|specialist|architect|technologies|development",
             clause, re.IGNORECASE,
         )), "")
-    role = role or (facts.skills[0] if facts.skills else "")
+    role = role or next((skill for skill in facts.skills if re.search(
+        r"development|engineering|technologies|testing", skill, re.IGNORECASE,
+    )), facts.skills[0] if facts.skills else "")
     # Preserve one short, explicitly approved core term such as IdentityIQ.
     anchor = next((clause for clause in clauses if clause != role and 1 <= len(clause) <= 35
                    and not re.match(r"^\d", clause) and not re.search(r"[,;&]", clause)
                    and not re.search(r"(?i)\b(expert|skilled|strong|proficient|experienced|expertise|enabling|immediate|joiner|agile)\b", clause)), "")
     # Ambiguous source abbreviations are not expanded into unverified claims.
-    skills = [skill for skill in dict.fromkeys([*facts.skills, *([anchor] if anchor else [])])
-              if skill.casefold() not in {"pas services", "snow"}]
-    protected = list(dict.fromkeys([*([anchor] if anchor else []),
+    skills = [skill for skill in _unique_terms([*([anchor] if anchor else []), *facts.skills])
+              if _normalized(skill) not in {"passervices", "snow", "restfullapi"}]
+    protected = _unique_terms([*([anchor] if anchor else []),
                                   *(skill for skill in skills if _skill_present(skill, request.previous_headline)
-                                    and not _skill_present(skill, role))]))[:3]
-    existing = _normalized(request.previous_headline)
+                                    and not _skill_present(skill, role))])[:3]
     return {"role_context": role, "experience": facts.experience, "skills": skills, "anchor": anchor, "protected": protected,
             "covered": [skill for skill in skills if _skill_present(skill, request.previous_headline)],
             "missing": [skill for skill in skills if not _skill_present(skill, request.previous_headline)]}
@@ -140,7 +162,7 @@ def _render(request: DaybreakHeadlineRequest, generated: dict) -> str:
         return request.previous_headline.strip()
     if not selected or not brief["role_context"]:
         raise ValueError("empty selection or role")
-    selected = list(dict.fromkeys([*brief["protected"], *selected]))
+    selected = _unique_terms([*brief["protected"], *selected])
     header = " | ".join(value for value in (brief["role_context"], brief["experience"]) if value)
     limit = min(220, request.max_length)
     while selected and len(header + " | " + ", ".join(selected)) > limit:
