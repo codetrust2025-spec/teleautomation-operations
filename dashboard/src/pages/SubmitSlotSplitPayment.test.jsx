@@ -60,7 +60,7 @@ function stubFetch(uploadReplies) {
 
 async function pickCandidate() {
   render(<SubmitSlotPage />)
-  const name = await screen.findByPlaceholderText(/choose or type your name/i)
+  const name = await screen.findByLabelText('Profile Service candidate')
   fireEvent.change(name, { target: { value: 'Aniket' } })
   fireEvent.click(await screen.findByRole('option', { name: 'Aniket' }))
   return screen.findByText(/payment due/i)

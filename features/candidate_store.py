@@ -7482,6 +7482,37 @@ def interview_slot_picker_rows(
     return out
 
 
+def eligible_profile_slot_candidate(name: str, candidate_id: str = "") -> dict | None:
+    """The subscribed Profile Service candidate a public booking is for, or None.
+
+    Profile Service books an existing, subscribed candidate -- one the Book
+    Interview Slot picker lists: on Candidates, profile service, In progress,
+    not barred from public booking (interview_slot_picker_rows). A name that is
+    not one of them is refused rather than matched loosely or created, so the
+    form cannot make a duplicate candidate or book a client who is not
+    subscribed (Selected, dropped, rejected, round-wise, or unknown). When the
+    form sends the chosen candidate's id it must be that same person's row.
+    """
+    key = _normalise_candidate_name_key(canonical_candidate_name(_clean_str(name)))
+    if not key:
+        return None
+    entry = next(
+        (
+            option for option in interview_slot_picker_rows(channel="profile")
+            if _normalise_candidate_name_key(option.get("name") or "") == key
+        ),
+        None,
+    )
+    if entry is None:
+        return None
+    cid = _clean_str(candidate_id)
+    if cid and cid != _clean_str(entry.get("id")):
+        row = get_candidate(cid)
+        if not row or _normalise_candidate_name_key(canonical_candidate_name(row.get("name") or "")) != key:
+            return None
+    return entry
+
+
 def interview_candidate_filter_options(
     *,
     from_date: str | None = None,

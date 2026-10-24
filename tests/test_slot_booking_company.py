@@ -16,7 +16,7 @@ import pytest
 
 from features import candidate_store as cs
 
-from tests.test_public_slot_booking_flow import _booking, _client, _confirm, _profile_booking, _upload
+from tests.test_public_slot_booking_flow import _booking, _client, _confirm, _profile_booking, _subscribe, _upload
 
 AHEAD = (date.today() + timedelta(days=7)).isoformat()
 
@@ -101,6 +101,7 @@ def test_the_other_required_fields_are_still_reported_first(monkeypatch, tmp_pat
 
 def test_retrying_the_same_booking_keeps_its_company_and_books_once(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
+    _subscribe()
     booking = _profile_booking(key=f"abilash-{AHEAD}")
     booking.update({"date": AHEAD, "company": "Infosys"})
     assert _confirm(client, booking).status_code == 200

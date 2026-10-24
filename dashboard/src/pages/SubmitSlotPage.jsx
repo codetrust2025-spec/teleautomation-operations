@@ -4,6 +4,7 @@ import { SubmitSlotFileDrop } from './SubmitSlotFileDrop.jsx'
 import { bookingSourceMeta } from '../utils/bookingSource.js'
 import { Icon } from '../components/ui/Icon.jsx'
 import AiNodeProgress, { analysedByLine, analysisSeconds, useAiAnalysis } from '../components/AiNodeProgress.jsx'
+import './subscribedCandidatePicker.css'
 
 const API_BASE = typeof window !== 'undefined' && window.location.port === '3000'
   ? ''
@@ -421,43 +422,106 @@ function SlotTechnologyPicker({ options, value, onChange, disabled }) {
   )
 }
 
-function SlotCandidatePicker({ candidates, value, onChange, disabled }) {
+/** Why a Profile Service list is empty, said where the list would be. */
+export const NO_SUBSCRIBED_CANDIDATES =
+  'No subscribed Profile Service candidates yet. A candidate appears here once they are on Candidates with Profile service, In progress.'
+
+/**
+ * Profile Service books a subscribed candidate who is already on Candidates --
+ * never a typed name, which made a new client or booked someone no longer
+ * subscribed. The list is the server's (`/public/slots/candidates`: profile
+ * service, In progress, not barred), the same one `/bookings/confirm` holds a
+ * booking to, so what can be chosen here is exactly what can be booked.
+ *
+ * The box searches; only choosing from the list sets the candidate. Closed, it
+ * shows who is chosen. The list is read again each time it opens, so a
+ * candidate subscribed since the page loaded is there without a reload.
+ */
+function SubscribedCandidatePicker({ candidates, value, onChoose, onOpen, disabled, loading }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
   const rootRef = useRef(null)
   const options = useMemo(() => dedupeCandidates(candidates), [candidates])
-  const query = value.trim().toLocaleLowerCase()
-  const matches = useMemo(() => options.filter(c => c.name.toLocaleLowerCase().includes(query)), [options, query])
+  const needle = query.trim().toLocaleLowerCase()
+  const matches = useMemo(
+    () => (needle ? options.filter(c => c.name.toLocaleLowerCase().includes(needle)) : options),
+    [options, needle],
+  )
   useEffect(() => {
-    function close(e) { if (!rootRef.current?.contains(e.target)) setOpen(false) }
+    function close(e) { if (!rootRef.current?.contains(e.target)) { setOpen(false); setQuery('') } }
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
   }, [])
+  useEffect(() => { setActive(0) }, [needle, open])
+  const show = () => { if (!open) { setOpen(true); setQuery(''); onOpen?.() } }
+  const choose = c => { onChoose(c.name); setOpen(false); setQuery('') }
+  const onKeyDown = e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); show(); setActive(i => Math.min(matches.length - 1, i + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(0, i - 1)) }
+    else if (e.key === 'Enter' && open) { e.preventDefault(); if (matches[active]) choose(matches[active]) }
+    else if (e.key === 'Escape') { setOpen(false); setQuery('') }
+  }
+  const empty = !loading && !options.length
   return (
-    <div ref={rootRef} className="sbs-picker">
+    <div ref={rootRef} className="sbs-picker sbs-profile-picker">
       <div className="sbs-picker__input-wrap">
         <svg className="sbs-picker__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+          <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
         </svg>
-        <input className="sbs-input sbs-name-input" value={value}
-          onChange={e => { onChange(e.target.value); setOpen(true) }}
-          onFocus={() => setOpen(true)}
-          placeholder="Choose or type your name" disabled={disabled}
-          autoComplete="name" aria-autocomplete="list" aria-expanded={open} aria-controls="sbs-candidate-options" />
-        <button type="button" className="sbs-picker__toggle" onClick={() => setOpen(v => !v)} disabled={disabled} aria-label="Show names" aria-expanded={open}>
+        <input className="sbs-input sbs-name-input" value={open ? query : value}
+          onChange={e => {
+            const typed = e.target.value
+            setQuery(typed); setOpen(true)
+            // A listed candidate's whole name, typed out, is choosing them;
+            // anything else only searches.
+            const exact = options.find(c => c.name.toLocaleLowerCase() === typed.trim().toLocaleLowerCase())
+            if (exact && exact.name !== value) onChoose(exact.name)
+          }}
+          onFocus={show} onClick={show} onKeyDown={onKeyDown}
+          placeholder={loading ? 'Loading…' : empty ? 'None subscribed yet' : 'Search candidates'}
+          disabled={disabled} autoComplete="off"
+          aria-label="Profile Service candidate" aria-autocomplete="list" aria-expanded={open}
+          aria-controls="sbs-candidate-options"
+          aria-activedescendant={open && matches[active] ? `sbs-candidate-${candidateNameKey(matches[active].name)}` : undefined} />
+        <button type="button" className="sbs-picker__toggle" onClick={() => (open ? (setOpen(false), setQuery('')) : show())} disabled={disabled} aria-label="Show subscribed candidates" aria-expanded={open}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
       {open && (
-        <div id="sbs-candidate-options" className="sbs-picker__menu" role="listbox">
-          {matches.length ? matches.map(c => (
-            <button key={candidateNameKey(c.name)} type="button" role="option"
-              aria-selected={c.name.toLocaleLowerCase() === query}
-              className="sbs-picker__option"
-              onClick={() => { onChange(c.name); setOpen(false) }}>{c.name}</button>
-          )) : <p className="sbs-picker__empty">Type a new name to continue.</p>}
+        <div id="sbs-candidate-options" className="sbs-picker__menu" role="listbox" aria-label="Subscribed Profile Service candidates">
+          {matches.map((c, index) => (
+            <button key={candidateNameKey(c.name)} id={`sbs-candidate-${candidateNameKey(c.name)}`} type="button" role="option"
+              aria-selected={c.name === value}
+              className={`sbs-picker__option sbs-profile-option${index === active ? ' is-active' : ''}`}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => choose(c)}>
+              <span className="sbs-profile-option__name">{c.name}</span>
+              {/* Seen, not part of the option's name: the chosen profile shows it. */}
+              {c.technology && <span className="sbs-profile-option__tech" aria-hidden="true">{c.technology}</span>}
+            </button>
+          ))}
+          {!matches.length && (
+            <p className="sbs-picker__empty" role="status">
+              {loading ? 'Loading candidates…' : empty ? NO_SUBSCRIBED_CANDIDATES : `No subscribed candidate matches “${query.trim()}”.`}
+            </p>
+          )}
         </div>
       )}
     </div>
+  )
+}
+
+/** The chosen candidate's profile, as Candidates holds it. */
+function ProfileCandidateDetails({ candidate }) {
+  if (!candidate) return null
+  const due = Number(candidate.balance_due) || 0
+  return (
+    <dl className="sbs-profile-details" aria-label={`${candidate.name}'s profile`}>
+      <div><dt>Technology</dt><dd>{candidate.technology || 'Not recorded'}</dd></div>
+      <div><dt>Payment</dt><dd className={due > 0 ? 'is-due' : 'is-clear'}>{due > 0 ? `₹${due.toLocaleString('en-IN')} due` : 'Paid up'}</dd></div>
+      {candidate.payment_message && <p className="sbs-profile-details__note">{candidate.payment_message}</p>}
+    </dl>
   )
 }
 
@@ -974,6 +1038,8 @@ export function SubmitSlotPage() {
     setMissingField(''); setError('')
   }, [resetPaymentProofs, resetInviteAnalysis])
 
+  // When the candidate list was last read (see refreshCandidates).
+  const candidatesReadAt = useRef(0)
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
@@ -983,7 +1049,7 @@ export function SubmitSlotPage() {
       ])
       const cData = await cRes.json()
       const bData = await bRes.json()
-      if (cData.status === 'ok') setCandidates(dedupeCandidates(cData.candidates || []))
+      if (cData.status === 'ok') { setCandidates(dedupeCandidates(cData.candidates || [])); candidatesReadAt.current = Date.now() }
       if (bData.status === 'ok') {
         setBooked(bData.slots || [])
         setBookedDetailsWithheld(Boolean(bData.details_withheld))
@@ -993,6 +1059,18 @@ export function SubmitSlotPage() {
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
+
+  // Newly subscribed candidates appear without a reload: the list is read
+  // again whenever it is opened, at most every 20 seconds.
+  const refreshCandidates = useCallback(async () => {
+    if (Date.now() - candidatesReadAt.current < 20000) return
+    candidatesReadAt.current = Date.now()
+    try {
+      const res = await fetch(`${API_BASE}/public/slots/candidates`, { cache: 'no-store' })
+      const data = await res.json()
+      if (data.status === 'ok') setCandidates(dedupeCandidates(data.candidates || []))
+    } catch { /* the list on screen stays; the booking is still checked */ }
+  }, [])
   useEffect(() => () => {
     if (slotPreview) URL.revokeObjectURL(slotPreview)
     if (sessionPreview) URL.revokeObjectURL(sessionPreview)
@@ -1216,7 +1294,7 @@ export function SubmitSlotPage() {
   useEffect(() => {
     if (!missingField) return
     const satisfied = {
-      name: !!effectiveName,
+      name: serviceType === 'round_wise' ? !!effectiveName : !!selected,
       phone: serviceType !== 'round_wise' || !!roundWisePhone.trim(),
       technology: serviceType !== 'round_wise' || !!effectiveTechnology,
       company: !!company.trim(),
@@ -1225,7 +1303,7 @@ export function SubmitSlotPage() {
       invite: !!slotFile,
     }[missingField]
     if (satisfied) setMissingField('')
-  }, [missingField, effectiveName, serviceType, roundWisePhone, effectiveTechnology,
+  }, [missingField, effectiveName, selected, serviceType, roundWisePhone, effectiveTechnology,
       company, interviewRound, needsPaymentProof, slotFile])
 
   async function submitBook(ev) {
@@ -1250,7 +1328,8 @@ export function SubmitSlotPage() {
     // so validating it earlier would judge an amount that is not settled yet.
     const steps = [
       { key: 'invite', ref: inviteRef, ok: !!slotFile },
-      { key: 'name', ref: nameRef, fallbackRef: nameFieldRef, ok: !!effectiveName },
+      { key: 'name', ref: nameRef, fallbackRef: nameFieldRef,
+        ok: serviceType === 'round_wise' ? !!effectiveName : !!selected },
       { key: 'invite_name', ref: nameRef, fallbackRef: nameFieldRef,
         ok: !inviteNamesAnotherClient(inviteReadName, effectiveName) || inviteNameChecked },
       { key: 'phone', ref: phoneRef,
@@ -1495,21 +1574,24 @@ export function SubmitSlotPage() {
               </div>
 
               <label ref={nameFieldRef} className="sbs-field sbs-field--client">
-                <span className="sbs-label">Client name</span>
+                <span className="sbs-label">{serviceType === "round_wise" ? "Client name" : "Subscribed candidate"}</span>
                 {serviceType === "round_wise" ? (
                   <input ref={nameRef} className="sbs-input" type="text" value={name} onChange={e => typeClientName(e.target.value)} placeholder="Type client name" disabled={busy || parsing} />
                 ) : (
-                  <SlotCandidatePicker candidates={candidates} value={name} onChange={typeClientName} disabled={busy || parsing} />
+                  <SubscribedCandidatePicker candidates={candidates} value={name} onChoose={typeClientName} onOpen={refreshCandidates} loading={loading} disabled={busy || parsing} />
                 )}
-                {missingField === 'name'
-                  ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter the client name for this round.</span>
+                {serviceType !== "round_wise" && <ProfileCandidateDetails candidate={selected} />}
+                {serviceType !== "round_wise" && !loading && !candidates.length && missingField !== 'name'
+                  ? <span className="sbs-hint sbs-profile-empty" role="status">{NO_SUBSCRIBED_CANDIDATES}</span>
+                  : missingField === 'name'
+                  ? <span className="sbs-hint sbs-hint--warn" role="alert">{serviceType === "round_wise" ? "Enter the client name for this round." : "Choose the candidate from the list of subscribed Profile Service candidates."}</span>
                   : nameFromInvite
                     ? <span className="sbs-hint">Matched from the invite. Check it.</span>
                     : inviteNameHint && !name.trim()
                       ? <span className="sbs-hint sbs-name-offer">{serviceType === "round_wise"
                           ? <>{`The invite names “${inviteNameHint}”. `}<button type="button" className="sbs-link-btn" onClick={e => { e.preventDefault(); typeClientName(inviteNameHint) }} disabled={busy || parsing}>Use this name</button>{' or type it.'}</>
                           : `The invite names “${inviteNameHint}”. Pick the client to confirm.`}</span>
-                      : <span className="sbs-hint">{serviceType === "round_wise" ? "Type the client name for this round." : "Pick from the list or type a new client name."}</span>}
+                      : <span className="sbs-hint">{serviceType === "round_wise" ? "Type the client name for this round." : selected ? "From Candidates. Check it is the right person." : "Choose from the subscribed Profile Service candidates."}</span>}
                 {inviteNamesAnotherClient(inviteReadName, name) && (
                   <span className="sbs-hint sbs-hint--warn sbs-name-check" role={missingField === 'invite_name' ? 'alert' : undefined}>
                     <input

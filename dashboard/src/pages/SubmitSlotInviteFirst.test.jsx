@@ -66,7 +66,7 @@ describe('the invite is the first field', () => {
     render(<SubmitSlotPage />)
     await screen.findByLabelText('Company')
     expect(labels()).toEqual([
-      'Interview invite screenshot', 'Service type', 'Client name', 'Company *', 'Interview round *',
+      'Interview invite screenshot', 'Service type', 'Subscribed candidate', 'Company *', 'Interview round *',
       'Interview date & time (IST) *',
     ])
     const first = document.querySelector('.sbs-form > .sbs-field')

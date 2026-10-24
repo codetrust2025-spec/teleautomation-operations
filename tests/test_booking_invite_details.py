@@ -19,7 +19,7 @@ from features.ollama_invite_extract import (
     clean_written_timezone,
     validate_invite_extraction,
 )
-from tests.test_public_slot_booking_flow import _booking, _client, _confirm, _profile_booking, _upload
+from tests.test_public_slot_booking_flow import _booking, _client, _confirm, _profile_booking, _subscribe, _upload
 
 AHEAD = (date.today() + timedelta(days=7)).isoformat()
 TEAMS = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_test%40thread.v2/0?context=x"
@@ -133,6 +133,7 @@ class TestTheBookingKeepsThem:
 
     def test_a_blank_never_clears_a_detail_already_recorded(self, monkeypatch, tmp_path):
         client = _client(monkeypatch, tmp_path)
+        _subscribe()
         booking = _profile_booking(key=f"abilash-{AHEAD}")
         booking.update({"date": AHEAD, "meeting_platform": "Zoom", "meeting_link": "https://us02web.zoom.us/j/1", "timezone": "IST"})
         assert _confirm(client, booking).status_code == 200

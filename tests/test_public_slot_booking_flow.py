@@ -106,6 +106,19 @@ def _profile_booking(key: str = "abilash-2026-08-12-1600") -> dict:
     }
 
 
+def _subscribe(name: str = "Abilash Perla") -> dict:
+    """Put a subscribed Profile Service candidate on file.
+
+    Profile Service books only a subscribed candidate already on Candidates
+    (eligible_profile_slot_candidate); the form no longer creates one from a
+    typed name, preset slot-booker names included.
+    """
+    return cs.create_candidate({
+        "name": name, "phone": "9000000700", "technology": "React JS", "reference": "Ravinder",
+        "stage": "in_progress", "service_type": "profile_service", "ctc_percentage": 8,
+    })
+
+
 def _confirm(client: TestClient, booking: dict):
     return client.post(
         "/bookings/confirm",
@@ -245,6 +258,12 @@ def test_success_is_never_reported_without_a_persisted_slot(monkeypatch, tmp_pat
         lambda *_a, **_k: (unbooked, "cloned"),
     )
     monkeypatch.setattr(cs, "finalize_public_booking_payment", lambda row, **_k: row)
+    # Abilash is a subscribed Profile Service candidate; the store is replaced
+    # above, so say so rather than seed one (Profile Service books only them).
+    monkeypatch.setattr(
+        cs, "eligible_profile_slot_candidate",
+        lambda name, candidate_id="": {"id": "abilash", "name": name},
+    )
 
     response = _confirm(client, _profile_booking(key="ghost-key"))
     assert response.status_code == 500

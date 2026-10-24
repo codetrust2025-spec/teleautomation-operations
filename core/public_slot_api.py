@@ -1078,6 +1078,22 @@ def install_public_slot_routes(app) -> None:
             interview_round=normalized_round,
             candidate_id=candidate_id.strip(),
         )
+        # Profile Service books a subscribed candidate already on Candidates,
+        # chosen from the list -- never a typed name, which could create a
+        # duplicate or book someone who is not subscribed. An admin's
+        # Re-Service grant is its own permission and keeps its path.
+        if (
+            normalized_service_type != "round_wise"
+            and not re_service_booking
+            and not await asyncio.to_thread(
+                cs.eligible_profile_slot_candidate, name, candidate_id.strip()
+            )
+        ):
+            return _json_error(
+                f"Choose the candidate from the Profile Service list. “{name.strip()}” is not a "
+                "subscribed Profile Service candidate (on Candidates, In progress).",
+                not_subscribed=True,
+            )
         if normalized_service_type == "round_wise" and not pending_payment_proofs and not re_service_booking:
             return _json_error(
                 "Upload and verify the payment screenshot to continue.",
