@@ -114,3 +114,15 @@ def test_rewriting_prioritizes_explicit_approved_experience_without_inflation():
     assert "include that exact experience" in text
     assert "Never round it or add a plus sign" in text
     assert '"experience":"6 years"' in text
+
+
+def test_editorial_review_lists_only_approved_missing_skills_without_spelling_churn():
+    request = payload() | {"previous_headline": "React.js developer using JavaScript"}
+    request["facts"]["skills"] = ["React.js", "JavaScript", "Docker"]
+    prompt = integration._prompt(integration.DaybreakHeadlineRequest.model_validate(request))
+    review = prompt.split("EDITORIAL_REVIEW:", 1)[1]
+    assert '["Docker"]' in review
+    assert '"React.js"' not in review
+    assert '"JavaScript"' not in review
+    assert "genuinely strengthen this existing role" in review
+    assert "return existing headline unchanged" in review

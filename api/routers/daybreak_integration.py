@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 from typing import Annotated
 
@@ -58,6 +59,9 @@ def _authorized(authorization: str | None) -> bool:
 
 def _prompt(request: DaybreakHeadlineRequest) -> str:
     facts = request.facts.model_dump()
+    normalized = lambda value: re.sub(r"[^a-z0-9]", "", value.lower())
+    existing = normalized(request.previous_headline)
+    missing = [skill for skill in facts["skills"] if normalized(skill) not in existing]
     # JSON makes the boundary explicit: only this candidate's approved facts
     # are passed to the shared Operations gateway. No stored Operations
     # candidate data is consulted by this route.
@@ -88,6 +92,13 @@ def _prompt(request: DaybreakHeadlineRequest) -> str:
         f"The headline must be 30 to {request.max_length} characters.\n"
         "APPROVED_FACTS=" + json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
         + "\nEXISTING_HEADLINE=" + json.dumps(request.previous_headline, ensure_ascii=False)
+        + "\nEDITORIAL_REVIEW: Consider these APPROVED skills missing from the headline: "
+        + json.dumps(missing, ensure_ascii=False)
+        + ". Select at most three that genuinely strengthen this existing role. "
+        "Replace vague or redundant wording only if that gives useful specific context. "
+        "Preserve exact approved experience. Prefer 150 to 220 characters, finish all words. "
+        "Omit all promotional adjectives. If no relevant factual improvement is possible "
+        "return existing headline unchanged."
     )
 
 
