@@ -369,19 +369,29 @@ button.ba-kpi:disabled { cursor: default; }
 .ba-sort--asc { border-bottom: 5px solid currentColor; }
 .ba-sort--none { border-top: 5px solid rgba(148, 163, 184, 0.3); }
 
+/* The Bookings column keeps room for its heading and sort mark in Verdana,
+   the font iPhones draw this stack in (about 11% wider than Segoe UI): at 70px
+   "Bookings" ran into "Share" on a phone. */
 @container (max-width: 470px) {
   .ba-table__attended { display: none; }
-  .ba-table__num { width: 76px; }
-  .ba-table__share { width: 90px; }
+  .ba-table__num { width: 88px; }
+  .ba-table__share { width: 86px; }
   .ba-share { grid-template-columns: 42px minmax(0, 1fr); gap: 5px; }
   .ba-table th, .ba-table td { padding-left: 6px; padding-right: 6px; }
 }
+/* Narrower still (a phone, a tablet's two columns): the name keeps room for a
+   long single word -- "Vekateshwarlu" in Verdana -- so it wraps between words,
+   never inside one. */
 @container (max-width: 360px) {
-  .ba-table__share { width: 52px; }
+  .ba-table th { font-size: 11.5px; }
+  .ba-table__name { font-size: 12.5px; }
+  .ba-table__rank { width: 30px; padding-right: 2px !important; }
+  .ba-table__num { width: 80px; }
+  .ba-table th.ba-table__num { padding-left: 0; }
+  .ba-table__share { width: 50px; }
   .ba-share { grid-template-columns: 1fr; }
   .ba-share i { display: none; }
-  .ba-table__num { width: 70px; }
-  .ba-table__rank { width: 32px; }
+  .ba-table__act { width: 34px; }
 }
 
 /* Bars: Interview levels, Tech stack, All technologies */
@@ -413,7 +423,9 @@ button.ba-kpi:disabled { cursor: default; }
 .ba-bar__track { grid-area: track; height: 5px; overflow: hidden; border-radius: 999px; background: rgba(148, 163, 184, 0.12); }
 .ba-bar__track i { display: block; height: 100%; border-radius: inherit; background: var(--ba-accent); }
 
-@container (min-width: 300px) {
+/* Two levels to a row only where "Screening" and "Unspecified" still fit
+   whole beside their counts: at 300px Verdana broke them mid-word. */
+@container (min-width: 380px) {
   .ba-card--levels .ba-bars { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; }
 }
 
@@ -527,12 +539,14 @@ button.ba-kpi:disabled { cursor: default; }
   .ba-stack > .ba-card { flex: 1 1 auto; }
 }
 
-/* A laptop: Refresh and Export keep their icons and names (title, aria-label)
-   and give up their words, which keeps the toolbar on one line at 1280-1499px. */
-@media (min-width: 641px) and (max-width: 1499px) {
+/* A laptop and a phone: Refresh and Export keep their icons and names (title,
+   aria-label) and give up their words. That keeps the toolbar on one line at
+   1280-1499px, and on a phone leaves "Interviews 251" room for its icon. */
+@media (max-width: 1499px) {
   .ba-button--icon-text { width: 36px; padding: 0; }
   .ba-button--icon-text > span { display: none; }
 }
+.ba-button > svg { flex: 0 0 auto; }
 
 @media (max-width: 900px) {
   .desktop-body.business-body.desktop-body--bookings-analytics { padding: 12px 10px 24px; }
@@ -547,9 +561,10 @@ button.ba-kpi:disabled { cursor: default; }
   .ba-toolbar .ba-select .dark-select__trigger.ba-control { width: 100%; min-width: 0; max-width: none; height: 40px; }
   .ba-control { height: 40px; }
   .ba-range__menu { width: min(320px, calc(100vw - 20px)); }
-  .ba-toolbar__end { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); margin-left: 0; }
+  .ba-toolbar__end { display: grid; grid-template-columns: minmax(0, 1fr) 40px 40px; margin-left: 0; }
   .ba-toolbar__end .ba-updated { grid-column: 1 / -1; order: 2; text-align: right; }
   .ba-button { height: 40px; padding: 0 10px; }
+  .ba-button--icon-text { width: 40px; padding: 0; }
   .ba-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .ba-kpi { padding: 8px 10px 8px 12px; }
   .ba-kpi__value { font-size: 22px; }
