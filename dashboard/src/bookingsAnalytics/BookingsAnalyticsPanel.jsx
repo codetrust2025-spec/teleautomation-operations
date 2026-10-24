@@ -334,11 +334,11 @@ function CandidateTable({ rows, limit, selected, onPick, onInterviews, label, em
   )
 }
 
-function SearchBox({ value, onChange, placeholder, label }) {
+function SearchBox({ value, onChange, placeholder, label, title }) {
   return (
     <label className="ba-search">
       <Icon name="search" size={14} />
-      <input type="search" value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} aria-label={label} />
+      <input type="search" value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} aria-label={label} title={title} />
     </label>
   )
 }
@@ -435,7 +435,9 @@ function InterviewsView({ range, filters, initialStatus, period, onClose }) {
   return (
     <View title={filters.candidate ? `${filters.candidate}: interviews` : 'Interviews'} subtitle={`${scope ? `${scope} · ` : ''}${period}`} onClose={onClose} wide>
       <div className="ba-view__tools">
-        <SearchBox value={query} onChange={setQuery} placeholder="Search name, company, level, technology" label="Search interviews" />
+        {/* The fields go in the tooltip: spelled out as the placeholder they
+            needed 336px of a phone's 245 in Verdana and were cut at "level,". */}
+        <SearchBox value={query} onChange={setQuery} placeholder="Search interviews" label="Search interviews" title="Search by name, company, level, technology or attendee" />
         <span className="ba-muted">{state.loading ? 'Loading…' : `${shown.length} of ${state.rows.length}`}</span>
       </div>
       <div className="ba-status-tabs" role="tablist" aria-label="Interview status">
