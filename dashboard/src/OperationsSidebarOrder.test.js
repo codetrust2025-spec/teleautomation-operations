@@ -1,7 +1,8 @@
 /**
  * The Operations sidebar order, and what the shell opens on.
  *
- * Requested order runs the day forwards: what needs doing now (Daily Ops),
+ * Requested order runs the day forwards: what needs doing now (Daily Ops) and
+ * how the bookings behind it add up (Bookings Analytics, directly below it),
  * then what has come in (Mail Alerts, AI Mail Review), then the records behind
  * it (Candidates, Data Room), and last Attendance and Slot Booking.
  *
@@ -29,6 +30,7 @@ const app = readFileSync(join(SRC, 'App.jsx'), 'utf8')
 
 const EXPECTED = [
   'Daily Ops',
+  'Bookings Analytics',
   'Mail Alerts',
   'AI Mail Review',
   'Candidates',

@@ -59,6 +59,16 @@ const PAGES = [
     ],
   },
   {
+    // A page since 21 Oct; it opened as "Interview booking analytics" over Daily Ops.
+    label: 'Bookings Analytics',
+    oldTitle: /^(interview )?bookings? analytics$/i,
+    keeps: () => [
+      screen.getByRole('group', { name: 'Bookings filters' }),
+      screen.getByRole('group', { name: 'Booking counters' }),
+      screen.getByRole('button', { name: 'Refresh' }),
+    ],
+  },
+  {
     label: 'Mail Alerts',
     oldTitle: /^mail monitoring notifications$/i,
     keeps: () => [

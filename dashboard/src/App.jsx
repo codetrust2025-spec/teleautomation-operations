@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { CandidatesPanel } from './components/CandidatesPanel.jsx'
 import { DailyOpsPanel } from './dailyOps/DailyOpsPanel.jsx'
+import { BookingsAnalyticsPanel } from './bookingsAnalytics/BookingsAnalyticsPanel.jsx'
 import { DataRoomPanel } from './components/DataRoomPanel.jsx'
 import { RecruitmentMailPanel } from './components/RecruitmentMailPanel.jsx'
 import { MailMonitoringNotifications } from './components/MailMonitoringNotifications.jsx'
@@ -29,6 +30,8 @@ const VIEWS = [
   // the badge beside it carries any count. (Daily Ops and Mail Alerts used to
   // drop their glyph at zero, which left two rows unaligned with the rest.)
   { id: 'daily-ops', label: 'Daily Ops', icon: 'clipboard', badge: 'interviews' },
+  // The booking analytics that used to be a popup over Daily Ops, as a page.
+  { id: 'bookings-analytics', label: 'Bookings Analytics', icon: 'chart' },
   { id: 'mail-notifications', label: 'Mail Alerts', icon: 'bell', badge: 'mail' },
   { id: 'ai-recruitment', label: 'AI Mail Review', icon: 'mail', badge: 'gmail-expired' },
   { id: 'candidates', label: 'Candidates', icon: 'users', badge: 'works' },
@@ -41,6 +44,12 @@ const VIEWS = [
 // sidebar - the id lives only in this state - so this one value is what login,
 // a refresh and the Operations root all land on.
 const DEFAULT_VIEW = 'daily-ops'
+
+// Pages that lay the body out themselves rather than in the shell's padding.
+const BODY_CLASS = {
+  'daily-ops': ' desktop-body--daily-ops',
+  'bookings-analytics': ' desktop-body--bookings-analytics',
+}
 
 function countLabel(value) {
   return value > 99 ? '99+' : value
@@ -286,9 +295,10 @@ function OperationsShell({ view, onNavigate }) {
           </div>
         </header>
 
-        <main className={`desktop-body business-body${view === 'daily-ops' ? ' desktop-body--daily-ops' : ''}`}>
+        <main className={`desktop-body business-body${BODY_CLASS[view] || ''}`}>
           {view === 'candidates' && <CandidatesPanel />}
           {view === 'daily-ops' && <DailyOpsPanel />}
+          {view === 'bookings-analytics' && <BookingsAnalyticsPanel />}
           {view === 'attendance' && <AttendancePanel />}
           {view === 'ai-recruitment' && <RecruitmentMailPanel />}
           {view === 'mail-notifications' && <MailMonitoringNotifications />}

@@ -169,6 +169,17 @@ const PATHS = {
     </>
   ),
   x: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
+  // Bookings Analytics: trend arrows, View all, the technology and candidate filters.
+  'arrow-up': <path d="M12 19V5M6 11l6-6 6 6" />,
+  'arrow-down': <path d="M12 5v14M6 13l6 6 6-6" />,
+  'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
+  code: <path d="m8.5 7.5-5 4.5 5 4.5M15.5 7.5l5 4.5-5 4.5" />,
+  user: (
+    <>
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M5 19.5c1-3.6 3.8-5.4 7-5.4s6 1.8 7 5.4" />
+    </>
+  ),
 }
 
 export const ICON_NAMES = Object.keys(PATHS)

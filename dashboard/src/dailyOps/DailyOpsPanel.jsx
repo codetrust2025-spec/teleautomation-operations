@@ -40,19 +40,15 @@ export function kpiScope(tab) {
 const PIE_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4', '#f43f5e', '#84cc16']
 const candidateColor = (index, count) => count <= PIE_COLORS.length ? PIE_COLORS[index] : `hsl(${Math.round((index * 360) / count)} 78% 55%)`
 
-function BookingPie({ overview = {}, selectedTechnology = '', onTechnologySelect }) {
-  const [open, setOpen] = useState(false)
-  const [hovered, setHovered] = useState(null)
-  const [selected, setSelected] = useState(null)
-  useEffect(() => {
-    if (!open) return undefined
-    const closeOnEscape = event => event.key === 'Escape' && setOpen(false)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [open])
+/**
+ * The bookings summary in the top bar: the donut and the count. The detail
+ * behind it -- every candidate, level and technology, and the interviews --
+ * is the Bookings Analytics page now, not a popup over this one (21 Oct), so
+ * the button beside the donut goes there.
+ */
+function BookingPie({ overview = {} }) {
   const total = Number(overview.total || 0)
-  const rawCandidates = overview.by_candidate || []
-  const candidates = rawCandidates
+  const candidates = overview.by_candidate || []
   let cursor = 0
   const stops = candidates.map((item, index) => {
     const start = cursor
@@ -60,20 +56,10 @@ function BookingPie({ overview = {}, selectedTechnology = '', onTechnologySelect
     return `${candidateColor(index, candidates.length)} ${start}% ${cursor}%`
   })
   const background = total && stops.length ? `conic-gradient(${stops.join(', ')})` : 'conic-gradient(#273244 0 100%)'
-  let segmentCursor = 0
-  const segments = candidates.map((item, index) => {
-    const percent = total ? (Number(item.count || 0) / total) * 100 : 0
-    const segment = { ...item, percent, offset: segmentCursor, color: candidateColor(index, candidates.length) }
-    segmentCursor += percent
-    return segment
-  })
-  const activeCandidate = hovered || selected
-  const displayedLevels = selected?.levels || overview.by_level || []
-  const displayedTechnologies = selected?.technologies || overview.by_technology || []
-  const selectCandidate = segment => setSelected(current => current?.name === segment.name ? null : segment)
+  const openAnalytics = () => window.dispatchEvent(new CustomEvent('teleautomation:navigate', { detail: { view: 'bookings-analytics' } }))
 
   return (
-    <><section className="ops-booking-pie" aria-label={`${total} interviews booked across all candidates`}>
+    <section className="ops-booking-pie" aria-label={`${total} interviews booked across all candidates`}>
       <div className="ops-booking-pie__chart" style={{ background }}>
         <span><strong>{total}</strong><small>booked</small></span>
       </div>
@@ -84,25 +70,8 @@ function BookingPie({ overview = {}, selectedTechnology = '', onTechnologySelect
         </div>
         <div className="ops-booking-pie__levels"><small>Levels</small>{(overview.by_level || []).map(item => <span key={item.name}><b>{item.name}</b>{item.count}</span>)}</div>
       </div>
-      <button type="button" className="ops-booking-pie__open" onClick={() => setOpen(true)}>Open analytics</button>
+      <button type="button" className="ops-booking-pie__open" onClick={openAnalytics} title="Open Bookings Analytics">Open Bookings Analytics</button>
     </section>
-    {open && <div className="ops-booking-modal" role="presentation" onMouseDown={event => event.target === event.currentTarget && setOpen(false)}>
-      <section className="ops-booking-modal__panel" role="dialog" aria-modal="true" aria-label="Interview booking analytics">
-        <header><div><h2>Interview booking analytics</h2><p>Candidate distribution and interview levels for the selected period</p></div><button type="button" onClick={() => setOpen(false)} aria-label="Close analytics">&#10005;</button></header>
-        <div className="ops-booking-modal__body">
-          <div className="ops-booking-modal__donut-wrap">
-            <svg className="ops-booking-modal__donut" viewBox="0 0 120 120" role="img" aria-label="Bookings by candidate">
-              <circle cx="60" cy="60" r="46" pathLength="100" className="ops-booking-modal__track" />
-              {segments.map(segment => <circle key={segment.name} cx="60" cy="60" r="46" pathLength="100" fill="none" stroke={segment.color} strokeWidth={activeCandidate?.name === segment.name ? 19 : 16} strokeDasharray={`${segment.percent} ${100 - segment.percent}`} strokeDashoffset={-segment.offset} transform="rotate(-90 60 60)" className="ops-booking-modal__segment" onMouseEnter={() => setHovered(segment)} onMouseLeave={() => setHovered(null)} onClick={() => selectCandidate(segment)}><title>{segment.name}: {segment.count} bookings ({segment.percent.toFixed(1)}%)</title></circle>)}
-            </svg>
-            <div className="ops-booking-modal__center">{activeCandidate ? <><strong>{activeCandidate.count}</strong><span>{activeCandidate.name}</span><small>{activeCandidate.percent.toFixed(1)}%</small></> : <><strong>{total}</strong><span>Total bookings</span><small>Click a candidate</small></>}</div>
-          </div>
-          <div className="ops-booking-modal__legend">{segments.map(segment => <button type="button" key={segment.name} onMouseEnter={() => setHovered(segment)} onMouseLeave={() => setHovered(null)} onClick={() => selectCandidate(segment)} className={activeCandidate?.name === segment.name ? 'is-active' : ''} aria-pressed={selected?.name === segment.name}><i style={{ background: segment.color }} /><span>{segment.name}</span><strong>{segment.count}</strong><em>{segment.percent.toFixed(1)}%</em></button>)}</div>
-        </div>
-        <footer className="ops-booking-modal__levels"><h3>Interview levels {selected ? `· ${selected.name}` : '· All candidates'}</h3><div>{displayedLevels.map(item => <span key={item.name}><b>{item.name}</b><strong>{item.count}</strong></span>)}</div></footer>
-        <footer className="ops-booking-modal__levels ops-booking-modal__technologies"><h3>Tech stack {selected ? `· ${selected.name}` : '· All candidates'} <small>Click to filter the table</small></h3><div>{displayedTechnologies.map(item => <button type="button" key={item.name} className={selectedTechnology === item.name ? 'is-active' : ''} onClick={() => onTechnologySelect?.(selectedTechnology === item.name ? '' : item.name)}><b>{item.name}</b><strong>{item.count}</strong></button>)}</div></footer>
-      </section>
-    </div>}</>
   )
 }
 
@@ -288,7 +257,7 @@ export function DailyOpsPanel({
         </div>
 
         <div className="ops-topbar__right">
-          <BookingPie overview={globalStats?.booking_overview} selectedTechnology={technologyFilter} onTechnologySelect={setTechnologyFilter} />
+          <BookingPie overview={globalStats?.booking_overview} />
         </div>
       </div>
 

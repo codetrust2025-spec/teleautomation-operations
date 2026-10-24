@@ -6,7 +6,7 @@
  * content in a 1388px bar, so the booking card and the pill wrapped to a
  * second line and the bar stood 161px tall. The 470px came from a single
  * `min-width` on `.ops-booking-pie`, held open by a per-candidate legend and a
- * row of level chips that the analytics modal shows in full anyway.
+ * row of level chips that Bookings Analytics shows in full anyway.
  *
  * The compaction has to stay inside a `min-width` media query. Written flat it
  * sits after the 900px and 600px blocks in the same file, at the same
@@ -87,10 +87,11 @@ describe('the top bar fits on one line above 900px', () => {
     expect((floor.selector.match(/\./g) || []).length).toBeGreaterThanOrEqual(2)
   })
 
-  it('keeps the way into the analytics modal', () => {
-    // The legend and the level chips are hidden in the bar because the modal
-    // behind this button shows both. Hide the button too and the detail is
-    // gone rather than moved.
+  it('keeps the way into Bookings Analytics', () => {
+    // The legend and the level chips are hidden in the bar because the
+    // Bookings Analytics page behind this button shows both (it was a modal
+    // until 21 Oct). Hide the button too and the detail is gone rather than
+    // moved.
     for (const rule of matching('.ops-booking-pie__open')) {
       expect(rule.body).not.toMatch(/display\s*:\s*none/)
     }
@@ -151,7 +152,7 @@ describe('and leaves tablet and phone alone', () => {
   it('leaves the card hidden on a phone rather than crushed to a sliver', () => {
     // At 390px the card measures 0px wide. That is `display:none` from the
     // 600px block, not a squeeze: the donut has no room beside the title and
-    // the pill, and the analytics modal still reaches all of it.
+    // the pill, and Bookings Analytics, in the sidebar, has all of it.
     const hidden = ALL.find(
       r =>
         r.selector.trim() === '.ops-booking-pie' &&
