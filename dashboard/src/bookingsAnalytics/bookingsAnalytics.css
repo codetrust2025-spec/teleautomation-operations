@@ -344,9 +344,11 @@ button.ba-kpi:disabled { cursor: default; }
 .ba-table__num b { color: #fff; }
 .ba-table__share { width: 112px; }
 .ba-table__act { width: 40px; padding-left: 0 !important; padding-right: 0 !important; text-align: center; }
+/* inline-block, so a ★ Selected badge follows the name on its line */
 .ba-table__name {
-  display: block;
+  display: inline-block;
   max-width: 100%;
+  vertical-align: middle;
   padding: 2px 0;
   border: 0;
   background: none;

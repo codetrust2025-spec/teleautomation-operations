@@ -93,10 +93,16 @@ describe('every place a stage is named agrees', () => {
     expect(new Set(labels)).toEqual(new Set(['Rejected']))
   })
 
-  it('names completed in three places, all of them Closed / Completed', () => {
+  it('names completed Closed / Completed, and the filter splits it into Selected and the rest', () => {
+    // The editor's list and the row badge name the stored value. The stage
+    // filter splits it by outcome (25 Oct): a profile-wise candidate whose
+    // stage is completed reads ★ Selected (candidateOutcome.js), and the stage
+    // editor relabels that option at render time; see CandidateSelectedStatus.
     const labels = everyStageLabel('completed')
-    expect(labels.length).toBe(3)
+    expect(labels.length).toBe(2)
     expect(new Set(labels)).toEqual(new Set(['Closed / Completed']))
+    expect(everyStageLabel('selected')).toEqual(['Selected'])
+    expect(everyStageLabel('closed_completed')).toEqual(['Closed / Completed'])
   })
 
   it('leaves in_progress and dropped consistent too', () => {

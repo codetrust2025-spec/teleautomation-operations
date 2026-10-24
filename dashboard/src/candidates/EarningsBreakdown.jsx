@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
 import "./EarningsBreakdown.css";
 import { normalizePaymentProofs } from "./paymentProofs.js";
 import { Icon } from "../components/ui/Icon.jsx";
+import { CandidateSelectedBadge } from "./SelectedBadge.jsx";
 
 /** "2026-07" → "Jul 2026". Returns "" for anything that is not a real month. */
 function monthLabel(value) {
@@ -348,7 +349,14 @@ export default function EarningsBreakdown({
                       <strong>{p.name}</strong>
                     </td>
                     <td className="earn-td--num">{p.count || 0}</td>
-                    <td className="earn-td--num earn-green">{p.completed || 0}</td>
+                    <td className="earn-td--num earn-green">
+                      {p.completed || 0}
+                      {(p.selected || 0) > 0 && (
+                        <span className="earn-selected" title={`${p.selected} of them Selected (profile-wise, closed / completed)`}>
+                          ★ {p.selected} selected
+                        </span>
+                      )}
+                    </td>
                     <td className="earn-td--money">{fmt(p.revenue_total || 0)}</td>
                     <td className="earn-td--money earn-green">
                       {fmt(commission)}
@@ -403,7 +411,7 @@ export default function EarningsBreakdown({
                                   return (
                                     <li className="earn-breakdown-item" key={c.id}>
                                       <span className="earn-breakdown-desc">
-                                        {c.name} · {fmt(received)} received – {fmt(referral)} referral
+                                        {c.name}<CandidateSelectedBadge row={c} /> · {fmt(received)} received – {fmt(referral)} referral
                                         {dateStr && <span className="earn-breakdown-date"> · {dateStr}</span>}
                                         {availableProofCount > 0 && onViewPaymentProofs && (
                                           <button

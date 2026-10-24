@@ -11,6 +11,8 @@ import {
 } from "../utils/istTime.js";
 import { CandidatesActiveRoster } from "./CandidatesActiveRoster.jsx";
 import { triggerRosterDownload } from "./candidatesRosterUtils.js";
+import { SelectedBadge, CandidateSelectedBadge } from "./SelectedBadge.jsx";
+import { isSelectedCandidate, stageLabel } from "./candidateOutcome.js";
 import { consumePendingWorkOpenIntent } from "../dailyOps/PendingWorksProvider.jsx";
 import { PendingWorksTab } from "./PendingWorksTab.jsx";
 import { Icon } from "../components/ui/Icon.jsx";
@@ -3027,6 +3029,7 @@ export function CandidateEditModal({
         <header className="cand-modal-header">
           <h3 className="cand-modal-title">
             {e ? "Edit candidate" : "Add candidate"}
+            {e && <CandidateSelectedBadge row={e} />}
           </h3>
           <button
             type="button"
@@ -3101,9 +3104,11 @@ export function CandidateEditModal({
                 value={l.stage}
                 onChange={(C) => g("stage", C.target.value)}
               >
+                {/* Stored values unchanged; a profile-wise candidate's
+                    "completed" is called Selected (candidateOutcome.js). */}
                 {V8.map((C) => (
                   <option value={C.value} key={C.value}>
-                    {C.label}
+                    {stageLabel(C.value, l.service_type)}
                   </option>
                 ))}
               </select>
@@ -3668,6 +3673,10 @@ function J8({
   const o = scopedPerf
     ? scopedPerf.fail || 0
     : ((h = e.by_stage) == null ? undefined : h.fail) || 0;
+  // Of the completed, the profile-wise ones: ★ Selected.
+  const selectedCount = scopedPerf
+    ? scopedPerf.selected || 0
+    : e.selected_count || 0;
   const u = i > 0 ? Math.round((l / i) * 100) : 0;
   const clientCollections = scopedPerf
     ? scopedPerf.revenue_total || 0
@@ -3709,7 +3718,7 @@ function J8({
         </div>
         <div className="cand-stat-value">{i}</div>
         <div className="cand-stat-sub">
-          {l} done · {c} active · {o} failed
+          <span className="cand-stat-selected">★ {selectedCount} selected</span> · {Math.max(0, l - selectedCount)} closed · {c} active · {o} failed
         </div>
         {(e.consultancy_count || 0) > 0 && (
           <div className="cand-stat-channel">
@@ -5154,6 +5163,7 @@ export function PaymentProofsModal({ candidate: e, onClose: t, onEdit: r }) {
               <span className="cand-handler-name">
                 {candidate?.name || e?.name}
               </span>
+              <CandidateSelectedBadge row={candidate || e} />
             </h3>
             <p className="cand-modal-sub cand-payout-bar">
               <span className="cand-payout-chunk cand-payout-chunk--earn">
@@ -5966,6 +5976,9 @@ function _Component30({ handler: e, onClose: t, onChanged: r }) {
     </div>
   );
 }
+// The stage filter. Stored "completed" is two outcomes on the page, so it is
+// two filters: Selected (profile-wise) and Closed / Completed (round-wise); the
+// server applies both (features/candidate_store.py, _apply_list_filters).
 const dR = [
   {
     value: "all",
@@ -5976,7 +5989,11 @@ const dR = [
     label: "In progress",
   },
   {
-    value: "completed",
+    value: "selected",
+    label: "Selected",
+  },
+  {
+    value: "closed_completed",
     label: "Closed / Completed",
   },
   {
@@ -5988,6 +6005,18 @@ const dR = [
     label: "Dropped",
   },
 ];
+/** Candidates by outcome, as the rows are labelled: Selected first. */
+function outcomeLines(stats) {
+  const by = (stats && stats.by_stage) || {};
+  const selected = (stats && stats.selected_count) || 0;
+  return [
+    ["★ Selected", selected],
+    ["Closed / Completed", Math.max(0, (by.completed || 0) - selected)],
+    ["In progress", by.in_progress || 0],
+    ["Rejected", by.fail || 0],
+    ["Dropped", by.dropped || 0],
+  ];
+}
 function fR(e) {
   return (
     {
@@ -6559,24 +6588,11 @@ function CandidatesPanelImpl() {
           ),
         );
       } else if (label === "Conversion") {
-        const stages = ["completed", "in_progress", "fail", "dropped"];
         total.textContent = `${c.by_stage?.completed || 0} completed of ${c.total || 0} candidates`;
-        stages.forEach((stage) =>
-          makeLine(
-            lines,
-            stage.replace("_", " "),
-            String(c.by_stage?.[stage] || 0),
-          ),
-        );
+        outcomeLines(c).forEach(([label, count]) => makeLine(lines, label, String(count)));
       } else if (label === "Total candidates") {
         total.textContent = `${c.total || 0} candidate${(c.total || 0) === 1 ? "" : "s"} in this view`;
-        ["completed", "in_progress", "fail", "dropped"].forEach((stage) =>
-          makeLine(
-            lines,
-            stage.replace("_", " "),
-            String(c.by_stage?.[stage] || 0),
-          ),
-        );
+        outcomeLines(c).forEach(([label, count]) => makeLine(lines, label, String(count)));
       } else if (label.startsWith("Top technologies")) {
         total.textContent = "Company share by technology";
         (c.top_technologies || []).forEach((item) =>
@@ -7171,6 +7187,7 @@ function CandidatesPanelImpl() {
                       >
                         <td className="cand-cell-name">
                           <span className="cand-name">{ge.name}</span>
+                          <CandidateSelectedBadge row={ge} />
                           {ge.details_complete && (
                             <span
                               className="cand-row-complete cand-tip cand-tip--below"
@@ -7220,9 +7237,13 @@ function CandidatesPanelImpl() {
                           </span>
                         </td>
                         <td className="cand-cell-stage">
-                          <span className={`cand-badge ${Ge.cls}`}>
-                            {Ge.label}
-                          </span>
+                          {isSelectedCandidate(ge) ? (
+                            <SelectedBadge className="ta-selected-badge--stage" />
+                          ) : (
+                            <span className={`cand-badge ${Ge.cls}`}>
+                              {Ge.label}
+                            </span>
+                          )}
                         </td>
                         <td className="cand-cell-pay">
                           <_Component27 row={ge} onViewProofs={Z} />

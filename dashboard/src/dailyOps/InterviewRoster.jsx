@@ -11,6 +11,7 @@ import { publishPendingWorkChanged } from './PendingWorksProvider.jsx'
 import { SITTING_OUTCOMES, STATUS_OPTIONS, canonicalStatus, countStatusRows, emptyStatusCounts, matchesStatusFilter, statusLabel, statusTone } from './interviewStatuses.js'
 import { DarkSelect } from './DarkSelect.jsx'
 import { Icon } from '../components/ui/Icon.jsx'
+import { CandidateSelectedBadge } from '../candidates/SelectedBadge.jsx'
 import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
 import { rowCompanyName as companyOf } from './companyName.js'
 
@@ -787,6 +788,7 @@ export function InterviewRoster({
                         wrapper out of the desktop's layout entirely. */}
                     <span className="ops-interview-identity">
                       <strong title={row.name}>{row.name}</strong>
+                      <CandidateSelectedBadge row={row} />
                       {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
                     </span>
                     {/* Every row said "Candidate booked" on a line of its own.

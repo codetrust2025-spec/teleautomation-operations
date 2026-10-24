@@ -6,6 +6,8 @@ import { DarkSelect } from '../dailyOps/DarkSelect.jsx'
 import { INTERVIEW_STATUSES } from '../dailyOps/interviewStatuses.js'
 import { formatDayLabel } from '../dailyOps/InterviewRoster.jsx'
 import { formatClockTime } from '../utils/istTime.js'
+import { SelectedBadge, CandidateSelectedBadge } from '../candidates/SelectedBadge.jsx'
+import { SELECTED_LABEL, isSelectedCandidate } from '../candidates/candidateOutcome.js'
 import {
   DEFAULT_PRESET,
   RANGE_PRESETS,
@@ -86,6 +88,14 @@ function queryFor(range, filters) {
   if (filters.technology) params.set('technology', filters.technology)
   if (filters.round) params.set('round', filters.round)
   return params
+}
+
+/** A candidate list searched by name -- or by "selected", the outcome they show. */
+function matchCandidates(rows, query) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return rows
+  const outcome = needle.replace(/^★\s*/, '') === 'selected'
+  return rows.filter(row => row.name.toLowerCase().includes(needle) || (outcome && row.selected))
 }
 
 const loadSummary = (range, filters, signal) => readJson('/candidates/interviews/global', queryFor(range, filters), signal)
@@ -313,6 +323,7 @@ function CandidateTable({ rows, limit, selected, onPick, onInterviews, label, em
                 <td className="ba-table__rank"><span className="ba-rank" style={{ '--ba-accent': rankColor(row.rank) }}>{row.rank}</span></td>
                 <td className="ba-table__name-cell">
                   <button type="button" className="ba-table__name" title={isActive ? 'Show every candidate again' : `Show only ${row.name}`} aria-pressed={isActive} onClick={() => onPick(row.name)}>{row.name}</button>
+                  {row.selected && <SelectedBadge />}
                 </td>
                 <td className="ba-table__num"><b>{row.count}</b></td>
                 <td className="ba-table__num ba-table__attended">{Number(row.attended) || 0}</td>
@@ -373,14 +384,22 @@ function View({ title, subtitle, onClose, children, wide = false }) {
 
 function AllCandidatesView({ rows, selected, onPick, onInterviews, onClose, period }) {
   const [query, setQuery] = useState('')
+  const [selectedOnly, setSelectedOnly] = useState(false)
   const matched = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return needle ? rows.filter(row => row.name.toLowerCase().includes(needle)) : rows
-  }, [rows, query])
+    const found = matchCandidates(rows, query)
+    return selectedOnly ? found.filter(row => row.selected) : found
+  }, [rows, query, selectedOnly])
   const total = rows.reduce((sum, row) => sum + row.count, 0)
+  const selectedCount = rows.filter(row => row.selected).length
   return (
     <View title="All candidates" subtitle={`${rows.length} candidates · ${total} bookings · ${period}`} onClose={onClose}>
-      <div className="ba-view__tools"><SearchBox value={query} onChange={setQuery} placeholder="Search candidates" label="Search all candidates" /><span className="ba-muted">{matched.length} shown</span></div>
+      <div className="ba-view__tools">
+        <SearchBox value={query} onChange={setQuery} placeholder="Search candidates" label="Search all candidates" />
+        <button type="button" className={`ba-status-tab ba-tone--green${selectedOnly ? ' is-active' : ''}`} aria-pressed={selectedOnly} onClick={() => setSelectedOnly(value => !value)} disabled={!selectedCount && !selectedOnly}>
+          ★ {SELECTED_LABEL} only<b>{selectedCount}</b>
+        </button>
+        <span className="ba-muted">{matched.length} shown</span>
+      </div>
       <CandidateTable rows={matched} selected={selected} onPick={onPick} onInterviews={onInterviews} label="All candidates by bookings" emptyText="No candidate matches that search." />
     </View>
   )
@@ -427,6 +446,7 @@ function InterviewsView({ range, filters, initialStatus, period, onClose }) {
     return state.rows.filter(row => {
       if (status && rowStatus(row).filterValue !== status) return false
       if (!needle) return true
+      if (needle.replace(/^★\s*/, '') === 'selected' && isSelectedCandidate(row)) return true
       return [row.name, row.interview_company, row.technology_resolved || row.technology, row.interview_round, row.interview_attendee_resolved || row.interview_attendee]
         .some(value => String(value || '').toLowerCase().includes(needle))
     })
@@ -460,7 +480,7 @@ function InterviewsView({ range, filters, initialStatus, period, onClose }) {
                 <tr key={row.id}>
                   <td data-label="Date">{formatDayLabel(row.date)}</td>
                   <td data-label="Time">{[row.time, row.time_end].filter(Boolean).map(formatClockTime).join(' – ') || '—'}</td>
-                  <td data-label="Candidate" className="ba-table__strong">{row.name || '—'}</td>
+                  <td data-label="Candidate" className="ba-table__strong">{row.name || '—'}<CandidateSelectedBadge row={row} /></td>
                   <td data-label="Level">{row.interview_round || 'Unspecified'}</td>
                   <td data-label="Technology">{row.technology_resolved || row.technology || 'Unspecified'}</td>
                   <td data-label="Company">{row.interview_company || '—'}</td>
@@ -546,9 +566,10 @@ export function BookingsAnalyticsPanel() {
   }, [technologies, filters.technology])
 
   const topRows = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    return needle ? candidates.filter(row => row.name.toLowerCase().includes(needle)) : candidates
+    return matchCandidates(candidates, search)
   }, [candidates, search])
+  const selectedCount = candidates.filter(row => row.selected).length
+  const chosenSelected = Boolean(filters.candidate && candidates.find(row => row.name === filters.candidate)?.selected)
 
   const option = (all, names, current) => {
     const list = [...new Set(names.filter(Boolean))]
@@ -620,7 +641,9 @@ export function BookingsAnalyticsPanel() {
         <KpiCard
           label="Total bookings"
           tone="blue"
-          note={filters.candidate ? filters.candidate : `${candidates.length} candidate${candidates.length === 1 ? '' : 's'}`}
+          note={filters.candidate
+            ? `${filters.candidate}${chosenSelected ? ` · ★ ${SELECTED_LABEL}` : ''}`
+            : `${candidates.length} candidate${candidates.length === 1 ? '' : 's'}${selectedCount ? ` · ★ ${selectedCount} selected` : ''}`}
           value={total}
           total={total}
           previous={previousCounts ? Number(previousCounts.count) || 0 : undefined}
@@ -661,7 +684,7 @@ export function BookingsAnalyticsPanel() {
                   <li key={segment.name}>
                     <button type="button" className={`${isActive ? 'is-active' : ''}${filters.candidate && !isActive ? ' is-dim' : ''}`} aria-pressed={segment.others ? undefined : isActive} onClick={() => (segment.others ? setView({ kind: 'candidates' }) : toggle('candidate', segment.name))} title={segment.others ? 'See every candidate' : isActive ? 'Show every candidate again' : `Show only ${segment.name}`}>
                       <i style={{ background: segment.color }} aria-hidden="true" />
-                      <span>{segment.name}</span>
+                      <span>{segment.name}{segment.selected && <SelectedBadge />}</span>
                       <strong>{segment.count}</strong>
                       <em>{formatPercent(segment.percent)}</em>
                     </button>

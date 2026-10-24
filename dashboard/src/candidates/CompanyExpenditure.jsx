@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import "./CompanyExpenditure.css";
+import { CandidateSelectedBadge } from "./SelectedBadge.jsx";
 
 const CATEGORIES = [
   { value: "rent", label: "Rent / space" },
@@ -122,7 +123,7 @@ export default function CompanyExpenditure({ onClose, apiBase = "" }) {
     const performers = statsData.top_performers || [];
     return performers
       .filter(p => (Number(p.revenue_total) || 0) > 0)
-      .map(p => ({ name: p.name, amount: Number(p.revenue_total) || 0, count: p.count || 0, completed: p.completed || 0 }))
+      .map(p => ({ name: p.name, amount: Number(p.revenue_total) || 0, count: p.count || 0, completed: p.completed || 0, selected: p.selected || 0 }))
       .sort((a, b) => b.amount - a.amount);
   }, [statsData]);
 
@@ -230,7 +231,7 @@ export default function CompanyExpenditure({ onClose, apiBase = "" }) {
                     <div key={item.name}>
                       <div className={`compexp-list-row compexp-list-row--clickable${expandedHandler === item.name ? " compexp-list-row--open" : ""}`} onClick={() => toggleHandler(item.name)}>
                         <span className="compexp-list-name"><span className="compexp-expand-icon">{expandedHandler === item.name ? "▾" : "▸"}</span> {item.name}</span>
-                        <span className="compexp-list-meta">{item.count} leads · {item.completed} done</span>
+                        <span className="compexp-list-meta">{item.count} leads · {item.completed} done{item.selected > 0 && <> · <span className="compexp-selected">★ {item.selected} selected</span></>}</span>
                         <strong className="compexp-list-amount compexp-list-amount--revenue">{fmt(item.amount)}</strong>
                       </div>
                       {expandedHandler === item.name && (
@@ -241,7 +242,7 @@ export default function CompanyExpenditure({ onClose, apiBase = "" }) {
                             if (!rows.length) return <p className="compexp-sublist-loading">No payments recorded.</p>;
                             return rows.map(c => (
                               <div className="compexp-sublist-row" key={c.id}>
-                                <span className="compexp-sublist-name">{c.name}</span>
+                                <span className="compexp-sublist-name">{c.name}<CandidateSelectedBadge row={c} /></span>
                                 <span className="compexp-sublist-date">{fmtDate(c.logged_date || c.date)}</span>
                                 <strong className="compexp-sublist-amount">{fmt(c.payment)}</strong>
                               </div>

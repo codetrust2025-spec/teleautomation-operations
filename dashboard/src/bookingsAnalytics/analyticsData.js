@@ -238,11 +238,13 @@ export function buildReport({ range, comparison, filters, summary, previous, can
       return [label, now, prior, change === null ? '' : change]
     }),
     [],
-    ['Candidate', 'Bookings', 'Share %', ...statuses.map(status => status.label)],
+    ['Selected candidates', candidates.filter(item => item.selected).length],
+    [],
+    ['Candidate', 'Status', 'Bookings', 'Share %', ...statuses.map(status => status.label)],
   ]
   const shown = filters?.candidate ? candidates.filter(item => item.name === filters.candidate) : candidates
   for (const item of shown) {
-    rows.push([item.name, item.count, item.percent, ...statuses.map(status => Number(item[status.value || 'pending']) || 0)])
+    rows.push([item.name, item.selected ? 'Selected' : '', item.count, item.percent, ...statuses.map(status => Number(item[status.value || 'pending']) || 0)])
   }
   rows.push([], ['Interview level', 'Bookings', 'Share %'])
   for (const item of levels) rows.push([item.name, item.count, item.percent])

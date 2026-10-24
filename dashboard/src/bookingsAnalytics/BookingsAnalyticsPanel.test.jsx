@@ -17,6 +17,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BookingsAnalyticsPanel } from './BookingsAnalyticsPanel.jsx'
+import { buildReport } from './analyticsData.js'
 import { captureLayout } from '../test/captureLayout.js'
 
 const STATUS_KEYS = ['attended', 'not_attended', 'technical_issue', 'cancelled', 'rescheduled', 'released_for_reschedule', 're_service']
@@ -30,6 +31,10 @@ const PEOPLE = [
   ['Zubin Lastrow', 1, 'ETL'],
 ]
 const LEVELS = ['L1', 'L1', 'L2', 'Screening', '', 'Final', 'HR']
+// Meena's profile is Closed / Completed (★ Selected); Ravi's round-wise work is
+// completed too, which stays Closed / Completed.
+const PLACED = 'Meena Sample'
+const ROUND_DONE = 'Ravi Testcase'
 const OUTCOMES = ['attended', 'attended', 'attended', 'cancelled', '', 'rescheduled', 'not_attended']
 
 function buildRows(people = PEOPLE) {
@@ -44,6 +49,9 @@ function buildRows(people = PEOPLE) {
         name,
         technology,
         technology_resolved: technology,
+        stage: name === PLACED || name === ROUND_DONE ? 'completed' : 'in_progress',
+        service_type: name === ROUND_DONE ? 'round_wise' : 'profile_service',
+        candidate_selected: name === PLACED,
         interview_round: LEVELS[n % LEVELS.length],
         interview_attendance_status: OUTCOMES[n % OUTCOMES.length],
         interview_attendance_status_resolved: OUTCOMES[n % OUTCOMES.length],
@@ -81,6 +89,8 @@ function select(url) {
 
 function summary(url) {
   const { rows, optionRows } = select(url)
+  // As the server reads it: the candidate's outcome, over every stored row.
+  const selected = new Set(ROWS.filter(row => row.candidate_selected).map(row => row.name))
   const counts = new Map()
   const tally = (key, map) => map.set(key, (map.get(key) || 0) + 1)
   const byCandidate = new Map()
@@ -99,12 +109,12 @@ function summary(url) {
   }
   return {
     status: 'ok',
-    booking_overview: { total: rows.length, by_candidate: bucketList(people), by_level: bucketList(levels), by_technology: bucketList(techs) },
+    booking_overview: { total: rows.length, by_candidate: bucketList(people).map(entry => ({ ...entry, selected: selected.has(entry.name) })), by_level: bucketList(levels), by_technology: bucketList(techs) },
     interviews: {
       count: rows.length,
       pending_count: counts.get('pending') || 0,
       ...Object.fromEntries(STATUS_KEYS.map(k => [`${k}_count`, counts.get(k) || 0])),
-      by_candidate: [...byCandidate.values()].sort((a, b) => b.scheduled - a.scheduled || a.name.localeCompare(b.name)),
+      by_candidate: [...byCandidate.values()].map(entry => ({ ...entry, selected: selected.has(entry.name) })).sort((a, b) => b.scheduled - a.scheduled || a.name.localeCompare(b.name)),
     },
     available_months: [],
   }
@@ -315,5 +325,67 @@ describe('live data', () => {
     } finally {
       delete document.hidden
     }
+  })
+})
+
+describe('★ Selected', () => {
+  const badgeIn = el => el.querySelector('.ta-selected-badge')
+
+  it('marks a selected candidate in the Top 10 and the chart legend, and nobody else', async () => {
+    await openPage()
+    for (const row of bodyRows(topTable())) {
+      const name = row.querySelector('.ba-table__name').textContent
+      expect(Boolean(badgeIn(row)), name).toBe(name === PLACED)
+    }
+    const legend = within(screen.getByRole('list', { name: 'Candidates in the chart' }))
+    const placed = legend.getAllByRole('button').find(b => b.textContent.includes(PLACED))
+    expect(badgeIn(placed).textContent).toBe('★Selected')
+    expect(legend.getAllByRole('button').filter(badgeIn)).toHaveLength(1)
+  })
+
+  it('counts them on the Total bookings card', async () => {
+    await openPage()
+    expect(kpi('Total bookings').querySelector('.ba-kpi__share').textContent).toBe(`${PEOPLE.length} candidates · ★ 1 selected`)
+  })
+
+  it('finds them by the word, in the Top 10 search and in All candidates', async () => {
+    await openPage()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search candidates' }), { target: { value: 'selected' } })
+    expect(bodyRows(topTable()).map(r => r.querySelector('.ba-table__name').textContent)).toEqual([PLACED])
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search candidates' }), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: /View all candidates/ }))
+    const view = screen.getByRole('dialog', { name: 'All candidates' })
+    const only = within(view).getByRole('button', { name: /Selected only/ })
+    expect(only.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(only)
+    const table = within(view).getByRole('table', { name: 'All candidates by bookings' })
+    expect(bodyRows(table).map(r => r.querySelector('.ba-table__name').textContent)).toEqual([PLACED])
+  })
+
+  it('marks their interviews in the drill-down, and finds them by the word', async () => {
+    await openPage()
+    fireEvent.click(kpi('Total bookings'))
+    const view = await screen.findByRole('dialog', { name: 'Interviews' })
+    const table = () => within(view).getByRole('table', { name: 'Interviews' })
+    await waitFor(() => expect(bodyRows(table())).toHaveLength(ROWS.length))
+    const marked = bodyRows(table()).filter(badgeIn)
+    expect(marked.length).toBe(ROWS.filter(r => r.name === PLACED).length)
+    expect(marked.every(r => r.textContent.includes(PLACED))).toBe(true)
+    fireEvent.change(within(view).getByRole('searchbox', { name: 'Search interviews' }), { target: { value: 'selected' } })
+    expect(bodyRows(table()).every(r => r.textContent.includes(PLACED))).toBe(true)
+  })
+
+  it('names them in the exported report', () => {
+    const csv = buildReport({
+      range: { from: '2000-01-01', to: '2100-12-31' }, comparison: null, filters: {},
+      summary: { interviews: { count: 3 } }, previous: null,
+      candidates: [{ name: PLACED, count: 2, percent: 66.7, selected: true }, { name: ROUND_DONE, count: 1, percent: 33.3, selected: false }],
+      levels: [], technologies: [],
+    })
+    const lines = csv.replace(/^\uFEFF/, '').split('\r\n')
+    expect(lines).toContain('Selected candidates,1')
+    expect(lines).toContain(`${PLACED},Selected,2,66.7,0,0,0,0,0,0,0,0`)
+    expect(lines).toContain(`${ROUND_DONE},,1,33.3,0,0,0,0,0,0,0,0`)
+    expect(lines.some(l => l.startsWith('Candidate,Status,Bookings,Share %,Pending,Attended'))).toBe(true)
   })
 })

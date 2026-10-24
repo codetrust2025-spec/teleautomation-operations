@@ -463,6 +463,21 @@ def is_closed_profile_service(row: dict) -> bool:
     )
 
 
+def candidate_is_selected(row: dict) -> bool:
+    """Selected: the final outcome of a successful profile-wise candidate.
+
+    A profile-wise candidate whose stage is Closed / Completed has been placed,
+    and every page shows them as ★ Selected. It is derived, never stored: the
+    stage stays "completed" and the service type "profile_service", so every
+    query, payment and complimentary rule that reads those values is unchanged.
+    A round-wise candidate who completes stays Closed / Completed. Selected is a
+    candidate-level outcome -- not an interview attendance status, and not an
+    interview's own result (INTERVIEW_RESULT_VALUES), which can also be
+    "selected" for one round.
+    """
+    return is_closed_profile_service(row)
+
+
 def referrer_complimentary_amount(row: dict) -> int:
     reference = _reference_key(row.get("reference") or "")
     if reference == "unknown" or not is_closed_profile_service(row):
@@ -2090,6 +2105,10 @@ def _compute_row(row: dict) -> dict:
     enriched["needs_followup"] = balance > 0
     enriched["closure_date"] = _clean_str(row.get("closure_date"))[:10]
     enriched["closure_month"] = _row_closure_month(row)
+    # The one place the dashboard reads Selected from, on every candidate and
+    # interview row; derived like balance_due, never written (_normalise keeps
+    # only the stored fields).
+    enriched["candidate_selected"] = candidate_is_selected(row)
     base_commission = referrer_commission_amount(row)
     referrer_bonus = referrer_complimentary_amount(row)
     admin_bonus = admin_complimentary_amount(row)
@@ -2345,7 +2364,15 @@ def _apply_list_filters(
     service_type: str | None = None,
 ) -> list[dict]:
     if stage and stage != "all":
-        rows = [r for r in rows if r.get("stage") == stage]
+        # Two filters split the stored "completed" by outcome, as the page
+        # labels it: Selected (profile-wise) and Closed / Completed (the rest).
+        # "completed" itself still means every completed candidate.
+        if stage == "selected":
+            rows = [r for r in rows if candidate_is_selected(r)]
+        elif stage == "closed_completed":
+            rows = [r for r in rows if r.get("stage") == "completed" and not candidate_is_selected(r)]
+        else:
+            rows = [r for r in rows if r.get("stage") == stage]
     if task and task != "all":
         rows = [r for r in rows if r.get("task") == task]
     if month and month != "all":
@@ -2365,6 +2392,9 @@ def _apply_list_filters(
         if q:
             def _hit(r: dict) -> bool:
                 if q == "consultancy" and r.get("consultancy"):
+                    return True
+                # The status a row is shown with is searchable by its word.
+                if q.lstrip("★ ").strip() == "selected" and candidate_is_selected(r):
                     return True
                 for k in ("name", "technology", "reference", "phone", "notes", "follow_up"):
                     if q in (r.get(k) or "").lower():
@@ -4859,6 +4889,14 @@ def interview_global_summary(
         overview_levels[level_label] = overview_levels.get(level_label, 0) + 1
         overview_technologies[technology_label] = overview_technologies.get(technology_label, 0) + 1
 
+    # Selected is the candidate's outcome, not the period's: read over every
+    # stored interview (all_rows), so a name reads the same in any range.
+    selected_candidates = {
+        canonical_candidate_name((row.get("name") or "").strip()) or "Unknown"
+        for row in all_rows
+        if candidate_is_selected(row)
+    }
+
     # Month options are offered only for days a real interview actually sits on.
     # `all_rows` has already dropped cancelled, failed and unconfirmed records;
     # what remained was a shape check loose enough to admit "2027-99", so the
@@ -4967,6 +5005,7 @@ def interview_global_summary(
                 {
                     "name": name,
                     "count": stats["count"],
+                    "selected": name in selected_candidates,
                     "levels": [
                         {"name": level, "count": count}
                         for level, count in sorted(stats["levels"].items(), key=lambda item: (-item[1], item[0].lower()))
@@ -4992,7 +5031,10 @@ def interview_global_summary(
             **interview_counts,
             "by_attendee": _bucket_rows(by_attendee),
             "by_referrer": _bucket_rows(by_referrer),
-            "by_candidate": _bucket_rows(by_candidate),
+            "by_candidate": [
+                {**entry, "selected": entry["name"] in selected_candidates}
+                for entry in _bucket_rows(by_candidate)
+            ],
             "by_technology": _bucket_rows(by_technology),
         },
         "tasks": {
@@ -8135,6 +8177,8 @@ def stats(
 
     total = len(rows)
     by_stage = {s: 0 for s in VALID_STAGES}
+    # Of by_stage["completed"], the profile-wise ones the page calls Selected.
+    selected_count = 0
     revenue = 0
     revenue_by_tech: dict[str, int] = {}
     company_by_tech: dict[str, int] = {}
@@ -8156,6 +8200,8 @@ def stats(
     for r in rows:
         st = r.get("stage") or "in_progress"
         by_stage[st] = by_stage.get(st, 0) + 1
+        selected = candidate_is_selected(r)
+        selected_count += int(selected)
         amt = int(r.get("payment") or 0)
         is_consultancy = bool(r.get("consultancy"))
         service_type = _normalise_service_type(r.get("service_type"), r)
@@ -8211,6 +8257,7 @@ def stats(
         bucket["count"] += 1
         if st in bucket:
             bucket[st] += 1
+        bucket["selected"] = bucket.get("selected", 0) + int(selected)
         bucket["revenue_total"] += amt
         bucket["company_revenue_total"] += company_share
         referrer_earnings = base_commission + referrer_bonus
@@ -8613,6 +8660,7 @@ def stats(
     result = {
         "total": total,
         "by_stage": by_stage,
+        "selected_count": selected_count,
         "revenue_total": revenue,
         "revenue_completed": completed_revenue,
         # Company revenue = client cash in minus commission and complimentary amounts.

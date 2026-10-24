@@ -1,0 +1,40 @@
+/* ★ Selected (25 Oct): one green badge for a selected candidate, the same on
+   every page that names them. Sized in ems so it follows the text it sits
+   beside -- a table cell, a legend, a card -- and never wraps inside itself. */
+.ta-selected-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25em;
+  margin-left: 0.45em;
+  padding: 0.1em 0.55em 0.1em 0.45em;
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  white-space: nowrap;
+  vertical-align: 0.1em;
+  /* Its own width wherever it lands: a phone's card cells stretch their
+     children, which drew the badge as a bar across the whole cell. */
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
+}
+.ta-selected-badge__star { color: #4ade80; font-size: 1.05em; line-height: 1; }
+
+/* A count of Selected candidates -- Overview, Earnings, Company revenue -- in
+   the badge's green, as text. */
+.cand-stat-selected,
+.earn-selected,
+.compexp-selected { color: #86efac; font-weight: 700; white-space: nowrap; }
+.earn-selected { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 650; }
+
+/* Daily Ops: on a desktop the badge opens the line under the name, ahead of
+   the phone, so its space goes after it; on a phone the row's gap spaces it. */
+.ops-interview-identity .ta-selected-badge { margin: 0 0.5em 0 0; }
