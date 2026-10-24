@@ -198,7 +198,7 @@ describe('after a booking the whole form resets', () => {
 
     // Back to the form a new booking starts from.
     expect(screen.getByRole('button', { name: /profile service/i })).toBeTruthy()
-    expect(screen.getByPlaceholderText(/choose or type your name/i).value).toBe('')
+    expect(screen.getByLabelText('Profile Service candidate').value).toBe('')
     expect(screen.getByRole('combobox').value).toBe('')
     expect(screen.queryByPlaceholderText(/10-digit phone number/i)).toBeNull()
     expect(screen.queryByPlaceholderText(/choose or type the technology/i)).toBeNull()

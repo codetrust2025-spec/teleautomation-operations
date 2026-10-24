@@ -70,7 +70,7 @@ async function readyForm(read) {
 describe('the form shows its original fields only', () => {
   // The invite moved to the top on 19 Oct; the other fields keep their order.
   const ORIGINAL = [
-    'Interview invite screenshot', 'Service type', 'Client name', 'Company *', 'Interview round *',
+    'Interview invite screenshot', 'Service type', 'Subscribed candidate', 'Company *', 'Interview round *',
     'Interview date & time (IST) *',
   ]
 

@@ -225,8 +225,9 @@ describe("an empty form reports the first field, not the browser's choice", () =
     const confirm = await openForm()
     await clickConfirm(confirm)
 
+    // Profile service: the client is a subscribed candidate, chosen from the list.
     await waitFor(() =>
-      expect(screen.getByText('Enter the client name for this round.')).toBeInTheDocument(),
+      expect(screen.getByText('Choose the candidate from the list of subscribed Profile Service candidates.')).toBeInTheDocument(),
     )
     expect(screen.queryByText('Choose the interview round.')).not.toBeInTheDocument()
   })

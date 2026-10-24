@@ -139,7 +139,7 @@ describe('Round-wise payment — non-roster candidate gets payment card', () => 
     render(<SubmitSlotPage />)
 
     // Profile service is default — type a name from the roster
-    const nameInput = await screen.findByPlaceholderText(/choose or type your name/i)
+    const nameInput = await screen.findByLabelText('Profile Service candidate')
     fireEvent.change(nameInput, { target: { value: 'Aniket' } })
     fireEvent.click(await screen.findByRole('option', { name: 'Aniket' }))
 
@@ -219,7 +219,7 @@ describe('Round-wise payment — upload carries correct service_type', () => {
     render(<SubmitSlotPage />)
 
     // Profile service is default
-    const nameInput = await screen.findByPlaceholderText(/choose or type your name/i)
+    const nameInput = await screen.findByLabelText('Profile Service candidate')
     fireEvent.change(nameInput, { target: { value: 'Aniket' } })
     fireEvent.click(await screen.findByRole('option', { name: 'Aniket' }))
 

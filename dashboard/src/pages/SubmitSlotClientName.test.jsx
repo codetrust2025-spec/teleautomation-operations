@@ -7,6 +7,9 @@
  * two clients with the same words, no client at all) leaves the box empty and offers the read name for
  * confirmation. Round-wise names are typed and are the payment identity, so they are never filled. A name the
  * candidate typed or picked is never replaced.
+ *
+ * Since 25 Oct a profile-service client is chosen from the subscribed list, never typed: the box searches it,
+ * and `pick` below is choosing from it (SubmitSlotProfileService.test.jsx has the rest of that).
  */
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -54,6 +57,15 @@ function stubFetch(candidateName) {
 }
 
 const nameBox = () => document.querySelector('.sbs-field--client input')
+const CHOOSE_HINT = 'Choose from the subscribed Profile Service candidates.'
+const CHOSEN_HINT = 'From Candidates. Check it is the right person.'
+
+/** Choose a profile-service client from the list, as a person does: search, then pick. */
+function pick(name) {
+  fireEvent.focus(nameBox())
+  fireEvent.change(nameBox(), { target: { value: name } })
+  fireEvent.click(screen.getByRole('option', { name: new RegExp(`^${name}`) }))
+}
 const nameHint = () => nameBox().closest('label').querySelector('.sbs-hint')
 const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
 
@@ -68,7 +80,7 @@ async function openForm(candidateName, { typed } = {}) {
   render(<SubmitSlotPage />)
   const confirm = await screen.findByRole('button', { name: /Confirm booking/i })
   await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
-  if (typed !== undefined) fireEvent.change(nameBox(), { target: { value: typed } })
+  if (typed !== undefined) pick(typed)
   await readInvite()
   return { confirm, calls }
 }
@@ -123,20 +135,20 @@ describe('anything less reliable is left for the candidate to confirm', () => {
       expect(nameBox().value).toBe('')
       expect(nameHint().textContent).toBe(`The invite names “${read}”. Pick the client to confirm.`)
       fireEvent.click(confirm)
-      expect(await screen.findByText('Enter the client name for this round.')).toBeInTheDocument()
+      expect(await screen.findByText('Choose the candidate from the list of subscribed Profile Service candidates.')).toBeInTheDocument()
       expect(calls.confirms).toHaveLength(0)
     })
 
   it('an invite that names nobody leaves the usual hint', async () => {
     await openForm('')
     expect(nameBox().value).toBe('')
-    expect(nameHint().textContent).toBe('Pick from the list or type a new client name.')
+    expect(nameHint().textContent).toBe(CHOOSE_HINT)
   })
 
-  it('once the candidate types a name, the offer goes away', async () => {
+  it('once the candidate picks a client, the offer goes away', async () => {
     await openForm('Someone Else')
-    fireEvent.change(nameBox(), { target: { value: 'Ira Testwala' } })
-    expect(nameHint().textContent).toBe('Pick from the list or type a new client name.')
+    pick('Ira Testwala')
+    expect(nameHint().textContent).toBe(CHOSEN_HINT)
   })
 })
 
@@ -144,12 +156,12 @@ describe('the candidate stays in charge', () => {
   it('a name typed or picked before the invite is read is never replaced', async () => {
     await openForm('Ira Testwala', { typed: 'Nova Q Fakename' })
     expect(nameBox().value).toBe('Nova Q Fakename')
-    expect(nameHint().textContent).toBe('Pick from the list or type a new client name.')
+    expect(nameHint().textContent).toBe(CHOSEN_HINT)
   })
 
   it('a matched name the candidate then changes is theirs: the next invite does not touch it', async () => {
     const { calls } = await openForm('Ira Testwala')
-    fireEvent.change(nameBox(), { target: { value: 'Nova Q Fakename' } })
+    pick('Nova Q Fakename')
     calls.invite = { candidate_name: 'Ira Testwala' }
     await readInvite()
     expect(nameBox().value).toBe('Nova Q Fakename')
@@ -200,7 +212,7 @@ describe('an invite addressed to someone other than the chosen client (11 Oct)',
   })
 
   it('stays quiet when the invite uses part of the same name', async () => {
-    await openForm('Ira Testwala', { typed: 'Ira' })
+    await openForm('Ira', { typed: 'Ira Testwala' })
     expect(check()).toBeNull()
   })
 

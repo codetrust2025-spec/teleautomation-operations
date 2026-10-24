@@ -240,7 +240,7 @@ describe('interview invite: the node reading it', () => {
 
   async function startInviteUpload() {
     render(<SubmitSlotPage />)
-    await screen.findByPlaceholderText(/choose or type your name/i)
+    await screen.findByLabelText('Profile Service candidate')
     const invite = [...document.querySelectorAll('input[type="file"]')].find(input => !input.multiple)
     attach(invite, [screenshot('invite')])
   }
