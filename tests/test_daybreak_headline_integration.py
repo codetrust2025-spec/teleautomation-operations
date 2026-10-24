@@ -39,7 +39,7 @@ def test_daybreak_headline_uses_shared_gateway_and_returns_selected_node(monkeyp
     def fake_chat(**kwargs):
         calls.append(kwargs)
         return SimpleNamespace(
-            content='{"headline":"React developer with 6 years using JavaScript and React.js"}',
+            content='{"skills":["JavaScript","React.js"],"use_existing":false}',
             node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=47,
         )
 
@@ -48,7 +48,7 @@ def test_daybreak_headline_uses_shared_gateway_and_returns_selected_node(monkeyp
     response = c.post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=payload())
     assert response.status_code == 200
     assert response.json() == {
-        "status": "ok", "headline": "React developer with 6 years using JavaScript and React.js",
+        "status": "ok", "headline": "React developer | 6 years | JavaScript, React.js",
         "node_id": "rtx4060", "node_label": "RTX 4060", "model": "qwen2.5:7b", "duration_ms": 47,
     }
     assert calls[0]["workload"] == "daybreak_headline"
@@ -90,20 +90,21 @@ def test_daybreak_prompt_requires_grounded_terms():
     assert "Every non-neutral word must appear verbatim in the approved facts" in text
     assert "experienced, strong, expertise" in text
 
-def test_existing_headline_reaches_model_as_data_for_factual_rewriting(monkeypatch):
+def test_existing_headline_is_comparison_only_not_a_long_string_for_the_model_to_extend(monkeypatch):
     import json
     calls = []
     def fake_chat(**kwargs):
         calls.append(kwargs)
-        return SimpleNamespace(content='{"headline":"React developer building applications using JavaScript and React.js"}', node_id="node", node_label="node", model="model", duration_ms=1)
+        return SimpleNamespace(content='{"skills":["JavaScript","React.js"],"use_existing":false}', node_id="node", node_label="node", model="model", duration_ms=1)
     monkeypatch.setattr("core.ai_gateway.chat_structured", fake_chat)
     c = client(monkeypatch)
     previous = "React developer - JavaScript, React.js"
     response = c.post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=payload() | {"previous_headline": previous})
     assert response.status_code == 200
     prompt = calls[0]["messages"][1]["content"]
-    assert "EXISTING_HEADLINE=" + json.dumps(previous) in prompt
-    assert "improve its clarity and wording" in prompt
+    assert json.dumps(previous) not in prompt
+    assert 'EXISTING_APPROVED_SKILL_COVERAGE=["JavaScript", "React.js"]' in prompt
+    assert "improve its clarity and wording" in prompt.lower()
     assert "does not authorize claims absent from APPROVED_FACTS" in prompt
     assert "return the existing headline unchanged" in prompt
     assert calls[0]["workload"] == "daybreak_headline"
@@ -126,3 +127,76 @@ def test_editorial_review_lists_only_approved_missing_skills_without_spelling_ch
     assert '"JavaScript"' not in review
     assert "genuinely strengthen this existing role" in review
     assert "return existing headline unchanged" in review
+
+
+def test_long_approved_summary_does_not_seed_a_truncated_headline():
+    request = payload()
+    request['facts']['target_role'] = ''
+    request['facts']['profile_facts'] = 'React developer | ' + 'JavaScript and React.js ' * 10
+    request['previous_headline'] = request['facts']['profile_facts'][:250]
+    prompt = integration._prompt(integration.DaybreakHeadlineRequest.model_validate(request))
+    assert request['previous_headline'] not in prompt
+    assert '"role_context":"React developer"' in prompt
+    assert '"experience":"6 years"' in prompt
+    assert 'Do not write or extend a headline string' in prompt
+
+
+def test_explicit_no_improvement_returns_previous_headline_without_inventing_a_change(monkeypatch):
+    c = client(monkeypatch)
+    monkeypatch.setattr('core.ai_gateway.chat_structured', lambda **_: SimpleNamespace(content='{"skills":[],"use_existing":true}', node_id='rtx4060', node_label='RTX 4060', model='qwen2.5:7b', duration_ms=1))
+    previous = 'React developer with 6 years using JavaScript and React.js'
+    response = c.post('/api/integrations/daybreak/headline', headers={'Authorization':'Bearer '+'d'*48}, json=payload() | {'previous_headline':previous})
+    assert response.status_code == 200
+    assert response.json()['headline'] == previous
+    assert c.post('/api/integrations/daybreak/headline', headers={'Authorization':'Bearer '+'d'*48}, json=payload()).status_code == 502
+
+
+def test_actual_route_rejects_invented_cross_candidate_truncated_and_malformed_selections(monkeypatch):
+    import json
+    c = client(monkeypatch)
+    for selection in [
+        {'skills':['AWS'],'use_existing':False},
+        {'skills':['SQL'],'use_existing':False},
+        {'skills':['React.j'],'use_existing':False},
+        {'skills':['JavaScript云'],'use_existing':False},
+        {'skills':['JavaScript'],'use_existing':'false'},
+        {'skills':['JavaScript'],'use_existing':False,'experience':'99 years'},
+        {'headline':'React developer with 99 years using AWS'},
+    ]:
+        monkeypatch.setattr('core.ai_gateway.chat_structured', lambda **_: SimpleNamespace(content=json.dumps(selection),node_id='rtx4060',node_label='RTX 4060',model='qwen2.5:7b',duration_ms=1))
+        response=c.post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=payload())
+        assert response.status_code==502,selection
+
+
+def test_actual_route_keeps_exact_months_and_candidate_scoped_schema(monkeypatch):
+    calls=[]
+    def selected(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(content='{"skills":["JavaScript","React.js"],"use_existing":false}',node_id='rtx4060',node_label='RTX 4060',model='qwen2.5:7b',duration_ms=1)
+    monkeypatch.setattr('core.ai_gateway.chat_structured',selected)
+    request=payload() | {'previous_headline':'React developer | 3.5 YOE | JavaScript, React.js'}
+    request['facts']['experience']='3 Years 5 Months'
+    response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=request)
+    assert response.status_code==200
+    assert response.json()['headline']=='React developer | 3 Years 5 Months | JavaScript, React.js'
+    assert calls[0]['schema']['properties']['skills']['items']['enum']==['JavaScript','React.js']
+    assert calls[0]['schema']['additionalProperties'] is False
+
+
+def test_formatting_only_selection_returns_exact_existing_headline(monkeypatch):
+    monkeypatch.setattr('core.ai_gateway.chat_structured',lambda **_:SimpleNamespace(content='{"skills":["React.js","JavaScript"],"use_existing":false}',node_id='rtx4060',node_label='RTX 4060',model='qwen2.5:7b',duration_ms=1))
+    previous='React developer - 6 YOE - JavaScript - React.js'
+    response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=payload() | {'previous_headline':previous})
+    assert response.status_code==200
+    assert response.json()['headline']==previous
+
+
+def test_render_drops_whole_skills_instead_of_clipping_words(monkeypatch):
+    import json
+    skills=['JavaScript','React.js','Application Performance Optimization','Responsive Interface Development']
+    monkeypatch.setattr('core.ai_gateway.chat_structured',lambda **_:SimpleNamespace(content=json.dumps({'skills':skills[:3],'use_existing':False}),node_id='rtx4060',node_label='RTX 4060',model='qwen2.5:7b',duration_ms=1))
+    request=payload() | {'max_length':85}
+    request['facts']['skills']=skills
+    response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=request)
+    assert response.status_code==200
+    assert response.json()['headline']=='React developer | 6 years | JavaScript, React.js'
