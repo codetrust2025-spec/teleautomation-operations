@@ -409,21 +409,27 @@ def _chat(
     # the node that just refused this very call, because the preference
     # order is deterministic.
     excluded_nodes: set[str] = set()
+    daybreak_order = ("rtx4060", "jagadeesh") if workload == "daybreak_headline" else None
+
+    def request_order() -> list[str]:
+        return list(daybreak_order) if daybreak_order is not None else ollama_nodes.candidate_order(chosen)
+
     if workload == "daybreak_headline":
-        # Praveen owns Naukri execution; the existing RTX service supplies AI.
-        # Fail closed when RTX is unavailable: Jagadeesh is not authorized for
-        # Daybreak. Other Operations workloads retain their existing pool.
+        # AI only: prefer RTX and health-check Jagadeesh on failure. Praveen
+        # remains the browser worker and is never borrowed for AI inference.
+        # This order is request-scoped; do not change the shared pool's primary.
         excluded_nodes = {
             node["id"] for node in ollama_nodes.configured_nodes()
-            if node["id"] != "rtx4060"
+            if node["id"] not in daybreak_order
         }
-    node_budget = max(1, len(ollama_nodes.candidate_order(chosen)))
+    node_budget = max(1, len(request_order()))
     for _node_attempt in range(node_budget):
         try:
             chosen_node = ollama_nodes.select_available_node(
                 model=chosen,
                 timeout=_remaining(deadline_monotonic, health_timeout),
                 exclude=excluded_nodes,
+                **({"node_order": daybreak_order} if daybreak_order is not None else {}),
             )
             selected_node = chosen_node["node_id"]
         except RuntimeError:
@@ -437,7 +443,7 @@ def _chat(
             # message. On later passes it is what keeps failover working
             # even when the health probes themselves are unavailable.
             remaining = [
-                node for node in ollama_nodes.candidate_order(chosen)
+                node for node in request_order()
                 if node not in excluded_nodes
             ]
             if not remaining:
@@ -578,7 +584,7 @@ def _chat(
                 if exc.code in _NODE_FAILURE_CODES:
                     ollama_nodes.record_failure(selected_node, str(exc))
                     alternatives = [
-                        node for node in ollama_nodes.candidate_order(chosen)
+                        node for node in request_order()
                         if node not in excluded_nodes and node != selected_node
                     ]
                     if alternatives:

@@ -706,6 +706,7 @@ def select_available_node(
     timeout: float = 5,
     require_inference: bool = False,
     exclude: set[str] | frozenset[str] | None = None,
+    node_order: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Pick where this request should run.
 
@@ -724,7 +725,9 @@ def select_available_node(
     """
     attempts: list[dict[str, Any]] = []
     excluded = {str(node) for node in (exclude or ())}
-    order = [nid for nid in candidate_order(model) if nid not in excluded]
+    # A workload may narrow its own pool without changing shared preferences,
+    # persisted primary selection, or another in-flight decision session.
+    order = [nid for nid in (node_order if node_order is not None else candidate_order(model)) if nid not in excluded]
     if not order:
         raise RuntimeError(
             "No Ollama node is left for this request; already tried: "
