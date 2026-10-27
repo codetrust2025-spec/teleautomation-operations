@@ -39,6 +39,7 @@ class DaybreakHeadlineRequest(BaseModel):
     facts: ApprovedFacts
     previous_headline: str = Field(default="", max_length=250)
     max_length: int = Field(default=250, ge=30, le=250)
+    editorial_proposal: bool = False
 
 
 def _authorized(authorization: str | None) -> bool:
@@ -111,7 +112,7 @@ def _brief(request: DaybreakHeadlineRequest) -> dict:
               if _normalized(skill) not in {"passervices", "snow", "restfullapi"}]
     protected = _unique_terms([*([anchor] if anchor else []),
                                   *(skill for skill in skills if _skill_present(skill, request.previous_headline)
-                                    and not _skill_present(skill, role))])[:3]
+                                    and not _skill_present(skill, role))])
     return {"role_context": role, "experience": facts.experience, "skills": skills, "anchor": anchor, "protected": protected,
             "covered": [skill for skill in skills if _skill_present(skill, request.previous_headline)],
             "missing": [skill for skill in skills if not _skill_present(skill, request.previous_headline)]}
@@ -129,7 +130,12 @@ def _selection_schema(request: DaybreakHeadlineRequest) -> dict:
 
 def _prompt(request: DaybreakHeadlineRequest) -> str:
     brief = _brief(request)
-    return (
+    editorial = ("This is the single optional second editorial proposal after a validated unchanged draft. "
+                 "Reconsider only complete missing approved capabilities or precise approved experience. "
+                 "Do not rotate synonyms, reorder existing skills or force a freshness change. "
+                 "Set use_existing=true unless a substantive improvement is justified.\n"
+                 if request.editorial_proposal else "")
+    return editorial + (
         "Select skills for one professional Naukri headline. Return JSON only: skills and use_existing. "
         "Do not write or extend a headline string. The service will include that exact experience "
         "and approved role context, then render whole selected skill names. Never round it or add a plus sign. "
@@ -149,31 +155,40 @@ def _prompt(request: DaybreakHeadlineRequest) -> str:
     )
 
 
+def _daybreak_coverage_key(value: str) -> str:
+    value = str(value or '').lower()
+    substitutions = [(r'\bgen(?:erative)?\s*ai\b','generativeai'),(r'\bjavascript\b','js'),(r'\biam\b','identityaccessmanagement'),(r'\biiq\b','identityiq'),(r'\bgcp\b','googlecloudplatforms'),(r'\bgcs\b','googlecloudstorage'),(r'\bpom\b','pageobjectmodel'),(r'\baws\b','amazonwebservices'),(r'\brest(?:ful)?\s*apis?\b','restapi'),(r'\bdevelopment\b','developer'),(r'\bengineering\b','engineer'),(r'\b(\d+)\s*(?:years?|yrs?|yoe)\b',r'\1years'),(r'\b(\d+)\s*(?:months?|mos?)\b',r'\1months')]
+    for pattern,replacement in substitutions:
+        value = re.sub(pattern,replacement,value)
+    return re.sub(r'[^a-z0-9+#]+','',value)
+
+
 def _render(request: DaybreakHeadlineRequest, generated: dict) -> str:
     if not isinstance(generated, dict) or set(generated) != {"skills", "use_existing"}:
         raise ValueError("invalid selection")
-    if type(generated["use_existing"]) is not bool or not isinstance(generated["skills"], list):
-        raise ValueError("invalid selection types")
-    brief = _brief(request)
     selected = generated["skills"]
-    if len(selected) > 3 or any(not isinstance(skill, str) or skill not in brief["skills"] for skill in selected):
+    brief = _brief(request)
+    if type(generated["use_existing"]) is not bool or not isinstance(selected, list):
+        raise ValueError("invalid selection types")
+    if len(selected) > 3 or any(not isinstance(s, str) or s not in brief["skills"] for s in selected):
         raise ValueError("unsupported selected skill")
-    if generated["use_existing"]:
-        return request.previous_headline.strip()
-    if not selected or not brief["role_context"]:
-        raise ValueError("empty selection or role")
-    selected = _unique_terms([*brief["protected"], *selected])
-    header = " | ".join(value for value in (brief["role_context"], brief["experience"]) if value)
+    previous = request.previous_headline.strip()
+    if generated["use_existing"] or not previous:
+        return previous  # No verified baseline means no automatic rewrite.
     limit = min(220, request.max_length)
-    while selected and len(header + " | " + ", ".join(selected)) > limit:
-        selected.pop()  # Drop a whole skill, never truncate a word or alter experience.
-    if not selected:
-        return request.previous_headline.strip()
-    new_skill = any(not _skill_present(skill, request.previous_headline) for skill in selected)
-    precise_experience = bool(brief["experience"]) and _experience_normalized(brief["experience"]) not in _experience_normalized(request.previous_headline)
-    if request.previous_headline and not new_skill and not precise_experience:
-        return request.previous_headline.strip()  # Formatting alone never forces an update.
-    return header + " | " + ", ".join(selected)
+    additions = [s for s in _unique_terms(selected) if not _skill_present(s, previous) and _daybreak_coverage_key(s) not in _daybreak_coverage_key(previous)]
+    # Append only complete approved additions. Never rotate or trim previous coverage.
+    candidate = previous
+    for skill in additions:
+        proposal = candidate + " | " + skill
+        if len(proposal) <= limit:
+            candidate = proposal
+    experience = brief["experience"]
+    if experience and _daybreak_coverage_key(experience) not in _daybreak_coverage_key(previous):
+        proposal = candidate + " | " + experience
+        if len(proposal) <= limit:
+            candidate = proposal
+    return candidate
 
 
 @router.post("/headline")
