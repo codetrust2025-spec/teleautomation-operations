@@ -15,6 +15,7 @@ from typing import Any
 
 from core import ollama_nodes
 from core import recruitment_mail_store as store
+from core import ai_mail_model
 from core.ai_gateway import AIGatewayError, chat_structured, configured_models
 from services.recruitment_semantics import (
     DOCUMENT_TYPES,
@@ -2920,6 +2921,12 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
         attachment_texts, message.get("thread_context"),
     ).get("context") or {}
     models = configured_models()
+    mail_selection = ai_mail_model.selection()
+    if mail_selection["custom"]:
+        models["primary"] = mail_selection["model"]
+    def provenance(response):
+        node = getattr(response, "node_id", "")
+        return response.model + (f"@{node}" if node else "")
     deadline = time.monotonic() + max(
         20.0,
         float(os.getenv("AI_JOB_TIMEOUT", os.getenv("AI_RECRUITMENT_JOB_TIMEOUT_SECONDS", "660"))),
@@ -2942,8 +2949,16 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
         output_schema: dict[str, Any] = SCHEMA,
     ):
         """Use the lightweight fallback when the configured runner cannot serve."""
+        def send(**kwargs):
+            if mail_selection["custom"] and kwargs["model"] == mail_selection["model"]:
+                response = ai_mail_model.request(selected=mail_selection, **kwargs)
+            else:
+                response = chat_structured(**kwargs)
+            ai_mail_model.remember(response)
+            return response
+
         try:
-            return chat_structured(
+            return send(
                 messages=messages, schema=output_schema, model=model, max_retries=max_retries,
                 timeout=remaining_timeout(),
                 deadline_monotonic=deadline,
@@ -2961,7 +2976,7 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
                 "Recruitment model failed; retrying fallback primary=%s fallback=%s code=%s",
                 model, fallback, exc.code,
             )
-            return chat_structured(
+            return send(
                 messages=messages, schema=output_schema, model=fallback, max_retries=0,
                 timeout=remaining_timeout(),
                 deadline_monotonic=deadline,
@@ -3018,7 +3033,7 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
                     "Ollama returned invalid recruitment-relevance JSON after one repair retry.",
                     code="OLLAMA_INVALID_JSON",
                 ) from exc
-        relevance_model = relevance_response.model
+        relevance_model = provenance(relevance_response)
         relevance_duration = relevance_response.duration_ms
         relevance["model"] = relevance_model
 
@@ -3080,7 +3095,7 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
         logger.info("Ollama response JSON extracted for recruitment classification")
         primary_model_result = deepcopy(primary)
         result = primary
-        model_label = primary_response.model
+        model_label = provenance(primary_response)
         duration = relevance_duration + primary_response.duration_ms
         validator = None
         validator_model_result = None
@@ -3107,7 +3122,7 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
                     raise AIGatewayError("Ollama validator returned malformed JSON after one repair retry.", code="OLLAMA_INVALID_JSON") from exc
             validator_model_result = deepcopy(validator)
             result = _reconcile_model_results(primary, validator)
-            model_label = f"{primary_response.model}|validator:{validator_response.model}"
+            model_label += f"|validator:{provenance(validator_response)}"
             duration += validator_response.duration_ms
         reconciled = deepcopy(result)
         try:
