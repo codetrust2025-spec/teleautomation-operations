@@ -360,6 +360,18 @@ class TestConnectedNeedsARealSignIn:
         computer.check_in(events=[self.event(signed_in=False, outcome="attention", code="screen")])
         assert status(env)["asha_rao"]["status"] == "delivered"
 
+    def test_both_times_come_from_the_computer_clock_so_skew_cannot_fake_or_hide_it(self, env):
+        computer = approved(env)
+        deliver(env, "asha_rao")
+        got = computer.check_in().json()["deliveries"][0]
+        slow = datetime.now(timezone.utc) - timedelta(minutes=20)  # the laptop runs 20 minutes behind the server
+        computer.check_in(receipts=[{**receipt(computer, got, computer.open(got["envelope"])), "at": slow.isoformat()}])
+        computer.check_in(events=[self.event(minutes=-19)])  # signed in 1 minute after storing, by its own clock
+        assert status(env)["asha_rao"]["status"] == "connected"
+        computer.check_in(events=[self.event(minutes=-25, job_id="000000fd-0000-4000-8000-000000000000")])
+        # An older sign-in reported later never replaces the newer evidence.
+        assert status(env)["asha_rao"]["connection"]["job_id"] == "000000ff-0000-4000-8000-000000000000"
+
     def test_a_sign_in_after_the_delivery_is_connected_and_a_later_refusal_is_attention(self, env):
         computer = self._delivered(env)
         computer.check_in(events=[self.event(password_used=True)])

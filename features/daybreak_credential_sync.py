@@ -83,7 +83,8 @@ def _now() -> datetime:
 
 
 def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    # Fixed width (always microseconds), so stored times order correctly as strings.
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _parse(value) -> datetime | None:
@@ -543,6 +544,10 @@ def _record_receipts(data: dict, executor: dict, receipts, now: datetime) -> Non
                 proof_ok = secrets.compare_digest(str(item.get("proof") or ""), receipt_proof(delivery["id"], _account_password(row)))
             if proof_ok is False or not _UUID.match(profile_id) or (delivery.get("profile_id") and profile_id != delivery["profile_id"]):
                 status, reason = "rejected", "unreadable" if proof_ok is False else "profile_mismatch"
+        # The computer's own clock for when it stored the login: Connected compares it with the same clock's sign-in time.
+        stored_at = _parse(item.get("at"))
+        if stored_at is not None and abs(stored_at - now) < timedelta(days=1):
+            delivery["receipt_executor_at"] = _iso(stored_at)
         delivery.update(state=status, receipt_at=_iso(now), proof_ok=proof_ok,
                         reason=reason if reason in REJECT_REASONS or status == "differs" else ("" if status in DELIVERED else "unreadable"))
         if status in DELIVERED and _UUID.match(profile_id):
@@ -563,7 +568,7 @@ def _record_events(data: dict, executor: dict, events, now: datetime) -> None:
         if not isinstance(item, dict) or not _UUID.match(str(item.get("profile_id") or "")) or not _UUID.match(str(item.get("job_id") or "")):
             continue
         at = _parse(item.get("at"))
-        if at is None or at > now + timedelta(minutes=5):
+        if at is None or at > now + timedelta(hours=1):
             continue
         event = {
             "job_id": str(item["job_id"]).lower(), "kind": str(item.get("kind") or "")[:20],
@@ -656,7 +661,7 @@ def status_view() -> dict:
         if delivery:
             if delivery["state"] in DELIVERED:
                 if delivery.get("sent_version") == credential_version(account):
-                    delivered, delivered_at = True, delivery.get("receipt_at")
+                    delivered, delivered_at = True, delivery.get("receipt_executor_at") or delivery.get("receipt_at")
                 else:
                     attention.append("changed_since_delivery")
             elif delivery["state"] == "differs":
