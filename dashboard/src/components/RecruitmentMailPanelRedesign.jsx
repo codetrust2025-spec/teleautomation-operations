@@ -1417,7 +1417,7 @@ function EvidenceDrawer({ id, onClose, onChanged }) {
   );
 }
 
-function AiNodeManager({
+export function AiNodeManager({
   nodes,
   activity = {},
   busy,
