@@ -1,0 +1,26 @@
+{
+ "_comment": "Synthetic. A sealed login and the key that opens it, shared by Operations and the Daybreak companion tests.",
+ "box_private_raw": "UNLlok4nX61IMzsLWgbindF82pO0yIoyTrXRHyiDfno=",
+ "box_private_pkcs8": "MC4CAQAwBQYDK2VuBCIEIFDS5aJOJ1+tSDM7C1oG4p3RfNqTtMiKMk610R8og356",
+ "password": "Synthetic Vector Pässword \"1\" \\ only for tests",
+ "proof": "a1d31c1de66c6467184978e6df7248f63e0115fca3800237d3c29397c9b82837",
+ "envelope": {
+  "v": 1,
+  "alg": "X25519-HKDF-SHA256-A256GCM",
+  "epk": "/SrGFi8wsFa/PDfM7kSc1XUywqr55OY6PFKfi+lXSnY=",
+  "iv": "Rov2HEsEAd7XBr3q",
+  "ct": "inyGZ1S/CaBRxiTeDxqHG2YQx7G+LPh6BmxVoUbQrXkrc0mCoZZWbuNa722L3DdT6TMIcWSf8d1QkULmRidT/5yV/r7bYiTJgbqrwuMTd6SkiA==",
+  "aad": {
+   "delivery_id": "dlv_vector000000000000000000",
+   "executor_id": "exe_vectorvector0000",
+   "account_id": "vector_account",
+   "profile_id": "0000000b-0000-4000-8000-000000000000",
+   "email": "vector@example.com",
+   "name": "Véctor \"Test\"",
+   "create": false,
+   "replace": false,
+   "verify": true,
+   "expires_at": "2099-01-01T00:00:00Z"
+  }
+ }
+}

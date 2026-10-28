@@ -51,6 +51,9 @@ _PUBLIC_EXACT = frozenset({
     "/api/gmail/pubsub/push",
     # Daybreak uses its own mandatory bearer credential; it has no dashboard session.
     "/api/integrations/daybreak/headline",
+    # The computer that runs Daybreak's browser: the same bearer credential plus its own approved signature.
+    "/api/integrations/daybreak/executor/register",
+    "/api/integrations/daybreak/executor/sync",
     # Where Google sends the account holder back after consent. A reconnect link
     # is opened by the Gmail account holder, who has no dashboard session. The
     # callback is not open: it rejects any `state` this service did not sign

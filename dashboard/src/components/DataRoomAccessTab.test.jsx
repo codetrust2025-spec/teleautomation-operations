@@ -108,7 +108,8 @@ describe('the Data Room tabs', () => {
     render(<DataRoomPanel />)
     await screen.findByText('Candidate 1')
     const labels = [...document.querySelectorAll('.dr-tab .dr-tab-label')].map((l) => l.textContent)
-    expect(labels).toEqual(['Credentials', 'Opportunities', 'Prompts', 'Key Links', 'Offers'])
+    // Daybreak (28 Oct): where the Naukri accounts stand in Daybreak; the admin's only.
+    expect(labels).toEqual(['Credentials', 'Opportunities', 'Prompts', 'Key Links', 'Offers', 'Daybreak'])
     const open = document.querySelector('.dr-tab[aria-current="page"]')
     expect(open.querySelector('.dr-tab-label').textContent).toBe('Credentials')
     expect(open.querySelector('.dr-tab-count').textContent).toBe('33')
