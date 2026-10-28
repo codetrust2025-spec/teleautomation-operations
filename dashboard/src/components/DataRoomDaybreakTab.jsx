@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { formatIstDateTime } from '../utils/istTime.js'
 
-// Data Room -> Daybreak. The Naukri accounts here are the logins Daybreak's browser uses. This tab shows, for
-// each one, how far it has got: matched to a Daybreak candidate (Synced), confirmed held by the approved
-// computer (Credential Delivered), and seen signing in to Naukri as exactly that account (Connected) -- or
-// why not (Needs Attention). It never shows or sends a password: Operations seals each one to the computer
-// itself when that computer checks in.
+// Data Room -> Daybreak. The Naukri accounts here are the logins Daybreak's workers (RTX 4060, Jagadeesh) use.
+// Operations seals each password to every enrolled worker and hands the sealed copies to Daybreak's own
+// queue; each worker collects and acknowledges its copy. This tab shows, per account, how far it has got:
+// matched to a Daybreak candidate (Synced), acknowledged by every worker (Credential Delivered), seen
+// signing in to Naukri as exactly that account in a real run (Connected) -- or why not (Needs Attention).
+// It never shows or sends a password.
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -22,19 +23,9 @@ export const STATUS_LABELS = {
   needs_attention: 'Needs Attention',
 }
 
-const DELIVERY_LABELS = {
-  requested: 'Waiting for the computer',
-  sent: 'Sent, waiting for its receipt',
-  stored: 'Stored',
-  unchanged: 'Already held, unchanged',
-  replaced: 'Replaced the old password',
-  created: 'Added to Daybreak and stored',
-  differs: 'Computer holds a different password',
-  rejected: 'Refused by the computer',
-  expired: 'Never collected',
-}
-
-const KIND_LABELS = { praveen: 'Praveen', rtx: 'RTX 4060', jagadeesh: 'Jagadeesh' }
+const BATCH = 10
+// Codes that a fresh delivery can fix; anything else (no match, duplicates, consent) needs a person first.
+const REDELIVERABLE = new Set(['changed_since_delivery', 'delivery_expired', 'login', 'credentials'])
 
 function when(value) {
   return value ? formatIstDateTime(value) : ''
@@ -51,53 +42,42 @@ async function call(path, options = {}) {
   return body
 }
 
-function Computer({ executor, onApprove, onRevoke, busy }) {
+function Worker({ worker, onApprove, onRevoke, busy }) {
   const [typing, setTyping] = useState(false)
   const [fingerprint, setFingerprint] = useState('')
-  const [cutover, setCutover] = useState(false)
-  const dedicated = executor.kind !== 'praveen'
   return (
     <li className="dr-db-computer">
       <div className="dr-db-computer-head">
-        <strong>{executor.name}</strong>
-        <span className="dr-muted">{KIND_LABELS[executor.kind] || executor.kind}</span>
-        <span className={`dr-status dr-db-exec--${executor.status}`}>{executor.status === 'approved' && executor.active ? 'Approved · active' : executor.status}</span>
+        <strong>{worker.name}</strong>
+        <span className={`dr-status dr-db-exec--${worker.approved ? 'approved' : 'pending'}`}>{worker.approved ? 'Key approved' : 'Key not approved'}</span>
+        {!worker.enabled && <span className="dr-muted">disabled in Daybreak</span>}
       </div>
       <div className="dr-db-computer-meta">
-        <span>Fingerprint <code>{executor.fingerprint}</code></span>
-        {executor.last_seen_at && <span>Last check-in {when(executor.last_seen_at)}</span>}
-        {executor.approved_at && <span>Approved {when(executor.approved_at)} by {executor.approved_by}</span>}
-        {executor.daybreak_mode && (
-          <span>Daybreak runs on {executor.daybreak_mode === 'remote' ? executor.daybreak_worker || 'a dedicated worker' : 'Praveen'}</span>
-        )}
+        <span>Key fingerprint <code>{worker.fingerprint.slice(0, 16)}…</code></span>
+        {worker.last_seen && <span>Last seen {when(worker.last_seen)}</span>}
+        {worker.approved && <span>Approved {when(worker.approved_at)} by {worker.approved_by}</span>}
       </div>
-      {executor.status === 'pending' && !typing && (
-        <button type="button" className="dr-add-btn" onClick={() => setTyping(true)} disabled={busy}>Approve…</button>
+      {!worker.approved && !typing && (
+        <button type="button" className="dr-add-btn" onClick={() => setTyping(true)} disabled={busy}>Approve key…</button>
       )}
-      {executor.status === 'pending' && typing && (
+      {!worker.approved && typing && (
         <form
           className="dr-db-approve"
           onSubmit={event => {
             event.preventDefault()
-            onApprove(executor, fingerprint, cutover)
+            onApprove(worker, fingerprint)
           }}
         >
           <label>
-            Type the fingerprint shown on {executor.name} itself
-            <input value={fingerprint} onChange={e => setFingerprint(e.target.value)} placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autoComplete="off" />
+            Type the publicKeySha256 that machine-check printed on {worker.name} (at least 16 characters)
+            <input value={fingerprint} onChange={e => setFingerprint(e.target.value)} placeholder="first 16+ characters" autoComplete="off" />
           </label>
-          {dedicated && (
-            <label className="dr-db-check">
-              <input type="checkbox" checked={cutover} onChange={e => setCutover(e.target.checked)} />
-              Daybreak&apos;s cutover to {executor.name} is complete
-            </label>
-          )}
-          <button type="submit" className="dr-add-btn" disabled={busy || !fingerprint.trim()}>Approve</button>
+          <button type="submit" className="dr-add-btn" disabled={busy || fingerprint.replace(/[^0-9a-f]/gi, '').length < 16}>Approve</button>
           <button type="button" className="dr-copy-btn" onClick={() => setTyping(false)}>Cancel</button>
         </form>
       )}
-      {executor.status === 'approved' && (
-        <button type="button" className="dr-copy-btn" onClick={() => onRevoke(executor)} disabled={busy}>Revoke</button>
+      {worker.approved && (
+        <button type="button" className="dr-copy-btn" onClick={() => onRevoke(worker)} disabled={busy}>Revoke approval</button>
       )}
     </li>
   )
@@ -112,7 +92,6 @@ export function DataRoomDaybreakTab() {
   const [filter, setFilter] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(() => new Set())
-  const [verify, setVerify] = useState(true)
 
   const load = useCallback(async () => {
     try {
@@ -125,8 +104,8 @@ export function DataRoomDaybreakTab() {
 
   useEffect(() => { load() }, [load])
 
-  // While a delivery is on its way, look again every 30 s; the computer checks in every 5 minutes.
-  const waiting = useMemo(() => (view?.accounts || []).some(row => row.pending), [view])
+  // While a worker still has a copy to collect, look again every 30 s (Daybreak's answer is cached for a minute).
+  const waiting = useMemo(() => (view?.accounts || []).some(row => row.delivery?.waiting_for?.length), [view])
   useEffect(() => {
     if (!waiting) return undefined
     const timer = setInterval(load, 30000)
@@ -139,6 +118,9 @@ export function DataRoomDaybreakTab() {
       (!filter || row.status === filter) &&
       (!q || row.label.toLowerCase().includes(q) || row.email.includes(q)))
   }, [view, filter, search])
+
+  const allApproved = (view?.workers || []).filter(w => w.enabled).every(w => w.approved) && (view?.workers || []).some(w => w.enabled)
+  const workerNames = (view?.workers || []).filter(w => w.enabled).map(w => w.name).join(' and ')
 
   const act = async (work, success) => {
     setBusy(true)
@@ -155,67 +137,58 @@ export function DataRoomDaybreakTab() {
     }
   }
 
-  const deliverySummary = result => {
-    const refused = result.refused?.length ? ` ${result.refused.length} refused (${[...new Set(result.refused.map(r => r.reason.replace(/_/g, ' ')))].join(', ')}).` : ''
-    return `${result.queued.length} queued for ${result.executor?.name || 'the computer'}; it collects them at its next check-in.${refused}`
+  const summary = results => {
+    const delivered = results.flatMap(r => r.delivered || [])
+    const refused = results.flatMap(r => r.refused || [])
+    const reasons = [...new Set(refused.map(r => r.detail || r.reason.replace(/_/g, ' ')))]
+    return `${delivered.length} sealed to ${workerNames}; each worker collects its copy within 15 minutes.${refused.length ? ` ${refused.length} not delivered: ${reasons.join('; ')}.` : ''}`
   }
 
   const deliver = async ids => {
     if (!ids.length) return
     const ok = await confirm({
-      title: `Deliver ${ids.length} login${ids.length === 1 ? '' : 's'} to ${view?.active_executor?.name}?`,
-      message: verify
-        ? 'Each password is sealed to that computer. It keeps a different password it already holds unless you choose Replace. It then proves each login with one preview run (signs in, never saves).'
-        : 'Each password is sealed to that computer. It keeps a different password it already holds unless you choose Replace.',
+      title: `Deliver ${ids.length} login${ids.length === 1 ? '' : 's'} to ${workerNames}?`,
+      message: `Each password is sealed to every enrolled worker and passed through Daybreak's queue. When a worker collects it, it replaces the password that worker held for the candidate. Nothing runs on Naukri because of this.`,
       confirmLabel: 'Deliver',
     })
     if (!ok) return
-    await act(() => call('/data-room/daybreak/deliveries', {
-      method: 'POST', body: JSON.stringify({ account_ids: ids, verify_ids: verify ? ids : [] }),
-    }), deliverySummary)
-  }
-
-  const replace = async row => {
-    const ok = await confirm({
-      title: `Replace the password ${view?.active_executor?.name} holds for ${row.label}?`,
-      message: 'The computer holds a different password for this candidate. Replace it only if the Data Room has the current one.',
-      confirmLabel: 'Replace', variant: 'danger',
-    })
-    if (ok) await act(() => call('/data-room/daybreak/deliveries', {
-      method: 'POST', body: JSON.stringify({ replace_ids: [row.account_id], verify_ids: verify ? [row.account_id] : [] }),
-    }), deliverySummary)
+    await act(async () => {
+      const results = []
+      for (let i = 0; i < ids.length; i += BATCH) {
+        results.push(await call('/data-room/daybreak/deliveries', { method: 'POST', body: JSON.stringify({ account_ids: ids.slice(i, i + BATCH) }) }))
+      }
+      return results
+    }, summary)
   }
 
   const addToDaybreak = async row => {
     const ok = await confirm({
       title: `Add ${row.label} to Daybreak?`,
-      message: `${row.label} (${row.email}) is not a Daybreak candidate. Confirm that this candidate agreed to Daybreak managing their Naukri headline. They are added with automation off and connected once; nothing is saved to Naukri until someone turns automation on in Daybreak.`,
+      message: `${row.label} (${row.email}) is not a Daybreak candidate. Confirm that this candidate agreed to Daybreak managing their Naukri headline. Daybreak adds them and their login is sealed to ${workerNames}. Daybreak's daily round only runs the candidates on its own list, so nothing is saved to Naukri until someone adds them there.`,
       confirmLabel: 'Candidate agreed · Add',
     })
-    if (ok) await act(() => call('/data-room/daybreak/deliveries', {
+    if (ok) await act(async () => [await call('/data-room/daybreak/deliveries', {
       method: 'POST', body: JSON.stringify({ create_ids: [row.account_id], consent_confirmed: true }),
-    }), deliverySummary)
+    })], summary)
   }
 
-  const approve = (executor, fingerprint, cutover) => act(
-    () => call(`/data-room/daybreak/executors/${encodeURIComponent(executor.id)}/approve`, {
-      method: 'POST', body: JSON.stringify({ fingerprint, cutover_confirmed: cutover }),
-    }),
-    `${executor.name} approved.`,
+  const approve = (worker, fingerprint) => act(
+    () => call(`/data-room/daybreak/workers/${encodeURIComponent(worker.key_id)}/approve`, { method: 'POST', body: JSON.stringify({ fingerprint }) }),
+    `${worker.name}'s key approved.`,
   )
 
-  const revoke = async executor => {
+  const revoke = async worker => {
     const ok = await confirm({
-      title: `Revoke ${executor.name}?`,
-      message: 'It gets no more logins, and deliveries still waiting for it are cancelled. Passwords it already holds stay in its own vault.',
+      title: `Revoke approval of ${worker.name}'s key?`,
+      message: 'No login is sealed while an enrolled worker\'s key is not approved. Copies the worker already holds stay in its own vault.',
       confirmLabel: 'Revoke', variant: 'danger',
     })
-    if (ok) await act(() => call(`/data-room/daybreak/executors/${encodeURIComponent(executor.id)}/revoke`, { method: 'POST' }), `${executor.name} revoked.`)
+    if (ok) await act(() => call(`/data-room/daybreak/workers/${encodeURIComponent(worker.key_id)}/revoke`, { method: 'POST' }), `${worker.name}'s approval revoked.`)
   }
 
   if (!view) return error ? <p className="dr-error" role="alert">{error}</p> : <p className="dr-muted">Loading Daybreak sync…</p>
 
-  const deliverable = row => row.synced && !row.attention_codes.some(code => !['changed_since_delivery', 'delivery_rejected', 'delivery_expired', 'login', 'credentials'].includes(code))
+  const deliverable = row => row.synced && row.attention_codes.every(code => REDELIVERABLE.has(code))
   const selectable = rows.filter(deliverable)
   const rec = view.reconciliation
   return (
@@ -232,11 +205,17 @@ export function DataRoomDaybreakTab() {
         ))}
       </div>
 
-      <h3 className="dr-db-h">Computer</h3>
-      {view.executors.length === 0
-        ? <p className="dr-muted">No computer has registered yet. Praveen registers itself once its companion has the Data Room sync installed.</p>
-        : <ul className="dr-db-computers">{view.executors.map(executor => (
-          <Computer key={executor.id} executor={executor} busy={busy} onApprove={approve} onRevoke={revoke} />
+      <h3 className="dr-db-h">Daybreak workers</h3>
+      {view.remote_control && (
+        <p className="dr-muted">
+          {view.remote_control.enabled ? 'Daybreak runs on its dedicated workers.' : 'Daybreak has not switched to its dedicated workers yet; they hold the logins ready.'}
+          {' '}Read from Daybreak {when(view.fetched_at)}.
+        </p>
+      )}
+      {view.workers.length === 0
+        ? <p className="dr-muted">Daybreak has no enrolled worker.</p>
+        : <ul className="dr-db-computers">{view.workers.map(worker => (
+          <Worker key={worker.key_id} worker={worker} busy={busy} onApprove={approve} onRevoke={revoke} />
         ))}</ul>}
 
       <h3 className="dr-db-h">Matching</h3>
@@ -247,7 +226,6 @@ export function DataRoomDaybreakTab() {
         {rec.invalid_usernames ? ` · ${rec.invalid_usernames} without an email username` : ''}
         {rec.names_differ ? ` · ${rec.names_differ} with a different name in Daybreak` : ''}
         {rec.daybreak_only ? ` · ${rec.daybreak_only} in Daybreak only` : ''}
-        {view.roster_reported_at ? ` (Daybreak's list as of ${when(view.roster_reported_at)})` : ''}
       </p>
       {view.daybreak_only.length > 0 && (
         <details className="dr-db-only">
@@ -259,11 +237,8 @@ export function DataRoomDaybreakTab() {
       <div className="dr-tab-header">
         <input className="dr-db-search" type="search" placeholder="Search name or address" value={search} onChange={e => setSearch(e.target.value)} aria-label="Search accounts" />
         <div className="dr-tab-header-actions">
-          <label className="dr-db-check">
-            <input type="checkbox" checked={verify} onChange={e => setVerify(e.target.checked)} />
-            Prove the login with one preview run
-          </label>
-          <button type="button" className="dr-add-btn" disabled={busy || !view.active_executor || selected.size === 0}
+          {!allApproved && <span className="dr-muted">Approve every worker&apos;s key before delivering.</span>}
+          <button type="button" className="dr-add-btn" disabled={busy || !allApproved || selected.size === 0}
             onClick={() => deliver([...selected])}>
             Deliver selected ({selected.size})
           </button>
@@ -314,29 +289,20 @@ export function DataRoomDaybreakTab() {
                 </td>
                 <td className="dr-db-details">
                   {row.attention.map(reason => <div key={reason} className="dr-db-reason">{reason}</div>)}
-                  {row.pending && <div>{DELIVERY_LABELS[row.pending.state]} · asked {when(row.pending.requested_at)}</div>}
                   {row.delivery && (
                     <div>
-                      {DELIVERY_LABELS[row.delivery.state] || row.delivery.state}
-                      {row.delivery.receipt_at ? ` · ${when(row.delivery.receipt_at)}` : ''}
-                      {row.delivery.verify_result === 'queued' ? ' · proof run queued' : row.delivery.verify_result === 'refused' ? ' · Daybreak did not queue a proof run' : ''}
+                      Sealed {when(row.delivery.at)}
+                      {row.delivery.receipts.map(r => ` · ${r.worker} acknowledged ${when(r.at)}`).join('')}
+                      {row.delivery.waiting_for.length > 0 ? ` · waiting for ${row.delivery.waiting_for.join(', ')}` : ''}
                     </div>
                   )}
-                  {row.connection?.signed_in_at && (
-                    <div>
-                      Signed in to Naukri {when(row.connection.signed_in_at)}
-                      {row.connection.password_used ? ' with this password' : ' (saved session)'}
-                    </div>
-                  )}
+                  {row.connection && <div>Signed in to Naukri on {row.connection.worker} {when(row.connection.signed_in_at)}</div>}
                 </td>
                 <td className="dr-db-actions">
-                  {row.attention_codes.includes('differs') && (
-                    <button type="button" className="dr-copy-btn" disabled={busy} onClick={() => replace(row)}>Replace</button>
-                  )}
-                  {row.can_add_to_daybreak && view.active_executor && (
+                  {row.can_add_to_daybreak && allApproved && (
                     <button type="button" className="dr-copy-btn" disabled={busy} onClick={() => addToDaybreak(row)}>Add to Daybreak</button>
                   )}
-                  {deliverable(row) && view.active_executor && (
+                  {deliverable(row) && allApproved && (
                     <button type="button" className="dr-copy-btn" disabled={busy} onClick={() => deliver([row.account_id])}>Deliver</button>
                   )}
                 </td>
