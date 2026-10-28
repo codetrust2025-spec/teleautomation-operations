@@ -127,6 +127,18 @@ def test_weak_models_are_refused_without_inference(monkeypatch):
     assert not policy._path().exists()
 
 
+def test_gateway_failure_is_not_counted_twice_by_mail_routing(monkeypatch):
+    def failed(**kw):
+        ollama_nodes.record_failure(ollama_nodes.decision_node(), 'test failure')
+        raise ai_gateway.AIGatewayError('unavailable', code='OLLAMA_CONNECTION_FAILED')
+    monkeypatch.setattr(ai_gateway, 'chat_structured', failed)
+    with ollama_nodes.decision_session():
+        ollama_nodes._remember_decision_node('rtx4060')
+        with pytest.raises(ai_gateway.AIGatewayError):
+            policy.request(selected={'validated_nodes': ['rtx4060']}, model='lab:7b', messages=[], schema={})
+    assert ollama_nodes.breaker_state('rtx4060')['consecutive_failures'] == 1
+
+
 def test_failed_persistence_retains_previous_selection(monkeypatch):
     monkeypatch.setattr(ai_gateway, 'chat_structured', generation)
     policy.activate('lab:7b', 0, 'admin')
