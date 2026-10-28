@@ -2525,7 +2525,6 @@ export default function RecruitmentMailPanelRedesign() {
             </select>
           </label>
           <PureOllamaToggle />
-          <AiMailModelSelector request={request} refreshToken={updatedAt} />
           <OcrToggle />
           <span>
             Last updated: {updatedAt
@@ -2549,6 +2548,7 @@ export default function RecruitmentMailPanelRedesign() {
           </button>
         </div>
       </header>
+      <AiMailModelSelector request={request} refreshToken={updatedAt} />
       <AiNodeManager
         nodes={aiNodes}
         activity={aiActivity.nodes}

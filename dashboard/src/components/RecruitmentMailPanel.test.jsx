@@ -130,6 +130,18 @@ describe("RecruitmentMailPanel", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
+  it("places model controls after the top toolbar and directly before AI Nodes", async () => {
+    render(<ConfirmProvider><RecruitmentMailPanel /></ConfirmProvider>);
+    await screen.findByRole("button", { name: "+ Add Gmail" });
+    const toolbar = document.querySelector(".sot-header-actions");
+    const model = screen.getByRole("region", { name: "AI Mail model selection" });
+    expect(toolbar).not.toContainElement(model);
+    expect(model.previousElementSibling).toHaveClass("sot-header");
+    expect(model.nextElementSibling).toHaveClass("sot-ai-nodes");
+    expect(within(toolbar).getByRole("combobox", { name: "Global candidate filter" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: /refresh/i })).toBeInTheDocument();
+    expect(toolbar.querySelectorAll(".sot-ocr-toggle")).toHaveLength(2);
+  });
   it("renders the canonical mailbox-only page without retired hub navigation", async () => {
     render(
       <ConfirmProvider>

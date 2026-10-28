@@ -37,8 +37,11 @@ for agents, including when *not* to deploy.
 
 ## AI Mail model selection
 
-AI Mail Review lists installed Ollama model names, byte sizes and node
-availability beside Pure Ollama. Admin Test checks both mail relevance and
+AI Mail Review lists installed Ollama model names in a compact control row
+directly above AI Nodes, with selected size in GB, Test and Save. Current
+model/node is shown below; availability and validation details are collapsed.
+All Candidates, Pure Ollama, OCR, Last Updated and Refresh stay in the separate
+top toolbar. Admin Test checks both mail relevance and
 classification JSON schemas on at least two nodes; Save independently repeats
 validation before atomically persisting a revision-checked selection in
 `OPERATIONS_DATA_DIR/ai_mail_model.json` (`AI_MAIL_MODEL_STATE_FILE` may override
