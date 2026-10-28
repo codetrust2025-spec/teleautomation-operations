@@ -61,3 +61,21 @@ or candidate content. It lives on the existing protected Operations data volume;
 no database migration, credential change or new binding is required. Failed
 validation or a stale revision retains the previous selection. The previous
 release/image remains the deployment rollback target.
+
+## AI Controls
+
+The Operations sidebar's AI Controls dashboard consolidates the existing mail
+model selector, AI Nodes component, global OCR and Pure Ollama switches. It uses
+the existing cookie-authenticated model, nodes/status/activity, metrics, feature
+config, mailbox health and recruitment review APIs, plus the existing activity
+websocket. Existing Set Primary, Unload, diagnostics tests and policy audit
+routes are reused without backend changes or new permissions.
+
+Installed size is decimal GB. Reported GPU residency is for the first loaded
+model from the node health API, not physical GPU capacity or utilization. Queue
+counters distinguish current rows from cumulative totals; recruitment events
+are not a complete AI job log. Unsupported 24-hour totals, general server logs,
+workload overrides and routing pins are explicitly unavailable rather than
+invented. Only API-returned configuration is displayed; no host files or
+secrets are exposed. The validator is read-only. No inference runs on page load;
+tests and mutations require existing explicit actions and confirmations.

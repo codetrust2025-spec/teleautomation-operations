@@ -4,6 +4,7 @@ import { DailyOpsPanel } from './dailyOps/DailyOpsPanel.jsx'
 import { BookingsAnalyticsPanel } from './bookingsAnalytics/BookingsAnalyticsPanel.jsx'
 import { DataRoomPanel } from './components/DataRoomPanel.jsx'
 import { RecruitmentMailPanel } from './components/RecruitmentMailPanel.jsx'
+import { AiControlsDashboard } from './components/AiControlsDashboard.jsx'
 import { MailMonitoringNotifications } from './components/MailMonitoringNotifications.jsx'
 import { ChangePasswordModal } from './components/ChangePasswordModal.jsx'
 import { AttendancePanel } from './attendance/AttendancePanel.jsx'
@@ -34,6 +35,7 @@ const VIEWS = [
   { id: 'bookings-analytics', label: 'Bookings Analytics', icon: 'chart' },
   { id: 'mail-notifications', label: 'Mail Alerts', icon: 'bell', badge: 'mail' },
   { id: 'ai-recruitment', label: 'AI Mail Review', icon: 'mail', badge: 'gmail-expired' },
+  { id: 'ai-controls', label: 'AI Controls', icon: 'code' },
   { id: 'candidates', label: 'Candidates', icon: 'users', badge: 'works' },
   { id: 'data-room', label: 'Data Room', icon: 'database' },
   { id: 'attendance', label: 'Attendance', icon: 'user-check' },
@@ -301,6 +303,7 @@ function OperationsShell({ view, onNavigate }) {
           {view === 'bookings-analytics' && <BookingsAnalyticsPanel />}
           {view === 'attendance' && <AttendancePanel />}
           {view === 'ai-recruitment' && <RecruitmentMailPanel />}
+          {view === 'ai-controls' && <AiControlsDashboard />}
           {view === 'mail-notifications' && <MailMonitoringNotifications />}
           {view === 'data-room' && <DataRoomPanel />}
         </main>

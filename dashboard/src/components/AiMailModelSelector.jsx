@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-export default function AiMailModelSelector({ request, refreshToken }) {
+export default function AiMailModelSelector({ request, refreshToken, onSaved }) {
   const [data, setData] = useState(null);
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,6 +35,7 @@ export default function AiMailModelSelector({ request, refreshToken }) {
         setData((old) => ({ ...old, selection: value.selection }));
         setTested("");
         setNotice("AI Mail model saved. New foreground and background classifications use this selection.");
+        onSaved?.(value.selection);
       }
     } catch (error) {
       setTested("");

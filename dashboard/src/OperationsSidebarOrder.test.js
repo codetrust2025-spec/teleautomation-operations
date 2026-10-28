@@ -33,6 +33,7 @@ const EXPECTED = [
   'Bookings Analytics',
   'Mail Alerts',
   'AI Mail Review',
+  'AI Controls',
   'Candidates',
   'Data Room',
   'Attendance',
