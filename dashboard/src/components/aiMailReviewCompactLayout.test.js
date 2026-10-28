@@ -20,12 +20,13 @@ import { dirname, resolve } from 'node:path'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const panel = readFileSync(resolve(HERE, 'RecruitmentMailPanelRedesign.jsx'), 'utf8')
+const nodePanel = readFileSync(resolve(HERE, 'AiNodeManager.jsx'), 'utf8')
 const css = readFileSync(resolve(HERE, '..', 'recruitmentMail.css'), 'utf8')
 
 describe('AI nodes collapse', () => {
   it('is a disclosure, not an always-open section', () => {
-    expect(panel).toContain('<details className="sot-ai-nodes"')
-    expect(panel).not.toContain('<section className="sot-ai-nodes"')
+    expect(nodePanel).toContain('<details className="sot-ai-nodes"')
+    expect(nodePanel).not.toContain('<section className="sot-ai-nodes"')
   })
 
   it('is open on every load, and still collapsible', () => {
@@ -33,17 +34,17 @@ describe('AI nodes collapse', () => {
     // turned out to be read often enough that a click to see it cost more
     // than the scroll does, so the default changed; it is still a <details>,
     // so one click puts it away for the rest of the visit.
-    const tag = panel.match(/<details className="sot-ai-nodes"[^>]*>/)[0]
+    const tag = nodePanel.match(/<details className="sot-ai-nodes"[^>]*>/)[0]
     expect(tag).toMatch(/\bopen\b/)
   })
 
   it('still says whether the nodes are healthy while collapsed', () => {
-    expect(panel).toContain('sot-ai-nodes-glance')
-    expect(panel).toMatch(/\$\{online\}\/\$\{nodes\.length\} online/)
+    expect(nodePanel).toContain('sot-ai-nodes-glance')
+    expect(nodePanel).toMatch(/\$\{online\}\/\$\{nodes\.length\} online/)
   })
 
   it('colours the glance when a node is down', () => {
-    expect(panel).toContain('online < nodes.length ? " is-degraded" : ""')
+    expect(nodePanel).toContain('online < nodes.length ? " is-degraded" : ""')
     expect(css).toMatch(/\.sot-ai-nodes-glance\.is-degraded \{[^}]*--sot-amber/)
   })
 
@@ -51,24 +52,17 @@ describe('AI nodes collapse', () => {
     // There were two on the page: this one refreshed node health, the header
     // one refreshed candidates and mailboxes, and which to press depended on
     // what you happened to be looking at. The header button does both now.
-    const nodes = panel.slice(panel.indexOf('<details className="sot-ai-nodes"'))
+    const nodes = nodePanel.slice(nodePanel.indexOf('<details className="sot-ai-nodes"'))
     const summary = nodes.slice(nodes.indexOf('<summary>'), nodes.indexOf('</summary>'))
     expect(summary).not.toContain('Refresh')
     expect(summary).not.toContain('onRefresh')
   })
 
-  it('leaves exactly one Refresh button on the page', () => {
-    // The visible label, not the word: the file also says "Refreshing" as a
-    // loading state and "Refresh record" in the evidence panel, which is a
-    // different screen.
+  it('keeps mail Refresh limited to email data', () => {
     expect(panel.match(/↻ Refresh/g) || []).toHaveLength(1)
-  })
-
-  it('makes that one Refresh reload node health as well', () => {
-    const header = panel.slice(panel.indexOf('The only Refresh on the page'))
-    const button = header.slice(0, header.indexOf('</button>'))
-    expect(button).toContain('load({ showLoader: true })')
-    expect(button).toContain('refreshOllama(true)')
+    expect(panel).toContain('load({ showLoader: true })')
+    expect(panel).not.toContain('refreshOllama')
+    expect(panel).not.toContain('/ollama/')
   })
 
   it('replaces the native marker with one that still reads as expandable', () => {
@@ -167,8 +161,7 @@ describe('the metric cards became chips', () => {
 
 describe('nothing was taken away', () => {
   it('keeps every toolbar control', () => {
-    for (const control of ['Global candidate filter', '<PureOllamaToggle />',
-                           '<OcrToggle />', '↻ Refresh', '<SearchInput',
+    for (const control of ['Global candidate filter', 'Manage AI Controls', '↻ Refresh', '<SearchInput',
                            '+ Add Gmail']) {
       expect(panel).toContain(control)
     }
@@ -176,8 +169,8 @@ describe('nothing was taken away', () => {
 
   it('keeps both list tabs and the node actions', () => {
     expect(panel).toContain('Pending Gmail <span>')
-    expect(panel).toContain('onMakePrimary(node)')
-    expect(panel).toContain('Unload')
+    expect(nodePanel).toContain('onMakePrimary(node)')
+    expect(nodePanel).toContain('Unload')
   })
 })
 

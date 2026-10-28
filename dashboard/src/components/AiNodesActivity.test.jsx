@@ -9,7 +9,7 @@
 import React from "react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RecruitmentMailPanel } from "./RecruitmentMailPanel.jsx";
+import { AiControlsDashboard } from "./AiControlsDashboard.jsx";
 import { ConfirmProvider } from "../context/ConfirmContext.jsx";
 
 vi.mock("../context/AuthContext.jsx", () => ({
@@ -53,7 +53,8 @@ function serve({ activity, activityEndpoint } = {}) {
     vi.fn(async (url) => {
       const target = String(url);
       let body = { status: "ok" };
-      if (target.includes("/ollama/nodes"))
+      if (target.includes("/mail-model")) body = { selection: { model: "fixture:7b" }, nodes: [] };
+      else if (target.includes("/ollama/nodes"))
         body = {
           status: "ok",
           nodes: NODES.map((node) => ({ ...node, activity: activity?.nodes?.[node.id] || [] })),
@@ -73,13 +74,14 @@ function stateOf(label) {
   return states[states.length - 1].textContent;
 }
 
-async function renderPanel() {
+async function renderPanel(connect = true) {
   render(
     <ConfirmProvider>
-      <RecruitmentMailPanel />
+      <AiControlsDashboard />
     </ConfirmProvider>,
   );
   await screen.findByText("RTX 4060", { selector: "strong" });
+  if (connect) act(() => live.status("Live"));
 }
 
 describe("AI nodes panel: what a node is busy with", () => {
@@ -148,7 +150,7 @@ describe("AI nodes panel: what a node is busy with", () => {
       activity: { boot: "b1", version: 1, nodes: {} },
       activityEndpoint: { boot: "b1", version: 2, nodes: { jagadeesh: [BOOKING] } },
     });
-    await renderPanel();
+    await renderPanel(false);
     await waitFor(() => expect(stateOf("Jagadeesh")).toBe("Ready"));
 
     act(() => live.status("Live"));

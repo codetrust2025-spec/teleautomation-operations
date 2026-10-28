@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from "react";
 
-export default function AiMailModelSelector({ request, refreshToken, onSaved }) {
-  const [data, setData] = useState(null);
+export default function AiMailModelSelector({ request, refreshToken, onSaved, catalogData }) {
+  const [localData, setData] = useState(null);
+  const data = catalogData === undefined ? localData : catalogData;
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [tested, setTested] = useState("");
 
   useEffect(() => {
+    if (catalogData !== undefined) {
+      if (catalogData) setModel((current) => current || catalogData.selection.model);
+      return;
+    }
     let active = true;
     request("/api/ai-recruitment/mail-model").then((value) => {
       if (!active) return;
@@ -18,7 +23,7 @@ export default function AiMailModelSelector({ request, refreshToken, onSaved }) 
       setModel((current) => current || value.selection.model);
     }).catch((error) => { if (active) setNotice(error.message); });
     return () => { active = false; };
-  }, [request, refreshToken]);
+  }, [request, refreshToken, catalogData]);
 
   const run = async (action) => {
     setBusy(true);
@@ -32,7 +37,7 @@ export default function AiMailModelSelector({ request, refreshToken, onSaved }) 
         const value = await request("/api/ai-recruitment/mail-model", {
           method: "PUT", body: JSON.stringify({ model, revision: data.selection.revision }),
         });
-        setData((old) => ({ ...old, selection: value.selection }));
+        if (catalogData === undefined) setData((old) => ({ ...old, selection: value.selection }));
         setTested("");
         setNotice("AI Mail model saved. New foreground and background classifications use this selection.");
         onSaved?.(value.selection);

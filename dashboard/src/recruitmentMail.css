@@ -3530,9 +3530,24 @@
 .sot-mailboxes-page .sot-mail-model-details summary { width: fit-content; cursor: pointer; }
 .sot-mailboxes-page .sot-mail-model-details :is(p, small) { display: block; margin-top: 6px; line-height: 1.5; }
 .sot-mailboxes-page .sot-mail-model-notice { margin-top: 6px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.sot-mailboxes-page .sot-header-actions > .sot-manage-ai-controls {
+  min-height: 28px;
+  padding: 3px 0;
+  border: 0;
+  background: none;
+  color: var(--sot-blue, #3284ff);
+  font-size: 12px;
+}
 @media (max-width: 600px) {
   .sot-mailboxes-page .sot-mail-model-selector { padding: 8px; }
   .sot-mailboxes-page .sot-mail-model-row { grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; }
   .sot-mailboxes-page .sot-mail-model-row label { grid-column: 1 / -1; }
   .sot-mailboxes-page .sot-mail-model-row :is(select, button) { padding-inline: 7px; }
+}
+@media (max-width: 640px) {
+  .sot-mailboxes-page .sot-header-actions > .sot-manage-ai-controls {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-self: start;
+  }
 }

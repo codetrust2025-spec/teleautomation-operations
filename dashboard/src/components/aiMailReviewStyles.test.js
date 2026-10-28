@@ -26,7 +26,7 @@ const read = (rel) => readFileSync(join(SRC, rel), 'utf8')
 const STYLESHEETS = ['index.css', 'businessShell.css', 'dailyOps.css', 'recruitmentMail.css']
 const css = STYLESHEETS.map(read).join('\n')
 
-const panel = read('components/RecruitmentMailPanelRedesign.jsx')
+const panel = read('components/AiNodeManager.jsx')
 const toggle = read('components/OcrToggle.jsx')
 
 /** Every class in a className="..." or className={`...`} in the given source. */

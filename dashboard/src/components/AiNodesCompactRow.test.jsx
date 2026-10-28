@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SRC = dirname(fileURLToPath(import.meta.url))
-const panel = readFileSync(join(SRC, 'RecruitmentMailPanelRedesign.jsx'), 'utf8')
+const panel = readFileSync(join(SRC, 'AiNodeManager.jsx'), 'utf8')
 const css = readFileSync(join(SRC, '..', 'recruitmentMail.css'), 'utf8')
 
 /** The node card, isolated from the rest of the panel. */
