@@ -261,6 +261,9 @@ def _public_worker(worker: dict, approvals: dict) -> dict:
     return {"id": worker.get("id"), "name": worker.get("name"), "key_id": worker.get("keyId"), "fingerprint": fingerprint,
             "fingerprint_format": FINGERPRINT_FORMAT, "key": _key_summary(worker["publicKey"]) if worker.get("publicKey") else "",
             "key_problem": problem, "stored_text_sha256": worker.get("publicKeySha256"),
+            # Whether Daybreak seals new logins to this worker now (RTX only while Daybreak runs rtx-only; a worker
+            # left out holds what it already has). Daybreak releases before this flag existed sealed to every worker.
+            "recipient": worker.get("recipient") is not False,
             "enabled": bool(worker.get("enabled")), "last_seen": _ms_iso(worker.get("lastSeen")) if worker.get("lastSeen") else None,
             "approved": approved, "approved_by": (approval or {}).get("approved_by") if approved else None,
             "approved_at": (approval or {}).get("approved_at") if approved else None}

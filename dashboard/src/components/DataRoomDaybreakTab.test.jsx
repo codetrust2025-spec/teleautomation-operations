@@ -80,6 +80,16 @@ describe('DataRoomDaybreakTab', () => {
     expect(posts()[0].body).toEqual({ fingerprint: 'bbbbbbbbbbbbbbbb' })
   })
 
+  it('needs only the workers Daybreak delivers to: RTX alone while Jagadeesh is left out', async () => {
+    mockFetch({ ...VIEW, workers: [WORKERS[0], { ...WORKERS[1], recipient: false }] })
+    render(<DataRoomDaybreakTab />)
+    expect(await screen.findByText('not receiving new logins')).toBeInTheDocument()
+    expect(screen.queryByText(/Approve every worker's key before delivering/)).toBeNull()
+    fireEvent.click(within(screen.getByText('Ravi Kumar').closest('tr')).getByRole('button', { name: 'Deliver' }))
+    await waitFor(() => expect(confirm).toHaveBeenCalled())
+    expect(confirm.mock.calls[0][0].title).toBe('Deliver 1 login to RTX 4060?')
+  })
+
   it('names the machine-check value to type, and offers no approval for a key of the wrong kind', async () => {
     mockFetch({ ...VIEW, workers: [WORKERS[0], { ...WORKERS[1], key: 'RSA-2048 RSA-OAEP-256', key_problem: 'the key is RSA-2048, not RSA-3072' }] })
     render(<DataRoomDaybreakTab />)

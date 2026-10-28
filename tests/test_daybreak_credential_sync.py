@@ -97,8 +97,10 @@ class FakeDaybreak:
         payload = payload or {}
         self.calls.append((action, json.loads(json.dumps(payload))))
         if action == "operations_status":
+            listed = getattr(self, "listed", None) or self.workers
             return {"workers": [{"id": w.id, "name": w.name, "priority": w.priority, "keyId": w.key_id, "publicKey": json.loads(w.text),
-                                 "publicKeySha256": w.stored_text_sha256, "lastSeen": int(time.time() * 1000), "enabled": True} for w in self.workers],
+                                 "publicKeySha256": w.stored_text_sha256, "lastSeen": int(time.time() * 1000), "enabled": True,
+                                 "recipient": w in self.workers} for w in listed],
                     "roster": self.roster,
                     "deliveries": [{"id": i, "receipt_at": r.get("receipt_at"), "committed": 1 if r.get("envelope") else 0}
                                    for i, r in self.rows.items() if i in payload.get("deliveryIds", [])],
@@ -246,6 +248,16 @@ class TestWorkerApproval:
         res = deliver(env, "asha_rao").json()
         assert res["delivered"] == [] and "Jagadeesh's key is not approved" in res["refused"][0]["detail"]
         assert [a for a, _ in env["daybreak"].calls].count("commit") == 0
+
+    def test_a_worker_daybreak_leaves_out_needs_no_approval(self, env):
+        rtx, jag = env["daybreak"].workers
+        env["daybreak"].workers = [rtx]           # what an rtx-only Daybreak offers in prepare
+        env["daybreak"].listed = [rtx, jag]       # ... while still listing Jagadeesh, enrolled but not a recipient
+        env["client"].post(f"/data-room/daybreak/workers/{rtx.key_id}/approve", json={"fingerprint": rtx.fingerprint})
+        res = deliver(env, "asha_rao").json()
+        assert res["delivered"] == ["asha_rao"] and res["refused"] == []
+        listed = {w["name"]: w for w in view(env)["_"]["workers"]}
+        assert listed["RTX 4060"]["recipient"] and listed["Jagadeesh"]["recipient"] is False and not listed["Jagadeesh"]["approved"]
 
     def test_a_key_replaced_after_approval_is_not_trusted(self, env):
         approve_all(env)

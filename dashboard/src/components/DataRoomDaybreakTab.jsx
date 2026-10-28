@@ -51,6 +51,7 @@ function Worker({ worker, onApprove, onRevoke, busy }) {
         <strong>{worker.name}</strong>
         <span className={`dr-status dr-db-exec--${worker.approved ? 'approved' : 'pending'}`}>{worker.approved ? 'Key approved' : 'Key not approved'}</span>
         {!worker.enabled && <span className="dr-muted">disabled in Daybreak</span>}
+        {worker.enabled && worker.recipient === false && <span className="dr-muted">not receiving new logins</span>}
       </div>
       <div className="dr-db-computer-meta">
         <span title={worker.fingerprint}>Key fingerprint <code>{worker.fingerprint.slice(0, 16)}…</code>{worker.key && <> · {worker.key}</>}</span>
@@ -120,8 +121,10 @@ export function DataRoomDaybreakTab() {
       (!q || row.label.toLowerCase().includes(q) || row.email.includes(q)))
   }, [view, filter, search])
 
-  const allApproved = (view?.workers || []).filter(w => w.enabled).every(w => w.approved) && (view?.workers || []).some(w => w.enabled)
-  const workerNames = (view?.workers || []).filter(w => w.enabled).map(w => w.name).join(' and ')
+  // Only the workers Daybreak seals new logins to need an approved key; one it leaves out keeps what it holds.
+  const recipients = (view?.workers || []).filter(w => w.enabled && w.recipient !== false)
+  const allApproved = recipients.length > 0 && recipients.every(w => w.approved)
+  const workerNames = recipients.map(w => w.name).join(' and ')
 
   const act = async (work, success) => {
     setBusy(true)
