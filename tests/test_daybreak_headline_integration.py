@@ -17,6 +17,8 @@ def client(monkeypatch):
 def payload():
     return {
         "candidate_ref": "candidate-a",
+        # The live append-only contract requires a verified existing baseline.
+        "previous_headline": "React developer | 6 years",
         "facts": {
             "target_role": "React developer",
             "experience": "6 years",
@@ -48,7 +50,7 @@ def test_daybreak_headline_uses_shared_gateway_and_returns_selected_node(monkeyp
     response = c.post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=payload())
     assert response.status_code == 200
     assert response.json() == {
-        "status": "ok", "headline": "React developer | 6 years | JavaScript, React.js",
+        "status": "ok", "headline": "React developer | 6 years | JavaScript | React.js",
         "node_id": "rtx4060", "node_label": "RTX 4060", "model": "qwen2.5:7b", "duration_ms": 47,
     }
     assert calls[0]["workload"] == "daybreak_headline"
@@ -178,7 +180,9 @@ def test_actual_route_keeps_exact_months_and_candidate_scoped_schema(monkeypatch
     request['facts']['experience']='3 Years 5 Months'
     response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=request)
     assert response.status_code==200
-    assert response.json()['headline']=='React developer | 3 Years 5 Months | JavaScript, React.js'
+    # Precise approved experience may be appended; existing coverage is never
+    # rewritten or trimmed just to normalize its formatting.
+    assert response.json()['headline']==request['previous_headline']+' | 3 Years 5 Months'
     assert calls[0]['schema']['properties']['skills']['items']['enum']==['JavaScript','React.js']
     assert calls[0]['schema']['additionalProperties'] is False
 
@@ -199,7 +203,7 @@ def test_render_drops_whole_skills_instead_of_clipping_words(monkeypatch):
     request['facts']['skills']=skills
     response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=request)
     assert response.status_code==200
-    assert response.json()['headline']=='React developer | 6 years | JavaScript, React.js'
+    assert response.json()['headline']=='React developer | 6 years | JavaScript | React.js'
 
 
 def test_core_terms_are_deduplicated_by_case_and_alias_without_changing_facts():
@@ -226,7 +230,7 @@ def test_missing_title_uses_approved_work_focus_not_an_invented_job_title():
     request=integration.DaybreakHeadlineRequest(candidate_ref='own',facts={'target_role':'','experience':'4 Years 5 Months','skills':['React.js','TypeScript','Frontend Development','Tailwind CSS'],'profile_facts':'4 Years 5 Months of experience in web technologies with JavaScript and React.js and TypeScript'},previous_headline='4 Years 5 Months of experience in web technologies with React.js and TypeScript')
     assert integration._brief(request)['role_context']=='Frontend Development'
     headline=integration._render(request,{'skills':['Tailwind CSS'],'use_existing':False})
-    assert headline.startswith('Frontend Development | 4 Years 5 Months |')
+    assert headline == request.previous_headline + ' | Tailwind CSS'
     assert 'Developer' not in headline
 
 

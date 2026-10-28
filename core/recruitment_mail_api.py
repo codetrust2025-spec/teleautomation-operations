@@ -10,6 +10,7 @@ from core.ai_gateway import AIGatewayError, chat_structured, configured_models, 
 from core.ollama_status import snapshot as ollama_status_snapshot
 from core import ai_activity
 from core import ollama_nodes
+from core import ai_mail_model
 from core import gmail_watch
 from features import candidate_store
 from services import gmail_reconnect
@@ -91,6 +92,30 @@ def _renew_gmail_watch(mailbox:dict)->dict|None:
 def install_recruitment_mail_routes(app):
     if enabled():
         store.ensure_schema()
+    @app.get('/api/ai-recruitment/mail-model')
+    async def mail_model_catalog(request:Request):
+        _guard();require_fleet_admin(request)
+        return await asyncio.to_thread(ai_mail_model.catalog)
+
+    @app.post('/api/ai-recruitment/mail-model/test')
+    async def mail_model_test(request:Request):
+        _guard();require_fleet_admin(request)
+        body=await request.json()
+        if not isinstance(body,dict):raise HTTPException(400,'Expected a model selection object')
+        try:return await asyncio.to_thread(ai_mail_model.test_model,body.get('model'))
+        except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
+    @app.put('/api/ai-recruitment/mail-model')
+    async def mail_model_save(request:Request):
+        _guard();profile=require_fleet_admin(request)
+        body=await request.json()
+        if not isinstance(body,dict):raise HTTPException(400,'Expected a model selection object')
+        actor=str((profile or {}).get('username') or 'admin')
+        try:
+            selected=await asyncio.to_thread(ai_mail_model.activate,body.get('model'),body.get('revision'),actor)
+            return {'selection':selected}
+        except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+
     @app.get('/api/ai-recruitment/config')
     async def feature_config(request:Request):
         require_fleet_admin(request)

@@ -1,11 +1,19 @@
 import React from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { SubmitSlotPage } from './SubmitSlotPage.jsx'
+
+// These fixtures describe an upcoming 25 Oct invite. Freeze Date only: timers
+// remain real, and the existing booking/past-date guards are exercised intact.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-20T06:00:00Z'))
+})
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 function screenshot(label) {

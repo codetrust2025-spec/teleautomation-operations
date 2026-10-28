@@ -7,6 +7,7 @@ import { subscribeMailStatus, subscribeNodeActivity } from "../notifications/mai
 import { ButtonContent, InlineLoader, OverlayLoader } from "../Loader.jsx";
 import { OcrToggle } from "./OcrToggle.jsx";
 import { PureOllamaToggle } from "./PureOllamaToggle.jsx";
+import AiMailModelSelector from "./AiMailModelSelector.jsx";
 import { ReconnectWorklist } from "./ReconnectWorklist.jsx";
 import { useReconnectStatus } from "../hooks/useReconnectStatus.js";
 import { readMailboxHealth } from "../notifications/mailboxHealth.js";
@@ -2524,6 +2525,7 @@ export default function RecruitmentMailPanelRedesign() {
             </select>
           </label>
           <PureOllamaToggle />
+          <AiMailModelSelector request={request} refreshToken={updatedAt} />
           <OcrToggle />
           <span>
             Last updated: {updatedAt
