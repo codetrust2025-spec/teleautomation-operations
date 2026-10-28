@@ -2045,18 +2045,27 @@ def calendar_invite_intent(
     to review rather than guessing in either direction.
     """
     payload = _analysis_payload(message, attachment_texts)
-    response = chat_structured(
+    selected = ai_mail_model.selection()
+    def send(**kwargs):
+        if selected["custom"]:
+            return ai_mail_model.request(selected=selected, **kwargs)
+        return chat_structured(**kwargs)
+    response = send(
         messages=[
             {"role": "system", "content": RELEVANCE_PROMPT},
             {"role": "user", "content": _prompt_json(payload)},
         ],
         schema=RELEVANCE_SCHEMA,
-        model=configured_models()["primary"],
+        model=selected["model"] if selected["custom"] else configured_models()["primary"],
         temperature=0,
         max_retries=0,
         workload="calendar_invite_intent",
     )
-    return _validate_relevance_result(parse_model_json(response.content), payload)
+    ai_mail_model.remember(response)
+    result = _validate_relevance_result(parse_model_json(response.content), payload)
+    result["model"] = response.model
+    result["node_id"] = getattr(response, "node_id", "")
+    return result
 
 
 def calendar_invite_is_a_candidate_interview(relevance: dict[str, Any]) -> bool:

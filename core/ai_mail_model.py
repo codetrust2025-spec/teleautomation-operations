@@ -191,11 +191,10 @@ def request(*, selected, **kwargs):
         try:
             result = _infer(node, **kwargs)
         except ai_gateway.AIGatewayError as exc:
-            if exc.code not in {"OLLAMA_INVALID_JSON", "OLLAMA_SCHEMA_VALIDATION_FAILED", "OLLAMA_MODEL_NOT_FOUND"}:
-                ollama_nodes.record_failure(node, exc.code)
+            # The shared gateway owns breaker accounting. Counting this again
+            # would turn one failed inference into two consecutive failures.
             last_error = exc
             continue
-        ollama_nodes.record_success(node)
         # Commit the outer mail session only after its first call succeeds.
         # Later calls cannot move to another node mid-decision.
         ollama_nodes._remember_decision_node(result.node_id)
