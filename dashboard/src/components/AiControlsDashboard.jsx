@@ -8,7 +8,6 @@ import { AiNodeManager } from './RecruitmentMailPanelRedesign.jsx'
 import { PureOllamaToggle } from './PureOllamaToggle.jsx'
 import { OcrToggle } from './OcrToggle.jsx'
 import { Icon } from './ui/Icon.jsx'
-import './AiControlsDashboard.css'
 
 // All requests use already-shipped Operations routes and cookie authentication.
 // A missing field is unavailable, never a zero or a deployment-time constant.
