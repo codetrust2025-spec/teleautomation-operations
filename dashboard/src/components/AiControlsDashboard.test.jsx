@@ -11,13 +11,13 @@ vi.mock('../notifications/mailEventStream.js', () => ({
   subscribeNodeActivity: fn => { mocks.activity = fn; return vi.fn() },
   subscribeMailStatus: fn => { mocks.status = fn; return vi.fn() },
 }))
-const inventory = [{ id: 'rtx4060', label: 'RTX 4060', available: true, models: [{ name: 'qwen2.5:7b', size_bytes: 4683087332 }, { name: 'other:8b', size_bytes: 6140415975 }] },
-  { id: 'jagadeesh', label: 'Jagadeesh', available: true, models: [{ name: 'qwen2.5:7b', size_bytes: 4683087332 }] },
+const inventory = [{ id: 'rtx4060', label: 'RTX 4060', available: true, models: [{ name: 'qwen2.5:7b', size_bytes: 4.7e9 }, { name: 'other:8b', size_bytes: 6.14e9 }] },
+  { id: 'jagadeesh', label: 'Jagadeesh', available: true, models: [{ name: 'qwen2.5:7b', size_bytes: 4.7e9 }] },
   { id: 'our_machine', label: 'Praveen', available: true, models: [] }]
 const nodes = inventory.map((n, i) => ({ ...n, endpoint_reachable: true, ready: true, status: 'online', primary: i === 0, response_time_ms: 123,
   loaded_models: i === 0 ? ['qwen2.5:7b'] : [], required_models: { 'qwen2.5:7b': true }, ollama_version: 'fixture-version',
   breaker: { consecutive_failures: 0, in_cooldown: false, cooldown_remaining_s: 0 },
-  gpu: i === 0 ? { size_bytes: 4755397016, size_vram_bytes: 4755397016 } : undefined }))
+  gpu: i === 0 ? { size_bytes: 4.76e9, size_vram_bytes: 4.76e9 } : undefined }))
 function fixture(path) {
   if (path.includes('/mail-model')) return { selection: { model: 'qwen2.5:7b', revision: 0, last_used: { model: 'qwen2.5:7b', node_label: 'Jagadeesh' } }, nodes: inventory }
   if (path.endsWith('/ollama/nodes')) return { primary_node: 'rtx4060', nodes, activity: { boot: 'one', version: 1, nodes: {} } }
@@ -133,7 +133,7 @@ describe('existing AI controls dashboard', () => {
   it('shows zero VRAM as zero and never invents physical GPU capacity', async () => {
     request.mockImplementation(async path => {
       const body = fixture(path)
-      if (path.endsWith('/ollama/nodes')) return { ...body, nodes: body.nodes.map(n => ({ ...n, gpu: { size_bytes: 6000000000, size_vram_bytes: 0 } })) }
+      if (path.endsWith('/ollama/nodes')) return { ...body, nodes: body.nodes.map(n => ({ ...n, gpu: { size_bytes: 6e9, size_vram_bytes: 0 } })) }
       return body
     })
     await open()
