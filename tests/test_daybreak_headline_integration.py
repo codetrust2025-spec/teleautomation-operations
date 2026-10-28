@@ -170,7 +170,10 @@ def test_actual_route_rejects_invented_cross_candidate_truncated_and_malformed_s
         assert response.status_code==502,selection
 
 
-def test_actual_route_keeps_exact_months_and_candidate_scoped_schema(monkeypatch):
+def test_actual_route_never_adds_a_second_experience_statement_and_keeps_scoped_schema(monkeypatch):
+    # Append-only rendering cannot replace "3.5 YOE", and a published headline cannot be cleaned
+    # up automatically, so appending "3 Years 5 Months" would state experience twice for good.
+    # A precise-experience rewrite needs an owner-approved editorial save.
     calls=[]
     def selected(**kwargs):
         calls.append(kwargs)
@@ -180,9 +183,8 @@ def test_actual_route_keeps_exact_months_and_candidate_scoped_schema(monkeypatch
     request['facts']['experience']='3 Years 5 Months'
     response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=request)
     assert response.status_code==200
-    # Precise approved experience may be appended; existing coverage is never
-    # rewritten or trimmed just to normalize its formatting.
-    assert response.json()['headline']==request['previous_headline']+' | 3 Years 5 Months'
+    # Existing coverage is never rewritten or trimmed, and no second experience statement is added.
+    assert response.json()['headline']==request['previous_headline']
     assert calls[0]['schema']['properties']['skills']['items']['enum']==['JavaScript','React.js']
     assert calls[0]['schema']['additionalProperties'] is False
 
@@ -213,7 +215,8 @@ def test_core_terms_are_deduplicated_by_case_and_alias_without_changing_facts():
     assert 'Identityiq' not in brief['skills'] and 'IIQ' not in brief['skills']
     headline=integration._render(request,{'skills':['Rules','Connectors'],'use_existing':False})
     assert headline.lower().count('identityiq')==1
-    assert '3 Years 5 Months' in headline
+    assert headline=='SailPoint IAM Engineer | 3.5 YOE | IdentityIQ | IAM | Rules | Connectors'
+    assert '3 Years 5 Months' not in headline  # one experience statement, never two formats
     assert request.facts.skills==['Identityiq','IIQ','IAM','Rules','Connectors']
 
 
@@ -238,3 +241,49 @@ def test_ambiguous_source_terms_are_omitted_not_silently_corrected():
     request=integration.DaybreakHeadlineRequest(candidate_ref='own',facts={'target_role':'Web Developer','experience':'5 Years','skills':['React.js','Pas Services','Restfull API','Snow','GraphQL'],'profile_facts':''})
     assert integration._selection_schema(request)['properties']['skills']['items']['enum']==['React.js','GraphQL']
     assert request.facts.skills==['React.js','Pas Services','Restfull API','Snow','GraphQL']
+
+
+def _platform_request(previous, max_length=250):
+    # Invented candidate: the shape of the 27 Oct drafts (six listed skills, three new approved ones).
+    skills=['Ci/Cd','Terraform','Docker','Jenkins','Powershell','Ansible','Kubernetes','GIT','Linux','Prometheus','Grafana','Devsecops']
+    return integration.DaybreakHeadlineRequest(candidate_ref='own',facts={'target_role':'Platform Engineer','experience':'4 Years 1 Month','skills':skills,'profile_facts':''},previous_headline=previous,max_length=max_length)
+
+
+def test_a_new_selection_never_rotates_out_existing_skills():
+    # 27 Oct 2026: a fixed six-skill rewrite swapped Docker/Jenkins/Powershell for new skills, so
+    # Daybreak's editorial gate refused every draft ("Removes existing approved capability coverage").
+    previous='Platform Engineer | 4 Years 1 Month | Ci/Cd, Terraform, Docker, Jenkins, Powershell, Ansible'
+    headline=integration._render(_platform_request(previous),{'skills':['Kubernetes','GIT','Linux'],'use_existing':False})
+    assert headline==previous+' | Kubernetes | GIT | Linux'
+    for kept in ['Ci/Cd','Terraform','Docker','Jenkins','Powershell','Ansible','4 Years 1 Month']:
+        assert kept in headline
+
+
+def test_additions_use_the_requests_naukri_limit_not_a_stale_220_cap():
+    # 28 Oct 2026: headlines of 207-220 characters stayed unchanged and selected skills were dropped
+    # although Naukri accepts and verifies 250-character headlines.
+    previous='Platform Engineer | 4 Years 1 Month | Ci/Cd, Terraform, Docker, Jenkins, Powershell, Ansible | Kubernetes | GIT | Linux'
+    previous=previous+' | Release Automation | '+'Observability Dashboards '*4
+    previous=previous[:215]+'s'
+    assert len(previous)==216  # +13 Prometheus +10 Grafana = 239; +12 Devsecops would be 251
+    headline=integration._render(_platform_request(previous),{'skills':['Prometheus','Grafana','Devsecops'],'use_existing':False})
+    assert headline.startswith(previous) and 220<len(headline)<=250
+    assert headline.endswith(' | Prometheus | Grafana')  # Devsecops no longer fits 250; whole skills only
+    tight=integration._render(_platform_request(previous,max_length=230),{'skills':['Prometheus','Grafana'],'use_existing':False})
+    assert tight==previous+' | Prometheus' and len(tight)<=230
+    full=previous+' | '+'x'*(250-len(previous)-3)
+    assert integration._render(_platform_request(full),{'skills':['Grafana'],'use_existing':False})==full
+
+
+def test_experience_is_appended_only_when_the_headline_states_none():
+    previous='Platform Engineer | Ci/Cd, Terraform, Docker'
+    assert integration._render(_platform_request(previous),{'skills':['GIT'],'use_existing':False})==previous+' | GIT | 4 Years 1 Month'
+    for stated in ['Platform Engineer | 4+ Yrs | Docker','Platform Engineer with 4 Years 1 Month | Docker','Platform Engineer | 4.1 YOE | Docker']:
+        assert integration._render(_platform_request(stated),{'skills':['GIT'],'use_existing':False})==stated+' | GIT'
+
+
+def test_no_verified_baseline_never_produces_a_first_headline(monkeypatch):
+    # Deliberate since 18fb435: Daybreak's editorial gate also refuses a save without comparison text.
+    monkeypatch.setattr('core.ai_gateway.chat_structured',lambda **_:SimpleNamespace(content='{"skills":["JavaScript","React.js"],"use_existing":false}',node_id='rtx4060',node_label='RTX 4060',model='qwen2.5:7b',duration_ms=1))
+    response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=payload() | {'previous_headline':''})
+    assert response.status_code==502

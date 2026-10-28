@@ -163,6 +163,10 @@ def _daybreak_coverage_key(value: str) -> str:
     return re.sub(r'[^a-z0-9+#]+','',value)
 
 
+# Any explicit duration ("3.5 YOE", "4 Years 5 Months", "6+ yrs") already states experience.
+_EXPERIENCE_STATED = re.compile(r"(?i)\b\d+(?:\.\d+)?\s*\+?\s*(?:years?|yrs?|yoe|months?|mos?)\b")
+
+
 def _render(request: DaybreakHeadlineRequest, generated: dict) -> str:
     if not isinstance(generated, dict) or set(generated) != {"skills", "use_existing"}:
         raise ValueError("invalid selection")
@@ -175,7 +179,9 @@ def _render(request: DaybreakHeadlineRequest, generated: dict) -> str:
     previous = request.previous_headline.strip()
     if generated["use_existing"] or not previous:
         return previous  # No verified baseline means no automatic rewrite.
-    limit = min(220, request.max_length)
+    # The request carries the real Naukri limit (250, verified on saved headlines). A stale 220
+    # cap from full rewrites blocked or trimmed valid additions to long headlines.
+    limit = request.max_length
     additions = [s for s in _unique_terms(selected) if not _skill_present(s, previous) and _daybreak_coverage_key(s) not in _daybreak_coverage_key(previous)]
     # Append only complete approved additions. Never rotate or trim previous coverage.
     candidate = previous
@@ -184,7 +190,8 @@ def _render(request: DaybreakHeadlineRequest, generated: dict) -> str:
         if len(proposal) <= limit:
             candidate = proposal
     experience = brief["experience"]
-    if experience and _daybreak_coverage_key(experience) not in _daybreak_coverage_key(previous):
+    # One experience statement only: never add "3 Years 5 Months" beside an existing "3.5 YOE".
+    if experience and not _EXPERIENCE_STATED.search(previous) and _daybreak_coverage_key(experience) not in _daybreak_coverage_key(previous):
         proposal = candidate + " | " + experience
         if len(proposal) <= limit:
             candidate = proposal
