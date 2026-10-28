@@ -139,6 +139,24 @@ def test_gateway_failure_is_not_counted_twice_by_mail_routing(monkeypatch):
     assert ollama_nodes.breaker_state('rtx4060')['consecutive_failures'] == 1
 
 
+def test_calendar_mail_intent_uses_saved_mail_model_without_changing_calendar_rules(monkeypatch):
+    from services import recruitment_mail_agent as agent
+    monkeypatch.setattr(ai_gateway, 'chat_structured', generation)
+    policy.activate('lab:7b', 0, 'admin')
+    calls = []
+    def intent(**kw):
+        calls.append(kw)
+        return ai_gateway.AIResult('{"decision":"NOT_ESTABLISHED"}', kw['model'], 1,
+                                   ollama_nodes.decision_node(), 'Synthetic node')
+    monkeypatch.setattr(ai_gateway, 'chat_structured', intent)
+    monkeypatch.setattr(agent, '_validate_relevance_result', lambda value, source: value)
+    result = agent.calendar_invite_intent({'subject': 'Synthetic general event', 'body': 'No candidate interview.'})
+    assert calls[0]['model'] == 'lab:7b'
+    assert calls[0]['schema'] is agent.RELEVANCE_SCHEMA
+    assert result['decision'] == 'NOT_ESTABLISHED'
+    assert result['model'] == 'lab:7b' and result['node_id'] in policy.selection()['validated_nodes']
+
+
 def test_failed_persistence_retains_previous_selection(monkeypatch):
     monkeypatch.setattr(ai_gateway, 'chat_structured', generation)
     policy.activate('lab:7b', 0, 'admin')
