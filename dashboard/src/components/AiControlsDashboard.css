@@ -39,7 +39,8 @@
 .ai-controls .sot-ai-nodes { margin: 0 0 10px; }
 .ai-controls .sot-ai-node-grid { grid-template-columns: minmax(0, 1fr); }
 .ai-controls .sot-ai-node { display: grid; grid-template-columns: minmax(90px, 1fr) auto auto; grid-template-areas: "name up latency" "ready actions actions"; align-items: center; gap: 6px 10px; }
-.ai-controls .sot-ai-node-name { min-width: 95px; }
+.ai-controls .sot-ai-node-name { min-width: 0; flex-wrap: wrap; }
+.ai-controls .sot-ai-node-name strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .ai-controls .sot-ai-node-name { grid-area: name; }
 .ai-controls .sot-ai-node-state.is-up, .ai-controls .sot-ai-node-state.is-down { grid-area: up; }
 .ai-controls .sot-ai-node-state:not(.is-up):not(.is-down) { grid-area: ready; }
