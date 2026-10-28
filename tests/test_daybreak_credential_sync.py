@@ -54,10 +54,16 @@ class Worker:
         self.id, self.name, self.priority, self.key_id = str(uuid.uuid4()), name, priority, str(uuid.uuid4())
         self.private = rsa.generate_private_key(public_exponent=65537, key_size=3072)
         numbers = self.private.public_key().public_numbers()
-        # WebCrypto's export order, as the worker stores it and machine-check hashes it.
-        self.jwk = {"alg": "RSA-OAEP-256", "e": b64url(numbers.e), "ext": True, "key_ops": ["encrypt"], "kty": "RSA", "n": b64url(numbers.n)}
-        self.text = json.dumps(self.jwk, separators=(",", ":"))
-        self.fingerprint = hashlib.sha256(self.text.encode()).hexdigest()
+        n, e = b64url(numbers.n), b64url(numbers.e)
+        # The orders production really uses. The worker's vault keeps WebCrypto's export order (machine-check's plain
+        # publicKeySha256 hashes it); Daybreak's registry stores the key re-serialised as kty, n, e, alg, ext, key_ops.
+        self.jwk = {"key_ops": ["encrypt"], "ext": True, "alg": "RSA-OAEP-256", "kty": "RSA", "n": n, "e": e}
+        self.text = json.dumps({"kty": "RSA", "n": n, "e": e, "alg": "RSA-OAEP-256", "ext": True, "key_ops": ["encrypt"]},
+                               separators=(",", ":"))
+        self.stored_text_sha256 = hashlib.sha256(self.text.encode()).hexdigest()
+        self.machine_check_plain = hashlib.sha256(json.dumps(self.jwk, separators=(",", ":")).encode()).hexdigest()
+        # machine-check's publicKeyCanonicalSha256: the members sorted, so every serialisation of the key agrees.
+        self.fingerprint = hashlib.sha256(json.dumps(dict(sorted(self.jwk.items())), separators=(",", ":")).encode()).hexdigest()
 
     def open(self, envelope: dict) -> str:
         """Daybreak's openCredential, in Python."""
@@ -92,7 +98,7 @@ class FakeDaybreak:
         self.calls.append((action, json.loads(json.dumps(payload))))
         if action == "operations_status":
             return {"workers": [{"id": w.id, "name": w.name, "priority": w.priority, "keyId": w.key_id, "publicKey": json.loads(w.text),
-                                 "publicKeySha256": w.fingerprint, "lastSeen": int(time.time() * 1000), "enabled": True} for w in self.workers],
+                                 "publicKeySha256": w.stored_text_sha256, "lastSeen": int(time.time() * 1000), "enabled": True} for w in self.workers],
                     "roster": self.roster,
                     "deliveries": [{"id": i, "receipt_at": r.get("receipt_at"), "committed": 1 if r.get("envelope") else 0}
                                    for i, r in self.rows.items() if i in payload.get("deliveryIds", [])],
@@ -245,9 +251,61 @@ class TestWorkerApproval:
         approve_all(env)
         jag, replaced = env["daybreak"].workers[1], Worker("Jagadeesh", 1)
         jag.private, jag.jwk, jag.text, jag.fingerprint = replaced.private, replaced.jwk, replaced.text, replaced.fingerprint
+        jag.stored_text_sha256 = replaced.stored_text_sha256
         res = deliver(env, "asha_rao").json()
         assert res["delivered"] == [] and "not approved" in res["refused"][0]["detail"]
         assert next(w for w in view(env)["_"]["workers"] if w["name"] == "Jagadeesh")["approved"] is False
+
+
+# RTX 4060's production public key (public half only), as Daybreak's registry stores it, verified on 28 Oct against the
+# key in RTX's own vault: worker 64f0b6ee-fb06-4b4a-a13e-e1fa9069cff7, key e8cb6736-a3ad-4a3a-a807-f88c3562605c.
+RTX_REGISTRY_TEXT = "{\"kty\":\"RSA\",\"n\":\"2o_C1yLUGQsOQdzTTRogjzZtA0ZHJvJleJQkBbzOXgTTv1rBnPc19FZNGbccHJPpBOkGibvtjJu1MrgWqfJK7j0ZaJgkw_AGNWS2w0d_vT9WPviPwE49NXhs6mTKNhU5E9p5ZtXhWopMMCh6WKWFvDXzsQPcjK1OuDp8fU6MF3Q_TYxEo-g-qUbaru0YRXlK52cuBgFn6f0nITK_FvLGIQzdnx75TC_EJ0g9kb9P_U3A-t4q02KhATgV0_b23k6utBmuPlvjsP_s-zUvDB4Z0I9tnSFK-2xe1XOBcWh4QfpSew2WiFJK3I7Cv-QgqXgzjzC2uSOKoL9KW4VLgMjNvf-bwQXPXoxtdoesSP5sG1YdC7QPEl8neFPOqx41JK9yBoXKiwqnpC5POsV6Iv3XatuA3_PFdX2hFdyNwFDK-LXeh97z-ghfmAB4BsBeLyXFTOXoxaEr0JmBbtHm2WWx37PpmZOcvOaprLjassuNlxXJCgvb6tXv3Evl2w0z1eQN\",\"e\":\"AQAB\",\"alg\":\"RSA-OAEP-256\",\"ext\":true,\"key_ops\":[\"encrypt\"]}"
+RTX_CANONICAL = "557abcc0a704493d95ac58485ec563a05916abcc2ddc8ebfe64037fb855ba935"   # machine-check publicKeyCanonicalSha256
+RTX_STORED_TEXT = "ed70b8ca7cfaeff10f0995347f8f6f5ad027ad39e43021fddb15157369336239"  # Daybreak publicKeySha256
+RTX_VAULT_ORDER = "2375df850b1ffc557a2db9a51cfa924f8216121e7fca011b9bd50a3622c4d5e8"  # machine-check publicKeySha256
+
+
+class TestFingerprintFormat:
+    def test_the_verified_rtx_key_shows_what_machine_check_prints(self):
+        registry = json.loads(RTX_REGISTRY_TEXT)
+        vault = {k: registry[k] for k in ("key_ops", "ext", "alg", "kty", "n", "e")}
+        assert hashlib.sha256(RTX_REGISTRY_TEXT.encode()).hexdigest() == RTX_STORED_TEXT
+        assert hashlib.sha256(json.dumps(vault, separators=(",", ":")).encode()).hexdigest() == RTX_VAULT_ORDER
+        # Every serialisation of the one key gives the one fingerprint, and it is machine-check's canonical value.
+        assert sync.worker_fingerprint(registry) == sync.worker_fingerprint(vault) == sync.worker_fingerprint(RTX_REGISTRY_TEXT) == RTX_CANONICAL
+        assert sync.worker_key_problem(registry) is None and sync._key_summary(registry) == "RSA-3072 RSA-OAEP-256"
+
+    def test_approval_takes_the_canonical_value_and_refuses_the_other_forms(self, env):
+        rtx = env["daybreak"].workers[0]
+        rtx.text = RTX_REGISTRY_TEXT
+        rtx.stored_text_sha256 = RTX_STORED_TEXT
+        approve = lambda value: env["client"].post(f"/data-room/daybreak/workers/{rtx.key_id}/approve", json={"fingerprint": value})
+        # The values a person could copy from the wrong place: Daybreak's stored-text hash and machine-check's plain one.
+        assert approve(RTX_STORED_TEXT[:16]).status_code == 400
+        assert approve(RTX_VAULT_ORDER[:16]).status_code == 400
+        body = approve(RTX_CANONICAL[:16]).json()["worker"]
+        assert body["approved"] and body["fingerprint"] == RTX_CANONICAL and body["fingerprint_format"] == "publicKeyCanonicalSha256"
+        assert body["stored_text_sha256"] == RTX_STORED_TEXT and body["key"] == "RSA-3072 RSA-OAEP-256" and body["key_problem"] is None
+
+    @pytest.mark.parametrize("change, problem", [
+        ({"alg": "RSA1_5"}, "RSA-OAEP-256"),
+        ({"key_ops": ["encrypt", "wrapKey"]}, "encryption"),
+        ({"kty": "EC"}, "RSA-OAEP-256"),
+        ({"d": "AQAB"}, "private"),
+        ({"e": "Aw"}, "exponent"),
+    ])
+    def test_a_key_of_another_kind_is_never_approved_or_sealed_to(self, env, change, problem):
+        rtx = env["daybreak"].workers[0]
+        rtx.text = json.dumps({**json.loads(rtx.text), **change}, separators=(",", ":"))
+        res = env["client"].post(f"/data-room/daybreak/workers/{rtx.key_id}/approve", json={"fingerprint": sync.worker_fingerprint(rtx.text)})
+        assert res.status_code == 409 and problem in res.json()["detail"]
+
+    def test_a_2048_bit_key_is_refused(self, env):
+        rtx = env["daybreak"].workers[0]
+        small = rsa.generate_private_key(public_exponent=65537, key_size=2048).public_key().public_numbers()
+        rtx.text = json.dumps({**json.loads(rtx.text), "n": b64url(small.n)}, separators=(",", ":"))
+        res = env["client"].post(f"/data-room/daybreak/workers/{rtx.key_id}/approve", json={"fingerprint": sync.worker_fingerprint(rtx.text)})
+        assert res.status_code == 409 and "RSA-2048" in res.json()["detail"]
 
 
 class TestReconciliation:

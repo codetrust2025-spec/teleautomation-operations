@@ -53,11 +53,12 @@ function Worker({ worker, onApprove, onRevoke, busy }) {
         {!worker.enabled && <span className="dr-muted">disabled in Daybreak</span>}
       </div>
       <div className="dr-db-computer-meta">
-        <span>Key fingerprint <code>{worker.fingerprint.slice(0, 16)}…</code></span>
+        <span title={worker.fingerprint}>Key fingerprint <code>{worker.fingerprint.slice(0, 16)}…</code>{worker.key && <> · {worker.key}</>}</span>
         {worker.last_seen && <span>Last seen {when(worker.last_seen)}</span>}
         {worker.approved && <span>Approved {when(worker.approved_at)} by {worker.approved_by}</span>}
+        {worker.key_problem && <span className="dr-db-reason">Key cannot be approved: {worker.key_problem}</span>}
       </div>
-      {!worker.approved && !typing && (
+      {!worker.approved && !typing && !worker.key_problem && (
         <button type="button" className="dr-add-btn" onClick={() => setTyping(true)} disabled={busy}>Approve key…</button>
       )}
       {!worker.approved && typing && (
@@ -69,7 +70,7 @@ function Worker({ worker, onApprove, onRevoke, busy }) {
           }}
         >
           <label>
-            Type the publicKeySha256 that machine-check printed on {worker.name} (at least 16 characters)
+            Type the publicKeyCanonicalSha256 that machine-check printed on {worker.name} (at least 16 characters)
             <input value={fingerprint} onChange={e => setFingerprint(e.target.value)} placeholder="first 16+ characters" autoComplete="off" />
           </label>
           <button type="submit" className="dr-add-btn" disabled={busy || fingerprint.replace(/[^0-9a-f]/gi, '').length < 16}>Approve</button>

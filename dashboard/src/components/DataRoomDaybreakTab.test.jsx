@@ -80,6 +80,19 @@ describe('DataRoomDaybreakTab', () => {
     expect(posts()[0].body).toEqual({ fingerprint: 'bbbbbbbbbbbbbbbb' })
   })
 
+  it('names the machine-check value to type, and offers no approval for a key of the wrong kind', async () => {
+    mockFetch({ ...VIEW, workers: [WORKERS[0], { ...WORKERS[1], key: 'RSA-2048 RSA-OAEP-256', key_problem: 'the key is RSA-2048, not RSA-3072' }] })
+    render(<DataRoomDaybreakTab />)
+    expect(await screen.findByText(/Key cannot be approved: the key is RSA-2048, not RSA-3072/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve key…' })).toBeNull()
+    cleanup()
+    mockFetch({ ...VIEW, workers: [WORKERS[0], { ...WORKERS[1], key: 'RSA-3072 RSA-OAEP-256' }] })
+    render(<DataRoomDaybreakTab />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve key…' }))
+    expect(screen.getByText(/Type the publicKeyCanonicalSha256 that machine-check printed on Jagadeesh/)).toBeInTheDocument()
+    expect(screen.getByText(/RSA-3072 RSA-OAEP-256/)).toBeInTheDocument()
+  })
+
   it('delivers after confirming, and adds a missing account only with consent', async () => {
     mockFetch(APPROVED)
     render(<DataRoomDaybreakTab />)
