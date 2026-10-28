@@ -3482,12 +3482,57 @@
   .sot-mailboxes-page .sot-reconnect-table tbody tr > td[data-label="Action"] { grid-area: action; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
 }
 
-/* Mail-only model controls remain next to Pure Ollama and wrap on mobile. */
-.sot-mailboxes-page .sot-mail-model-selector { flex: 1 1 20rem; min-width: 0; max-width: 30rem; padding: .65rem; border: 1px solid var(--sot-border, #21344d); border-radius: 10px; background: var(--sot-card, #0e1929); overflow-wrap: anywhere; text-align: left; }
-.sot-mailboxes-page .sot-mail-model-selector label { display: grid; gap: .35rem; font-weight: 600; }
-.sot-mailboxes-page .sot-mail-model-selector select { width: 100%; min-width: 0; max-width: 100%; padding: .45rem; border: 1px solid var(--sot-border, #21344d); border-radius: 7px; color: var(--sot-text, #f3f7ff); background: var(--sot-card-soft, #111e30); }
-.sot-mailboxes-page .sot-header-actions .sot-mail-model-selector button { padding: .35rem .5rem; margin-top: .4rem; font-size: 11px; }
-.sot-mailboxes-page .sot-mail-model-selector button:disabled { opacity: .5; cursor: not-allowed; }
-.sot-mailboxes-page .sot-mail-model-selector p { margin-top: .35rem; line-height: 1.4; font-size: 11px; }
-.sot-mailboxes-page .sot-mail-model-selector details { margin-top: .35rem; font-size: 11px; color: var(--sot-muted, #8da0bd); }
-@media (max-width: 700px) { .sot-mailboxes-page .sot-header-actions > .sot-mail-model-selector { grid-column: 1 / -1; max-width: 100%; width: 100%; } }
+/* Compact AI Mail model controls; separate from the page toolbar. */
+.sot-mailboxes-page .sot-mail-model-selector {
+  min-width: 0;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sot-border, #21344d);
+  border-radius: 8px;
+  background: var(--sot-card, #0e1929);
+}
+.sot-mailboxes-page .sot-mail-model-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 26rem) auto auto auto;
+  align-items: center;
+  justify-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+.sot-mailboxes-page .sot-mail-model-row label {
+  color: var(--sot-text, #f3f7ff);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sot-mailboxes-page .sot-mail-model-row select,
+.sot-mailboxes-page .sot-mail-model-row button {
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--sot-border, #21344d);
+  border-radius: 6px;
+  color: var(--sot-text, #f3f7ff);
+  background: var(--sot-card-soft, #111e30);
+  font: inherit;
+  font-size: 12px;
+}
+.sot-mailboxes-page .sot-mail-model-row select { width: 100%; max-width: 100%; }
+.sot-mailboxes-page .sot-mail-model-row button { cursor: pointer; white-space: nowrap; }
+.sot-mailboxes-page .sot-mail-model-row button:hover:not(:disabled) { border-color: var(--sot-blue, #3284ff); }
+.sot-mailboxes-page .sot-mail-model-row .sot-mail-model-save { background: #2468cf; border-color: #3284ff; }
+.sot-mailboxes-page .sot-mail-model-row button:disabled { opacity: .45; cursor: not-allowed; }
+.sot-mailboxes-page .sot-mail-model-row :is(select, button):focus-visible { outline: 2px solid var(--sot-blue, #3284ff); outline-offset: 2px; }
+.sot-mailboxes-page .sot-mail-model-size { color: var(--sot-muted, #8da0bd); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sot-mailboxes-page .sot-mail-model-current,
+.sot-mailboxes-page .sot-mail-model-details { margin-top: 5px; color: var(--sot-muted, #8da0bd); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.sot-mailboxes-page .sot-mail-model-current strong { color: var(--sot-text, #f3f7ff); font-weight: 500; }
+.sot-mailboxes-page .sot-mail-model-details summary { width: fit-content; cursor: pointer; }
+.sot-mailboxes-page .sot-mail-model-details :is(p, small) { display: block; margin-top: 6px; line-height: 1.5; }
+.sot-mailboxes-page .sot-mail-model-notice { margin-top: 6px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .sot-mailboxes-page .sot-mail-model-selector { padding: 8px; }
+  .sot-mailboxes-page .sot-mail-model-row { grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; }
+  .sot-mailboxes-page .sot-mail-model-row label { grid-column: 1 / -1; }
+  .sot-mailboxes-page .sot-mail-model-row :is(select, button) { padding-inline: 7px; }
+}

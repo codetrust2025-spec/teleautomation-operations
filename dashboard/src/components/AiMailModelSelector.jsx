@@ -46,31 +46,48 @@ export default function AiMailModelSelector({ request, refreshToken }) {
   const names = [...new Set((data?.nodes || []).flatMap((node) => node.models.map((entry) => entry.name)))];
   const selectedInstalled = names.some((name) => name.replace(/:latest$/, "") === model.replace(/:latest$/, ""));
   const last = data?.selection?.last_used;
-  return <section className="sot-mail-model-selector" aria-label="AI Mail model selection">
-    <label>AI Model{" "}
-      <select aria-label="AI Mail model" value={model} disabled={busy || !data} onChange={(event) => {
+  const selectedEntries = (data?.nodes || []).flatMap((node) => node.models.filter((entry) =>
+    entry.name.replace(/:latest$/, "") === model.replace(/:latest$/, "")));
+  const sizes = [...new Set(selectedEntries.filter((entry) => entry.size_bytes > 0)
+    .map((entry) => (entry.size_bytes / 1e9).toFixed(1)))];
+  return <section className="sot-mail-model-selector" aria-label="AI Mail model selection" aria-busy={busy}>
+    <div className="sot-mail-model-row">
+      <label htmlFor="ai-mail-model">AI Model</label>
+      <select id="ai-mail-model" aria-label="AI Mail model" title={model || "Select an installed model"}
+        value={model} disabled={busy || !data} onChange={(event) => {
         setModel(event.target.value); setTested(""); setNotice("");
       }}>
-        {!names.includes(model) && <option value={model}>{model || "Loading models…"} — {selectedInstalled ? "available (configured alias)" : "unavailable"}</option>}
+        {!names.includes(model) && <option value={model}
+          title={selectedInstalled ? "Installed under a configured alias" : "Not available on a reachable node"}>
+          {model || "Loading models…"}
+        </option>}
         {names.map((name) => {
           const holders = data.nodes.filter((node) => node.models.some((entry) => entry.name === name));
-          const sizes = [...new Set(holders.flatMap((node) => node.models.filter((entry) => entry.name === name)
-            .map((entry) => (entry.size_bytes / 1024 ** 3).toFixed(1))))].join("/");
           return <option key={name} value={name} title={holders.map((node) => node.label).join(", ")}>
-            {name} — {sizes} GiB — {holders.some((node) => node.available) ? "available" : "offline"}
+            {name}
           </option>;
         })}
       </select>
-    </label>{" "}
-    <button disabled={busy || !data || !selectedInstalled} onClick={() => run("test")}>Test model &amp; failover</button>{" "}
-    <button disabled={busy || !data || tested !== model} onClick={() => run("save")}>Save AI Mail model</button>{" "}
-    {busy && <p role="status">Validating model availability and structured mail JSON…</p>}
-    <p>Configured AI Mail model: <strong>{data?.selection?.model || "Loading…"}</strong></p>
-    <p>Last actual AI Mail execution: {last ? `${last.model} on ${last.node_label || last.node_id}` : "Not recorded yet"}. Existing node preferences remain in effect.</p>
-    <details><summary>Availability and validation</summary>
+      <output className="sot-mail-model-size" aria-label="Selected model size"
+        title="Installed model size on disk; decimal gigabytes">
+        {sizes.length ? sizes.join("/") : "—"} GB
+      </output>
+      <button className="sot-mail-model-test" aria-label="Test model & failover"
+        title="Test structured mail JSON and failover without saving"
+        disabled={busy || !data || !selectedInstalled} onClick={() => run("test")}>Test</button>
+      <button className="sot-mail-model-save" aria-label="Save AI Mail model"
+        title="Revalidate and save the AI Mail model"
+        disabled={busy || !data || tested !== model} onClick={() => run("save")}>Save</button>
+    </div>
+    <p className="sot-mail-model-current">Current: <strong>{data?.selection?.model || "Loading…"}</strong>
+      <span> · {last ? `Last run: ${last.model} on ${last.node_label || last.node_id}` : "Node not recorded yet"}</span>
+    </p>
+    {busy && <p className="sot-mail-model-notice" role="status">Validating model availability and structured mail JSON…</p>}
+    {notice && <p className="sot-mail-model-notice" role="status">{notice}</p>}
+    <details className="sot-mail-model-details"><summary>Availability and validation</summary>
       <p>{(data?.nodes || []).map((node) => `${node.label}: ${node.available ? "online" : "offline"}`).join(" · ")}</p>
+      <p>Selected model: {selectedInstalled ? "installed on a reachable node" : "unavailable"}.</p>
       <small>Activation requires relevance and classification JSON validation on two nodes. Mail safety validation, one-node decision affinity and the independent validator remain enabled.</small>
     </details>
-    {notice && <p role="status">{notice}</p>}
   </section>;
 }
