@@ -18,6 +18,7 @@ from api.routers.data_room import router as data_room_router
 from api.routers.expenses import router as expenses_router
 from api.routers.operations_ai import router as operations_ai_router
 from api.routers.daybreak_integration import router as daybreak_integration_router
+from api.routers.daybreak_credential_sync import router as daybreak_credential_sync_router
 from api.routers.referrers import router as referrers_router
 from core.dashboard_auth_api import install_dashboard_auth
 from core.log_redaction import install_access_log_redaction
@@ -42,6 +43,7 @@ app.include_router(data_room_router)
 app.include_router(referrers_router)
 app.include_router(operations_ai_router)
 app.include_router(daybreak_integration_router)
+app.include_router(daybreak_credential_sync_router)
 
 # Outermost, so it sees every response as it finally leaves: gzip for text the
 # browser asks to have compressed, a year's caching for the hashed /assets/.
