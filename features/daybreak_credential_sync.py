@@ -208,17 +208,62 @@ def _daybreak(action: str, payload: dict | None = None) -> dict:
 # Daybreak's workers and the admin's approval of their keys
 # ---------------------------------------------------------------------------------------------
 
+FINGERPRINT_FORMAT = "publicKeyCanonicalSha256"
+_PRIVATE_JWK_MEMBERS = frozenset({"d", "p", "q", "dp", "dq", "qi", "oth", "k"})
+
+
 def worker_fingerprint(public_key) -> str:
-    """sha256 of the worker's public key exactly as the worker kit's machine-check prints it (JSON.stringify of the JWK)."""
-    text = public_key if isinstance(public_key, str) else json.dumps(public_key, separators=(",", ":"), ensure_ascii=False)
+    """sha256 of the worker's public JWK with its members sorted -- what the worker kit's machine-check prints as
+    publicKeyCanonicalSha256.
+
+    One key has several serialisations: the worker's vault keeps WebCrypto's member order (key_ops, ext, alg, kty, n,
+    e), Daybreak stores kty, n, e, alg, ext, key_ops, and machine-check's plain publicKeySha256 hashes the vault order.
+    A hash over any one order cannot be compared with another, so the fingerprint shown and approved here is the one
+    form that does not depend on order. Same members, same values -> same fingerprint; anything else differs.
+    """
+    jwk = json.loads(public_key) if isinstance(public_key, str) else public_key
+    text = json.dumps(jwk, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def worker_key_problem(public_key) -> str | None:
+    """Why a worker key is not the kind Daybreak's envelopes use, or None. Different key types are never treated as
+    interchangeable: only an RSA-3072 RSA-OAEP-256 encryption-only public key with the standard exponent qualifies."""
+    jwk = json.loads(public_key) if isinstance(public_key, str) else public_key
+    if not isinstance(jwk, dict):
+        return "the key is missing"
+    if _PRIVATE_JWK_MEMBERS & set(jwk):
+        return "the key carries private material"
+    if jwk.get("kty") != "RSA" or jwk.get("alg") not in (None, "RSA-OAEP-256") or jwk.get("e") != "AQAB":
+        return "the key is not an RSA-OAEP-256 key with the standard exponent"
+    if jwk.get("key_ops") not in (None, ["encrypt"]):
+        return "the key is not limited to encryption"
+    try:
+        bits = _b64url_int(str(jwk.get("n") or "")).bit_length()
+    except (ValueError, TypeError):
+        return "the key modulus is unreadable"
+    if bits != 3072:
+        return f"the key is RSA-{bits}, not RSA-3072"
+    return None
+
+
+def _key_summary(public_key) -> str:
+    jwk = json.loads(public_key) if isinstance(public_key, str) else public_key
+    bits = _b64url_int(str(jwk.get("n") or "")).bit_length() if isinstance(jwk, dict) and jwk.get("n") else 0
+    return f"{jwk.get('kty')}-{bits} {jwk.get('alg') or 'unspecified alg'}" if isinstance(jwk, dict) else ""
 
 
 def _public_worker(worker: dict, approvals: dict) -> dict:
     fingerprint = worker_fingerprint(worker["publicKey"]) if worker.get("publicKey") else ""
+    problem = worker_key_problem(worker["publicKey"]) if worker.get("publicKey") else "the key is missing"
     approval = approvals.get(str(worker.get("keyId") or ""))
-    approved = bool(approval and approval.get("fingerprint") == fingerprint and approval.get("worker_id") == worker.get("id"))
+    approved = bool(not problem and approval and approval.get("fingerprint") == fingerprint and approval.get("worker_id") == worker.get("id"))
     return {"id": worker.get("id"), "name": worker.get("name"), "key_id": worker.get("keyId"), "fingerprint": fingerprint,
+            "fingerprint_format": FINGERPRINT_FORMAT, "key": _key_summary(worker["publicKey"]) if worker.get("publicKey") else "",
+            "key_problem": problem, "stored_text_sha256": worker.get("publicKeySha256"),
+            # Whether Daybreak seals new logins to this worker now (RTX only while Daybreak runs rtx-only; a worker
+            # left out holds what it already has). Daybreak releases before this flag existed sealed to every worker.
+            "recipient": worker.get("recipient") is not False,
             "enabled": bool(worker.get("enabled")), "last_seen": _ms_iso(worker.get("lastSeen")) if worker.get("lastSeen") else None,
             "approved": approved, "approved_by": (approval or {}).get("approved_by") if approved else None,
             "approved_at": (approval or {}).get("approved_at") if approved else None}
@@ -231,10 +276,14 @@ def approve_worker(key_id: str, *, typed_fingerprint: str, actor: str) -> dict:
     worker = next((w for w in data["snapshot"]["workers"] if w.get("keyId") == key_id), None)
     if worker is None or not worker.get("publicKey"):
         raise SyncError(404, "Daybreak has no worker with that key")
+    problem = worker_key_problem(worker["publicKey"])
+    if problem:
+        raise SyncError(409, f"{worker.get('name') or 'This worker'}'s key cannot be approved: {problem}.")
     fingerprint = worker_fingerprint(worker["publicKey"])
     typed = re.sub(r"[^0-9a-f]", "", str(typed_fingerprint or "").lower())
     if len(typed) < 16 or not fingerprint.startswith(typed):
-        raise SyncError(400, "The fingerprint does not match. Read it on the worker laptop (machine-check) and type at least 16 characters.")
+        raise SyncError(400, "The fingerprint does not match. On the worker laptop, machine-check prints it as "
+                             "publicKeyCanonicalSha256; type at least its first 16 characters.")
     data["approvals"][key_id] = {"worker_id": worker["id"], "name": worker.get("name"), "fingerprint": fingerprint,
                                  "approved_by": actor, "approved_at": _iso(_now())}
     _save(data)
@@ -398,6 +447,8 @@ def _approved_recipients(data: dict, offered: list[dict]) -> list[dict]:
         approval = data["approvals"].get(str(slot.get("keyId") or ""))
         fingerprint = worker_fingerprint(slot.get("publicKey")) if slot.get("publicKey") else ""
         name = (workers.get(slot.get("workerId")) or {}).get("name") or "A Daybreak worker"
+        if not slot.get("publicKey") or worker_key_problem(slot["publicKey"]):
+            raise SyncError(409, f"{name}'s key is not an RSA-3072 RSA-OAEP-256 encryption key; nothing was sealed.")
         if not approval or approval["fingerprint"] != fingerprint or approval["worker_id"] != slot.get("workerId"):
             raise SyncError(409, f"{name}'s key is not approved in the Data Room. Compare its fingerprint on that laptop and approve it first.")
     return offered

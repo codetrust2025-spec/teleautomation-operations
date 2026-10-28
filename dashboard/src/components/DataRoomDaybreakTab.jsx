@@ -51,13 +51,15 @@ function Worker({ worker, onApprove, onRevoke, busy }) {
         <strong>{worker.name}</strong>
         <span className={`dr-status dr-db-exec--${worker.approved ? 'approved' : 'pending'}`}>{worker.approved ? 'Key approved' : 'Key not approved'}</span>
         {!worker.enabled && <span className="dr-muted">disabled in Daybreak</span>}
+        {worker.enabled && worker.recipient === false && <span className="dr-muted">not receiving new logins</span>}
       </div>
       <div className="dr-db-computer-meta">
-        <span>Key fingerprint <code>{worker.fingerprint.slice(0, 16)}…</code></span>
+        <span title={worker.fingerprint}>Key fingerprint <code>{worker.fingerprint.slice(0, 16)}…</code>{worker.key && <> · {worker.key}</>}</span>
         {worker.last_seen && <span>Last seen {when(worker.last_seen)}</span>}
         {worker.approved && <span>Approved {when(worker.approved_at)} by {worker.approved_by}</span>}
+        {worker.key_problem && <span className="dr-db-reason">Key cannot be approved: {worker.key_problem}</span>}
       </div>
-      {!worker.approved && !typing && (
+      {!worker.approved && !typing && !worker.key_problem && (
         <button type="button" className="dr-add-btn" onClick={() => setTyping(true)} disabled={busy}>Approve key…</button>
       )}
       {!worker.approved && typing && (
@@ -69,7 +71,7 @@ function Worker({ worker, onApprove, onRevoke, busy }) {
           }}
         >
           <label>
-            Type the publicKeySha256 that machine-check printed on {worker.name} (at least 16 characters)
+            Type the publicKeyCanonicalSha256 that machine-check printed on {worker.name} (at least 16 characters)
             <input value={fingerprint} onChange={e => setFingerprint(e.target.value)} placeholder="first 16+ characters" autoComplete="off" />
           </label>
           <button type="submit" className="dr-add-btn" disabled={busy || fingerprint.replace(/[^0-9a-f]/gi, '').length < 16}>Approve</button>
@@ -119,8 +121,10 @@ export function DataRoomDaybreakTab() {
       (!q || row.label.toLowerCase().includes(q) || row.email.includes(q)))
   }, [view, filter, search])
 
-  const allApproved = (view?.workers || []).filter(w => w.enabled).every(w => w.approved) && (view?.workers || []).some(w => w.enabled)
-  const workerNames = (view?.workers || []).filter(w => w.enabled).map(w => w.name).join(' and ')
+  // Only the workers Daybreak seals new logins to need an approved key; one it leaves out keeps what it holds.
+  const recipients = (view?.workers || []).filter(w => w.enabled && w.recipient !== false)
+  const allApproved = recipients.length > 0 && recipients.every(w => w.approved)
+  const workerNames = recipients.map(w => w.name).join(' and ')
 
   const act = async (work, success) => {
     setBusy(true)
