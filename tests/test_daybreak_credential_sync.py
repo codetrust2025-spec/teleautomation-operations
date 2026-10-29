@@ -414,3 +414,16 @@ class TestStatuses:
         assert row["status"] == "needs_attention" and row["attention"] == ["Naukri refused the password"]
         day.run(P["asha"], "Jagadeesh", minutes=4)
         assert view(env)["asha_rao"]["status"] == "connected"
+
+
+def test_the_real_app_routes_the_status_to_this_router_not_to_an_opportunity(monkeypatch):
+    """Production answered GET /data-room/daybreak with "Opportunity not found": the Data Room router's
+    /data-room/{oid} was registered first. Driven through main.app, the real routing order."""
+    import main
+    from core import dashboard_auth_vps as auth
+
+    monkeypatch.setattr(auth, "auth_enabled", lambda: False)
+    monkeypatch.setattr(routes, "_require_admin", lambda request: {"username": "admin", "role": "admin"})
+    monkeypatch.setattr(sync, "status_view", lambda: {"marker": "daybreak status"})
+    body = TestClient(main.app).get("/data-room/daybreak").json()
+    assert body == {"status": "ok", "marker": "daybreak status"}

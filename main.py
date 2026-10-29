@@ -39,11 +39,12 @@ install_recruitment_mail_routes(app)
 app.include_router(candidates_router)
 app.include_router(attendance_router)
 app.include_router(expenses_router)
+# Before the Data Room router: its GET /data-room/{oid} would otherwise answer /data-room/daybreak as an opportunity.
+app.include_router(daybreak_credential_sync_router)
 app.include_router(data_room_router)
 app.include_router(referrers_router)
 app.include_router(operations_ai_router)
 app.include_router(daybreak_integration_router)
-app.include_router(daybreak_credential_sync_router)
 
 # Outermost, so it sees every response as it finally leaves: gzip for text the
 # browser asks to have compressed, a year's caching for the hashed /assets/.
