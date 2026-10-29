@@ -48,12 +48,12 @@ describe('sortRosterRows', () => {
     expect(names(sortRosterRows(SERVED, 'date_desc'))).toBe('bdca')
   })
 
-  it('orders 30 Oct interviews chronologically: 2:00 PM Kashaboina before 3:30 PM Gangadhar', () => {
+  it('orders 30 Oct interviews chronologically: 2:00 PM before 3:30 PM', () => {
     const oct30 = [
-      row('gangadhar', 'Gangadhar Nagarale', '2026-10-30', '3:30 PM'),
-      row('kashaboina', 'Kashaboina Rajashekar', '2026-10-30', '2:00 PM'),
+      row('slot_330', 'Candidate Two', '2026-10-30', '3:30 PM'),
+      row('slot_200', 'Candidate One', '2026-10-30', '2:00 PM'),
     ]
-    expect(names(sortRosterRows(oct30))).toBe('kashaboinagangadhar')
+    expect(names(sortRosterRows(oct30))).toBe('slot_200slot_330')
   })
 
   it('puts undated rows and unreadable times last, and leaves the input alone', () => {
