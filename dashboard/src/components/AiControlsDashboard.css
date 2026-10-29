@@ -45,7 +45,7 @@
 .ai-controls table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 11.5px; }
 .ai-controls th { text-align: left; color: #b9cbec; background: #101e33; font-weight: 500; }
 .ai-controls td, .ai-controls th { padding: 7px 8px; border-bottom: 1px solid #1c2b41; vertical-align: top; overflow-wrap: anywhere; }
-.ai-controls tr.is-selected td { background: #132449; }
+.ai-controls tr.is-selected, .ai-controls tr.is-selected td { background: #132449; }
 .ai-controls td small { display: block; margin-top: 2px; color: var(--ai-muted); font-size: 10.5px; }
 .ai-controls-status { display: inline-flex; align-items: center; gap: 6px; }
 .ai-controls-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: var(--ai-muted); }
@@ -59,6 +59,10 @@
 /* Tiles: the health summary and the queue counters. */
 .ai-controls-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 .ai-controls-tiles.ai-controls-health { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* Fixed counts rather than auto-fit: in a 530px column auto-fit left the fourth
+   queue counter alone on a second row. Labels wrap instead. */
+.ai-controls-tiles.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ai-controls-tiles.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ai-controls-tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 9px 12px; border: 1px solid #1d3352; border-radius: 9px; background: #0c1626; }
 .ai-controls-tile > span { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #a8b9d6; }
 .ai-controls-tile > strong { font-size: 19px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
@@ -72,7 +76,7 @@
 .ai-controls-health .ai-controls-tile.is-warn > span::before { background: var(--ai-warn); }
 .ai-controls-health .ai-controls-tile.is-info > span::before { background: var(--ai-info); }
 .ai-controls-group { margin: 0 0 -4px; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ai-muted); }
-.ai-controls-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 6px 0 0; }
+.ai-controls-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 6px 0 0; }
 .ai-controls-kv div { min-width: 0; padding: 7px 10px; border: 1px solid #1a2b42; border-radius: 8px; background: #0c1626; }
 .ai-controls-kv dt { font-size: 11px; color: var(--ai-muted); }
 .ai-controls-kv dd { margin: 2px 0 0; font-size: 12.5px; font-weight: 600; color: #e6edf8; overflow-wrap: anywhere; }
@@ -128,7 +132,8 @@
   .ai-control-card > header { padding: 10px 12px; }
   .ai-control-card-body { padding: 10px 12px 12px; }
   .ai-controls-tile > strong { font-size: 17px; }
-  .ai-controls-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ai-controls-tiles, .ai-controls-tiles.is-four, .ai-controls-tiles.is-three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ai-controls-tiles.is-three > :last-child { grid-column: 1 / -1; }
   .ai-controls table, .ai-controls tbody, .ai-controls tr, .ai-controls td { display: block; width: 100%; }
   .ai-controls thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .ai-controls tr { padding: 6px 0; border-bottom: 1px solid var(--ai-border); }
@@ -138,4 +143,22 @@
   .ai-controls td[colspan]::before { content: none; }
   .ai-controls .sot-ai-node-actions { width: 100%; justify-content: flex-end; }
   .ai-controls .ai-controls-test-actions button { flex: 1 1 140px; min-height: 40px; }
+  /* The two long lists become two-line items instead of one labelled card per
+     field, which made six models about 900px tall on a phone. */
+  .ai-controls .ai-controls-inventory tr, .ai-controls .ai-controls-events tr { display: grid; align-items: center; gap: 2px 10px; padding: 8px 2px; }
+  .ai-controls .ai-controls-inventory td, .ai-controls .ai-controls-events td { display: block; width: auto; min-width: 0; padding: 0; }
+  .ai-controls .ai-controls-inventory td::before, .ai-controls .ai-controls-events td::before { content: none; }
+  .ai-controls .ai-controls-inventory tr { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "model model model residency" "node size availability availability"; }
+  .ai-controls .ai-controls-inventory td:nth-child(1) { grid-area: model; font-weight: 600; }
+  .ai-controls .ai-controls-inventory td:nth-child(2) { grid-area: node; }
+  .ai-controls .ai-controls-inventory td:nth-child(3) { grid-area: size; }
+  .ai-controls .ai-controls-inventory td:nth-child(4) { grid-area: availability; }
+  .ai-controls .ai-controls-inventory td:nth-child(5) { grid-area: residency; justify-self: end; }
+  .ai-controls .ai-controls-inventory td:nth-child(n + 2):nth-child(-n + 4) { color: var(--ai-muted); font-size: 11px; }
+  .ai-controls .ai-controls-events tr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "recorded validation" "model duration"; }
+  .ai-controls .ai-controls-events td:nth-child(1) { grid-area: recorded; font-weight: 600; }
+  .ai-controls .ai-controls-events td:nth-child(2) { grid-area: model; color: var(--ai-muted); font-size: 11px; }
+  .ai-controls .ai-controls-events td:nth-child(3) { grid-area: validation; justify-self: end; }
+  .ai-controls .ai-controls-events td:nth-child(4) { grid-area: duration; justify-self: end; color: var(--ai-muted); font-size: 11px; }
+  .ai-controls .ai-controls-inventory td[colspan], .ai-controls .ai-controls-events td[colspan] { grid-column: 1 / -1; grid-row: auto; }
 }

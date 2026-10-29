@@ -22,7 +22,7 @@ function fixture(path) {
   if (path.includes('/mail-model')) return { selection: { model: 'qwen2.5:7b', revision: 0, last_used: { model: 'qwen2.5:7b', node_label: 'Jagadeesh' } }, nodes: inventory }
   if (path.endsWith('/ollama/nodes')) return { primary_node: 'rtx4060', nodes, activity: { boot: 'one', version: 1, nodes: {} } }
   if (path.endsWith('/ollama/status')) return { models: { primary: 'qwen2.5:7b', validator: 'validator:9b', vision: 'qwen3-vl:8b-instruct', fallback: 'qwen2.5:7b' }, ollama: { status: 'healthy', configured_model: 'qwen2.5:7b', successful_requests: 42, failed_requests: 2, last_successful_request_at: '2026-10-29T05:27:51Z' } }
-  if (path.endsWith('/metrics')) return { metrics: { queue_depth: 3, ai_retry_pending_total: 4, ai_processing_failure_total: 5800, mailbox_sync_success_total: 80199, mailbox_sync_failure_total: 273, websocket_connection_count: 2 } }
+  if (path.endsWith('/metrics')) return { metrics: { queue_depth: 3, ai_retry_pending_total: 4, ai_processing_failure_total: 5800, mailbox_sync_success_total: 80199, mailbox_sync_failure_total: 273, websocket_connection_count: 2, ai_processing_duration_ms_avg: 54763.4 } }
   if (path.endsWith('/health')) return { mailboxes: [{ connection_status: 'ERROR' }, { connection_status: 'CONNECTED' }] }
   if (path.includes('/review?')) return { events: [{ id: 'synthetic', created_at: '2026-10-28T12:00:00Z', ai_model: 'qwen2.5:7b@jagadeesh', validation_status: 'AUTO_VALIDATED', processing_duration_ms: 1234 }] }
   if (path.includes('/audit?')) return { entries: [{ at: '2026-10-28T12:00:00Z', actor: 'synthetic-admin', previous: false, new: true }] }
@@ -179,6 +179,11 @@ describe('AI Controls: two tabs', () => {
     const queues = screen.getByRole('heading', { name: 'Queue Statistics' }).closest('section')
     expect(within(queues).getByText('5,800').closest('article')).toHaveClass('is-bad')
     expect(within(queues).getByText('80,199').closest('article')).toHaveClass('is-good')
+    expect(within(queues).getByText('54,763 ms')).toBeInTheDocument()
+    expect(within(queues).getByText('Websocket connections').closest('.ai-controls-tiles')).toHaveClass('is-four')
+    expect(within(queues).getByText('Mailbox sync completed').closest('.ai-controls-tiles')).toHaveClass('is-three')
+    expect(screen.getByText('qwen2.5:7b@jagadeesh').closest('.ai-control-table-wrap')).toHaveClass('ai-controls-events')
+    expect(screen.getByText('6.14 GB').closest('.ai-control-table-wrap')).toHaveClass('ai-controls-inventory')
   })
 
   it('keeps event history distinct from live work and does not invent Naukri jobs', async () => {

@@ -59,13 +59,13 @@ function Card({ title, subtitle, icon, aside, children, className = '' }) {
 function Tile({ label, value, detail, tone = '' }) {
   return <article className={`ai-controls-tile${tone ? ` is-${tone}` : ''}`}><span>{label}</span><strong>{value}</strong>{detail && <small>{detail}</small>}</article>
 }
-function Rows({ headings, rows, empty = 'No records returned by this API.', pageSize = 0, label = 'Records', highlight }) {
+function Rows({ headings, rows, empty = 'No records returned by this API.', pageSize = 0, label = 'Records', highlight, className = '' }) {
   const [page, setPage] = useState(0)
   const pages = pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1
   const current = Math.min(page, pages - 1)
   const start = pageSize ? current * pageSize : 0
   const shown = pageSize ? rows.slice(start, start + pageSize) : rows
-  return <div className="ai-control-table-wrap"><table><thead><tr>{headings.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>
+  return <div className={`ai-control-table-wrap${className ? ` ${className}` : ''}`}><table><thead><tr>{headings.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>
     {shown.length ? shown.map((row, i) => <tr key={start + i} className={highlight?.(row) ? 'is-selected' : undefined}>{row.map((cell, j) => <td key={j} data-label={headings[j]}>{cell}</td>)}</tr>) : <tr><td colSpan={headings.length}>{empty}</td></tr>}
   </tbody></table>{pageSize > 0 && rows.length > 0 && <nav className="ai-controls-pagination" aria-label={`${label} pagination`}>
     <span>{start + 1}–{Math.min(start + pageSize, rows.length)} of {rows.length}</span>
@@ -196,7 +196,7 @@ export function AiControlsDashboard({ request = aiControlsRequest }) {
             <h3>Installed models <span className="ai-controls-count">{data.catalog ? rows.length : '—'}</span></h3>
             <label className="ai-controls-filter">Node <select aria-label="Model inventory node" value={nodeFilter} onChange={e => setNodeFilter(e.target.value)}><option value="all">All nodes</option>{catalog.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}</select></label>
           </div>
-          <Rows key={nodeFilter} headings={['Model', 'Node', 'Disk size', 'Availability', 'Residency']} rows={rows} pageSize={6} label="Model inventory" highlight={row => sameModel(row[0], selection?.model)} />
+          <Rows key={nodeFilter} headings={['Model', 'Node', 'Disk size', 'Availability', 'Residency']} rows={rows} pageSize={6} label="Model inventory" highlight={row => sameModel(row[0], selection?.model)} className="ai-controls-inventory" />
           <Disclosure summary="Inventory details"><p>Sizes are installed bytes in decimal GB, not GPU capacity. No pull, delete or explicit load control exists here.</p></Disclosure>
         </div>
       </Card>
@@ -269,24 +269,24 @@ export function AiControlsDashboard({ request = aiControlsRequest }) {
     <div className="ai-controls-column">
       <Card title="Queue Statistics" subtitle="Mailbox sync and AI processing counters" icon="clipboard">
         <p className="ai-controls-group">Current</p>
-        <div className="ai-controls-tiles">
+        <div className="ai-controls-tiles is-four">
           <Tile label="Mailbox sync queued" value={number(metrics.queue_depth)} tone={backlogTone(metrics.queue_depth)} />
           <Tile label="AI retry pending" value={number(metrics.ai_retry_pending_total)} tone={backlogTone(metrics.ai_retry_pending_total)} />
           <Tile label="AI processing failed" value={number(metrics.ai_processing_failure_total)} detail="Parked rows" tone={failureTone(metrics.ai_processing_failure_total)} />
           <Tile label="Websocket connections" value={number(metrics.websocket_connection_count)} />
         </div>
         <p className="ai-controls-group">Cumulative</p>
-        <div className="ai-controls-tiles">
+        <div className="ai-controls-tiles is-three">
           <Tile label="Mailbox sync completed" value={number(metrics.mailbox_sync_success_total)} tone={typeof metrics.mailbox_sync_success_total === 'number' ? 'good' : ''} />
           <Tile label="Mailbox sync failed / dead-letter" value={number(metrics.mailbox_sync_failure_total)} tone={failureTone(metrics.mailbox_sync_failure_total)} />
-          <Tile label="Average AI event processing" value={metrics.ai_processing_duration_ms_avg == null ? 'Unavailable' : `${Number(metrics.ai_processing_duration_ms_avg).toFixed(0)} ms`} detail="All stored events" />
+          <Tile label="Average AI event processing" value={metrics.ai_processing_duration_ms_avg == null ? 'Unavailable' : `${Math.round(Number(metrics.ai_processing_duration_ms_avg)).toLocaleString()} ms`} detail="All stored events" />
         </div>
         <Disclosure summary="Counter scope"><p>No running/queued AI totals, 24-hour success totals, trends or cancellation are exposed by this API.</p></Disclosure>
       </Card>
       <Card title="Recruitment Event History" subtitle="Recent recruitment review events and how they were validated" icon="calendar">
         <Rows headings={['Recorded', 'Model / node provenance', 'Validation', 'Duration']} rows={(data.events?.events || []).map(e => [when(e.created_at), e.ai_model || 'Not recorded',
           e.validation_status ? <span className={`ai-controls-badge${validationTone(e.validation_status) ? ` is-${validationTone(e.validation_status)}` : ''}`}>{e.validation_status}</span> : 'Not recorded',
-          e.processing_duration_ms == null ? 'Not recorded' : `${e.processing_duration_ms} ms`])} pageSize={5} label="Recruitment events" />
+          e.processing_duration_ms == null ? 'Not recorded' : `${e.processing_duration_ms} ms`])} pageSize={5} label="Recruitment events" className="ai-controls-events" />
         <Disclosure summary="History scope"><p>Up to 20 recruitment review events; not a complete AI job log. No Naukri jobs or general server logs are supplied by this API.</p></Disclosure>
       </Card>
     </div>
