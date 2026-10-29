@@ -18,7 +18,7 @@ import {
 } from './calendarDates.js'
 
 const POPOVER_WIDTH = 280
-const POPOVER_HEIGHT = 430
+const POPOVER_HEIGHT = 460
 
 /** Today / Yesterday / Tomorrow, so the common picks need no counting. */
 function relativeDayLabel(iso, today) {
@@ -55,8 +55,11 @@ export function DateCalendarPicker({
 }) {
   const today = todayIso()
   const selected = isValidIsoDay(value) ? value : ''
-  const currentPreset = CALENDAR_PRESETS.find(p => p.id === preset)
-  const isSet = Boolean(currentPreset || selected)
+  const isUpcoming = !selected && (!preset || preset === 'upcoming')
+  const currentPreset = isUpcoming
+    ? CALENDAR_PRESETS.find(p => p.id === 'upcoming')
+    : CALENDAR_PRESETS.find(p => p.id === preset)
+  const isSet = Boolean((preset && preset !== 'upcoming') || selected)
 
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState(null)
@@ -175,16 +178,21 @@ export function DateCalendarPicker({
   let triggerText = placeholder
   let triggerTitle = 'All upcoming interviews'
 
-  if (currentPreset) {
+  if (currentPreset && currentPreset.id !== 'upcoming') {
     triggerText = currentPreset.label
     const resolved = resolveCalendarPreset(currentPreset.id, today)
     triggerTitle = resolved
-      ? `${currentPreset.label} (${formatIstCalendarDay(resolved.from)} – ${formatIstCalendarDay(resolved.to)})`
+      ? (resolved.from === resolved.to
+          ? `${currentPreset.label} (${formatIstCalendarDay(resolved.from)})`
+          : `${currentPreset.label} (${formatIstCalendarDay(resolved.from)} – ${formatIstCalendarDay(resolved.to)})`)
       : currentPreset.label
   } else if (selected) {
     const relative = relativeDayLabel(selected, today)
     triggerText = formatIstCalendarDay(selected)
     triggerTitle = relative ? `${triggerText} · ${relative}` : triggerText
+  } else if (isUpcoming) {
+    triggerText = 'Upcoming'
+    triggerTitle = 'All upcoming interviews'
   }
 
   const popover = open && position && createPortal(
@@ -199,7 +207,7 @@ export function DateCalendarPicker({
       {/* Calendar Presets: This Week, This Month, This Year */}
       <div className="ops-datepicker__presets" role="group" aria-label="Calendar presets">
         {CALENDAR_PRESETS.map(p => {
-          const isActive = preset === p.id
+          const isActive = p.id === 'upcoming' ? isUpcoming : preset === p.id
           return (
             <button
               key={p.id}

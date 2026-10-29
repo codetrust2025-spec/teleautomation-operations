@@ -1652,8 +1652,9 @@
 .ops-datepicker__value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;font-size:12px;font-weight:600}
 .ops-datepicker__caret{display:inline-flex;align-items:center;color:#94a3b8;margin-left:2px}
 
-.ops-datepicker__presets{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid rgba(148,163,184,.12)}
-.ops-datepicker__preset{height:28px;padding:0 4px;border:1px solid rgba(148,163,184,.18);border-radius:6px;background:rgba(15,23,42,.6);color:#cbd5e1;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.ops-datepicker__presets{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid rgba(148,163,184,.12)}
+.ops-datepicker__preset{grid-column:span 2;height:28px;padding:0 4px;border:1px solid rgba(148,163,184,.18);border-radius:6px;background:rgba(15,23,42,.6);color:#cbd5e1;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.ops-datepicker__preset:nth-child(1),.ops-datepicker__preset:nth-child(2){grid-column:span 3}
 .ops-datepicker__preset:hover{background:rgba(59,130,246,.15);border-color:rgba(96,165,250,.4);color:#ffffff}
 .ops-datepicker__preset--active{background:#2563eb;border-color:#3b82f6;color:#ffffff;box-shadow:0 2px 8px rgba(37,99,235,.3)}
 

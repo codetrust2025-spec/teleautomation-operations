@@ -15,8 +15,8 @@ import { INTERVIEW_STATUSES, canonicalStatus } from './interviewStatuses.js'
 import { rowCompanyName } from './companyName.js'
 
 export const ROSTER_SORT_OPTIONS = [
-  { value: 'date_desc', label: 'Latest to Oldest' },
   { value: 'date_asc', label: 'Oldest to Latest' },
+  { value: 'date_desc', label: 'Latest to Oldest' },
   { value: 'time_asc', label: 'Time Earliest' },
   { value: 'time_desc', label: 'Time Latest' },
   { value: 'round', label: 'Interview Round' },
@@ -27,8 +27,8 @@ export const ROSTER_SORT_OPTIONS = [
   { value: 'missing_company_first', label: 'Missing Company First' },
   { value: 'missing_round_first', label: 'Missing Round First' },
 ]
-export const DEFAULT_ROSTER_SORT = 'date_desc'
-export const ROSTER_SORT_STORAGE_KEY = 'ta.dailyOps.rosterSort'
+export const DEFAULT_ROSTER_SORT = 'date_asc'
+export const ROSTER_SORT_STORAGE_KEY = 'ta.dailyOps.rosterSort.v3'
 
 const VALID = new Set(ROSTER_SORT_OPTIONS.map(option => option.value))
 
@@ -107,27 +107,32 @@ function by(a, b, direction = 1) {
   return (a < b ? -1 : 1) * direction
 }
 
-/** The default order: newest date first and, on one date, latest time first. */
-function defaultOrder(a, b) {
+/** Earliest date first, and on one date, earliest time first. */
+function earliestFirst(a, b) {
+  return by(dateKey(a), dateKey(b), 1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1)
+}
+
+/** Newest date first, and on one date, latest time first (tie-breaker for attribute sorts). */
+function latestFirst(a, b) {
   return by(dateKey(a), dateKey(b), -1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), -1)
 }
 
 const COMPARE = {
-  date_desc: defaultOrder,
-  date_asc: (a, b) => by(dateKey(a), dateKey(b), 1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1),
-  time_asc: (a, b) => by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1) || defaultOrder(a, b),
-  time_desc: (a, b) => by(minutesOfDay(a?.time), minutesOfDay(b?.time), -1) || defaultOrder(a, b),
-  round: (a, b) => by(roundRank(a), roundRank(b), 1) || defaultOrder(a, b),
-  status: (a, b) => by(statusRank(a), statusRank(b), 1) || defaultOrder(a, b),
-  updated_desc: (a, b) => by(stamp(a?.updated_at), stamp(b?.updated_at), -1) || defaultOrder(a, b),
-  created_desc: (a, b) => by(stamp(a?.created_at), stamp(b?.created_at), -1) || defaultOrder(a, b),
-  screenshot_first: (a, b) => by(has(a?.slot_screenshot_proof?.url) ? 0 : 1, has(b?.slot_screenshot_proof?.url) ? 0 : 1) || defaultOrder(a, b),
-  missing_company_first: (a, b) => by(has(rowCompanyName(a)) ? 1 : 0, has(rowCompanyName(b)) ? 1 : 0) || defaultOrder(a, b),
-  missing_round_first: (a, b) => by(has(a?.interview_round) ? 1 : 0, has(b?.interview_round) ? 1 : 0) || defaultOrder(a, b),
+  date_asc: earliestFirst,
+  date_desc: latestFirst,
+  time_asc: (a, b) => by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1) || earliestFirst(a, b),
+  time_desc: (a, b) => by(minutesOfDay(a?.time), minutesOfDay(b?.time), -1) || latestFirst(a, b),
+  round: (a, b) => by(roundRank(a), roundRank(b), 1) || latestFirst(a, b),
+  status: (a, b) => by(statusRank(a), statusRank(b), 1) || latestFirst(a, b),
+  updated_desc: (a, b) => by(stamp(a?.updated_at), stamp(b?.updated_at), -1) || latestFirst(a, b),
+  created_desc: (a, b) => by(stamp(a?.created_at), stamp(b?.created_at), -1) || latestFirst(a, b),
+  screenshot_first: (a, b) => by(has(a?.slot_screenshot_proof?.url) ? 0 : 1, has(b?.slot_screenshot_proof?.url) ? 0 : 1) || latestFirst(a, b),
+  missing_company_first: (a, b) => by(has(rowCompanyName(a)) ? 1 : 0, has(rowCompanyName(b)) ? 1 : 0) || latestFirst(a, b),
+  missing_round_first: (a, b) => by(has(a?.interview_round) ? 1 : 0, has(b?.interview_round) ? 1 : 0) || latestFirst(a, b),
 }
 
 /** A new array in the chosen order; the input is left as it was. */
 export function sortRosterRows(rows, order = DEFAULT_ROSTER_SORT) {
-  const compare = COMPARE[order] || defaultOrder
+  const compare = COMPARE[order] || COMPARE[DEFAULT_ROSTER_SORT]
   return [...(rows || [])].sort(compare)
 }

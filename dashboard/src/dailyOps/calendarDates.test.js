@@ -184,6 +184,22 @@ describe('calendar presets arithmetic in IST', () => {
 
   it('resolves presets via resolveCalendarPreset', () => {
     const today = '2026-10-13'
+    const upcoming = resolveCalendarPreset('upcoming', today)
+    expect(upcoming).toEqual({
+      id: 'upcoming',
+      label: 'Upcoming',
+      from: '2026-10-13',
+      to: '2026-11-12',
+    })
+
+    const todayPreset = resolveCalendarPreset('today', today)
+    expect(todayPreset).toEqual({
+      id: 'today',
+      label: 'Today',
+      from: '2026-10-13',
+      to: '2026-10-13',
+    })
+
     const week = resolveCalendarPreset('thisWeek', today)
     expect(week).toEqual({
       id: 'thisWeek',

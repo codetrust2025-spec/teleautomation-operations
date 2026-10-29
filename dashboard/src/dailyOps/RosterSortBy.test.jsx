@@ -39,13 +39,21 @@ const SERVED = [
 describe('sortRosterRows', () => {
   const names = rows => rows.map(r => r.id).join('')
 
-  it('runs Latest to Oldest by default: date, then time, both newest first', () => {
-    expect(DEFAULT_ROSTER_SORT).toBe('date_desc')
-    expect(names(sortRosterRows(SERVED))).toBe('bdca')
+  it('runs Oldest to Latest by default: date, then time, both earliest first', () => {
+    expect(DEFAULT_ROSTER_SORT).toBe('date_asc')
+    expect(names(sortRosterRows(SERVED))).toBe('acdb')
   })
 
-  it('runs Oldest to Latest when asked: date, then time, both oldest first', () => {
-    expect(names(sortRosterRows(SERVED, 'date_asc'))).toBe('acdb')
+  it('runs Latest to Oldest when asked: date, then time, both newest first', () => {
+    expect(names(sortRosterRows(SERVED, 'date_desc'))).toBe('bdca')
+  })
+
+  it('orders 30 Oct interviews chronologically: 2:00 PM before 3:30 PM', () => {
+    const oct30 = [
+      row('slot_330', 'Candidate Two', '2026-10-30', '3:30 PM'),
+      row('slot_200', 'Candidate One', '2026-10-30', '2:00 PM'),
+    ]
+    expect(names(sortRosterRows(oct30))).toBe('slot_200slot_330')
   })
 
   it('puts undated rows and unreadable times last, and leaves the input alone', () => {
@@ -67,9 +75,9 @@ describe('the saved choice', () => {
   beforeEach(() => window.localStorage.clear())
 
   it('defaults when nothing or something unknown is saved', () => {
-    expect(readRosterSort()).toBe('date_desc')
+    expect(readRosterSort()).toBe('date_asc')
     window.localStorage.setItem(ROSTER_SORT_STORAGE_KEY, 'by_name')
-    expect(readRosterSort()).toBe('date_desc')
+    expect(readRosterSort()).toBe('date_asc')
   })
 
   it('keeps a valid choice and ignores an invalid one', () => {
@@ -81,7 +89,7 @@ describe('the saved choice', () => {
 
   it('falls back to the default when storage is blocked', () => {
     const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
-    expect(readRosterSort()).toBe('date_desc')
+    expect(readRosterSort()).toBe('date_asc')
     spy.mockRestore()
   })
 })
@@ -134,45 +142,45 @@ describe('Sort By on the Daily Ops roster', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
   }
 
-  it('shows Latest to Oldest by default, inside the filters panel', async () => {
+  it('shows Oldest to Latest (earliest first) by default, inside the filters panel', async () => {
     render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
-    expect(sortBox().value).toBe('date_desc')
+    expect(sortBox().value).toBe('date_asc')
     expect([...sortBox().options].map(o => o.textContent)).toEqual([
-      'Latest to Oldest', 'Oldest to Latest', 'Time Earliest', 'Time Latest', 'Interview Round', 'Attendance Status',
+      'Oldest to Latest', 'Latest to Oldest', 'Time Earliest', 'Time Latest', 'Interview Round', 'Attendance Status',
       'Recently Updated', 'Recently Created', 'Screenshot Available First', 'Missing Company First', 'Missing Round First',
     ])
-    expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
+    expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala'])
   })
 
   it('switches order without asking the server again, and keeps the choice through a reload', async () => {
     const { unmount } = render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
     const before = calls.length
-    applySort('date_asc')
-    expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala'])
+    applySort('date_desc')
+    expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
     expect(calls.length).toBe(before)
-    expect(window.localStorage.getItem(ROSTER_SORT_STORAGE_KEY)).toBe('date_asc')
+    expect(window.localStorage.getItem(ROSTER_SORT_STORAGE_KEY)).toBe('date_desc')
     expect(calls.every(url => !url.searchParams.has('sort'))).toBe(true)
 
     unmount()
     render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
-    expect(sortBox().value).toBe('date_asc')
-    expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala'])
+    expect(sortBox().value).toBe('date_desc')
+    expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
   })
 
   it('stays sorted after a search refetches the roster, and Reset leaves the choice alone', async () => {
     render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
-    applySort('date_asc')
+    applySort('date_desc')
     fireEvent.change(screen.getByRole('textbox', { name: 'Candidate search' }), { target: { value: 'fake' } })
     await waitFor(() => expect(calls.some(url => url.searchParams.get('candidate_search') === 'fake' || url.searchParams.get('q') === 'fake' || [...url.searchParams.values()].includes('fake'))).toBe(true))
-    await waitFor(() => expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala']))
+    await waitFor(() => expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha']))
     fireEvent.click(screen.getByRole('button', { name: /Reset all filters/ }))
     await waitFor(() => expect(shown()).toHaveLength(4))
-    expect(sortBox().value).toBe('date_asc')
-    expect(shown()).toEqual(['Asha', 'Chitra', 'Dev', 'Bala'])
+    expect(sortBox().value).toBe('date_desc')
+    expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
   })
 })
 
@@ -216,7 +224,7 @@ describe('the other orders (11 Oct, second request)', () => {
   })
 
   it('an unknown saved value falls back to the default order', () => {
-    expect(ids('by_candidate_name')).toBe(ids('date_desc'))
+    expect(ids('by_candidate_name')).toBe(ids('date_asc'))
   })
 })
 
