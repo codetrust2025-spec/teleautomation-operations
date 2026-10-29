@@ -185,6 +185,8 @@ export function endOfYearIso(iso = todayIso()) {
 }
 
 export const CALENDAR_PRESETS = [
+  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'today', label: 'Today' },
   { id: 'thisWeek', label: 'This Week' },
   { id: 'thisMonth', label: 'This Month' },
   { id: 'thisYear', label: 'This Year' },
@@ -192,6 +194,20 @@ export const CALENDAR_PRESETS = [
 
 export function resolveCalendarPreset(presetId, today = todayIso()) {
   switch (presetId) {
+    case 'upcoming':
+      return {
+        id: 'upcoming',
+        label: 'Upcoming',
+        from: today,
+        to: addDaysIso(today, 30),
+      }
+    case 'today':
+      return {
+        id: 'today',
+        label: 'Today',
+        from: today,
+        to: today,
+      }
     case 'thisWeek':
       return {
         id: 'thisWeek',

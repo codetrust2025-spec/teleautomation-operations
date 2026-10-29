@@ -125,6 +125,10 @@ export function DailyOpsPanel({
   }
 
   function applyPreset(presetId) {
+    if (presetId === 'upcoming') {
+      clearDate()
+      return
+    }
     setSelectedDate('')
     setSelectedPreset(presetId)
   }
@@ -134,15 +138,17 @@ export function DailyOpsPanel({
     setSelectedPreset('')
   }
 
-  // Upcoming only when neither a specific date nor a preset is selected
-  const upcomingOnly = !selectedDate && !selectedPreset
+  // Upcoming only when neither a specific date nor a preset is selected (or when upcoming preset is selected)
+  const upcomingOnly = !selectedDate && (!selectedPreset || selectedPreset === 'upcoming')
 
   const loadGlobal = useCallback(async () => {
     setLoading(true)
     try {
       const today = todayIso()
       let range
-      if (selectedPreset) {
+      if (selectedPreset === 'today') {
+        range = { from: today, to: today }
+      } else if (selectedPreset && selectedPreset !== 'upcoming') {
         const p = resolveCalendarPreset(selectedPreset, today)
         range = p ? { from: p.from, to: p.to } : { from: today, to: addDaysIso(today, 30) }
       } else if (selectedDate) {

@@ -109,7 +109,7 @@ describe('DailyOpsFilterMenu', () => {
       target: { value: 'React' },
     })
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), {
-      target: { value: 'date_asc' },
+      target: { value: 'date_desc' },
     })
 
     const applyBtn = screen.getByRole('button', { name: /Apply \(5\)/i })
@@ -122,7 +122,7 @@ describe('DailyOpsFilterMenu', () => {
       attendee: 'Bhavana',
       round: 'L1',
       technology: 'React',
-      sort: 'date_asc',
+      sort: 'date_desc',
     })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -148,7 +148,7 @@ describe('DailyOpsFilterMenu', () => {
 
     expect(screen.getByRole('combobox', { name: 'Candidate filter' })).toHaveValue('')
     expect(screen.getByRole('combobox', { name: 'Attendee filter' })).toHaveValue('')
-    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('date_desc')
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('date_asc')
   })
 
   it('resets all filters and closes panel when Reset is clicked', () => {
@@ -174,7 +174,7 @@ describe('DailyOpsFilterMenu', () => {
       attendee: '',
       round: '',
       technology: '',
-      sort: 'date_desc',
+      sort: 'date_asc',
     })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })

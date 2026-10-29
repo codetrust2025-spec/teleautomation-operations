@@ -157,14 +157,13 @@ describe('the date control replaces the month dropdown', () => {
     expect(screen.queryByRole('dialog', { name: 'Choose a date' })).toBeNull()
   })
 
-  it('offers no quick picks that repeat the Period row', async () => {
-    // Today sat in both places, and Yesterday/Tomorrow repeated two cells of
-    // the grid directly underneath them. The calendar is the date control; the
-    // Period row is the range control.
+  it('offers Today in presets alongside Upcoming, but no redundant Yesterday/Tomorrow quick picks', async () => {
     await renderPanel()
     const calendar = await openCalendar()
 
-    for (const label of ['Yesterday', 'Today', 'Tomorrow']) {
+    expect(within(calendar).getByRole('button', { name: 'Today' })).toBeInTheDocument()
+    expect(within(calendar).getByRole('button', { name: 'Upcoming' })).toBeInTheDocument()
+    for (const label of ['Yesterday', 'Tomorrow']) {
       expect(within(calendar).queryByRole('button', { name: label })).toBeNull()
     }
     expect(within(calendar).getByRole('grid')).toBeInTheDocument()
@@ -323,6 +322,24 @@ describe('default behavior and clearing the date', () => {
 
     calendar = await openCalendar()
     fireEvent.click(within(calendar).getByRole('button', { name: 'Clear' }))
+
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('Upcoming'))
+    await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
+    expect(lastRosterCall().searchParams.get('upcoming_only')).toBe('true')
+  })
+
+  it('filters by Today preset and switches back to upcoming preset', async () => {
+    await renderPanel()
+
+    let calendar = await openCalendar()
+    fireEvent.click(within(calendar).getByRole('button', { name: 'Today' }))
+
+    await waitFor(() => expect(dateTrigger()).toHaveTextContent('Today'))
+    await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/daily$/))
+    expect(lastRosterCall().searchParams.get('date')).toBe(TODAY)
+
+    calendar = await openCalendar()
+    fireEvent.click(within(calendar).getByRole('button', { name: 'Upcoming' }))
 
     await waitFor(() => expect(dateTrigger()).toHaveTextContent('Upcoming'))
     await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
