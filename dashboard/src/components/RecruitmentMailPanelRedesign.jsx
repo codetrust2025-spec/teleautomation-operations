@@ -3,11 +3,7 @@ import { API } from "../config.js";
 import { useConfirm } from "../context/ConfirmContext.jsx";
 import { mailboxUiStatus, reconnectWorklist } from "../utils/mailboxStatus.js";
 import { publishGmailExpired } from "../notifications/gmailExpired.js";
-import { subscribeMailStatus, subscribeNodeActivity } from "../notifications/mailEventStream.js";
 import { ButtonContent, InlineLoader, OverlayLoader } from "../Loader.jsx";
-import { OcrToggle } from "./OcrToggle.jsx";
-import { PureOllamaToggle } from "./PureOllamaToggle.jsx";
-import AiMailModelSelector from "./AiMailModelSelector.jsx";
 import { ReconnectWorklist } from "./ReconnectWorklist.jsx";
 import { useReconnectStatus } from "../hooks/useReconnectStatus.js";
 import { readMailboxHealth } from "../notifications/mailboxHealth.js";
@@ -351,7 +347,8 @@ export function SearchInput({ value, onChange }) {
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Search candidate or Gmail account"
+        aria-label="Search candidate or Gmail account"
+        placeholder="Search…"
       />
     </label>
   );
@@ -1002,10 +999,6 @@ function Analytics({
   charts,
   flags,
   names,
-  aiStatus,
-  onConnectionTest,
-  onModelTest,
-  busy,
 }) {
   return (
     <section className="sot-analytics">
@@ -1042,63 +1035,6 @@ function Analytics({
         ) : (
           <p className="sot-empty">No pending risk flags.</p>
         )}
-      </article>
-      <article className="sot-content-card sot-ai-diagnostics">
-        <h2>AI Diagnostics</h2>
-        <p>Local Ollama health for selection and offer validation.</p>
-        <dl>
-          <div>
-            <dt>Status</dt>
-            <dd>{human(aiStatus?.status || "not checked")}</dd>
-          </div>
-          <div>
-            <dt>Configured model</dt>
-            <dd>{aiStatus?.configured_model || "Not configured"}</dd>
-          </div>
-          <div>
-            <dt>Model available</dt>
-            <dd>{aiStatus?.model_available ? "Yes" : "No"}</dd>
-          </div>
-          <div>
-            <dt>Last check</dt>
-            <dd>{formatTime(aiStatus?.last_checked_at)}</dd>
-          </div>
-          <div>
-            <dt>Response time</dt>
-            <dd>
-              {aiStatus?.response_time_ms == null
-                ? "Unknown"
-                : `${aiStatus.response_time_ms} ms`}
-            </dd>
-          </div>
-          <div>
-            <dt>Last success</dt>
-            <dd>{formatTime(aiStatus?.last_successful_request_at)}</dd>
-          </div>
-          <div>
-            <dt>Average response</dt>
-            <dd>
-              {aiStatus?.average_response_time_ms == null
-                ? "Unknown"
-                : `${aiStatus.average_response_time_ms} ms`}
-            </dd>
-          </div>
-          <div>
-            <dt>Last error</dt>
-            <dd>{aiStatus?.error_code || "None"}</dd>
-          </div>
-        </dl>
-        {aiStatus?.error_message && (
-          <p className="sot-ai-error">{aiStatus.error_message}</p>
-        )}
-        <div className="sot-diagnostic-actions">
-          <button disabled={busy} onClick={onConnectionTest}>
-            Test Connection
-          </button>
-          <button disabled={busy} onClick={onModelTest}>
-            Test Model Response
-          </button>
-        </div>
       </article>
     </section>
   );
@@ -1417,122 +1353,6 @@ function EvidenceDrawer({ id, onClose, onChanged }) {
   );
 }
 
-export function AiNodeManager({
-  nodes,
-  activity = {},
-  busy,
-  onMakePrimary,
-  onUnload,
-}) {
-  // Open on every load. It was collapsed to keep the mailbox list above the
-  // fold -- the grid is three cards tall and sits between the header and the
-  // list -- but node health is read often enough here that hiding it behind a
-  // click cost more than the scroll does. Still a disclosure: one click
-  // collapses it for the rest of the visit.
-  const online = nodes.filter((node) => node.endpoint_reachable).length;
-  const primary = nodes.find((node) => node.primary);
-  return (
-    <details className="sot-ai-nodes" aria-label="Ollama AI nodes" open>
-      <summary>
-        <strong>AI nodes</strong>
-        <span
-          className={`sot-ai-nodes-glance${online < nodes.length ? " is-degraded" : ""}`}
-        >
-          {nodes.length
-            ? `${online}/${nodes.length} online${primary ? ` · ${primary.label}` : ""}`
-            : "none configured"}
-        </span>
-      </summary>
-      <div className="sot-ai-node-grid">
-        {nodes.length ? (
-          nodes.map((node) => {
-            // What the gateway says this node is running right now -- the
-            // record the booking page names its node from, so the two agree.
-            const serving = [
-              ...new Set(
-                (activity[node.id] || [])
-                  .map((item) => item.label)
-                  .filter(Boolean),
-              ),
-            ];
-            return (
-              <article
-                className={`sot-ai-node is-${node.status || "offline"}`}
-                key={node.id}
-              >
-                {/* One row per node, and only what an operator acts on. The host
-                  * URL, Ollama version, acceleration split and last success and
-                  * failure timestamps were diagnostics that pushed the three
-                  * nodes into a tall stack; they are still on the health
-                  * endpoint for anyone debugging. */}
-                <span className="sot-ai-node-name">
-                  <i aria-hidden="true" />
-                  <strong>{node.label}</strong>
-                  {node.primary && (
-                    <span className="sot-ai-node-primary">PRIMARY</span>
-                  )}
-                </span>
-                <span
-                  className={`sot-ai-node-state is-${
-                    node.endpoint_reachable ? "up" : "down"
-                  }`}
-                >
-                  {node.endpoint_reachable ? "Online" : "Offline"}
-                </span>
-                <span className="sot-ai-node-state">
-                  {/* Busy and Ready are different facts -- a model held in memory
-                    * versus every required model installed -- so they are shown
-                    * as one state rather than one label meaning either. A request
-                    * running on the node says what it is busy with. */}
-                  {serving.length
-                    ? `Busy · ${serving.join(" + ")}`
-                    : node.model_loaded
-                      ? "Busy"
-                      : node.ready
-                        ? "Ready"
-                        : "Not ready"}
-                </span>
-                <span className="sot-ai-node-latency">
-                  {node.response_time_ms == null
-                    ? "—"
-                    : `${node.response_time_ms} ms`}
-                </span>
-                <span className="sot-ai-node-actions">
-                  {!node.primary && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => onMakePrimary(node)}
-                      title={
-                        node.ready
-                          ? `Route AI work to ${node.label} for one hour`
-                          : "This node is failing its model check — you will be asked to confirm"
-                      }
-                    >
-                      {node.ready ? "Set primary" : "Set primary anyway"}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="is-warning"
-                    disabled={busy || !node.endpoint_reachable}
-                    onClick={() => onUnload(node)}
-                    title={`Unload AI models on ${node.label}`}
-                  >
-                    Unload
-                  </button>
-                </span>
-              </article>
-            );
-          })
-        ) : (
-          <p className="sot-empty">Node health has not loaded yet.</p>
-        )}
-      </div>
-    </details>
-  );
-}
-
 const INTERVIEW_CLASSIFICATIONS = new Set([
   "interview_confirmed",
   "interview_rescheduled",
@@ -1559,7 +1379,6 @@ function MonitoringOverview({
   metrics,
   mailboxRows,
   interviewSummary,
-  aiStatus,
   onOpen,
 }) {
   const activeMailboxes = mailboxRows.filter((row) =>
@@ -1589,9 +1408,7 @@ function MonitoringOverview({
           <div>
             <strong>AI validation</strong>
             <small>
-              {aiStatus?.status === "healthy"
-                ? "qwen2.5:7b is ready"
-                : "Failures retry automatically"}
+              Evidence validation and automatic retry
             </small>
           </div>
         </article>
@@ -1921,22 +1738,6 @@ export default function RecruitmentMailPanelRedesign() {
   const [loading, setLoading] = useState(true);
   const [evidenceId, setEvidenceId] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
-  const [aiStatus, setAiStatus] = useState(null);
-  const [aiNodes, setAiNodes] = useState([]);
-  // Which request each node is serving, from the gateway: the nodes endpoint
-  // carries a snapshot and the live socket pushes every change. A snapshot from
-  // before a restart has a different boot id, so the counter starting again
-  // from zero cannot make a fresh one look old.
-  const [aiActivity, setAiActivity] = useState({ boot: "", version: -1, nodes: {} });
-  const acceptAiActivity = useCallback((snapshot) => {
-    if (!snapshot || typeof snapshot.version !== "number") return;
-    setAiActivity((current) =>
-      snapshot.boot !== current.boot || snapshot.version >= current.version
-        ? { boot: snapshot.boot, version: snapshot.version, nodes: snapshot.nodes || {} }
-        : current,
-    );
-  }, []);
-  const [refreshingAi, setRefreshingAi] = useState(false);
   const loadInFlight = useRef(null);
   const activeSyncRefreshInFlight = useRef(false);
 
@@ -2017,65 +1818,6 @@ export default function RecruitmentMailPanelRedesign() {
       window.clearInterval(timer);
     };
   }, []);
-  const refreshOllama = useCallback(async (interactive = true) => {
-    if (interactive) setRefreshingAi(true);
-    try {
-      const [statusResult, nodesResult] = await Promise.allSettled([
-        request(`/api/ai-recruitment/ollama/status?_=${Date.now()}`),
-        request(`/api/ai-recruitment/ollama/nodes?_=${Date.now()}`),
-      ]);
-      if (statusResult.status === "fulfilled") {
-        setAiStatus(statusResult.value.ollama || null);
-        setUpdatedAt(
-          new Date(statusResult.value.ollama?.last_checked_at || Date.now()),
-        );
-      }
-      if (nodesResult.status === "fulfilled") {
-        setAiNodes(nodesResult.value.nodes || []);
-        acceptAiActivity(nodesResult.value.activity);
-      }
-      if (
-        statusResult.status === "rejected" &&
-        nodesResult.status === "rejected"
-      ) {
-        throw statusResult.reason;
-      }
-    } catch (error) {
-      setAiStatus({
-        status: "unavailable",
-        diagnostic_status: "INTERNAL_ERROR",
-        error_code: "DIAGNOSTICS_REQUEST_FAILED",
-        error_message: error.message,
-      });
-      setUpdatedAt(new Date());
-    } finally {
-      if (interactive) setRefreshingAi(false);
-    }
-  }, [acceptAiActivity]);
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      refreshOllama(false);
-    }, 60000);
-    return () => window.clearInterval(timer);
-  }, [refreshOllama]);
-  useEffect(() => subscribeNodeActivity(acceptAiActivity), [acceptAiActivity]);
-  useEffect(
-    () =>
-      // Pushes sent while the socket was down are not replayed, so read the
-      // current snapshot each time it comes back.
-      subscribeMailStatus((status) => {
-        if (status !== "Live") return;
-        request(`/api/ai-recruitment/ollama/activity?_=${Date.now()}`)
-          .then((body) => acceptAiActivity(body.activity))
-          .catch(() => {
-            /* the minute-by-minute node refresh carries it too */
-          });
-      }),
-    [acceptAiActivity],
-  );
-  useEffect(() => {
-    if (!loading) refreshOllama(false);
-  }, [loading, refreshOllama]);
   const activeSyncSignature = mailboxes
     .filter((row) =>
       ["QUEUED", "RUNNING"].includes(
@@ -2446,64 +2188,6 @@ export default function RecruitmentMailPanelRedesign() {
     setReviewStatusFilter((current) => (current === group ? "" : group));
     setTab("reviews");
   };
-  const testOllama = (kind) =>
-    run(async () => {
-      const result = await request(`/api/ai-recruitment/ollama/test-${kind}`, {
-        method: "POST",
-        body: "{}",
-      });
-      if (result.ollama) setAiStatus(result.ollama);
-      if (result.status !== "ok")
-        throw new Error(
-          result.error_message ||
-            result.ollama?.error_message ||
-            "Ollama test failed",
-        );
-    });
-  const makePrimaryNode = (node) =>
-    run(
-      async () => {
-        // A node failing its model check would take every AI feature down if it
-        // became primary, so the override is a deliberate answer, not a default.
-        let override = false;
-        if (!node.ready) {
-          const proceed = window.confirm(
-            `${node.label} is not passing its model health check.\n\n` +
-              "Making it primary can stop payment extraction, interview " +
-              "booking and AI Mail Review from working.\n\nSet it as primary anyway?",
-          );
-          if (!proceed) return;
-          override = true;
-        }
-        await request(
-          `/api/ai-recruitment/ollama/nodes/${node.id}/primary${override ? "?override=true" : ""}`,
-          { method: "POST", body: "{}" },
-        );
-        await refreshOllama(false);
-      },
-      { success: `${node.label} is now the primary AI node.` },
-    );
-  const unloadNodeModels = async (node) => {
-    const ok = await confirm({
-      title: `Unload models on ${node.label}?`,
-      message:
-        "This frees GPU/RAM but does not power off the laptop. Models reload automatically on the next request.",
-      confirmLabel: "Unload models",
-      tone: "warning",
-    });
-    if (!ok) return;
-    await run(
-      async () => {
-        await request(`/api/ai-recruitment/ollama/nodes/${node.id}/unload`, {
-          method: "POST",
-          body: "{}",
-        });
-        await refreshOllama(false);
-      },
-      { success: `Models unloaded from ${node.label}.` },
-    );
-  };
-
   return (
     <main className="sot-page sot-mailboxes-page">
       {/* The page is named once, in the shell header ("AI Mail Review"); this
@@ -2524,23 +2208,23 @@ export default function RecruitmentMailPanelRedesign() {
               ))}
             </select>
           </label>
-          <PureOllamaToggle />
-          <OcrToggle />
+          <button
+            type="button"
+            className="sot-manage-ai-controls"
+            onClick={() => window.dispatchEvent(new CustomEvent("teleautomation:navigate", { detail: { view: "ai-controls" } }))}
+          >
+            Manage AI Controls
+          </button>
           <span>
             Last updated: {updatedAt
               ? formatTime(updatedAt)
               : <InlineLoader label="Loading data…" />}
           </span>
-          {/* The only Refresh on the page. It used to reload candidates and
-              mailboxes while the AI panel carried a second button for node
-              health, so which one an operator wanted depended on what they
-              were looking at. This does both. */}
           <button
             onClick={() => {
               load({ showLoader: true });
-              refreshOllama(true);
             }}
-            disabled={busy || refreshingAi || loading}
+            disabled={busy || loading}
           >
             <ButtonContent loading={loading} loadingLabel="Refreshing">
               ↻ Refresh
@@ -2548,14 +2232,6 @@ export default function RecruitmentMailPanelRedesign() {
           </button>
         </div>
       </header>
-      <AiMailModelSelector request={request} refreshToken={updatedAt} />
-      <AiNodeManager
-        nodes={aiNodes}
-        activity={aiActivity.nodes}
-        busy={busy}
-        onMakePrimary={makePrimaryNode}
-        onUnload={unloadNodeModels}
-      />
       {loading && (
         <div className="sot-page-loader">
           <OverlayLoader label="Loading candidate mailboxes…" />
@@ -2574,23 +2250,17 @@ export default function RecruitmentMailPanelRedesign() {
             metrics={metrics}
             mailboxRows={rows}
             interviewSummary={monitoringSummary}
-            aiStatus={aiStatus}
             onOpen={setTab}
           />
           <details className="sot-content-card sot-overview-analytics">
-            <summary>Operational analytics &amp; AI diagnostics</summary>
+            <summary>Mail operational analytics</summary>
             <p>
-              Open only when you need trends, conflict checks, or AI
-              troubleshooting.
+              Open for mail trends and conflict checks.
             </p>
             <Analytics
               charts={charts}
               flags={flags}
               names={names}
-              aiStatus={aiStatus}
-              onConnectionTest={() => testOllama("connection")}
-              onModelTest={() => testOllama("model")}
-              busy={busy}
             />
           </details>
         </>

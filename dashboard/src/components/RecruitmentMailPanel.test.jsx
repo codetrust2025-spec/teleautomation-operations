@@ -14,6 +14,7 @@ import {
   shouldShowInSelectionOfferReview,
 } from "./RecruitmentMailPanel.jsx";
 import { ConfirmProvider } from "../context/ConfirmContext.jsx";
+import { captureLayout } from "../test/captureLayout.js";
 
 // This page now carries the project-wide OCR switch, which reads the signed-in
 // role to decide whether the control is writable. These tests render the panel
@@ -130,17 +131,22 @@ describe("RecruitmentMailPanel", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
-  it("places model controls after the top toolbar and directly before AI Nodes", async () => {
+  it("centralizes AI management while retaining email controls and navigation", async () => {
     render(<ConfirmProvider><RecruitmentMailPanel /></ConfirmProvider>);
     await screen.findByRole("button", { name: "+ Add Gmail" });
     const toolbar = document.querySelector(".sot-header-actions");
-    const model = screen.getByRole("region", { name: "AI Mail model selection" });
-    expect(toolbar).not.toContainElement(model);
-    expect(model.previousElementSibling).toHaveClass("sot-header");
-    expect(model.nextElementSibling).toHaveClass("sot-ai-nodes");
     expect(within(toolbar).getByRole("combobox", { name: "Global candidate filter" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: /refresh/i })).toBeInTheDocument();
-    expect(toolbar.querySelectorAll(".sot-ocr-toggle")).toHaveLength(2);
+    expect(screen.queryByRole("region", { name: "AI Mail model selection" })).not.toBeInTheDocument();
+    expect(document.querySelector('.sot-ai-nodes')).toBeNull();
+    expect(toolbar.querySelectorAll('.sot-ocr-toggle')).toHaveLength(0);
+    const navigate = vi.fn();
+    window.addEventListener('teleautomation:navigate', navigate);
+    fireEvent.click(screen.getByRole('button', { name: 'Manage AI Controls' }));
+    expect(navigate.mock.calls[0][0].detail).toEqual({ view: 'ai-controls' });
+    window.removeEventListener('teleautomation:navigate', navigate);
+    expect(fetch.mock.calls.some(([url]) => /ollama|mail-model|ocr-policy|pure-ollama-policy/.test(String(url)))).toBe(false);
+    captureLayout("ai-mail-centralized", document.querySelector(".sot-mailboxes-page"));
   });
   it("renders the canonical mailbox-only page without retired hub navigation", async () => {
     render(
