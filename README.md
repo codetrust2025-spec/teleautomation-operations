@@ -37,11 +37,11 @@ for agents, including when *not* to deploy.
 
 ## AI Mail model selection
 
-AI Mail Review lists installed Ollama model names in a compact control row
-directly above AI Nodes, with selected size in GB, Test and Save. Current
-model/node is shown below; availability and validation details are collapsed.
-All Candidates, Pure Ollama, OCR, Last Updated and Refresh stay in the separate
-top toolbar. Admin Test checks both mail relevance and
+AI Controls owns the model selector, with selected size in GB, Test and Save.
+Current model/node is shown below; availability and validation are collapsed.
+AI Mail Review retains candidate Gmail operations and a Manage AI Controls
+navigation link, without duplicate global AI controls or node polling.
+Admin Test checks both mail relevance and
 classification JSON schemas on at least two nodes; Save independently repeats
 validation before atomically persisting a revision-checked selection in
 `OPERATIONS_DATA_DIR/ai_mail_model.json` (`AI_MAIL_MODEL_STATE_FILE` may override
@@ -79,3 +79,12 @@ workload overrides and routing pins are explicitly unavailable rather than
 invented. Only API-returned configuration is displayed; no host files or
 secrets are exposed. The validator is read-only. No inference runs on page load;
 tests and mutations require existing explicit actions and confirmations.
+
+Overview is a compact model-selection and node-health panel. Models, Nodes,
+Policies, Workloads, Queues and Logs each show only their own content; advanced
+diagnostics are collapsed. Installed models and policy history paginate six
+rows at a time, and recruitment history paginates five of the API's existing
+twenty records. Pagination is local and adds no API. One catalog response feeds
+both the selector and inventory; node rendering lives in AiNodeManager.jsx,
+independent of the email workspace. Mail results, alerts, Gmail monitoring and
+candidate-specific actions remain in AI Mail Review.

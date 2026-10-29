@@ -47,12 +47,14 @@ describe('existing AI controls dashboard', () => {
     const view = await open()
     expect(screen.getByText('3 / 3')).toBeInTheDocument()
     expect(screen.getByText('4.7 GB')).toBeInTheDocument()
-    expect(screen.getByText('Reported primary:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'AI Nodes' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Installed and Loaded Models' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'AI Policies' })).not.toBeInTheDocument()
+    expect(request.mock.calls.filter(([path]) => path === '/api/ai-recruitment/mail-model')).toHaveLength(1)
     expect(request.mock.calls.every(([, opts]) => !opts?.method || opts.method === 'GET')).toBe(true)
     expect(request.mock.calls.some(([path]) => path.includes('/test'))).toBe(false)
     expect(screen.queryByText('Total AI Jobs (24h)')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /restart|pull|delete|load model/i })).not.toBeInTheDocument()
-    await screen.findByText('Pure Ollama AI Mail Detection')
     captureLayout('ai-controls-overview', view.container)
   })
   it('shows exact installed and loaded inventory, sizes and node filtering', async () => {
@@ -121,11 +123,13 @@ describe('existing AI controls dashboard', () => {
     expect(request).toHaveBeenCalledWith('/ai/ocr-policy/audit?limit=20')
     cleanup(); mocks.role = 'handler'
     await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Policies', exact: true }))
     expect(screen.queryByRole('button', { name: 'View OCR history' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'View Pure Ollama history' })).not.toBeInTheDocument()
   })
   it('runs generic diagnostics only on explicit action', async () => {
     await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Nodes', exact: true }))
     fireEvent.click(screen.getByRole('button', { name: 'Test Model Response' }))
     await waitFor(() => expect(request).toHaveBeenCalledWith('/api/ai-recruitment/ollama/test-model', { method: 'POST', body: '{}' }))
     expect(await screen.findByText(/Model response passed:/)).toHaveAttribute('role', 'status')
@@ -137,6 +141,8 @@ describe('existing AI controls dashboard', () => {
       return body
     })
     await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Nodes', exact: true }))
+    fireEvent.click(screen.getByText('Loaded models and residency'))
     expect(screen.getAllByText('0.00 GB VRAM / 6.00 GB model')).toHaveLength(3)
     expect(screen.queryByText(/8 GB GPU/)).not.toBeInTheDocument()
   })
@@ -150,6 +156,47 @@ describe('existing AI controls dashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save AI Mail model' }))
     await waitFor(() => expect(screen.getByText('other:8b', { selector: '.ai-controls-stats strong' })).toBeInTheDocument())
     expect(screen.queryByRole('combobox', { name: /validator/i })).not.toBeInTheDocument()
+  })
+  it('shows separate panels and preserves the model draft between Overview and Models', async () => {
+    await open()
+    fireEvent.change(screen.getByRole('combobox', { name: 'AI Mail model' }), { target: { value: 'other:8b' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Models', exact: true }))
+    expect(screen.getByRole('combobox', { name: 'AI Mail model' })).toHaveValue('other:8b')
+    expect(screen.queryByRole('heading', { name: 'AI Nodes' })).not.toBeInTheDocument()
+    captureLayout('ai-controls-models', document.querySelector('.ai-controls'))
+    fireEvent.click(screen.getByRole('button', { name: 'Overview', exact: true }))
+    expect(screen.getByRole('combobox', { name: 'AI Mail model' })).toHaveValue('other:8b')
+    for (const [tab, heading] of [['Policies', 'AI Policies'], ['Workloads', 'Workload Models and Configuration · Read Only'], ['Queues', 'Queue Statistics'], ['Logs', 'Recent Recruitment Event History']]) {
+      fireEvent.click(screen.getByRole('button', { name: tab, exact: true }))
+      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: 'AI Mail model selection' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'AI Nodes' })).not.toBeInTheDocument()
+    }
+  })
+  it('paginates inventory and events without fetching another API', async () => {
+    request.mockImplementation(async path => {
+      const body = fixture(path)
+      if (path.endsWith('/mail-model')) return { ...body, nodes: [{ ...inventory[0], models: Array.from({ length: 14 }, (_, i) => ({ name: `synthetic-${i}:8b`, size_bytes: 5e9 })) }] }
+      if (path.includes('/review?')) return { events: Array.from({ length: 12 }, (_, i) => ({ ai_model: `event-${i}:8b` })) }
+      return body
+    })
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Models', exact: true }))
+    expect(screen.getByText('1–6 of 14')).toBeInTheDocument()
+    captureLayout('ai-controls-inventory-paged', document.querySelector('.ai-controls'))
+    expect(screen.queryByText('synthetic-6:8b', { selector: 'td' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Model inventory next page' }))
+    expect(screen.getByText('7–12 of 14')).toBeInTheDocument()
+    expect(screen.getByText('synthetic-6:8b', { selector: 'td' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Model inventory next page' }))
+    expect(screen.getByText('13–14 of 14')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Model inventory next page' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Logs', exact: true }))
+    expect(screen.getByText('1–5 of 12')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Recruitment events next page' }))
+    expect(screen.getByText('6–10 of 12')).toBeInTheDocument()
+    expect(request.mock.calls.filter(([p]) => p.includes('/review?'))).toHaveLength(1)
+    expect(request.mock.calls.filter(([p]) => p.endsWith('/mail-model'))).toHaveLength(1)
   })
   it('uses cookie authentication and reports HTTP errors without alternate authentication', async () => {
     fetch.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({ detail: 'Admin access required' }) })

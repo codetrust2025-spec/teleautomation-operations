@@ -67,9 +67,10 @@ describe('decommissioned features are absent from the tree', () => {
   })
 })
 
-describe('OCR survives inside AI Mail Review', () => {
-  it('is rendered by the AI Mail Review panel', () => {
-    const panel = read('components/RecruitmentMailPanelRedesign.jsx')
+describe('OCR survives in centralized AI Controls', () => {
+  it('is rendered by AI Controls only', () => {
+    const panel = read('components/AiControlsDashboard.jsx')
+    expect(read('components/RecruitmentMailPanelRedesign.jsx')).not.toContain('OcrToggle')
     expect(panel).toContain('OcrToggle')
     expect(panel).toContain('<OcrToggle />')
   })
