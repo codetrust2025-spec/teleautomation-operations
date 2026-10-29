@@ -45,7 +45,7 @@ describe('the Data Room tabs', () => {
     render(<DataRoomPanel />)
     await screen.findByText('Ops Gmail (Current)')
     const labels = [...document.querySelectorAll('.dr-tab .dr-tab-label')].map(l => l.textContent)
-    expect(labels).toEqual(['Credentials', 'Opportunities', 'Prompts', 'Key Links', 'Offers'])
+    expect(labels).toEqual(['Credentials', 'Opportunities', 'Prompts', 'Key Links', 'Offers', 'Daybreak'])
     expect(screen.queryByText(/Interview Data/i)).toBeNull()
   })
 

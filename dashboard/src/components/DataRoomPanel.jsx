@@ -7,6 +7,7 @@ import { DataRoomAccountsTab } from './DataRoomAccountsTab.jsx'
 import { DataRoomPromptsTab } from './DataRoomPromptsTab.jsx'
 import { DataRoomLinksTab } from './DataRoomLinksTab.jsx'
 import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
+import { DataRoomDaybreakTab } from './DataRoomDaybreakTab.jsx'
 import { OPERATIONS_PUBLIC_URL } from '../config.js'
 
 const API_BASE =
@@ -110,6 +111,8 @@ const DATA_ROOM_TABS = [
   { id: 'prompts', label: 'Prompts', adminOnly: false },
   { id: 'links', label: 'Key Links', adminOnly: false },
   { id: 'offers', label: 'Offers', adminOnly: false },
+  // Where the Naukri accounts stand in Daybreak (28 Oct). Only the admin moves logins to another computer.
+  { id: 'daybreak', label: 'Daybreak', adminOnly: true, ownerOnly: true },
 ]
 
 export function DataRoomPanel() {
@@ -131,8 +134,8 @@ export function DataRoomPanel() {
   const [activeTab, setActiveTab] = useState('access')
 
   const visibleTabs = useMemo(
-    () => DATA_ROOM_TABS.filter(tab => isAdmin || !tab.adminOnly),
-    [isAdmin],
+    () => DATA_ROOM_TABS.filter(tab => (isAdmin || !tab.adminOnly) && (!tab.ownerOnly || role === 'admin')),
+    [isAdmin, role],
   )
 
   const tabCounts = useMemo(() => {
@@ -149,6 +152,7 @@ export function DataRoomPanel() {
       prompts: prompts.length,
       links: resources.length,
       offers: offers.length,
+      daybreak: accounts.filter(row => row.service === 'Naukri').length,
     }
   }, [credentials, stats, rows.length])
 
@@ -342,6 +346,8 @@ export function DataRoomPanel() {
       {activeTab === 'offers' && credentials && (
         <DataRoomOffersTab offers={credentials.offer_letters || []} onReload={loadCredentials} />
       )}
+
+      {activeTab === 'daybreak' && <DataRoomDaybreakTab />}
 
       {activeTab === 'partners' && (
       <section className="dr-section dr-partners-section dr-section--active" aria-labelledby="dr-partners-title">
