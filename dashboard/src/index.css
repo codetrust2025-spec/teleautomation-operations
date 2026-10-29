@@ -19639,7 +19639,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .dr-db-name { font-weight: 600; }
 .dr-db-steps { display: flex; gap: 6px; margin-top: 4px; font-size: 0.7rem; color: #64748b; flex-wrap: wrap; }
 .dr-db-step--done { color: #86efac; }
-.dr-db-step--done::before { content: "¹3 "; }
+.dr-db-step--done::before { content: "\2713\00a0"; }
 .dr-db-details { font-size: 0.78rem; overflow-wrap: anywhere; }
 .dr-db-reason { color: #fde047; }
 .dr-db-actions { white-space: nowrap; }
