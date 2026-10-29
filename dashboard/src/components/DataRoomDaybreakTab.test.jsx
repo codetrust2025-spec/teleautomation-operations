@@ -1,4 +1,7 @@
 import React from 'react'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataRoomDaybreakTab } from './DataRoomDaybreakTab.jsx'
@@ -121,5 +124,13 @@ describe('DataRoomDaybreakTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Needs Attention · 1' }))
     expect(screen.queryByText('Asha Rao')).toBeNull()
     expect(screen.getByText('New Person')).toBeInTheDocument()
+  })
+})
+
+describe('the progress steps stylesheet', () => {
+  it('marks a done step with a check mark (it once read "¹3": an escape mangled into an octal one)', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'index.css'), 'utf-8')
+    const rule = css.match(/\.dr-db-step--done::before\s*\{\s*content:\s*"([^"]*)"/)
+    expect(rule?.[1]).toBe(String.raw`\2713\00a0`)
   })
 })
