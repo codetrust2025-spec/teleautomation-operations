@@ -2189,6 +2189,40 @@
   cursor: not-allowed;
 }
 
+/* Mail download button group */
+.mail-download-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mail-download-btn {
+  border: 1px solid rgba(100, 210, 140, 0.30);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: rgba(100, 210, 140, 0.10);
+  color: #86efac;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.mail-download-btn:hover:not(:disabled) {
+  border-color: rgba(100, 210, 140, 0.55);
+  background: rgba(100, 210, 140, 0.20);
+}
+.mail-download-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mail-download-btn--json {
+  border-radius: 0 8px 8px 0;
+  padding: 6px 8px;
+  border-left-width: 0;
+}
+.mail-download-btn:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
 /* `.mail-filters select` and `.mail-detail select` set `background:` — the
    shorthand, which resets background-image to none. With the base rule's
    `appearance: none` removing the native arrow, these selects would be left
@@ -3254,6 +3288,19 @@
     padding: 3px 9px;
     border-radius: 7px;
     font-size: 11px;
+  }
+
+  .mail-monitoring-page__actions .mail-download-btn {
+    min-height: 26px;
+    padding: 3px 9px;
+    border-radius: 7px;
+    font-size: 11px;
+  }
+  .mail-monitoring-page__actions .mail-download-btn--json {
+    border-radius: 0 7px 7px 0;
+  }
+  .mail-monitoring-page__actions .mail-download-btn:first-child {
+    border-radius: 7px 0 0 7px;
   }
 
   .mail-summary--compact { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }

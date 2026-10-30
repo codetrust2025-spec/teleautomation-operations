@@ -541,8 +541,57 @@ def install_recruitment_mail_routes(app):
         # not empty the screen.
         grouped=str(group_by or '').strip().lower()=='candidate'
         rows,total=await asyncio.to_thread(store.list_notifications,filters=filters,limit=limit,offset=offset,group_by_candidate=grouped)
+        email_count = await asyncio.to_thread(store.count_notifications, filters) if grouped else total
         response.headers['Cache-Control']='no-store, max-age=0'
-        return {'status':'ok','notifications':rows,'total':total,'grouped_by':'candidate' if grouped else None,'limit':min(max(limit,1),100),'offset':max(offset,0)}
+        return {'status':'ok','notifications':rows,'total':total,'email_count':email_count,'grouped_by':'candidate' if grouped else None,'limit':min(max(limit,1),100),'offset':max(offset,0)}
+
+    @app.get('/api/mail-monitoring/export')
+    async def mail_notifications_export(
+        request:Request, response:Response, format:str='xlsx',
+        search:str|None=None, candidate_id:str|None=None, company:str|None=None,
+        classification:str|None=None, classification_group:str|None=None,
+        candidate_status:str|None=None,
+        priority:str|None=None, is_read:bool|None=None, is_reviewed:bool|None=None,
+        confidence_min:float|None=None, confidence_max:float|None=None,
+        date_from:date|None=None, date_to:date|None=None, sort:str='newest',
+        booking_result:str|None=None,
+    ):
+        _guard();require_fleet_admin(request)
+        filters={
+            'search':search,'candidate_id':candidate_id,'company':company,
+            'classification':classification,'classification_group':classification_group,
+            'candidate_status':candidate_status,
+            'priority':priority,'is_read':is_read,'is_reviewed':is_reviewed,
+            'confidence_min':confidence_min,'confidence_max':confidence_max,
+            'date_from':date_from,'date_to':date_to,'sort':sort,
+            'booking_result':booking_result,
+        }
+        records = await asyncio.to_thread(store.export_notifications, filters=filters)
+        from core.recruitment_mail_export import records_to_xlsx, records_to_json_payload
+        fmt = str(format or 'xlsx').strip().lower()
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        if fmt == 'json':
+            payload = records_to_json_payload(records, filters)
+            body = json.dumps(payload, indent=2, default=str)
+            filename = f"mail_alerts_{stamp}.json"
+            return Response(
+                content=body, media_type="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Cache-Control": "no-store, max-age=0",
+                },
+            )
+        else:
+            xlsx_bytes = records_to_xlsx(records)
+            filename = f"mail_alerts_{stamp}.xlsx"
+            return Response(
+                content=xlsx_bytes,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Cache-Control": "no-store, max-age=0",
+                },
+            )
 
     @app.get('/api/mail-monitoring/candidates')
     async def mail_notification_candidates(request:Request,response:Response):

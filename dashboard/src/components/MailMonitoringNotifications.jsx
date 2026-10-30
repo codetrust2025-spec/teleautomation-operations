@@ -365,6 +365,8 @@ export function MailMonitoringNotifications() {
   const [summary, setSummary] = useState({ new_offers: 0, selections: 0, joining_confirmations: 0, auto_booked_interviews: 0, ai_retry_pending: 0, unread: 0 });
   const [selected, setSelected] = useState(null);
   const [clearing, setClearing] = useState(false);
+  const [downloading, setDownloading] = useState(null);
+  const [emailCount, setEmailCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -398,7 +400,7 @@ export function MailMonitoringNotifications() {
     try {
       const [list, counts] = await Promise.all([request(`/api/mail-monitoring/notifications?${query}`),fetchMailSummary()]);
       if (version !== loadVersion.current) return;
-      setItems(list.notifications || []);setTotal(list.total || 0);setSummary(counts.summary || {});
+      setItems(list.notifications || []);setTotal(list.total || 0);setEmailCount(list.email_count ?? list.total ?? 0);setSummary(counts.summary || {});
       publishMailUnread(counts.summary?.unread);
     } catch { /* retain last good state */ }
     finally { if (!silent && version === loadVersion.current) setLoading(false); }
@@ -523,6 +525,50 @@ export function MailMonitoringNotifications() {
       setSelected(null);setPage(0);await load();
     } finally { setClearing(false); }
   };
+
+  const downloadMails = async (format = "xlsx") => {
+    if (downloading) return;
+    setDownloading(format);
+    try {
+      const params = new URLSearchParams({ format });
+      for (const [key, value] of Object.entries({
+        search: effectiveFilters.search,
+        classification_group: effectiveFilters.classificationGroup,
+        candidate_id: effectiveFilters.candidateId,
+        booking_result: effectiveFilters.bookingResult,
+        priority: effectiveFilters.priority,
+        is_read: effectiveFilters.read,
+        sort: "newest",
+      })) {
+        if (value !== "" && value !== null && value !== undefined) params.set(key, String(value));
+      }
+      const response = await fetch(`${API}/api/mail-monitoring/export?${params.toString()}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || "Export failed");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match ? match[1] : `mail_alerts.${format}`;
+      if (typeof window !== "undefined" && window.URL && window.document) {
+        const url = window.URL.createObjectURL(blob);
+        const a = window.document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        window.document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error("Export error:", err);
+    } finally {
+      setDownloading(null);
+    }
+  };
   // Live counts shown on each tab badge, pulled from the summary endpoint so
   // they reflect the full dataset regardless of what is currently filtered.
   const tabCounts = {
@@ -553,7 +599,7 @@ export function MailMonitoringNotifications() {
         );
       })}
     </nav>
-    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
+    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><div className="mail-download-group"><button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button><button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button></div><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
     </div>
     <div className="mail-filters mail-filters--compact">
       <input aria-label="Search notifications" placeholder="Search candidate, email, company or subject" value={filters.search} onChange={set("search")} />

@@ -2930,86 +2930,191 @@ def latest_realtime_event_id() -> str | None:
     return str(row[0]) if row else None
 
 
-def list_notifications(
-    *, filters: dict[str, Any] | None = None, limit: int = 50, offset: int = 0,
-    group_by_candidate: bool = False,
-) -> tuple[list[dict[str, Any]], int]:
+def notification_filter_sql(
+    filters: dict[str, Any] | None = None, prefix: str = "",
+) -> tuple[str, list[Any], str]:
     filters = filters or {}
-    rows_clause, rows_params = visible_rows_sql()
+    p = f"{prefix}." if prefix else ""
+    rows_clause, rows_params = visible_rows_sql(prefix=prefix)
     where: list[str] = [rows_clause]
     params: list[Any] = list(rows_params)
     exact = {"candidate_id", "candidate_status", "priority"}
-    # When no specific classification filter is provided, default to tracked
-    # notification classifications (auto interview booking + job confirmed).
-    # This ensures non-tracked classifications are excluded by default.
+
     if filters.get("classification"):
-        where.append("classification=%s")
+        where.append(f"{p}classification=%s")
         params.append(filters["classification"])
     elif filters.get("classification_group"):
-        # The Mail Alerts screen filters by group rather than by the eighteen
-        # individual classifications. Exact `classification` is left untouched
-        # above so existing callers behave identically; an unknown group falls
-        # through to the tracked default rather than returning nothing, because
-        # a filter that silently empties the screen reads as "no alerts".
         group = CLASSIFICATION_GROUPS.get(
             str(filters["classification_group"]).strip().lower()
         )
         if group:
             placeholders = ", ".join("%s" for _ in sorted(group))
-            where.append(f"classification IN ({placeholders})")
+            where.append(f"{p}classification IN ({placeholders})")
             params.extend(sorted(group))
         else:
-            tracked_clause, tracked_params = tracked_classification_sql()
+            tracked_clause, tracked_params = tracked_classification_sql(prefix=prefix)
             where.append(tracked_clause)
             params.extend(tracked_params)
     else:
-        tracked_clause, tracked_params = tracked_classification_sql()
+        tracked_clause, tracked_params = tracked_classification_sql(prefix=prefix)
         where.append(tracked_clause)
         params.extend(tracked_params)
-    # `exact` was assigned here and never read, so candidate_id, candidate_status
-    # and priority were accepted by the API, forwarded by the screen, and then
-    # silently dropped — every query returned the unfiltered set. Nothing failed:
-    # a filter that does nothing looks exactly like a filter matching everything.
-    # Found by checking the live totals per candidate rather than trusting that
-    # the name in the set meant the value was used.
+
     for field in sorted(exact):
         value = filters.get(field)
         if value not in (None, ""):
             if field == 'candidate_id':
                 from services.recruitment_identity import aliases, load_links
-                where.append('(candidate_id=%s OR candidate_id=ANY(%s))')
+                where.append(f'({p}candidate_id=%s OR {p}candidate_id=ANY(%s))')
                 params.extend([value, sorted(aliases(str(value), load_links()))])
             elif field == 'priority' and value == 'retry_pending':
-                where.append("priority IN ('retry_pending','review_required')")
+                where.append(f"{p}priority IN ('retry_pending','review_required')")
             else:
-                where.append(f"{field}=%s")
+                where.append(f"{p}{field}=%s")
                 params.append(value)
     booking_result = str(filters.get("booking_result") or "").strip().lower()
-    booking_clause, booking_params = booking_result_sql(booking_result)
+    booking_clause, booking_params = booking_result_sql(booking_result, prefix=prefix)
     if booking_clause:
         where.append(booking_clause)
         params.extend(booking_params)
     for field in ("is_read", "is_reviewed"):
         if filters.get(field) is not None:
-            where.append(f"{field}=%s")
+            where.append(f"{p}{field}=%s")
             params.append(bool(filters[field]))
             if field == "is_read" and bool(filters[field]) is False and not filters.get("classification"):
-                where.append("classification <> 'recruitment_walkin'")
+                where.append(f"{p}classification <> 'recruitment_walkin'")
     if filters.get("company"):
-        where.append("company_name ILIKE %s"); params.append(f"%{filters['company']}%")
+        where.append(f"{p}company_name ILIKE %s"); params.append(f"%{filters['company']}%")
     if filters.get("search"):
-        where.append("concat_ws(' ',candidate_name,candidate_email,company_name,job_role,email_subject,sender_email,ai_summary) ILIKE %s")
+        where.append(f"concat_ws(' ',{p}candidate_name,{p}candidate_email,{p}company_name,{p}job_role,{p}email_subject,{p}sender_email,{p}ai_summary) ILIKE %s")
         params.append(f"%{filters['search']}%")
     if filters.get("confidence_min") is not None:
-        where.append("ai_confidence>=%s"); params.append(float(filters['confidence_min']))
+        where.append(f"{p}ai_confidence>=%s"); params.append(float(filters['confidence_min']))
     if filters.get("confidence_max") is not None:
-        where.append("ai_confidence<=%s"); params.append(float(filters['confidence_max']))
+        where.append(f"{p}ai_confidence<=%s"); params.append(float(filters['confidence_max']))
     if filters.get("date_from"):
-        where.append("created_at::date>=%s"); params.append(filters['date_from'])
+        where.append(f"{p}created_at::date>=%s"); params.append(filters['date_from'])
     if filters.get("date_to"):
-        where.append("created_at::date<=%s"); params.append(filters['date_to'])
+        where.append(f"{p}created_at::date<=%s"); params.append(filters['date_to'])
     clause = " AND ".join(where)
     order = "ASC" if str(filters.get("sort") or "").lower() == "oldest" else "DESC"
+    return clause, params, order
+
+
+def count_notifications(filters: dict[str, Any] | None = None) -> int:
+    """Exact count of notifications matching the filters without grouping."""
+    clause, params, _ = notification_filter_sql(filters)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) FROM mail_monitoring_notifications WHERE {clause}", params)
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+
+def export_notifications(
+    filters: dict[str, Any] | None = None, batch_size: int = 500,
+) -> list[dict[str, Any]]:
+    """Export genuine email notifications with full body, recipient and attachment metadata."""
+    clause, params, order = notification_filter_sql(filters, prefix="n")
+    select_fields = """
+        n.id AS notification_id,
+        n.candidate_id,
+        n.candidate_name,
+        n.candidate_email,
+        n.company_name,
+        n.job_role,
+        n.classification,
+        n.candidate_status,
+        n.ai_confidence,
+        n.email_subject,
+        n.sender_name,
+        n.sender_email,
+        n.email_received_at,
+        n.created_at AS detected_at,
+        n.priority,
+        n.is_read,
+        n.booking_id,
+        n.booking_status,
+        n.booking_block_reason,
+        n.booking_block_reason_code,
+        n.meeting_link,
+        n.interview_date,
+        n.interview_time,
+        n.interview_timezone,
+        n.interview_round,
+        n.interview_mode,
+        n.gmail_message_id,
+        n.gmail_thread_id,
+        m.id AS mailbox_message_id,
+        m.recipient_email,
+        m.sent_at AS message_sent_at,
+        m.rfc_message_id,
+        COALESCE(NULLIF(m.body_text, ''), m.html_body_text, '') AS email_body
+    """
+    records: list[dict[str, Any]] = []
+    offset = 0
+    with get_connection() as conn, conn.cursor() as cur:
+        while True:
+            query = f"""
+                SELECT {select_fields}
+                FROM mail_monitoring_notifications n
+                LEFT JOIN mailbox_messages m ON m.provider_message_id = n.gmail_message_id
+                WHERE {clause}
+                ORDER BY n.created_at {order}
+                LIMIT %s OFFSET %s
+            """
+            cur.execute(query, params + [batch_size, offset])
+            batch = _rows(cur)
+            if not batch:
+                break
+
+            msg_ids = [r["mailbox_message_id"] for r in batch if r.get("mailbox_message_id")]
+            attachments_map: dict[str, list[dict[str, Any]]] = {}
+            if msg_ids:
+                unique_ids = list(set(msg_ids))
+                placeholders = ", ".join("%s" for _ in unique_ids)
+                cur.execute(
+                    f"""
+                    SELECT mailbox_message_id, filename, mime_type, size
+                    FROM mailbox_attachments
+                    WHERE mailbox_message_id IN ({placeholders})
+                    ORDER BY created_at
+                    """,
+                    unique_ids,
+                )
+                for att in _rows(cur):
+                    mid = att["mailbox_message_id"]
+                    if mid not in attachments_map:
+                        attachments_map[mid] = []
+                    attachments_map[mid].append({
+                        "filename": att.get("filename") or "unnamed",
+                        "mime_type": att.get("mime_type") or "",
+                        "size_bytes": att.get("size") or 0,
+                    })
+
+            reconciled_batch = reconcile_booking_claims(batch)
+            booking_result = str((filters or {}).get("booking_result") or "").strip().lower()
+            if booking_result:
+                reconciled_batch = _without_released_bookings(reconciled_batch, booking_result)
+
+            for r in reconciled_batch:
+                mid = r.get("mailbox_message_id")
+                r["attachments"] = attachments_map.get(mid, [])
+                records.append(r)
+
+            if len(batch) < batch_size:
+                break
+            offset += batch_size
+
+    return records
+
+
+def list_notifications(
+    *, filters: dict[str, Any] | None = None, limit: int = 50, offset: int = 0,
+    group_by_candidate: bool = False,
+) -> tuple[list[dict[str, Any]], int]:
+    filters = filters or {}
+    clause, params, order = notification_filter_sql(filters)
+    booking_result = str(filters.get("booking_result") or "").strip().lower()
     page = max(1, min(limit, 100))
     skip = max(0, offset)
     with get_connection() as conn, conn.cursor() as cur:
@@ -3055,7 +3160,7 @@ def list_notifications(
     return _booking_result_page(reconcile_booking_claims(rows), total, booking_result)
 
 
-def booking_result_sql(booking_result: str) -> tuple[str, list[Any]]:
+def booking_result_sql(booking_result: str, prefix: str = "") -> tuple[str, list[Any]]:
     """The Booking result filter on Mail Alerts, as a WHERE clause.
 
     "booked" is what the roster holds: a booked status together with the
@@ -3067,17 +3172,18 @@ def booking_result_sql(booking_result: str) -> tuple[str, list[Any]]:
     in neither. Anything else asked for filters nothing, the way an
     unknown alert type does, rather than emptying the screen.
     """
+    p = f"{prefix}." if prefix else ""
     if booking_result == "booked":
         placeholders = ", ".join("%s" for _ in BOOKED_BOOKING_STATUSES)
         return (
-            f"((booking_status IN ({placeholders}) AND COALESCE(booking_id,'') <> '')"
-            " OR booking_status = %s)",
+            f"(({p}booking_status IN ({placeholders}) AND COALESCE({p}booking_id,'') <> '')"
+            f" OR {p}booking_status = %s)",
             [*BOOKED_BOOKING_STATUSES, DUPLICATE_IGNORED_STATUS],
         )
     if booking_result == "blocked":
         return (
-            "((COALESCE(booking_block_reason_code,'') <> '' OR COALESCE(booking_block_reason,'') <> '')"
-            " AND COALESCE(booking_status,'') <> %s)",
+            f"((COALESCE({p}booking_block_reason_code,'') <> '' OR COALESCE({p}booking_block_reason,'') <> '')"
+            f" AND COALESCE({p}booking_status,'') <> %s)",
             [DUPLICATE_IGNORED_STATUS],
         )
     return "", []
@@ -3473,7 +3579,8 @@ def record_unread_interview_alert(
     return created[0] if created else None
 
 
-def visible_rows_sql() -> tuple[str, list[Any]]:
+def visible_rows_sql(prefix: str = "") -> tuple[str, list[Any]]:
+    p = f"{prefix}." if prefix else ""
     """Not dismissed, not a historical row the tool deliberately skipped, and
     not an alert whose own event the validator rejected.
 
@@ -3486,19 +3593,20 @@ def visible_rows_sql() -> tuple[str, list[Any]]:
     without rewriting them. An alert with no event (Needs reading) is unaffected.
     """
     return (
-        "dismissed_at IS NULL AND COALESCE(booking_status,'') <> 'Historical Skipped'"
-        " AND NOT EXISTS (SELECT 1 FROM ai_recruitment_events rejected_event"
-        " WHERE rejected_event.id = ai_recruitment_event_id"
+        f"{p}dismissed_at IS NULL AND COALESCE({p}booking_status,'') <> 'Historical Skipped'"
+        f" AND NOT EXISTS (SELECT 1 FROM ai_recruitment_events rejected_event"
+        f" WHERE rejected_event.id = {p}ai_recruitment_event_id"
         " AND rejected_event.validation_status = 'REJECTED')",
         [],
     )
 
 
-def tracked_classification_sql() -> tuple[str, list[Any]]:
+def tracked_classification_sql(prefix: str = "") -> tuple[str, list[Any]]:
     """Only classifications the screen is built to act on, plus walk-in audit rows."""
+    p = f"{prefix}." if prefix else ""
     visible = sorted(TRACKED_NOTIFICATION_CLASSIFICATIONS | {"recruitment_walkin"})
     placeholders = ", ".join("%s" for _ in visible)
-    return f"classification IN ({placeholders})", visible
+    return f"{p}classification IN ({placeholders})", visible
 
 
 def notification_visibility_sql() -> tuple[str, list[Any]]:
