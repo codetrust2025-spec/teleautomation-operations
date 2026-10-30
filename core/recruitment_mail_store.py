@@ -3495,9 +3495,10 @@ def visible_rows_sql() -> tuple[str, list[Any]]:
 
 
 def tracked_classification_sql() -> tuple[str, list[Any]]:
-    """Only classifications the screen is built to act on."""
-    placeholders = ", ".join("%s" for _ in TRACKED_NOTIFICATION_CLASSIFICATIONS)
-    return f"classification IN ({placeholders})", list(TRACKED_NOTIFICATION_CLASSIFICATIONS)
+    """Only classifications the screen is built to act on, plus walk-in audit rows."""
+    visible = sorted(TRACKED_NOTIFICATION_CLASSIFICATIONS | {"recruitment_walkin"})
+    placeholders = ", ".join("%s" for _ in visible)
+    return f"classification IN ({placeholders})", visible
 
 
 def notification_visibility_sql() -> tuple[str, list[Any]]:
