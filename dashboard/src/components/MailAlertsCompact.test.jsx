@@ -68,7 +68,7 @@ function install(rows = ROWS, total = 184) {
     calls.push({ href, method: init.method || "GET" });
     const body = href.includes("/mail-monitoring/candidates") ? { status: "ok", candidates: [] }
       : href.includes("/summary") ? { summary: { unread: 6, ai_retry_pending: 17, visible_total: total } }
-        : href.includes("/notifications?") ? { notifications: listed, total }
+        : href.includes("/notifications?") ? { notifications: listed, total, email_count: total }
           : { status: "ok" };
     return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
   }));

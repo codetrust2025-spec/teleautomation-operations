@@ -44,6 +44,9 @@ describe('controls that shipped without rules', () => {
   it('styles the Clear all notifications button', () => {
     expect(hasRule('mail-clear-all')).toBe(true)
   })
+  it('styles the Download Mails button', () => {
+    expect(hasRule('mail-download-btn')).toBe(true)
+  })
 
   it('styles the mailbox view tablist', () => {
     expect(hasRule('sot-mailbox-view-tabs')).toBe(true)
