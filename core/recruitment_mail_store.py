@@ -35,6 +35,9 @@ CANONICAL_CLASSIFICATIONS = {
     # `ai_retry_pending`: that one means another attempt is coming, and for
     # these there is none -- a person has to read it.
     "interview_needs_reading",
+    # Generic walk-in recruitment campaign retained in All Alerts as an
+    # informative audit record, but excluded from Unread Invitations.
+    "recruitment_walkin",
 }
 
 # Mail Monitoring Notifications track only auto interview slot booking and
@@ -56,6 +59,14 @@ TRACKED_NOTIFICATION_CLASSIFICATIONS = {
     # Only mail carrying real interview evidence is ever filed under it
     # (`services.unread_interview_mail`), so it is a short queue, not a dump.
     "interview_needs_reading",
+    # NOTE: "recruitment_walkin" is intentionally absent here.
+    # Walk-in audit records are written directly by record_walkin_alert() and
+    # appear in All Alerts, but must never appear in Unread Invitations or drive
+    # the unread counter. Including it here would place it in
+    # SELECTION_RELATED_CLASSIFICATIONS (the computed residual) and surface it
+    # under the Selection Related filter -- misleading to operators.
+    # The "interview" and "selection" groups partition this set exactly;
+    # a test in test_mail_alert_groups.py asserts that invariant.
 }
 # candidate_rejected is deliberately absent. A rejection is an outcome to
 # record, not something to interrupt an administrator for: it needs no action,
@@ -151,6 +162,7 @@ _CLASSIFICATION_STATUS = {
     "interview_rescheduled": "Interview Rescheduled",
     "interview_cancelled": "Interview Cancelled",
     "interview_needs_reading": "Needs reading",
+    "recruitment_walkin": "Walk-in Drive",
     "candidate_rejected": "Rejected",
     "needs_review": "AI Retry Pending",
     "ai_retry_pending": "AI Retry Pending",
@@ -2981,6 +2993,8 @@ def list_notifications(
         if filters.get(field) is not None:
             where.append(f"{field}=%s")
             params.append(bool(filters[field]))
+            if field == "is_read" and bool(filters[field]) is False and not filters.get("classification"):
+                where.append("classification <> 'recruitment_walkin'")
     if filters.get("company"):
         where.append("company_name ILIKE %s"); params.append(f"%{filters['company']}%")
     if filters.get("search"):
@@ -3386,6 +3400,35 @@ def unread_interview_candidates(*, since, limit: int = 200) -> list[dict[str, An
         return _rows(cur)
 
 
+def record_walkin_alert(
+    message: dict[str, Any], *, reason_code: str = "GENERIC_WALK_IN_DRIVE",
+) -> dict[str, Any] | None:
+    """File a generic walk-in recruitment drive alert in All Alerts without surfacing under Unread Invitations."""
+    provider_id = str(message.get("provider_message_id") or "").strip()
+    if not provider_id:
+        return None
+    name, email = _candidate_snapshot(str(message.get("candidate_id") or ""), {})
+    summary = "Generic walk-in recruitment campaign; open drive without a candidate-specific interview slot."
+    action = "No booking required; generic recruitment walk-in drive."
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
+          gmail_message_id,gmail_thread_id,email_analysis_id,classification,candidate_status,
+          email_subject,sender_name,sender_email,email_received_at,ai_confidence,ai_summary,ai_reason,
+          recommended_action,priority,created_at,updated_at)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+          ON CONFLICT (gmail_message_id, classification) DO NOTHING RETURNING *""",
+          (_id(), str(message.get("candidate_id") or ""), name, email,
+           provider_id, message.get("provider_thread_id"), message.get("analysis_id"),
+           "recruitment_walkin", _CLASSIFICATION_STATUS["recruitment_walkin"],
+           message.get("subject"), message.get("sender_name"), message.get("sender_email"),
+           message.get("sent_at"), 0.0, summary[:1000],
+           str(reason_code or message.get("ai_last_error_code") or "GENERIC_WALK_IN_DRIVE")[:1000],
+           action[:1000],
+           "low"))
+        created = _rows(cur)
+    return created[0] if created else None
+
+
 def record_unread_interview_alert(
     message: dict[str, Any], *, evidence: str, reason_code: str = "", cancelling: bool = False,
 ) -> dict[str, Any] | None:
@@ -3452,9 +3495,10 @@ def visible_rows_sql() -> tuple[str, list[Any]]:
 
 
 def tracked_classification_sql() -> tuple[str, list[Any]]:
-    """Only classifications the screen is built to act on."""
-    placeholders = ", ".join("%s" for _ in TRACKED_NOTIFICATION_CLASSIFICATIONS)
-    return f"classification IN ({placeholders})", list(TRACKED_NOTIFICATION_CLASSIFICATIONS)
+    """Only classifications the screen is built to act on, plus walk-in audit rows."""
+    visible = sorted(TRACKED_NOTIFICATION_CLASSIFICATIONS | {"recruitment_walkin"})
+    placeholders = ", ".join("%s" for _ in visible)
+    return f"classification IN ({placeholders})", visible
 
 
 def notification_visibility_sql() -> tuple[str, list[Any]]:
@@ -3479,7 +3523,7 @@ def notification_summary() -> dict[str, Any]:
     visibility, params = notification_visibility_sql()
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("""SELECT count(*) FILTER(WHERE dismissed_at IS NULL) visible_total,
-          count(*) FILTER(WHERE NOT is_read AND dismissed_at IS NULL) unread,
+          count(*) FILTER(WHERE NOT is_read AND dismissed_at IS NULL AND classification <> 'recruitment_walkin') unread,
           count(*) FILTER(WHERE classification='offer_received' AND dismissed_at IS NULL) new_offers,
           count(*) FILTER(WHERE classification='job_selection_confirmed' AND dismissed_at IS NULL) selections,
           count(*) FILTER(WHERE classification='joining_confirmed' AND dismissed_at IS NULL) joining_confirmations,
