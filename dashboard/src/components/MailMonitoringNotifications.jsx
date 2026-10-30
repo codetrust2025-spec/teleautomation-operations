@@ -10,6 +10,11 @@ import { OriginalEmail } from "./OriginalEmail.jsx";
 import { Icon } from "./ui/Icon.jsx";
 
 // Important candidate employment outcomes and actionable interview activity.
+// NOTE: "recruitment_walkin" is intentionally absent here. Walk-in audit
+// records appear in All Alerts via item.candidate_status ("Walk-in Drive")
+// set by the DB. TRACKED_CLASSIFICATIONS must equal the union of
+// CLASSIFICATION_GROUPS exactly — both frontend tests assert this invariant.
+// Adding recruitment_walkin here without a matching group entry breaks both.
 export const TRACKED_CLASSIFICATIONS = [
   "job_selection_confirmed", "offer_received", "final_round_cleared",
   "hr_confirmation", "offer_accepted",

@@ -14,6 +14,9 @@ def test_every_requested_classification_is_stable():
         'interview_update','interview_shortlisted','interview_confirmed','interview_rescheduled',
             'interview_cancelled','candidate_rejected','ai_retry_pending','not_relevant',
         'final_round_cleared','hr_confirmation','interview_needs_reading',
+        # Added: generic walk-in recruitment campaigns retained in All Alerts
+        # as an audit record; excluded from Unread Invitations and unread counter.
+        'recruitment_walkin',
     }
 
 
