@@ -3003,6 +3003,10 @@ def notification_filter_sql(
 
 def count_notifications(filters: dict[str, Any] | None = None) -> int:
     """Exact count of notifications matching the filters without grouping."""
+    booking_result = str((filters or {}).get("booking_result") or "").strip().lower()
+    if booking_result == "booked":
+        # reconcile_booking_claims drops rows whose booking is no longer on the roster
+        return len(export_notifications(filters))
     clause, params, _ = notification_filter_sql(filters)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(f"SELECT count(*) FROM mail_monitoring_notifications WHERE {clause}", params)
@@ -3043,12 +3047,7 @@ def export_notifications(
         n.interview_round,
         n.interview_mode,
         n.gmail_message_id,
-        n.gmail_thread_id,
-        m.id AS mailbox_message_id,
-        m.recipient_email,
-        m.sent_at AS message_sent_at,
-        m.rfc_message_id,
-        COALESCE(NULLIF(m.body_text, ''), m.html_body_text, '') AS email_body
+        n.gmail_thread_id
     """
     records: list[dict[str, Any]] = []
     offset = 0
@@ -3057,7 +3056,6 @@ def export_notifications(
             query = f"""
                 SELECT {select_fields}
                 FROM mail_monitoring_notifications n
-                LEFT JOIN mailbox_messages m ON m.provider_message_id = n.gmail_message_id
                 WHERE {clause}
                 ORDER BY n.created_at {order}
                 LIMIT %s OFFSET %s
@@ -3066,6 +3064,35 @@ def export_notifications(
             batch = _rows(cur)
             if not batch:
                 break
+
+            # Look up corresponding mailbox_messages without multiplying notification rows
+            gmail_ids = [r["gmail_message_id"] for r in batch if r.get("gmail_message_id")]
+            messages_map: dict[str, dict[str, Any]] = {}
+            if gmail_ids:
+                unique_gmail_ids = list(set(gmail_ids))
+                placeholders = ", ".join("%s" for _ in unique_gmail_ids)
+                cur.execute(
+                    f"""
+                    SELECT provider_message_id, id, recipient_email, sent_at, rfc_message_id,
+                           COALESCE(NULLIF(body_text, ''), html_body_text, '') AS email_body
+                    FROM mailbox_messages
+                    WHERE provider_message_id IN ({placeholders})
+                    ORDER BY created_at DESC
+                    """,
+                    unique_gmail_ids,
+                )
+                for m_row in _rows(cur):
+                    pid = m_row.get("provider_message_id")
+                    if pid and pid not in messages_map:
+                        messages_map[pid] = m_row
+
+            for r in batch:
+                m = messages_map.get(r.get("gmail_message_id")) or {}
+                r["mailbox_message_id"] = m.get("id")
+                r["recipient_email"] = m.get("recipient_email") or ""
+                r["message_sent_at"] = m.get("sent_at")
+                r["rfc_message_id"] = m.get("rfc_message_id") or ""
+                r["email_body"] = m.get("email_body") or ""
 
             msg_ids = [r["mailbox_message_id"] for r in batch if r.get("mailbox_message_id")]
             attachments_map: dict[str, list[dict[str, Any]]] = {}
@@ -3106,7 +3133,6 @@ def export_notifications(
             offset += batch_size
 
     return records
-
 
 def list_notifications(
     *, filters: dict[str, Any] | None = None, limit: int = 50, offset: int = 0,
