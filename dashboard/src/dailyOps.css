@@ -2166,6 +2166,42 @@
   margin-left: 2px;
 }
 
+/* "Today" quick filter, right beside Filters (Oct 2026): the same height and
+   outline, and solid blue while it is on, as the calendar's active preset is. */
+.ops-roster-today {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(30, 41, 59, 0.7);
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.ops-roster-today svg { color: #60a5fa; }
+.ops-roster-today:hover {
+  background: rgba(30, 58, 138, 0.4);
+  border-color: rgba(96, 165, 250, 0.6);
+  color: #ffffff;
+}
+.ops-roster-today--active,
+.ops-roster-today--active:hover {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+.ops-roster-today--active svg { color: #ffffff; }
+.ops-roster-today:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+
 /* Floating dark-themed panel matching screenshot */
 .ops-filter-panel {
   position: absolute;
@@ -2616,8 +2652,16 @@
   /* The basis leaves just room for the buttons, so they share the search row
      and the selects start on the next; the search grows into any slack. */
   .ops-roster-controls__filters .ops-roster-search { order: 0; flex: 1 1 calc(100% - 56px); min-width: 0; }
-  .ops-roster-controls__filters:has(.ops-roster-clear) .ops-roster-search { flex-basis: calc(100% - 140px); }
+  /* 152px: Reset with its count beside Refresh. At 140 a count wrapped them. */
+  .ops-roster-controls__filters:has(.ops-roster-clear) .ops-roster-search { flex-basis: calc(100% - 152px); }
   .ops-roster-controls__filters .ops-roster-control { order: 2; }
+  /* Filters and Today are one pair (Oct 2026): both join the date on the
+     second row, at its height, so Today never wraps away from Filters. */
+  .ops-roster-controls__filters .ops-filter-dropdown-wrap,
+  .ops-roster-controls__filters .ops-roster-today { order: 2; flex: 0 0 auto; }
+  .ops-roster-controls__filters .ops-roster-control--date { flex: 1 1 110px; }
+  .ops-roster-controls__filters .ops-filter-trigger,
+  .ops-roster-controls__filters .ops-roster-today { height: 40px; }
   .ops-roster-controls__filters .ops-roster-controls__actions {
     order: 1; flex: 0 0 auto; width: auto; margin-left: 0; gap: 6px;
   }

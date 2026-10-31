@@ -138,6 +138,17 @@ export function DailyOpsPanel({
     setSelectedPreset('')
   }
 
+  // The Today button beside Filters is the calendar's Today preset, one click
+  // away. It reads as on for today's date picked off the grid too, since that
+  // is the same view, and a second click goes back to Upcoming. Reset, the
+  // calendar's Upcoming and any other date or period turn it off by replacing
+  // the date; search, the status tabs and Filters narrow within it.
+  const todayActive = selectedPreset === 'today' || (!selectedPreset && selectedDate === todayIso())
+  function toggleToday() {
+    if (todayActive) clearDate()
+    else applyPreset('today')
+  }
+
   // Upcoming only when neither a specific date nor a preset is selected (or when upcoming preset is selected)
   const upcomingOnly = !selectedDate && (!selectedPreset || selectedPreset === 'upcoming')
 
@@ -267,7 +278,7 @@ export function DailyOpsPanel({
         </div>
       </div>
 
-      {/* ── Controls row: Search → Calendar → Filters → Reset → Refresh ── */}
+      {/* ── Controls row: Search → Calendar → Filters → Today → Reset → Refresh ── */}
       <div className="ops-roster-controls" aria-label="Roster controls">
         <div className="ops-roster-controls__filters">
           <label className="ops-roster-search">
@@ -312,6 +323,17 @@ export function DailyOpsPanel({
             }}
             onResetAll={clearFilters}
           />
+
+          <button
+            type="button"
+            className={`ops-roster-today${todayActive ? ' ops-roster-today--active' : ''}`}
+            onClick={toggleToday}
+            aria-pressed={todayActive}
+            title={todayActive ? 'Showing today only (IST). Click again for all upcoming interviews' : 'Show only interviews scheduled today (IST)'}
+          >
+            <Icon name="calendar" size={14} strokeWidth={2.1} />
+            <span>Today</span>
+          </button>
 
           <div className="ops-roster-controls__actions">
             <button

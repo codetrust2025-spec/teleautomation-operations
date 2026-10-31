@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '../Loader.jsx'
 import { SubmitSlotFileDrop } from './SubmitSlotFileDrop.jsx'
 import { bookingSourceMeta } from '../utils/bookingSource.js'
+import { interviewDayIso, sortInterviewsEarliestFirst } from '../utils/interviewChronology.js'
 import { Icon } from '../components/ui/Icon.jsx'
 import AiNodeProgress, { analysedByLine, analysisSeconds, useAiAnalysis } from '../components/AiNodeProgress.jsx'
 import './subscribedCandidatePicker.css'
@@ -195,10 +196,15 @@ export function formatDayHeader(iso) {
   } catch { return iso }
 }
 
+/**
+ * Day groups in the order the slots arrive. Callers sort first, earliest IST
+ * start first, with the helper Daily Ops sorts with, so the days and the
+ * slots inside each read top to bottom in time order.
+ */
 function groupSlotsByDate(slots) {
   const groups = new Map()
   for (const slot of slots) {
-    const key = (slot.date || '').slice(0, 10)
+    const key = interviewDayIso(slot.date) || (slot.date || '').slice(0, 10)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(slot)
   }
@@ -719,8 +725,10 @@ export function SubmitSlotPage() {
   // Signed out, the server leaves out the client and technology (names are
   // shown in full to everyone since 12 Oct).
   const [bookedDetailsWithheld, setBookedDetailsWithheld] = useState(false)
-  const awaitingSlots = useMemo(() => booked.filter(needsStatusUpdate), [booked])
-  const upcomingSlots = useMemo(() => booked.filter(slot => !needsStatusUpdate(slot)), [booked])
+  // Earliest first on this page whatever order the payload holds: the one
+  // rule Daily Ops uses, from each slot's IST start.
+  const awaitingSlots = useMemo(() => sortInterviewsEarliestFirst(booked.filter(needsStatusUpdate)), [booked])
+  const upcomingSlots = useMemo(() => sortInterviewsEarliestFirst(booked.filter(slot => !needsStatusUpdate(slot))), [booked])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [parsing, setParsing] = useState(false)

@@ -4,15 +4,17 @@
  * Every order is read from fields the roster rows already carry -- the ISO
  * date and the time, never the label shown -- nothing is requested for it and
  * nothing is written except the choice itself, kept in this browser so it
- * survives a reload. Latest to Oldest (the default) runs date then time, both
- * newest first; Oldest to Latest both oldest first. Within any other order,
- * ties fall back to the default. A missing value (no date, no readable time,
- * no round...) goes last.
+ * survives a reload. Oldest to Latest (the default) runs by each interview's
+ * IST start, earliest first, through the helper the public Confirmed slots
+ * list sorts with too; Latest to Oldest is its reverse. Time orders settle
+ * ties earliest first, the other orders latest first. A missing value (no
+ * date, no readable time, no round...) goes last.
  * Alphabetical orders by candidate, company, technology or attendee name are
  * deliberately not offered.
  */
 import { INTERVIEW_STATUSES, canonicalStatus } from './interviewStatuses.js'
 import { rowCompanyName } from './companyName.js'
+import { compareInterviewStart, interviewClockMinutes } from '../utils/interviewChronology.js'
 
 export const ROSTER_SORT_OPTIONS = [
   { value: 'date_asc', label: 'Oldest to Latest' },
@@ -60,23 +62,8 @@ export function saveRosterSort(value) {
   }
 }
 
-/** "15:00", "9:05", "3:00 PM", "11:30am" -> minutes after midnight; null when unreadable. */
-export function minutesOfDay(value) {
-  const m = /^\s*(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]\.?m\.?)?\s*$/i.exec(String(value || ''))
-  if (!m) return null
-  let hours = Number(m[1])
-  const minutes = Number(m[2])
-  const meridiem = (m[3] || '').replace(/\./g, '').toLowerCase()
-  if (minutes > 59 || hours > 23 || (meridiem && (hours < 1 || hours > 12))) return null
-  if (meridiem === 'pm' && hours !== 12) hours += 12
-  if (meridiem === 'am' && hours === 12) hours = 0
-  return hours * 60 + minutes
-}
-
-function dateKey(row) {
-  const value = String(row?.date || '').slice(0, 10)
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
-}
+/** "15:00", "9:05", "3:00 PM", "11:30am", "3 pm" -> minutes after midnight; null when unreadable. */
+export const minutesOfDay = interviewClockMinutes
 
 function stamp(value) {
   const ms = Date.parse(String(value || ''))
@@ -107,14 +94,14 @@ function by(a, b, direction = 1) {
   return (a < b ? -1 : 1) * direction
 }
 
-/** Earliest date first, and on one date, earliest time first. */
+/** The earliest IST start first: the order the server and Confirmed slots use. */
 function earliestFirst(a, b) {
-  return by(dateKey(a), dateKey(b), 1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), 1)
+  return compareInterviewStart(a, b, 1)
 }
 
-/** Newest date first, and on one date, latest time first (tie-breaker for attribute sorts). */
+/** The latest IST start first (tie-breaker for attribute sorts). */
 function latestFirst(a, b) {
-  return by(dateKey(a), dateKey(b), -1) || by(minutesOfDay(a?.time), minutesOfDay(b?.time), -1)
+  return compareInterviewStart(a, b, -1)
 }
 
 const COMPARE = {
