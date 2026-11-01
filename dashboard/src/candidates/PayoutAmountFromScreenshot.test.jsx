@@ -482,7 +482,10 @@ describe("after a save", () => {
 describe("editing an expense", () => {
   it("keeps a typed amount, and attaching a replacement screenshot reads nothing", async () => {
     const server = stubServer();
-    server.store.push({ id: "e-0", reference: "Thrilok", amount: 3000, category: "commission", note: "", date: "2026-10-06", proofs: [] });
+    // The list shows the current month, so an expense being edited has to sit in it.
+    // A fixed date stops exercising the edit path as soon as the month rolls over.
+    const inCurrentMonth = `${new Date().toISOString().slice(0, 7)}-06`;
+    server.store.push({ id: "e-0", reference: "Thrilok", amount: 3000, category: "commission", note: "", date: inCurrentMonth, proofs: [] });
     await openModal(OWED - 3000);
     fireEvent.click(await screen.findByTitle("Edit"));
     expect(amountField()).not.toHaveAttribute("readonly");
