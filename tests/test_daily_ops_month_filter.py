@@ -90,11 +90,16 @@ def test_cancelled_and_failed_records_do_not_open_a_month(store):
 
 
 def test_an_unconfirmed_slot_does_not_open_a_month(store):
+    # The probe month must sit outside the current and previous months, which are
+    # always offered by design (see
+    # test_the_current_and_previous_month_are_always_available). A date inside
+    # either of them is offered for that reason alone, so this test would quietly
+    # stop checking the unconfirmed rule once the calendar caught up with it.
     seed(store, [
-        {"date": "2026-11-11", "time": "10:00", "slot_confirmed": False},
+        {"date": "2098-11-11", "time": "10:00", "slot_confirmed": False},
         {"date": "2026-08-04", "time": "11:30"},
     ])
-    assert "2026-11" not in months(store)
+    assert "2098-11" not in months(store)
 
 
 def test_the_current_and_previous_month_are_always_available(store):
