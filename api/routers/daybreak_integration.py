@@ -133,7 +133,12 @@ def _prompt(request: DaybreakHeadlineRequest) -> str:
     editorial = ("This is the single optional second editorial proposal after a validated unchanged draft. "
                  "Reconsider only complete missing approved capabilities or precise approved experience. "
                  "Do not rotate synonyms, reorder existing skills or force a freshness change. "
-                 "Set use_existing=true unless a substantive improvement is justified.\n"
+                 "Set use_existing=true unless a substantive improvement is justified. "
+                 "A missing approved capability that fits the remaining characters is itself a "
+                 "substantive improvement: adding it increases verified coverage without altering, "
+                 "reordering or weakening any existing claim. When at least one such capability "
+                 "exists and there is room, set use_existing=false and select up to three. Use "
+                 "use_existing=true only when no approved capability is missing, or none would fit.\n"
                  if request.editorial_proposal else "")
     return editorial + (
         "Select skills for one professional Naukri headline. Return JSON only: skills and use_existing. "
