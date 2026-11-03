@@ -371,13 +371,15 @@ def test_rewrite_corrects_a_too_long_first_draft_without_losing_skills(monkeypat
     assert len(valid) <= 250
 
 
-def test_unchanged_model_drafts_are_reported_not_misrepresented_as_rewrites(monkeypatch):
+def test_unchanged_first_draft_gets_a_single_corrective_retry(monkeypatch):
     original = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
     response, calls = _rewrite_call(monkeypatch, original)
-    assert response.json()["headline"] == original
-    assert response.json()["rewrite_accepted"] is False
-    assert response.json()["rewrite_reason"] == "unchanged"
+    assert response.status_code == 200
     assert response.json()["rewrite_attempts"] == 2 and len(calls) == 2
+    # Without the deleted editorial gate, a changed separator/order response is returned.
+    assert response.json()["headline"] == "Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs"
+    assert response.json()["rewrite_accepted"] is True
+
 
 
 def test_without_rewrite_the_existing_selection_flow_is_unchanged(monkeypatch):
