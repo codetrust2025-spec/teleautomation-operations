@@ -43,13 +43,15 @@ class DaybreakHeadlineRequest(BaseModel):
     rewrite: bool = False
 
 
-# The owner-tested prompt for a full rewrite of the live headline (Qwen2.5:7B). Daybreak re-validates every
-# result: all existing details preserved, every term grounded, structure genuinely reorganized.
+# The owner's prompt for a full rewrite of the live headline (Qwen2.5:7B). Daybreak re-validates every
+# result: all existing details preserved and structure genuinely reorganized.
 REWRITE_PROMPT = (
-    "Rewrite this Naukri resume headline into a distinctly different, natural and professional sentence. "
-    "Reorganize the sentence structure and skill order, not just synonyms or punctuation. "
-    "Preserve every skill, experience detail and meaning. Do not invent or omit information. "
-    "Return only one rewritten headline."
+    "Rewrite the current Naukri headline into a genuinely different, natural, professional sentence within 250 characters. "
+    "Reorganize sentence structure and skill order. "
+    "Preserve all existing skills, job titles, experience and factual details. "
+    "Do not invent, exaggerate or omit information. "
+    "Avoid unnecessary filler. "
+    "Return only the rewritten headline."
 )
 REWRITE_MODEL = "qwen2.5:7b"
 _CONNECTIVES = {"a", "an", "the", "and", "or", "of", "in", "on", "at", "for", "to", "with", "by", "from", "as",

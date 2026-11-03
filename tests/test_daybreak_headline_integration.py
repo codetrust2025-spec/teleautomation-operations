@@ -310,7 +310,7 @@ def test_rewrite_sends_the_exact_tested_prompt_and_the_current_headline_to_qwen(
     assert response.json()["headline"] == rewritten and response.json()["node_id"] == "rtx4060"
     prompt = calls[0]["messages"][0]["content"]
     assert prompt == integration.REWRITE_PROMPT + "\n\nJava Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
-    assert integration.REWRITE_PROMPT.startswith("Rewrite this Naukri resume headline into a distinctly different")
+    assert integration.REWRITE_PROMPT == ("Rewrite the current Naukri headline into a genuinely different, natural, professional sentence within 250 characters. Reorganize sentence structure and skill order. Preserve all existing skills, job titles, experience and factual details. Do not invent, exaggerate or omit information. Avoid unnecessary filler. Return only the rewritten headline.")
     assert calls[0]["model"] == "qwen2.5:7b" and calls[0]["workload"] == "daybreak_headline"
 
 
