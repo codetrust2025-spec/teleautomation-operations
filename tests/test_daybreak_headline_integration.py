@@ -287,3 +287,45 @@ def test_no_verified_baseline_never_produces_a_first_headline(monkeypatch):
     monkeypatch.setattr('core.ai_gateway.chat_structured',lambda **_:SimpleNamespace(content='{"skills":["JavaScript","React.js"],"use_existing":false}',node_id='rtx4060',node_label='RTX 4060',model='qwen2.5:7b',duration_ms=1))
     response=client(monkeypatch).post('/api/integrations/daybreak/headline',headers={'Authorization':'Bearer '+'d'*48},json=payload() | {'previous_headline':''})
     assert response.status_code==502
+
+
+def _rewrite_call(monkeypatch, content):
+    calls = []
+
+    def fake_chat(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(content=content, node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=31)
+
+    monkeypatch.setattr("core.ai_gateway.chat", fake_chat)
+    monkeypatch.setattr("core.ai_gateway.chat_structured", lambda **_: (_ for _ in ()).throw(AssertionError("rewrite must not use the selection flow")))
+    body = {**payload(), "previous_headline": "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs", "rewrite": True}
+    response = client(monkeypatch).post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=body)
+    return response, calls
+
+
+def test_rewrite_sends_the_exact_tested_prompt_and_the_current_headline_to_qwen(monkeypatch):
+    rewritten = "Java Developer with 4 Years 3 Months building REST APIs on Kafka, MySQL and Spring Boot"
+    response, calls = _rewrite_call(monkeypatch, 'Headline: "' + rewritten + '"\n')
+    assert response.status_code == 200
+    assert response.json()["headline"] == rewritten and response.json()["node_id"] == "rtx4060"
+    prompt = calls[0]["messages"][0]["content"]
+    assert prompt == integration.REWRITE_PROMPT + "\n\nJava Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
+    assert integration.REWRITE_PROMPT.startswith("Rewrite this Naukri resume headline into a distinctly different")
+    assert calls[0]["model"] == "qwen2.5:7b" and calls[0]["workload"] == "daybreak_headline"
+
+
+def test_rewrite_that_drops_or_changes_a_detail_returns_the_existing_headline(monkeypatch):
+    previous = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
+    for content in ("Java Developer with 4 Years 3 Months building REST APIs on MySQL and Spring Boot",
+                    "Java Developer with 3 Years 4 Months building REST APIs on Kafka, MySQL and Spring Boot",
+                    "Too short"):
+        response, _ = _rewrite_call(monkeypatch, content)
+        assert response.status_code == 200 and response.json()["headline"] == previous, content
+
+
+def test_without_rewrite_the_existing_selection_flow_is_unchanged(monkeypatch):
+    monkeypatch.setattr("core.ai_gateway.chat", lambda **_: (_ for _ in ()).throw(AssertionError("no rewrite requested")))
+    monkeypatch.setattr("core.ai_gateway.chat_structured", lambda **_: SimpleNamespace(content='{"skills":[],"use_existing":true}', node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=5))
+    body = {**payload(), "previous_headline": "React developer | 6 years | JavaScript | React.js"}
+    response = client(monkeypatch).post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=body)
+    assert response.status_code == 200 and response.json()["headline"] == "React developer | 6 years | JavaScript | React.js"

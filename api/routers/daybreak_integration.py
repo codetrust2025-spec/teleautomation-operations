@@ -40,6 +40,47 @@ class DaybreakHeadlineRequest(BaseModel):
     previous_headline: str = Field(default="", max_length=250)
     max_length: int = Field(default=250, ge=30, le=250)
     editorial_proposal: bool = False
+    rewrite: bool = False
+
+
+# The owner-tested prompt for a full rewrite of the live headline (Qwen2.5:7B). Daybreak re-validates every
+# result: all existing details preserved, every term grounded, structure genuinely reorganized.
+REWRITE_PROMPT = (
+    "Rewrite this Naukri resume headline into a distinctly different, natural and professional sentence. "
+    "Reorganize the sentence structure and skill order, not just synonyms or punctuation. "
+    "Preserve every skill, experience detail and meaning. Do not invent or omit information. "
+    "Return only one rewritten headline."
+)
+REWRITE_MODEL = "qwen2.5:7b"
+_CONNECTIVES = {"a", "an", "the", "and", "or", "of", "in", "on", "at", "for", "to", "with", "by", "from", "as",
+                "using", "via", "plus", "across", "including", "into", "through"}
+
+
+def _terms(value: str) -> list[str]:
+    words = re.findall(r"[a-z0-9][a-z0-9+#.]*", value.lower())
+    return [w.rstrip(".") for w in words if w.rstrip(".") and w.rstrip(".") not in _CONNECTIVES]
+
+
+def _durations(value: str) -> list[str]:
+    found = re.findall(r"\d+(?:\.\d+)?\s*\+?\s*(?:years?|yrs?|yoe|months?|mos?)\b", value.lower())
+    return sorted(_experience_normalized(item) for item in found)
+
+
+def _clean_rewrite(text: str) -> str:
+    line = next((part.strip() for part in str(text or "").splitlines() if part.strip()), "")
+    line = re.sub(r"(?i)^(?:rewritten\s+)?(?:resume\s+)?headline\s*:\s*", "", line)
+    return line.strip().strip("\"'“”‘’").strip()
+
+
+def _rewrite(request: DaybreakHeadlineRequest, content: str) -> str:
+    """The model's rewrite, or the existing headline when it drops, changes or invents nothing usable."""
+    previous = request.previous_headline.strip()
+    candidate = _clean_rewrite(content)
+    if not (30 <= len(candidate) <= request.max_length):
+        return previous
+    if not set(_terms(previous)) <= set(_terms(candidate)) or _durations(previous) != _durations(candidate):
+        return previous  # Every existing skill and the exact experience must survive the rewrite.
+    return candidate
 
 
 def _authorized(authorization: str | None) -> bool:
@@ -212,9 +253,28 @@ def generate_headline(
     if not _authorized(authorization):
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
-        from core.ai_gateway import AIGatewayError, chat_structured
+        from core.ai_gateway import AIGatewayError, chat, chat_structured
         from core.ai_model_routing import model_for
 
+        if payload.rewrite and payload.previous_headline.strip():
+            # Varied wording day to day; Daybreak refuses cosmetic changes and repeats of a recent save.
+            result = chat(
+                messages=[{"role": "user", "content": REWRITE_PROMPT + "\n\n" + payload.previous_headline.strip()}],
+                model=REWRITE_MODEL,
+                temperature=0.7,
+                max_retries=1,
+                workload="daybreak_headline",
+                num_predict=160,
+                think=False,
+            )
+            return {
+                "status": "ok",
+                "headline": _rewrite(payload, result.content),
+                "node_id": result.node_id,
+                "node_label": result.node_label,
+                "model": result.model,
+                "duration_ms": result.duration_ms,
+            }
         result = chat_structured(
             messages=[
                 {"role": "system", "content": "You produce concise, factual resume headlines."},
