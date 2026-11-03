@@ -71,8 +71,9 @@ def _durations(value: str) -> list[str]:
 def _clean_rewrite(text: str) -> str:
     # A wrapped model sentence is one headline, not just its first line.
     line = " ".join(part.strip() for part in str(text or "").splitlines() if part.strip())
-    line = re.sub(r"(?i)^(?:rewritten\\s+)?(?:resume\\s+)?headline\\s*:\\s*", "", line)
-    return line.strip().strip("\\\"'“”‘’").strip()
+    line = re.sub(r"(?i)^(?:rewritten\s+)?(?:resume\s+)?headline\s*:\s*", "", line)
+    return line.strip().strip("\"'“”‘’").strip()
+
 
 
 def _rewrite_candidate(request: DaybreakHeadlineRequest, content: str) -> tuple[str | None, str]:
@@ -292,10 +293,10 @@ def generate_headline(
             reason = "empty"
             result = None
             for attempt in range(2):
-                prompt = REWRITE_PROMPT + "\\n\\n" + original
+                prompt = REWRITE_PROMPT + "\n\n" + original
                 if attempt:
                     prompt += (
-                        "\\n\\nCORRECTION: The previous draft failed: " + reason + ". "
+                        "\n\nCORRECTION: The previous draft failed: " + reason + ". "
                         "Return a clearly reorganized version using the original headline's exact skills, "
                         "job title, numbers and experience. Keep all its content words, but move skills "
                         "and sentence parts into a different order. Do not add filler or proficiency claims. "
