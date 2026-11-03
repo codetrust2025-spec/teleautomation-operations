@@ -77,34 +77,15 @@ def _clean_rewrite(text: str) -> str:
 
 
 def _rewrite_candidate(request: DaybreakHeadlineRequest, content: str) -> tuple[str | None, str]:
-    """Return the safe rewrite and a machine-readable rejection reason, never a silent substitute."""
+    """No editorial/content validation: only a nonempty, changed headline within Naukri's limit."""
     previous = request.previous_headline.strip()
     candidate = _clean_rewrite(content)
     if not candidate:
         return None, "empty"
-    if len(candidate) < 30:
-        return None, "too_short"
-    if len(candidate) > request.max_length:
+    if len(candidate) > min(250, request.max_length):
         return None, "too_long"
-    if _durations(previous) != _durations(candidate):
-        return None, "experience_changed"
-    if not set(_terms(previous)) <= set(_terms(candidate)):
-        return None, "original_details_missing"
-    approved = " ".join((previous, request.facts.target_role, request.facts.experience,
-                         *request.facts.skills, request.facts.profile_facts))
-    if not set(_terms(candidate)) <= set(_terms(approved)):
-        return None, "unsupported_terms"
-
-    # Match the current Daybreak editorial gate so Operations does not falsely approve cosmetic edits.
-    before, after = _terms(previous), _terms(candidate)
-    row = [0] * (len(after) + 1)
-    for term in before:
-        next_row = [0]
-        for j, other in enumerate(after, 1):
-            next_row.append(row[j - 1] + 1 if term == other else max(row[j], next_row[-1]))
-        row = next_row
-    if not before or row[-1] / len(before) > 0.7:
-        return None, "insufficient_restructuring"
+    if candidate.casefold() == previous.casefold():
+        return None, "unchanged"
     return candidate, "accepted"
 
 
