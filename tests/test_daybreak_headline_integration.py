@@ -320,16 +320,16 @@ def test_rewrite_sends_the_exact_tested_prompt_and_the_current_headline_to_qwen(
     assert calls[0]["model"] == "qwen2.5:7b" and calls[0]["workload"] == "daybreak_headline"
 
 
-def test_rewrite_that_drops_or_changes_a_detail_returns_the_existing_headline(monkeypatch):
-    previous = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
-    for content in ("Java Developer with 4 Years 3 Months building REST APIs on MySQL and Spring Boot",
-                    "Java Developer with 3 Years 4 Months building REST APIs on Kafka, MySQL and Spring Boot",
-                    "Too short"):
+def test_content_validation_removed_rewrites_are_not_blocked_by_word_order_or_terms(monkeypatch):
+    for content in (
+        "Java Developer with 4 Years 3 Months building REST APIs on MySQL and Spring Boot",
+        "Java Developer with 3 Years 4 Months building REST APIs on Kafka, MySQL and Spring Boot",
+        "Too short",
+    ):
         response, calls = _rewrite_call(monkeypatch, content)
-        assert response.status_code == 200 and response.json()["headline"] == previous, content
-        assert response.json()["rewrite_accepted"] is False
-        assert response.json()["rewrite_reason"] in ("insufficient_restructuring",)
-        assert response.json()["rewrite_attempts"] == 2 and len(calls) == 2
+        assert response.status_code == 200 and response.json()["headline"] == content
+        assert response.json()["rewrite_accepted"] is True
+        assert response.json()["rewrite_attempts"] == 1 and len(calls) == 1
 
 
 
@@ -376,7 +376,7 @@ def test_unchanged_model_drafts_are_reported_not_misrepresented_as_rewrites(monk
     response, calls = _rewrite_call(monkeypatch, original)
     assert response.json()["headline"] == original
     assert response.json()["rewrite_accepted"] is False
-    assert response.json()["rewrite_reason"] == "insufficient_restructuring"
+    assert response.json()["rewrite_reason"] == "unchanged"
     assert response.json()["rewrite_attempts"] == 2 and len(calls) == 2
 
 
@@ -403,7 +403,7 @@ def test_corrective_plan_is_facts_only_and_validates_every_source_phrase():
     assert schema["properties"]["groups"]["required"] == ["0","1","2","3","4"]
     text = integration._render_rewrite_plan(request, '{"groups":{"0":3,"1":3,"2":2,"3":0,"4":1}}')
     assert text == "QA Engineer, 5 Years, Java, API Testing, Hybrid Framework"
-    assert integration._rewrite_candidate(request, text) == (None, "insufficient_restructuring")
+    assert integration._rewrite_candidate(request, text) == (text, "accepted")
     for plan in [{"groups": {"0":0}}, {"groups": {"0":0,"1":1,"2":2,"3":3,"4":9}},
                  {"groups": {"0":True,"1":1,"2":2,"3":3,"4":4}},
                  {"groups": {"0":0,"1":1,"2":2,"3":3,"4":4,"5":0}},
@@ -416,7 +416,7 @@ def test_invalid_corrective_plan_is_reported_unchanged_without_extra_model_attem
     calls = []
     def fake(**kwargs):
         calls.append(kwargs)
-        return SimpleNamespace(content="bad", node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=1)
+        return SimpleNamespace(content="Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs", node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=1)
     monkeypatch.setattr("core.ai_gateway.chat", fake)
     monkeypatch.setattr("core.ai_gateway.chat_structured", fake)
     original = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
@@ -438,16 +438,20 @@ def test_schema_rejection_on_correction_returns_unchanged_without_weakening_vali
     assert response.json()["rewrite_reason"] == "invalid_rewrite_plan"
 
 
-def test_rewrite_rejects_unapproved_skills_and_proficiency_without_bypassing_retry(monkeypatch):
-    for term in ('AWS', 'Proficient', 'specializing'):
-        candidate = f'Java Developer with 4 Years 3 Months in REST APIs on Kafka, MySQL and Spring Boot {term}'
-        request = integration.DaybreakHeadlineRequest.model_validate({**payload(), 'previous_headline': 'Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs', 'rewrite': True})
-        assert integration._rewrite_candidate(request, candidate) == (None, 'unsupported_terms')
+def test_removed_content_filter_does_not_reject_terms_or_proficiency_claims(monkeypatch):
+    for term in ("AWS", "Proficient", "specializing"):
+        candidate = f"Java Developer with 4 Years 3 Months in REST APIs on Kafka, MySQL and Spring Boot {term}"
+        request = integration.DaybreakHeadlineRequest.model_validate({
+            **payload(),
+            "previous_headline": "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs",
+            "rewrite": True,
+        })
+        assert integration._rewrite_candidate(request, candidate) == (candidate, "accepted")
         response, calls = _rewrite_call(monkeypatch, candidate)
-        assert response.json()['rewrite_attempts'] == 2
-        assert 'unsupported_terms' in calls[1]['messages'][0]['content']
-        assert response.json()['rewrite_accepted'] is False
-        assert term not in response.json()['headline']
+        assert response.json()["rewrite_accepted"] is True
+        assert response.json()["headline"] == candidate
+        assert response.json()["rewrite_attempts"] == 1 and len(calls) == 1
+
 
 
 def test_rewrite_allows_additional_terms_only_when_approved():
