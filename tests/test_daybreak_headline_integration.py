@@ -297,7 +297,10 @@ def _rewrite_call(monkeypatch, content):
         return SimpleNamespace(content=content, node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=31)
 
     monkeypatch.setattr("core.ai_gateway.chat", fake_chat)
-    monkeypatch.setattr("core.ai_gateway.chat_structured", lambda **_: (_ for _ in ()).throw(AssertionError("rewrite must not use the selection flow")))
+    def fake_plan(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(content='{"groups":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0}}', node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=31)
+    monkeypatch.setattr("core.ai_gateway.chat_structured", fake_plan)
     body = {**payload(), "previous_headline": "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs", "rewrite": True}
     response = client(monkeypatch).post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=body)
     return response, calls
@@ -325,7 +328,7 @@ def test_rewrite_that_drops_or_changes_a_detail_returns_the_existing_headline(mo
         response, calls = _rewrite_call(monkeypatch, content)
         assert response.status_code == 200 and response.json()["headline"] == previous, content
         assert response.json()["rewrite_accepted"] is False
-        assert response.json()["rewrite_reason"] in ("original_details_missing", "experience_changed", "too_short")
+        assert response.json()["rewrite_reason"] in ("insufficient_restructuring",)
         assert response.json()["rewrite_attempts"] == 2 and len(calls) == 2
 
 
@@ -346,6 +349,15 @@ def test_rewrite_corrects_a_too_long_first_draft_without_losing_skills(monkeypat
                                model="qwen2.5:7b", duration_ms=25)
 
     monkeypatch.setattr("core.ai_gateway.chat", fake_chat)
+    parts = integration._rewrite_fragments(original)
+    groups = {str(i): min(4, (len(parts)-1-i)*5//len(parts)) for i in range(len(parts))}
+    order = [0,1] + sorted(range(2,len(parts)), key=lambda i: groups[str(i)])
+    valid = ", ".join(parts[i] for i in order)
+    def fake_plan(**kwargs):
+        import json
+        calls.append(kwargs)
+        return SimpleNamespace(content=json.dumps({"groups": groups}), node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=25)
+    monkeypatch.setattr("core.ai_gateway.chat_structured", fake_plan)
     body = {**payload(), "previous_headline": original, "rewrite": True}
     response = client(monkeypatch).post(
         "/api/integrations/daybreak/headline",
@@ -374,3 +386,53 @@ def test_without_rewrite_the_existing_selection_flow_is_unchanged(monkeypatch):
     body = {**payload(), "previous_headline": "React developer | 6 years | JavaScript | React.js"}
     response = client(monkeypatch).post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=body)
     assert response.status_code == 200 and response.json()["headline"] == "React developer | 6 years | JavaScript | React.js"
+
+
+def test_corrective_plan_is_facts_only_and_validates_every_source_phrase():
+    import json
+    import pytest
+    request = integration.DaybreakHeadlineRequest(**{
+        **payload(), "previous_headline": "QA Engineer | 5 Years | Hybrid Framework | Java | API Testing", "rewrite": True,
+    })
+    prompt = integration._rewrite_plan_prompt(request, "QA Engineer with 5 Years and Hybrid Frameworks", "original_details_missing")
+    source = json.loads(prompt.split("\nSOURCE=", 1)[1])
+    assert "framework" in source["missing_words"]
+    assert source["maximum_characters"] == 250
+    assert source["phrases"][2] == {"id": 2, "text": "Hybrid Framework"}
+    schema = integration._rewrite_plan_schema(request)
+    assert schema["properties"]["groups"]["required"] == ["0","1","2","3","4"]
+    text = integration._render_rewrite_plan(request, '{"groups":{"0":3,"1":3,"2":2,"3":0,"4":1}}')
+    assert text == "QA Engineer, 5 Years, Java, API Testing, Hybrid Framework"
+    assert integration._rewrite_candidate(request, text) == (None, "insufficient_restructuring")
+    for plan in [{"groups": {"0":0}}, {"groups": {"0":0,"1":1,"2":2,"3":3,"4":9}},
+                 {"groups": {"0":True,"1":1,"2":2,"3":3,"4":4}},
+                 {"groups": {"0":0,"1":1,"2":2,"3":3,"4":4,"5":0}},
+                 {"groups": {"0":0,"1":1,"2":2,"3":3,"4":4}, "new_skill":"AWS"}, {"groups": None}]:
+        with pytest.raises(ValueError):
+            integration._render_rewrite_plan(request, json.dumps(plan))
+
+
+def test_invalid_corrective_plan_is_reported_unchanged_without_extra_model_attempts(monkeypatch):
+    calls = []
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(content="bad", node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=1)
+    monkeypatch.setattr("core.ai_gateway.chat", fake)
+    monkeypatch.setattr("core.ai_gateway.chat_structured", fake)
+    original = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
+    response = client(monkeypatch).post("/api/integrations/daybreak/headline",headers={"Authorization":"Bearer "+"d"*48},json={**payload(),"previous_headline":original,"rewrite":True})
+    assert response.json()["headline"] == original
+    assert response.json()["rewrite_accepted"] is False
+    assert response.json()["rewrite_reason"] == "invalid_rewrite_plan"
+    assert len(calls) == response.json()["rewrite_attempts"] == 2
+
+
+def test_schema_rejection_on_correction_returns_unchanged_without_weakening_validation(monkeypatch):
+    original = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
+    monkeypatch.setattr("core.ai_gateway.chat", lambda **_: SimpleNamespace(content=original,node_id="rtx4060",node_label="RTX 4060",model="qwen2.5:7b",duration_ms=1))
+    monkeypatch.setattr("core.ai_gateway.chat_structured", lambda **_: (_ for _ in ()).throw(AIGatewayError("private details",code="OLLAMA_SCHEMA_VALIDATION_FAILED")))
+    response = client(monkeypatch).post("/api/integrations/daybreak/headline",headers={"Authorization":"Bearer "+"d"*48},json={**payload(),"previous_headline":original,"rewrite":True})
+    assert response.status_code == 200
+    assert response.json()["headline"] == original
+    assert response.json()["rewrite_accepted"] is False
+    assert response.json()["rewrite_reason"] == "invalid_rewrite_plan"
