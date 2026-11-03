@@ -308,6 +308,9 @@ def test_rewrite_sends_the_exact_tested_prompt_and_the_current_headline_to_qwen(
     response, calls = _rewrite_call(monkeypatch, 'Headline: "' + rewritten + '"\n')
     assert response.status_code == 200
     assert response.json()["headline"] == rewritten and response.json()["node_id"] == "rtx4060"
+    assert response.json()["rewrite_accepted"] is True
+    assert response.json()["rewrite_attempts"] == 1
+    assert len(calls) == 1
     prompt = calls[0]["messages"][0]["content"]
     assert prompt == integration.REWRITE_PROMPT + "\n\nJava Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
     assert integration.REWRITE_PROMPT == ("Rewrite the current Naukri headline into a genuinely different, natural, professional sentence within 250 characters. Reorganize sentence structure and skill order. Preserve all existing skills, job titles, experience and factual details. Do not invent, exaggerate or omit information. Avoid unnecessary filler. Return only the rewritten headline.")
@@ -319,8 +322,50 @@ def test_rewrite_that_drops_or_changes_a_detail_returns_the_existing_headline(mo
     for content in ("Java Developer with 4 Years 3 Months building REST APIs on MySQL and Spring Boot",
                     "Java Developer with 3 Years 4 Months building REST APIs on Kafka, MySQL and Spring Boot",
                     "Too short"):
-        response, _ = _rewrite_call(monkeypatch, content)
+        response, calls = _rewrite_call(monkeypatch, content)
         assert response.status_code == 200 and response.json()["headline"] == previous, content
+        assert response.json()["rewrite_accepted"] is False
+        assert response.json()["rewrite_reason"] in ("original_details_missing", "experience_changed", "too_short")
+        assert response.json()["rewrite_attempts"] == 2 and len(calls) == 2
+
+
+
+def test_rewrite_corrects_a_too_long_first_draft_without_losing_skills(monkeypatch):
+    original = ("Senior Full Stack Developer | 5 Years 5 Months | MERN Stack Development, React.js, "
+                "Node.js, JavaScript, Redux, RESTful APIs | Express.js | MongoDB | TypeScript | "
+                "API Development | API Integration | Microservices | Redis | JWT Authentication | GIT")
+    valid = ("5 Years 5 Months | Senior Full Stack Developer | GIT, JWT Authentication, Redis, "
+             "Microservices, API Integration, API Development | TypeScript, MongoDB, Express.js | "
+             "RESTful APIs, Redux, JavaScript, Node.js, React.js | MERN Stack Development")
+    calls = []
+
+    def fake_chat(**kwargs):
+        calls.append(kwargs)
+        content = "Proficient in " * 30 + original if len(calls) == 1 else valid
+        return SimpleNamespace(content=content, node_id="rtx4060", node_label="RTX 4060",
+                               model="qwen2.5:7b", duration_ms=25)
+
+    monkeypatch.setattr("core.ai_gateway.chat", fake_chat)
+    body = {**payload(), "previous_headline": original, "rewrite": True}
+    response = client(monkeypatch).post(
+        "/api/integrations/daybreak/headline",
+        headers={"Authorization": "Bearer " + "d" * 48}, json=body)
+    assert response.status_code == 200
+    assert response.json()["headline"] == valid
+    assert response.json()["rewrite_accepted"] is True
+    assert response.json()["rewrite_attempts"] == 2
+    assert response.json()["duration_ms"] == 50
+    assert len(calls) == 2 and "too_long" in calls[1]["messages"][0]["content"]
+    assert len(valid) <= 250
+
+
+def test_unchanged_model_drafts_are_reported_not_misrepresented_as_rewrites(monkeypatch):
+    original = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
+    response, calls = _rewrite_call(monkeypatch, original)
+    assert response.json()["headline"] == original
+    assert response.json()["rewrite_accepted"] is False
+    assert response.json()["rewrite_reason"] == "insufficient_restructuring"
+    assert response.json()["rewrite_attempts"] == 2 and len(calls) == 2
 
 
 def test_without_rewrite_the_existing_selection_flow_is_unchanged(monkeypatch):
