@@ -69,20 +69,44 @@ def _durations(value: str) -> list[str]:
 
 
 def _clean_rewrite(text: str) -> str:
-    line = next((part.strip() for part in str(text or "").splitlines() if part.strip()), "")
-    line = re.sub(r"(?i)^(?:rewritten\s+)?(?:resume\s+)?headline\s*:\s*", "", line)
-    return line.strip().strip("\"'“”‘’").strip()
+    # A wrapped model sentence is one headline, not just its first line.
+    line = " ".join(part.strip() for part in str(text or "").splitlines() if part.strip())
+    line = re.sub(r"(?i)^(?:rewritten\\s+)?(?:resume\\s+)?headline\\s*:\\s*", "", line)
+    return line.strip().strip("\\\"'“”‘’").strip()
+
+
+def _rewrite_candidate(request: DaybreakHeadlineRequest, content: str) -> tuple[str | None, str]:
+    """Return the safe rewrite and a machine-readable rejection reason, never a silent substitute."""
+    previous = request.previous_headline.strip()
+    candidate = _clean_rewrite(content)
+    if not candidate:
+        return None, "empty"
+    if len(candidate) < 30:
+        return None, "too_short"
+    if len(candidate) > request.max_length:
+        return None, "too_long"
+    if _durations(previous) != _durations(candidate):
+        return None, "experience_changed"
+    if not set(_terms(previous)) <= set(_terms(candidate)):
+        return None, "original_details_missing"
+
+    # Match the current Daybreak editorial gate so Operations does not falsely approve cosmetic edits.
+    before, after = _terms(previous), _terms(candidate)
+    row = [0] * (len(after) + 1)
+    for term in before:
+        next_row = [0]
+        for j, other in enumerate(after, 1):
+            next_row.append(row[j - 1] + 1 if term == other else max(row[j], next_row[-1]))
+        row = next_row
+    if not before or row[-1] / len(before) > 0.7:
+        return None, "insufficient_restructuring"
+    return candidate, "accepted"
 
 
 def _rewrite(request: DaybreakHeadlineRequest, content: str) -> str:
-    """The model's rewrite, or the existing headline when it drops, changes or invents nothing usable."""
-    previous = request.previous_headline.strip()
-    candidate = _clean_rewrite(content)
-    if not (30 <= len(candidate) <= request.max_length):
-        return previous
-    if not set(_terms(previous)) <= set(_terms(candidate)) or _durations(previous) != _durations(candidate):
-        return previous  # Every existing skill and the exact experience must survive the rewrite.
-    return candidate
+    """Compatibility helper; the endpoint handles explicit retry and reason reporting."""
+    candidate, _ = _rewrite_candidate(request, content)
+    return candidate or request.previous_headline.strip()
 
 
 def _authorized(authorization: str | None) -> bool:
@@ -259,23 +283,50 @@ def generate_headline(
         from core.ai_model_routing import model_for
 
         if payload.rewrite and payload.previous_headline.strip():
-            # Varied wording day to day; Daybreak refuses cosmetic changes and repeats of a recent save.
-            result = chat(
-                messages=[{"role": "user", "content": REWRITE_PROMPT + "\n\n" + payload.previous_headline.strip()}],
-                model=REWRITE_MODEL,
-                temperature=0.7,
-                max_retries=1,
-                workload="daybreak_headline",
-                num_predict=160,
-                think=False,
-            )
+            # The gateway's max_retries retries transport errors, not an invalid generated headline.
+            # Give Qwen one correction attempt before returning the original, and say why.
+            original = payload.previous_headline.strip()
+            attempts = 0
+            total_ms = 0
+            candidate = None
+            reason = "empty"
+            result = None
+            for attempt in range(2):
+                prompt = REWRITE_PROMPT + "\\n\\n" + original
+                if attempt:
+                    prompt += (
+                        "\\n\\nCORRECTION: The previous draft failed: " + reason + ". "
+                        "Return a clearly reorganized version using the original headline's exact skills, "
+                        "job title, numbers and experience. Keep all its content words, but move skills "
+                        "and sentence parts into a different order. Do not add filler or proficiency claims. "
+                        f"At most {payload.max_length} characters INCLUDING spaces; preferably no longer "
+                        f"than the original ({len(original)} characters). Output only the headline."
+                    )
+                result = chat(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=REWRITE_MODEL,
+                    temperature=0.7 if attempt == 0 else 0.4,
+                    max_retries=1,
+                    workload="daybreak_headline",
+                    num_predict=160,
+                    think=False,
+                )
+                attempts += 1
+                total_ms += result.duration_ms
+                candidate, reason = _rewrite_candidate(payload, result.content)
+                if candidate is not None:
+                    break
             return {
                 "status": "ok",
-                "headline": _rewrite(payload, result.content),
+                # Keep the original field for compatibility with existing RTX/Jagadeesh workers.
+                "headline": candidate if candidate is not None else original,
+                "rewrite_accepted": candidate is not None,
+                "rewrite_reason": "" if candidate is not None else reason,
+                "rewrite_attempts": attempts,
                 "node_id": result.node_id,
                 "node_label": result.node_label,
                 "model": result.model,
-                "duration_ms": result.duration_ms,
+                "duration_ms": total_ms,
             }
         result = chat_structured(
             messages=[
