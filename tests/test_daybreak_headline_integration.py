@@ -307,7 +307,7 @@ def _rewrite_call(monkeypatch, content):
 
 
 def test_rewrite_sends_the_exact_tested_prompt_and_the_current_headline_to_qwen(monkeypatch):
-    rewritten = "Java Developer with 4 Years 3 Months building REST APIs on Kafka, MySQL and Spring Boot"
+    rewritten = "Java Developer with 4 Years 3 Months in REST APIs on Kafka, MySQL and Spring Boot"
     response, calls = _rewrite_call(monkeypatch, 'Headline: "' + rewritten + '"\n')
     assert response.status_code == 200
     assert response.json()["headline"] == rewritten and response.json()["node_id"] == "rtx4060"
@@ -436,3 +436,22 @@ def test_schema_rejection_on_correction_returns_unchanged_without_weakening_vali
     assert response.json()["headline"] == original
     assert response.json()["rewrite_accepted"] is False
     assert response.json()["rewrite_reason"] == "invalid_rewrite_plan"
+
+
+def test_rewrite_rejects_unapproved_skills_and_proficiency_without_bypassing_retry(monkeypatch):
+    for term in ('AWS', 'Proficient', 'specializing'):
+        candidate = f'Java Developer with 4 Years 3 Months in REST APIs on Kafka, MySQL and Spring Boot {term}'
+        request = integration.DaybreakHeadlineRequest.model_validate({**payload(), 'previous_headline': 'Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs', 'rewrite': True})
+        assert integration._rewrite_candidate(request, candidate) == (None, 'unsupported_terms')
+        response, calls = _rewrite_call(monkeypatch, candidate)
+        assert response.json()['rewrite_attempts'] == 2
+        assert 'unsupported_terms' in calls[1]['messages'][0]['content']
+        assert response.json()['rewrite_accepted'] is False
+        assert term not in response.json()['headline']
+
+
+def test_rewrite_allows_additional_terms_only_when_approved():
+    request = payload() | {'previous_headline': 'Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs', 'rewrite': True}
+    request['facts']['skills'].append('AWS')
+    candidate = 'Java Developer with 4 Years 3 Months in REST APIs on Kafka, MySQL and Spring Boot with AWS'
+    assert integration._rewrite_candidate(integration.DaybreakHeadlineRequest.model_validate(request), candidate) == (candidate, 'accepted')

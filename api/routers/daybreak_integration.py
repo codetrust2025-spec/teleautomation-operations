@@ -90,6 +90,10 @@ def _rewrite_candidate(request: DaybreakHeadlineRequest, content: str) -> tuple[
         return None, "experience_changed"
     if not set(_terms(previous)) <= set(_terms(candidate)):
         return None, "original_details_missing"
+    approved = " ".join((previous, request.facts.target_role, request.facts.experience,
+                         *request.facts.skills, request.facts.profile_facts))
+    if not set(_terms(candidate)) <= set(_terms(approved)):
+        return None, "unsupported_terms"
 
     # Match the current Daybreak editorial gate so Operations does not falsely approve cosmetic edits.
     before, after = _terms(previous), _terms(candidate)
