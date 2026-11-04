@@ -328,6 +328,14 @@ def authoritative_naukri_accounts() -> list[dict]:
     return [row for row in rows if (creds.normalise_service(row.get("service")) or creds.classify_service(row)) == "Naukri"]
 
 
+def has_attested_daybreak_consent(row: dict) -> bool:
+    """Only an explicit admin attestation for this exact account email qualifies."""
+    email = normalise_email(row.get("username"))
+    return bool(_EMAIL.fullmatch(email) and row.get("daybreak_consent_at")
+                and row.get("daybreak_consent_by")
+                and row.get("daybreak_consent_email") == email)
+
+
 def credential_version(row: dict) -> str:
     """Changes whenever the stored password changes, without decrypting it: the Fernet token is rewritten only then."""
     token = str(row.get("password_enc") or row.get("password") or "")
