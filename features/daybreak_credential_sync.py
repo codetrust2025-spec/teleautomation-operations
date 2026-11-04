@@ -312,6 +312,22 @@ def _naukri_accounts() -> list[dict]:
             and (creds.normalise_service(row.get("service")) or creds.classify_service(row)) == "Naukri"]
 
 
+def authoritative_naukri_accounts() -> list[dict]:
+    """A corrupt/missing source must not become a partial deletion snapshot."""
+    from features import data_room_credentials_store as creds
+    try:
+        with open(creds._FILE, encoding="utf-8") as handle:
+            data = json.load(handle)
+        rows = data["service_accounts"]
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError()
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SyncError(503, "Operations account source is unavailable; synchronization held") from exc
+    if any("enabled" in row and type(row["enabled"]) is not bool for row in rows):
+        raise SyncError(409, "Operations has an invalid account enabled state; synchronization held")
+    return [row for row in rows if (creds.normalise_service(row.get("service")) or creds.classify_service(row)) == "Naukri"]
+
+
 def credential_version(row: dict) -> str:
     """Changes whenever the stored password changes, without decrypting it: the Fernet token is rewritten only then."""
     token = str(row.get("password_enc") or row.get("password") or "")

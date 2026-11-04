@@ -586,6 +586,10 @@ def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | 
     for key in ("label", "username", "notes"):
         if key in body and body[key] is not None:
             fields[key] = str(body[key])
+    if "enabled" in body:
+        if type(body["enabled"]) is not bool:
+            return {}, "Account enabled must be a boolean"
+        fields["enabled"] = body["enabled"]
     if "service" in body or creating:
         service = normalise_service(body.get("service")) if body.get("service") not in (None, "") else (DEFAULT_SERVICE if creating else "")
         if not service:

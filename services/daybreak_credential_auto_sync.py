@@ -1,9 +1,8 @@
-"""Continuous, fail-closed Data Room -> Daybreak credential delivery.
+"""Five-minute Operations -> Daybreak account-list and credential reconciliation.
 
-Only already-consented, uniquely matched Daybreak accounts are eligible.
-Never create a candidate, sign in to Naukri, queue a headline job, or authorize
-a save. Passwords use the existing RSA-sealed delivery protocol; neither this
-module nor its logs handle plaintext passwords.
+The account list mirrors Data Room names and email addresses; it never
+grants consent or starts Naukri jobs. Credential delivery retains its existing
+consent, worker-key and signed-envelope protections.
 """
 from __future__ import annotations
 
@@ -74,6 +73,21 @@ def sync_once() -> dict:
         except BlockingIOError:
             return {"status": "already_running", "delivered": 0}
 
+        # Send a complete, signed, metadata-only snapshot. The Daybreak
+        # endpoint preserves consent, sessions and existing job history.
+        source = sync.authoritative_naukri_accounts()
+        roster = [{"id": str(row.get("id") or ""),
+                   "label": str(row.get("label") or ""),
+                   "email": sync.normalise_email(row.get("username")),
+                   "enabled": row.get("enabled") is not False}
+                  for row in source]
+        mirror = sync._daybreak("roster_sync",
+                                {"accounts": roster, "sourceCount": len(roster)})
+        if (mirror.get("status") != "ok"
+                or mirror.get("sourceCount") != len(roster)
+                or mirror.get("matchedCount") != len(roster)):
+            raise sync.SyncError(409, "Daybreak account list did not reconcile")
+        sync.refresh(force=True)
         view = sync.status_view()
         selected, blocked = plan(view)
         unmatched = sum(1 for r in view.get("accounts", [])
@@ -102,9 +116,9 @@ async def _loop() -> None:
         try:
             result = await asyncio.to_thread(sync_once)
             # Counts only: no emails, usernames, passwords or sealed envelopes.
-            logger.info("Daybreak credential sync: status=%s delivered=%s refused=%s unmatched=%s",
-                        result["status"], result.get("delivered", 0),
-                        result.get("refused", 0), result.get("unmatched", 0))
+            logger.info("Daybreak account and credential sync: status=%s source=%s mismatches=%s delivered=%s",
+                        result["status"], result.get("total", 0),
+                        result.get("unmatched", 0), result.get("delivered", 0))
             beat("daybreak_credential_sync", interval_sec=CHECK_INTERVAL_SEC)
         except asyncio.CancelledError:
             raise
