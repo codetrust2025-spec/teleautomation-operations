@@ -580,7 +580,7 @@ def service_accounts_with_passwords() -> list[dict]:
     return sorted(out, key=_section_sort_key("service_accounts"))
 
 
-def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | None]:
+def _service_account_fields(body: dict, *, creating: bool, consent_actor: str = "") -> tuple[dict, str | None]:
     """The fields an operator may set on a service account, checked."""
     fields: dict = {}
     for key in ("label", "username", "notes"):
@@ -591,6 +591,26 @@ def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | 
         if not service:
             return {}, f"Service must be one of {', '.join(SERVICE_TYPES)}"
         fields["service"] = service
+    # Consent is an explicit administrator attestation bound to this exact email.
+    # Never accept caller-supplied timestamps or identities. An edit without the
+    # consent field preserves the existing record; a changed email invalidates
+    # eligibility at the sync boundary until consent is re-attested.
+    if "daybreak_consent_confirmed" in body:
+        consent = body["daybreak_consent_confirmed"]
+        if not isinstance(consent, bool):
+            return {}, "Daybreak consent confirmation must be a boolean"
+        if consent:
+            email = str(body.get("username") or "").strip().lower()
+            service = fields.get("service") or DEFAULT_SERVICE
+            if service != "Naukri" or not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email):
+                return {}, "Daybreak consent requires a Naukri account with a valid email address"
+            if not consent_actor:
+                return {}, "An authenticated administrator is required to attest consent"
+            fields.update(daybreak_consent_at=_now_iso(), daybreak_consent_email=email,
+                          daybreak_consent_by=consent_actor)
+        else:
+            fields.update(daybreak_consent_at=None, daybreak_consent_email=None,
+                          daybreak_consent_by=None)
     password = body.get("password")
     # An edit sends a password only when it is changed; a blank one keeps what is stored.
     if isinstance(password, str) and password != "":
@@ -598,8 +618,8 @@ def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | 
     return fields, None
 
 
-def create_service_account(body: dict) -> tuple[dict | None, str | None]:
-    fields, error = _service_account_fields(body or {}, creating=True)
+def create_service_account(body: dict, *, consent_actor: str = "") -> tuple[dict | None, str | None]:
+    fields, error = _service_account_fields(body or {}, creating=True, consent_actor=consent_actor)
     if error:
         return None, error
     if "label" in fields:
@@ -608,8 +628,15 @@ def create_service_account(body: dict) -> tuple[dict | None, str | None]:
     return create_vault_item("service_accounts", {"id": str((body or {}).get("id") or "").strip(), **fields})
 
 
-def update_service_account(item_id: str, body: dict) -> tuple[dict | None, str | None]:
-    fields, error = _service_account_fields(body or {}, creating=False)
+def update_service_account(item_id: str, body: dict, *, consent_actor: str = "") -> tuple[dict | None, str | None]:
+    current = _find_service_row(_load(), item_id) or {}
+    # The service can be omitted on edit; validate consent against the actual
+    # resulting service and email, not a default or a client assertion.
+    incoming = dict(body or {})
+    if "daybreak_consent_confirmed" in incoming:
+        incoming.setdefault("username", current.get("username", ""))
+        incoming.setdefault("service", current.get("service", ""))
+    fields, error = _service_account_fields(incoming, creating=False, consent_actor=consent_actor)
     if error:
         return None, error
     if "label" in fields:
