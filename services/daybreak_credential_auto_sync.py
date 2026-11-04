@@ -79,7 +79,8 @@ def sync_once() -> dict:
         roster = [{"id": str(row.get("id") or ""),
                    "label": str(row.get("label") or ""),
                    "email": sync.normalise_email(row.get("username")),
-                   "enabled": row.get("enabled") is not False}
+                   "enabled": row.get("enabled") is not False,
+                   "consentVerified": sync.has_attested_daybreak_consent(row)}
                   for row in source]
         mirror = sync._daybreak("roster_sync",
                                 {"accounts": roster, "sourceCount": len(roster)})
