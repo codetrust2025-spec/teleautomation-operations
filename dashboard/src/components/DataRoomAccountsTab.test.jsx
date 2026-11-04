@@ -56,6 +56,8 @@ describe('DataRoomAccountsTab service account modal', () => {
       'Username / email',
       'Password',
       'Notes (optional)',
+      'Account active',
+      'I verified this account owner agreed to Daybreak managing their Naukri profile',
     ])
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
@@ -180,4 +182,15 @@ describe('DataRoomAccountsTab service account modal', () => {
     expect(calls[1].url).toContain('/data-room/service-accounts/gmail_b/image')
     expect(calls[1].isForm).toBe(true)
   })
+})
+
+
+it('requires a fresh unchecked consent attestation when the account identity changes', () => {
+  vi.stubGlobal('fetch', async () => ({ok:true,json:async()=>({status:'ok',password:''})}))
+  render(<ConfirmProvider><DataRoomAccountsTab accounts={[{id:'example',label:'Example',service:'Naukri',username:'old@example.test',daybreak_consent_at:'2026-11-01T00:00:00Z',daybreak_consent_by:'admin',daybreak_consent_email:'old@example.test'}]} onReload={()=>{}} /></ConfirmProvider>)
+  fireEvent.click(screen.getByRole('button',{name:/^Edit/}))
+  const consent=screen.getByRole('checkbox',{name:/I verified this account owner/})
+  expect(consent).toBeChecked()
+  fireEvent.change(screen.getByRole('dialog').querySelector('input[placeholder="name@example.com"]'),{target:{value:'new@example.test'}})
+  expect(consent).not.toBeChecked()
 })

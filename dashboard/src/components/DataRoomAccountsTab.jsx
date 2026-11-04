@@ -173,7 +173,7 @@ function accountFields({ kind, mode, service }) {
     { key: 'username', label: 'Username / email', placeholder: 'name@example.com' },
     { key: 'password', label: 'Password', type: 'password' },
     { key: 'notes', label: 'Notes (optional)', type: 'textarea', rows: 3, full: true },
-    ...(service === 'Naukri' ? [{
+    ...(service === 'Naukri' ? [{ key: 'enabled', label: 'Account active', type: 'checkbox', full: true }, {
       key: 'daybreak_consent_confirmed',
       label: 'I verified this account owner agreed to Daybreak managing their Naukri profile',
       type: 'checkbox', full: true,
@@ -563,7 +563,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     // The type the list is narrowed to. Under Dashboard / Tool Logins that is a
     // tool login: a new sign-in to this dashboard is chosen on purpose, not by default.
     const service = activeFilter === LOGIN_TYPE ? 'Tool' : SEPARATE_SERVICES.includes(activeFilter) ? activeFilter : DEFAULT_SERVICE
-    setModal({ mode: 'create', form: { id: '', label: '', reference: '', service, username: '', password: '', notes: '', daybreak_consent_confirmed: false } })
+    setModal({ mode: 'create', form: { id: '', label: '', reference: '', service, username: '', password: '', notes: '', daybreak_consent_confirmed: false, enabled: true } })
   }
 
   const openEditLogin = (login) => {
@@ -601,7 +601,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     clearImageState()
     // An account whose service was never recorded opens with none chosen, so
     // saving it asks for one rather than guessing.
-    setModal({ mode: 'edit', id: row.id, row, originalPassword: null, form: { id: row.id, label: row.label || '', service: SERVICE_TYPES.includes(row.service) ? row.service : '', username: row.username || '', password: '', notes: row.notes || '', daybreak_consent_confirmed: Boolean(row.daybreak_consent_at && row.daybreak_consent_by && row.daybreak_consent_email === String(row.username || '').trim().toLowerCase()) } })
+    setModal({ mode: 'edit', id: row.id, row, originalPassword: null, form: { id: row.id, label: row.label || '', service: SERVICE_TYPES.includes(row.service) ? row.service : '', username: row.username || '', password: '', notes: row.notes || '', enabled: row.enabled !== false, daybreak_consent_confirmed: Boolean(row.daybreak_consent_at && row.daybreak_consent_by && row.daybreak_consent_email === String(row.username || '').trim().toLowerCase()) } })
     if (row.has_password) {
       fetchPassword(row.id)
         .then(password => setModal(m => (m && m.id === row.id && m.mode === 'edit' && m.originalPassword === null
@@ -632,7 +632,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
         && body.service === modal.row?.service
       if (body.daybreak_consent_confirmed === previous && identityUnchanged) delete body.daybreak_consent_confirmed
     }
-    if (body.service !== 'Naukri') delete body.daybreak_consent_confirmed
+    if (body.service !== 'Naukri') { delete body.daybreak_consent_confirmed; delete body.enabled }
     if (mode === 'create' && !body.id.trim()) body.id = slugId(body.label || body.username)
     // An edit sends the password only when it was changed; blank keeps the stored one.
     if (mode === 'edit' && (body.password === '' || body.password === originalPassword)) delete body.password
@@ -1011,6 +1011,8 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
           fields={accountFields({ kind: modalKind(modal), mode: modal.mode, service: modal.form?.service })}
           form={modal.form}
           onChange={(f) => setModal(s => {
+            if (String(f.username || '').trim().toLowerCase() !== String(s.form.username || '').trim().toLowerCase()
+              || f.service !== s.form.service) f = { ...f, daybreak_consent_confirmed: false }
             // Switching Add between a service account and a dashboard login
             // keeps the name typed so far: an account's name is a login's reference.
             const wasLogin = s.form.service === LOGIN_TYPE

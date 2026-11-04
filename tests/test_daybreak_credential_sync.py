@@ -98,13 +98,19 @@ class FakeDaybreak:
         self.calls.append((action, json.loads(json.dumps(payload))))
         if action == "operations_status":
             listed = getattr(self, "listed", None) or self.workers
-            return {"workers": [{"id": w.id, "name": w.name, "priority": w.priority, "keyId": w.key_id, "publicKey": json.loads(w.text),
+            return {"capabilities": {"accountMirrorV1": True}, "workers": [{"id": w.id, "name": w.name, "priority": w.priority, "keyId": w.key_id, "publicKey": json.loads(w.text),
                                  "publicKeySha256": w.stored_text_sha256, "lastSeen": int(time.time() * 1000), "enabled": True,
                                  "recipient": w in self.workers} for w in listed],
                     "roster": self.roster,
                     "deliveries": [{"id": i, "receipt_at": r.get("receipt_at"), "committed": 1 if r.get("envelope") else 0}
                                    for i, r in self.rows.items() if i in payload.get("deliveryIds", [])],
                     "evidence": self.evidence, "remoteControl": {"enabled": False, "writes": False}}
+        if action == "operations_reconcile":
+            profile = next((p for p in self.roster if p["id"] == payload["id"] and p["email"] == payload["email"]), None)
+            if not profile or (payload["enabled"] and profile.get("session_status") == "attention"):
+                raise sync.SyncError(409, "Account requires review")
+            profile.update(name=payload["name"], enabled=int(payload["enabled"]))
+            return {"ok": True, "id": profile["id"], "enabled": bool(profile["enabled"])}
         if action == "prepare":
             profile = next((p for p in self.roster if p["id"] == payload.get("id")), None) if payload.get("id") else \
                 next((p for p in self.roster if p["email"] == payload["email"]), None)
@@ -427,3 +433,150 @@ def test_the_real_app_routes_the_status_to_this_router_not_to_an_opportunity(mon
     monkeypatch.setattr(sync, "status_view", lambda: {"marker": "daybreak status"})
     body = TestClient(main.app).get("/data-room/daybreak").json()
     assert body == {"status": "ok", "marker": "daybreak status"}
+
+
+class TestAutomaticAccountMirror:
+    def setup_auto(self, env, monkeypatch, tmp_path):
+        from services import daybreak_credential_auto_sync as auto
+        monkeypatch.setattr(auto, "DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("DAYBREAK_ACCOUNT_MIRROR_ENABLED", "1")
+        approve_all(env)
+        return auto
+
+    def attest(self, account="new_person"):
+        result, error = creds.update_service_account(account, {"daybreak_consent_confirmed": True}, consent_actor="admin")
+        assert not error
+
+    def test_new_consented_account_is_created_once_and_sealed_to_both_workers(self, env, monkeypatch, tmp_path):
+        auto = self.setup_auto(env, monkeypatch, tmp_path)
+        self.attest()
+        auto.sync_once()
+        profiles = [p for p in env["daybreak"].roster if p["email"] == "new.person@example.com"]
+        assert len(profiles) == 1
+        opened = env["daybreak"].collect()
+        assert {w for w, p in opened if p == profiles[0]["id"]} == {"RTX 4060", "Jagadeesh"}
+        calls = len([1 for action, _ in env["daybreak"].calls if action == "prepare"])
+        auto.sync_once()
+        assert len([1 for action, _ in env["daybreak"].calls if action == "prepare"]) == calls
+        assert len([p for p in env["daybreak"].roster if p["email"] == "new.person@example.com"]) == 1
+        assert not any(a in {"poll", "authorize_save", "queue", "complete"} for a, _ in env["daybreak"].calls)
+        assert not view(env)["new_person"]["connected"]  # Receipt is not a Naukri sign-in.
+        no_secret_in(env["store"].read_text())
+
+    def test_missing_consent_duplicate_source_and_disabled_accounts_are_never_created(self, env, monkeypatch, tmp_path):
+        auto = self.setup_auto(env, monkeypatch, tmp_path)
+        for aid in ("twin_a", "twin_b"):
+            self.attest(aid)
+        auto.sync_once()
+        assert not any(p["email"] in {"new.person@example.com", "twin@example.com"} for p in env["daybreak"].roster)
+        summary = sync.status_view()["account_mirror"]
+        assert summary["missing"] == 1
+        assert summary["blocked_records"][0]["reason"] == "operations_consent_required"
+
+    def test_rename_disable_and_delete_preserve_profile_and_previous_evidence(self, env, monkeypatch, tmp_path):
+        auto = self.setup_auto(env, monkeypatch, tmp_path)
+        auto.sync_once();env["daybreak"].collect()
+        profile = next(p for p in env["daybreak"].roster if p["id"] == P["asha"])
+        creds.update_service_account("asha_rao", {"label": "Updated Owner", "enabled": False})
+        auto.sync_once()
+        assert profile["name"] == "Updated Owner" and profile["enabled"] == 0
+        creds.delete_vault_item("service_accounts", "ravi_kumar")
+        old = list(env["daybreak"].evidence)
+        auto.sync_once()
+        assert next(p for p in env["daybreak"].roster if p["id"] == P["ravi"])["enabled"] == 0
+        assert env["daybreak"].evidence == old
+        assert len([p for p in env["daybreak"].roster if p["id"] == P["ravi"]]) == 1
+
+    def test_missing_source_file_is_not_treated_as_delete_everything(self, env, monkeypatch, tmp_path):
+        auto = self.setup_auto(env, monkeypatch, tmp_path)
+        auto.sync_once()
+        before = json.dumps(env["daybreak"].roster)
+        from pathlib import Path
+        Path(creds._FILE).unlink()
+        with pytest.raises(sync.SyncError):auto.sync_once()
+        assert json.dumps(env["daybreak"].roster) == before
+
+    def test_ambiguous_delivery_is_durable_and_never_blindly_retried(self, env, monkeypatch, tmp_path):
+        auto = self.setup_auto(env, monkeypatch, tmp_path);self.attest()
+        real = env["daybreak"]
+        def transport(action, payload=None):
+            if action == "commit":raise sync.SyncError(502, "Lost reply")
+            return real(action, payload)
+        monkeypatch.setattr(sync, "_daybreak", transport)
+        auto.sync_once()
+        assert sync._load()["onboarding_intents"]["new_person"]["state"] == "pending"
+        count = len([1 for action, _ in real.calls if action == "prepare"])
+        monkeypatch.setattr(sync, "_daybreak", real)
+        auto.sync_once()
+        assert len([1 for action, _ in real.calls if action == "prepare"]) == count
+        assert sync.status_view()["account_mirror"]["pending_or_uncertain_onboarding"] == 3
+
+    def test_old_receiver_without_safety_capability_cannot_auto_create(self, env, monkeypatch, tmp_path):
+        auto = self.setup_auto(env, monkeypatch, tmp_path);self.attest();real=env["daybreak"]
+        def transport(action, payload=None):
+            result=real(action,payload)
+            if action == "operations_status":result.pop("capabilities",None)
+            return result
+        monkeypatch.setattr(sync, "_daybreak", transport)
+        auto.sync_once()
+        assert not any(p["email"] == "new.person@example.com" for p in real.roster)
+
+    def test_changed_password_is_delivered_without_duplicate_profile_or_name_only_resend(self, env, monkeypatch, tmp_path):
+        auto = self.setup_auto(env, monkeypatch, tmp_path);auto.sync_once();env["daybreak"].collect()
+        count=len(env["daybreak"].roster)
+        creds.update_service_account("asha_rao", {"password":"Asha-Changed-9"})
+        auto.sync_once();opened=env["daybreak"].collect()
+        assert opened[("RTX 4060",P["asha"])] == "Asha-Changed-9"
+        assert opened[("Jagadeesh",P["asha"])] == "Asha-Changed-9"
+        assert len(env["daybreak"].roster)==count
+        calls=len([1 for action,_ in env["daybreak"].calls if action=="prepare"])
+        creds.update_service_account("asha_rao", {"label":"Renamed"});auto.sync_once()
+        assert len([1 for action,_ in env["daybreak"].calls if action=="prepare"])==calls
+
+
+    def test_concurrent_passes_do_not_duplicate_new_accounts_or_deliveries(self, env, monkeypatch, tmp_path):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        auto=self.setup_auto(env,monkeypatch,tmp_path);self.attest()
+        entered,release=Event(),Event();original=sync.status_view
+        def wait_view():
+            entered.set();assert release.wait(5)
+            return original()
+        monkeypatch.setattr(sync,"status_view",wait_view)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            first=pool.submit(auto.sync_once)
+            try:
+                assert entered.wait(3)
+                assert auto.sync_once()=={"status":"already_running","delivered":0}
+            finally:release.set()
+            first.result(timeout=5)
+        assert len([p for p in env["daybreak"].roster if p["email"]=="new.person@example.com"])==1
+        assert len(env["daybreak"].rows)==6  # three source accounts, each sealed once to two workers
+
+    def test_identity_change_pauses_old_link_without_silent_consent_reuse(self,env,monkeypatch,tmp_path):
+        auto=self.setup_auto(env,monkeypatch,tmp_path);auto.sync_once();env["daybreak"].collect()
+        creds.update_service_account("asha_rao",{"username":"new.identity@example.com"})
+        auto.sync_once()
+        assert next(p for p in env["daybreak"].roster if p["id"]==P["asha"])["enabled"]==0
+        assert not any(p["email"]=="new.identity@example.com" for p in env["daybreak"].roster)
+        assert sync.status_view()["account_mirror"]["blocked_links"]["asha_rao"]=="identity_or_consent_conflict"
+
+    def test_full_28_account_mirror_converges_then_deactivates_a_deleted_source_without_losing_history(self,env,monkeypatch,tmp_path):
+        auto=self.setup_auto(env,monkeypatch,tmp_path)
+        rows=[{"id":f"source-{i}","label":f"Synthetic {i:02}","service":"Naukri","username":f"account-{i}@example.test","password":f"synthetic-only-{i}","daybreak_consent_at":T0,"daybreak_consent_by":"test-admin","daybreak_consent_email":f"account-{i}@example.test"}for i in range(28)]
+        creds._save({"service_accounts":rows})
+        env["daybreak"].roster=[{"id":str(uuid.uuid4()),"name":r["label"],"email":r["username"],"enabled":1,"consent_at":T0}for r in rows[:24]]
+        for _ in range(4):auto.sync_once();env["daybreak"].collect()
+        body=sync.status_view()
+        assert body["account_mirror"]["operations_accounts"]==body["account_mirror"]["daybreak_accounts"]==body["account_mirror"]["matched"]==28
+        assert body["account_mirror"]["missing"]==0
+        assert len({p["email"]for p in env["daybreak"].roster})==28
+        assert all(r["delivered"] for r in body["accounts"])
+        old=next(p for p in env["daybreak"].roster if p["email"]==rows[0]["username"])
+        env["daybreak"].run(old["id"],"RTX 4060")
+        history=json.dumps(env["daybreak"].evidence)
+        creds.delete_vault_item("service_accounts","source-0");auto.sync_once()
+        assert len(sync.authoritative_accounts())==sum(bool(p["enabled"])for p in env["daybreak"].roster)==27
+        assert len(env["daybreak"].roster)==28 and old["enabled"]==0
+        assert json.dumps(env["daybreak"].evidence)==history
+        assert sync.status_view()["account_mirror"]["retained_deleted_links"]==1

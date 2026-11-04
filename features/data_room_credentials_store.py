@@ -586,6 +586,10 @@ def _service_account_fields(body: dict, *, creating: bool, consent_actor: str = 
     for key in ("label", "username", "notes"):
         if key in body and body[key] is not None:
             fields[key] = str(body[key])
+    if "enabled" in body:
+        if type(body["enabled"]) is not bool:
+            return {}, "Account enabled must be a boolean"
+        fields["enabled"] = body["enabled"]
     if "service" in body or creating:
         service = normalise_service(body.get("service")) if body.get("service") not in (None, "") else (DEFAULT_SERVICE if creating else "")
         if not service:
@@ -607,10 +611,10 @@ def _service_account_fields(body: dict, *, creating: bool, consent_actor: str = 
             if not consent_actor:
                 return {}, "An authenticated administrator is required to attest consent"
             fields.update(daybreak_consent_at=_now_iso(), daybreak_consent_email=email,
-                          daybreak_consent_by=consent_actor)
+                          daybreak_consent_by=consent_actor, daybreak_consent_revoked_at=None)
         else:
             fields.update(daybreak_consent_at=None, daybreak_consent_email=None,
-                          daybreak_consent_by=None)
+                          daybreak_consent_by=None, daybreak_consent_revoked_at=_now_iso())
     password = body.get("password")
     # An edit sends a password only when it is changed; a blank one keeps what is stored.
     if isinstance(password, str) and password != "":
@@ -639,6 +643,11 @@ def update_service_account(item_id: str, body: dict, *, consent_actor: str = "")
     fields, error = _service_account_fields(incoming, creating=False, consent_actor=consent_actor)
     if error:
         return None, error
+    identity_changed = (str(fields.get("username", current.get("username", ""))).strip().lower() != str(current.get("username", "")).strip().lower()
+                        or fields.get("service", current.get("service")) != current.get("service"))
+    if identity_changed and incoming.get("daybreak_consent_confirmed") is not True:
+        fields.update(daybreak_consent_at=None, daybreak_consent_email=None,
+                      daybreak_consent_by=None, daybreak_consent_revoked_at=_now_iso())
     if "label" in fields:
         current = _find_service_row(_load(), item_id) or {}
         fields["label"] = standard_credential_name(fields["label"], fields.get("service") or current.get("service"))

@@ -1,8 +1,8 @@
 """Continuous, fail-closed Data Room -> Daybreak credential delivery.
 
-Only already-consented, uniquely matched Daybreak accounts are eligible.
-Never create a candidate, sign in to Naukri, queue a headline job, or authorize
-a save. Passwords use the existing RSA-sealed delivery protocol; neither this
+Only consented, uniquely identified Operations accounts are eligible.
+The separately enabled account mirror creates or deactivates account records;
+it never signs in to Naukri, queues a headline job, or authorizes a save. Passwords use the existing RSA-sealed delivery protocol; neither this
 module nor its logs handle plaintext passwords.
 """
 from __future__ import annotations
@@ -30,7 +30,11 @@ def enabled() -> bool:
     return os.getenv("DAYBREAK_CREDENTIAL_AUTO_SYNC_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
 
 
-def plan(view: dict) -> tuple[list[str], str | None]:
+def mirror_enabled() -> bool:
+    return os.getenv("DAYBREAK_ACCOUNT_MIRROR_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+
+
+def plan(view: dict, *, onboard: bool = False) -> tuple[list[str], str | None]:
     """Select accounts needing a first or refreshed delivery, without changing anything.
 
     A delivery awaiting a worker receipt is NOT retried. A failed Naukri login,
@@ -47,6 +51,11 @@ def plan(view: dict) -> tuple[list[str], str | None]:
     chosen: list[str] = []
     for row in view.get("accounts", []):
         profile = row.get("profile") or {}
+        if row.get("source_enabled") is False or row.get("automatic_delivery_blocked"):
+            continue
+        if onboard and not row.get("synced") and row.get("automatic_onboarding", {}).get("eligible"):
+            chosen.append(str(row["account_id"]))
+            continue
         if not (row.get("synced") and profile.get("enabled")):
             continue
         codes = set(row.get("attention_codes") or [])
@@ -74,17 +83,24 @@ def sync_once() -> dict:
         except BlockingIOError:
             return {"status": "already_running", "delivered": 0}
 
+        mirror = sync.reconcile_operations_source() if mirror_enabled() else {"updated": 0, "blocked": {}}
         view = sync.status_view()
-        selected, blocked = plan(view)
+        selected, blocked = plan(view, onboard=mirror_enabled())
         unmatched = sum(1 for r in view.get("accounts", [])
                         if "missing_in_daybreak" in (r.get("attention_codes") or []))
         if blocked:
             return {"status": blocked, "delivered": 0,
                     "total": len(view.get("accounts", [])), "unmatched": unmatched}
         if not selected:
-            return {"status": "up_to_date", "delivered": 0,
-                    "total": len(view.get("accounts", [])), "unmatched": unmatched}
-        result = sync.deliver(selected, actor="automatic-data-room-sync")
+            return {"status": "needs_attention" if mirror["blocked"] or unmatched else "up_to_date", "delivered": 0,
+                    "total": len(view.get("accounts", [])), "unmatched": unmatched,
+                    **({"updated": mirror["updated"], "blocked": len(mirror["blocked"])} if mirror_enabled() else {})}
+        if mirror_enabled():
+            creates = [r["account_id"] for r in view["accounts"] if r["account_id"] in selected and not r["synced"]]
+            result = sync.deliver(selected, actor="automatic-data-room-sync", create_ids=creates,
+                                  consent_confirmed=True, automatic=True)
+        else:
+            result = sync.deliver(selected, actor="automatic-data-room-sync")
         return {"status": "delivered" if result.get("delivered") else "needs_attention",
                 "delivered": len(result.get("delivered") or []),
                 "refused": len(result.get("refused") or []),

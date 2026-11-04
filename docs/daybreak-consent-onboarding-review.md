@@ -1,13 +1,21 @@
-# Daybreak consent-aware onboarding — implementation review
+# Operations → Daybreak account mirror
 
-This branch adds a **generic consent attestation** to Operations service-account forms. Only an authenticated administrator can attest, and the saved timestamp, identity and account email are set by the server. Changing the email invalidates a prior attestation; revocation clears it. The frontend checkbox is shown for Naukri accounts, not other service types.
+Operations service-account IDs are the stable source identities. The existing five-minute credential loop can additionally reconcile the account list when `DAYBREAK_ACCOUNT_MIRROR_ENABLED=1`; it remains OFF by default. No Naukri login, queue submission or save is performed by this loop.
 
-## Safety boundary
+- New uniquely identified Naukri accounts require an explicit administrator consent attestation bound to the current normalized email and an available password. Never infer consent from an import, notes or possession of credentials. Both recipient encryption keys must be approved.
+- Existing identities retain IDs, facts, sessions, save history and scheduling. Names and enabled status reconcile from Operations. Changed passwords use the existing signed prepare/commit and RSA-sealed per-worker envelopes.
+- Removed, reclassified, disabled or consent-revoked source accounts are deactivated, not deleted. Active queued/running work delays reconciliation. Unknown source identities, duplicates and changed emails are reported rather than guessed or rebound. A changed identity needs renewed consent and review of the old identity link.
+- Missing/corrupt source data fails closed. Each pass is serialized and bounded. Durable pending delivery intents survive ambiguous responses/crashes; they are not blindly repeated. Receipts are required for delivery confirmation; actual account-matched Naukri evidence is separately required for Connected.
+- The Daybreak receiver must advertise `accountMirrorV1`. Its signed metadata action and creation guard reject active work and uncertain saves by identity, including historical email evidence. There are no person-specific restrictions.
 
-This is **not yet automatic account creation**. The live 5-minute sync still delivers credentials only for existing matched Daybreak candidates. The existing signed Daybreak `prepare`/`commit` protocol already supports explicit candidate creation with a confirmed consent assertion, but the 5-minute worker has not been changed to invoke it.
+## Counts
 
-**Do not merge or deploy this draft** as the full automation feature. To finish it, the server must re-check the stored consent against the current exact email and password, exclude duplicates/missing keys, call the existing encrypted delivery protocol with `create_ids` only for eligible accounts, and verify Daybreak roster and worker receipts. The routine must be idempotent and bounded. No person-specific names or exceptions. Never infer consent from an imported credential alone.
+The API and Data Room show source count, Daybreak physical record count, matched/missing counts, exact blocked source IDs/reasons, retained deleted links and pending delivery outcomes. With 28 valid consented unique source accounts and no blocked identities, the integration test converges from 24 to 28 Daybreak records. After deletion, active account counts mirror the source while deactivated historical records remain; history must never be deleted to manufacture equal raw totals.
 
-The Daybreak codebase already implements its own scheduled daily updates, primary/backup worker leasing, independently verified saves and uncertain-save fences. None of those write paths are changed in this branch. Releasing a live daily save workflow requires the existing owner approval, production backup, idle/health gates and rollback verification.
+## Approval and rollout gate
 
-Current production must remain unchanged until both code and safety tests are complete and an owner approves the exact release.
+Do not activate this feature until the owner approves the exact Operations and companion Daybreak receiver commits. Use normal CI and code-only release gates, a fresh verified private D1 backup, idle-work checks, unchanged worker routing/keys/09:30 IST schedule, and confirmed Naukri writes OFF. Deploy the additive Daybreak receiver guard first; verify its capability and signed refusal cases. Deploy Operations through the normal pinned immutable-image process with the mirror flag still OFF. Verify read-only planned changes and source consent. Enable the mirror flag only under the same reviewed approval, then observe two automatic cycles, compare IDs/counts/receipts, and verify no jobs or saves were created. Never force 28 by fabricating missing consent.
+
+## Rollback
+
+Disable only `DAYBREAK_ACCOUNT_MIRROR_ENABLED` and recreate Operations API using its existing image; ordinary credential delivery can remain enabled. Keep the previous immutable image and Daybreak Worker version. Code rollback must preserve new source-links, delivery intents, consent evidence, all profiles and history. Do not reactivate a deactivated account automatically during rollback, clear uncertainty, replay pending operations, delete new candidates or restore an old database snapshot. If any reconciliation outcome is ambiguous, hold that identity for read-only review.

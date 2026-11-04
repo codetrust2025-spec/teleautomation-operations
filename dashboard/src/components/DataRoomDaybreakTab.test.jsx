@@ -134,3 +134,13 @@ describe('the progress steps stylesheet', () => {
     expect(rule?.[1]).toBe(String.raw`\2713\00a0`)
   })
 })
+
+
+it('reports actual account totals and consent blockers without triggering synchronization', async () => {
+  mockFetch({ ...VIEW, account_mirror: {operations_accounts: 28, daybreak_accounts:24, matched:24, missing:4,
+    blocked_records:[{account_id:'new',reason:'operations_consent_required'}],blocked_links:{}} })
+  render(<DataRoomDaybreakTab />)
+  expect(await screen.findByLabelText('Automatic account synchronization')).toHaveTextContent('Operations: 28 · Daybreak: 24')
+  expect(screen.getByText('New Person: operations consent required')).toBeInTheDocument()
+  expect(posts()).toHaveLength(0)
+})

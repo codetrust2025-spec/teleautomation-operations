@@ -115,7 +115,8 @@ def _b64url_int(value: str) -> int:
 # ---------------------------------------------------------------------------------------------
 
 def _empty() -> dict:
-    return {"approvals": {}, "snapshot": None, "deliveries": {}, "updated_at": None}
+    return {"approvals": {}, "snapshot": None, "deliveries": {}, "source_links": {},
+            "onboarding_intents": {}, "updated_at": None}
 
 
 def _load() -> dict:
@@ -315,9 +316,102 @@ def _naukri_accounts() -> list[dict]:
 def has_attested_daybreak_consent(row: dict) -> bool:
     """A durable administrator consent attestation bound to this exact email."""
     email = normalise_email(row.get("username"))
-    return bool(_EMAIL.fullmatch(email) and row.get("daybreak_consent_at")
+    at = _parse(row.get("daybreak_consent_at"))
+    return bool(_EMAIL.fullmatch(email) and at and at <= _now()
                 and row.get("daybreak_consent_by")
-                and row.get("daybreak_consent_email") == email)
+                and row.get("daybreak_consent_email") == email
+                and not row.get("daybreak_consent_revoked_at"))
+
+
+def authoritative_accounts() -> list[dict]:
+    """A missing/corrupt source is an outage, never an instruction to deactivate everyone."""
+    from features import data_room_credentials_store as creds
+    try:
+        with open(creds._FILE, encoding="utf-8") as handle:
+            source = json.load(handle)
+        rows = source["service_accounts"]
+        if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+            raise ValueError()
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SyncError(503, "Operations account source is unavailable; no reconciliation performed") from exc
+    result = [r for r in rows if (creds.normalise_service(r.get("service")) or creds.classify_service(r)) == "Naukri"]
+    ids = [str(r.get("id") or "") for r in result]
+    if any(not i for i in ids) or len(set(ids)) != len(ids):
+        raise SyncError(409, "Operations contains missing or duplicate account IDs")
+    return result
+
+
+def onboarding_problem(row: dict, match: dict, data: dict) -> str | None:
+    if not has_attested_daybreak_consent(row):
+        return "operations_consent_required"
+    if row.get("enabled") is False:
+        return "source_disabled"
+    if not credential_version(row):
+        return "no_password"
+    if match["problems"] != ["missing_in_daybreak"]:
+        return (match["problems"] or ["already_matched"])[0]
+    if not data["snapshot"].get("capabilities", {}).get("accountMirrorV1"):
+        return "daybreak_mirror_upgrade_required"
+    aid, email = str(row["id"]), normalise_email(row["username"])
+    if aid in data["onboarding_intents"]:
+        return "onboarding_requires_review"
+    if any(k == aid or normalise_email(v.get("email")) == email
+           for k, v in data["deliveries"].items()):
+        return "previous_delivery_requires_review"
+    if aid in data["source_links"]:
+        return "previous_identity_requires_review"
+    return None
+
+
+def reconcile_operations_source() -> dict:
+    """Bounded metadata/pause reconciliation. Never queues browser jobs or writes headlines."""
+    rows = authoritative_accounts()
+    source = {str(r["id"]): r for r in rows}
+    data = refresh(force=True)
+    if not data["snapshot"].get("capabilities", {}).get("accountMirrorV1"):
+        return {"updated": 0, "blocked": {"deployment": "daybreak_mirror_upgrade_required"}}
+    roster = data["snapshot"]["roster"]
+    matches = reconcile(rows, roster)["accounts"]
+    by_id = {p["id"]: p for p in roster}
+    # Existing successful deliveries already bind a stable Operations ID to a Daybreak profile.
+    for aid, delivery in data["deliveries"].items():
+        profile = by_id.get(delivery.get("profile_id"))
+        if profile and normalise_email(profile["email"]) == normalise_email(delivery.get("email")):
+            data["source_links"].setdefault(aid, {"profile_id": profile["id"], "email": normalise_email(profile["email"])})
+    blocked, updated = {}, 0
+    # Bind uniquely matched source rows even when no credential change is needed.
+    for aid, match in matches.items():
+        if not match["problems"] and match["profile"]:
+            existing = data["source_links"].get(aid)
+            link = {"profile_id": match["profile"]["id"], "email": match["email"]}
+            if existing and existing != link:
+                blocked[aid] = "identity_link_conflict"
+            else:
+                data["source_links"][aid] = link
+    for aid, link in list(data["source_links"].items()):
+        row, profile = source.get(aid), by_id.get(link["profile_id"])
+        if profile is None:
+            blocked[aid] = "linked_profile_missing"
+            continue
+        if row is not None and (normalise_email(row["username"]) != link["email"] or matches[aid]["problems"]):
+            blocked[aid] = "identity_or_consent_conflict"
+        desired = bool(row is not None and row.get("enabled") is not False and not row.get("daybreak_consent_revoked_at") and aid not in blocked)
+        name = (_account_name(row) or link["email"])[:100] if row else profile["name"]
+        if bool(profile.get("enabled")) == desired and (not row or profile.get("name") == name):
+            continue
+        if updated >= MAX_PER_REQUEST:
+            break
+        try:
+            result = _daybreak("operations_reconcile", {"id": profile["id"], "email": link["email"], "name": name, "enabled": desired})
+            if not result.get("ok"):
+                raise SyncError(409, "Daybreak did not confirm reconciliation")
+            updated += 1
+        except SyncError:
+            blocked[aid] = "daybreak_busy_or_protected"
+    data["snapshot"]["fetched_at"] = None
+    data["mirror_report"] = {"at": _iso(_now()), "updated": updated, "blocked": blocked}
+    _save(data)
+    return {"updated": updated, "blocked": blocked}
 
 
 def credential_version(row: dict) -> str:
@@ -414,6 +508,7 @@ def refresh(*, force: bool = False) -> dict:
         "roster": [p for p in result.get("roster") or [] if isinstance(p, dict) and _UUID.match(str(p.get("id") or ""))],
         "evidence": [e for e in result.get("evidence") or [] if isinstance(e, dict)],
         "remote_control": result.get("remoteControl"),
+        "capabilities": result.get("capabilities") or {},
     }
     _save(data)
     return data
@@ -462,7 +557,7 @@ def _approved_recipients(data: dict, offered: list[dict]) -> list[dict]:
     return offered
 
 
-def deliver(account_ids: list[str], *, actor: str, create_ids: list[str] | None = None, consent_confirmed: bool = False) -> dict:
+def deliver(account_ids: list[str], *, actor: str, create_ids: list[str] | None = None, consent_confirmed: bool = False, automatic: bool = False) -> dict:
     """Seal the Data Room's current password for each account to every enrolled worker, through Daybreak's queue.
 
     Only accounts matching exactly one Daybreak candidate are delivered. An account Daybreak lacks is added only when
@@ -477,7 +572,7 @@ def deliver(account_ids: list[str], *, actor: str, create_ids: list[str] | None 
     if len(wanted) > MAX_PER_REQUEST:
         raise SyncError(400, f"Deliver at most {MAX_PER_REQUEST} accounts at a time")
     data = refresh(force=True)
-    accounts = {str(r.get("id")): r for r in _naukri_accounts()}
+    accounts = {str(r.get("id")): r for r in (authoritative_accounts() if automatic else _naukri_accounts())}
     matched = reconcile(list(accounts.values()), data["snapshot"]["roster"])["accounts"]
     if not [w for w in data["snapshot"]["workers"] if w.get("enabled")]:
         raise SyncError(409, "Daybreak has no enrolled worker to deliver to")
@@ -487,6 +582,17 @@ def deliver(account_ids: list[str], *, actor: str, create_ids: list[str] | None 
         if row is None or match is None:
             refused.append({"account_id": account_id, "reason": "not_a_naukri_account"})
             continue
+        if automatic:
+            issue = onboarding_problem(row, match, data) if account_id in create else None
+            if data["onboarding_intents"].get(account_id, {}).get("state") == "pending":
+                issue = "onboarding_requires_review"
+            if row.get("enabled") is False or row.get("daybreak_consent_revoked_at"):
+                issue = "source_disabled_or_consent_revoked"
+            if match.get("profile") and (not match["profile"].get("enabled") or match["profile"].get("session_status") == "attention"):
+                issue = "profile_requires_attention"
+            if issue:
+                refused.append({"account_id": account_id, "reason": issue})
+                continue
         problems = [p for p in match["problems"] if not (p == "missing_in_daybreak" and account_id in create)]
         if problems:
             refused.append({"account_id": account_id, "reason": problems[0]})
@@ -500,6 +606,9 @@ def deliver(account_ids: list[str], *, actor: str, create_ids: list[str] | None 
             request["id"] = profile["id"]
         else:
             request["create"] = True
+        if automatic:
+            data["onboarding_intents"][account_id] = {"email": match["email"], "at": _iso(_now()), "state": "pending"}
+            _save(data)  # Survives an ambiguous prepare/commit or process crash; never blindly replayed.
         try:
             prepared = _daybreak("prepare", request)
             offered = [slot for slot in prepared.get("deliveries") or [] if isinstance(slot, dict)]
@@ -517,6 +626,13 @@ def deliver(account_ids: list[str], *, actor: str, create_ids: list[str] | None 
                     for slot in recipients]
             finally:
                 password = ""
+            if automatic:
+                fresh = next((r for r in authoritative_accounts() if str(r["id"]) == account_id), None)
+                if (fresh is None or fresh.get("enabled") is False or fresh.get("daybreak_consent_revoked_at")
+                        or normalise_email(fresh.get("username")) != match["email"]
+                        or credential_version(fresh) != credential_version(row)
+                        or (account_id in create and not has_attested_daybreak_consent(fresh))):
+                    raise SyncError(409, "Operations identity, consent or credential changed during delivery")
             _daybreak("commit", {"envelopes": envelopes})
         except SyncError as exc:
             refused.append({"account_id": account_id, "reason": "daybreak", "detail": exc.detail})
@@ -528,6 +644,9 @@ def deliver(account_ids: list[str], *, actor: str, create_ids: list[str] | None 
                              "expires_at": _ms_iso(slot["expiresAt"]), "receipt_at": None, "committed": True}
                             for slot in recipients],
         }
+        data["source_links"][account_id] = {"profile_id": candidate["id"], "email": match["email"]}
+        if automatic:
+            data["onboarding_intents"][account_id]["state"] = "committed"
         delivered.append(account_id)
         _save(data)
     if delivered:
@@ -569,7 +688,7 @@ def status_view() -> dict:
     snapshot = data["snapshot"]
     workers = [_public_worker(w, data["approvals"]) for w in snapshot["workers"]]
     worker_of = {w["id"]: w for w in workers} | {w["name"]: w for w in workers}  # runs name a worker by id or name
-    accounts = sorted(_naukri_accounts(), key=lambda r: _account_name(r).lower())
+    accounts = sorted(authoritative_accounts(), key=lambda r: _account_name(r).lower())
     matched = reconcile(accounts, snapshot["roster"])
     runs_of: dict[str, list[dict]] = {}
     for run in snapshot.get("evidence") or []:
@@ -616,6 +735,10 @@ def status_view() -> dict:
             "account_id": account_id, "label": _account_name(account), "email": match["email"], "status": status,
             "synced": synced, "delivered": delivered, "connected": connected, "attention": reasons,
             "attention_codes": list(dict.fromkeys(attention)) + ([login_problem] if login_problem else []),
+            "automatic_onboarding": {"eligible": onboarding_problem(account, match, data) is None,
+                                     "blocked_reason": onboarding_problem(account, match, data)},
+            "automatic_delivery_blocked": data["onboarding_intents"].get(account_id, {}).get("state") == "pending",
+            "source_enabled": account.get("enabled") is not False and not account.get("daybreak_consent_revoked_at"),
             "notes": match["notes"], "can_add_to_daybreak": match["problems"] == ["missing_in_daybreak"],
             "profile": None if profile is None else {"id": profile["id"], "name": profile.get("name"), "enabled": bool(profile.get("enabled"))},
             "delivery": None if delivery is None else {"at": delivery.get("at"), "by": delivery.get("by"), "created": bool(delivery.get("created")),
@@ -623,12 +746,25 @@ def status_view() -> dict:
             "connection": None if last is None else {"signed_in_at": _when(last.get("completed_at")), "kind": last.get("kind"),
                                                      "worker": (worker_of.get(str(last.get("runner_worker") or "")) or {}).get("name")},
         })
+    source_ids = {str(a["id"]) for a in accounts}
+    mirror_summary = {
+        "operations_accounts": len(accounts), "daybreak_accounts": len(snapshot["roster"]),
+        "matched": sum(bool(r["synced"]) for r in rows),
+        "missing": sum("missing_in_daybreak" in r["attention_codes"] for r in rows),
+        "disabled_in_operations": sum(a.get("enabled") is False for a in accounts),
+        "eligible_to_create": sum(r["automatic_onboarding"]["eligible"] for r in rows),
+        "blocked_records": [{"account_id": r["account_id"], "reason": r["automatic_onboarding"]["blocked_reason"]}
+                            for r in rows if not r["synced"] and not r["automatic_onboarding"]["eligible"]],
+        "blocked_links": (data.get("mirror_report") or {}).get("blocked") or {},
+        "retained_deleted_links": sum(k not in source_ids for k in data["source_links"]),
+        "pending_or_uncertain_onboarding": sum(x.get("state") != "committed" for x in data["onboarding_intents"].values()),
+    }
     counts = {key: sum(1 for r in rows if r["status"] == key) for key in ("synced", "delivered", "connected", "needs_attention")}
     return {
         "daybreak_url": daybreak_url(), "fetched_at": snapshot.get("fetched_at"), "workers": workers,
         "remote_control": snapshot.get("remote_control"), "accounts": rows,
         "daybreak_only": [{"id": p["id"], "name": p.get("name"), "email": p.get("email")} for p in matched["daybreak_only"]],
-        "counts": counts,
+        "counts": counts, "account_mirror": mirror_summary,
         "reconciliation": {
             "data_room_accounts": len(rows),
             "matched": sum(1 for r in rows if r["synced"]),

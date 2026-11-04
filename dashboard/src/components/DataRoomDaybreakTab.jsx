@@ -198,6 +198,17 @@ export function DataRoomDaybreakTab() {
   return (
     <section className="dr-db" aria-label="Daybreak sync">
       {error && <p className="dr-error" role="alert">{error}</p>}
+      {view.account_mirror && <div className="dr-db-reconciliation" aria-label="Automatic account synchronization">
+        <p><strong>Operations: {view.account_mirror.operations_accounts} · Daybreak: {view.account_mirror.daybreak_accounts}</strong>
+          {' · '}{view.account_mirror.matched} matched · {view.account_mirror.missing} missing</p>
+        <p className="dr-muted">Accounts reconcile every five minutes when enabled. Removed accounts are deactivated; their save history is retained.</p>
+        {(view.account_mirror.blocked_records || []).map(row => <p className="dr-db-reason" key={row.account_id}>
+          {(view.accounts.find(a => a.account_id === row.account_id) || {}).label || row.account_id}: {row.reason.replace(/_/g, ' ')}
+        </p>)}
+        {Object.entries(view.account_mirror.blocked_links || {}).map(([id, reason]) => <p className="dr-db-reason" key={id}>
+          {(view.accounts.find(a => a.account_id === id) || {}).label || 'Removed account'}: {reason.replace(/_/g, ' ')}
+        </p>)}
+      </div>}
       {notice && <p className="dr-db-notice" role="status">{notice}</p>}
 
       <div className="dr-db-counts">
