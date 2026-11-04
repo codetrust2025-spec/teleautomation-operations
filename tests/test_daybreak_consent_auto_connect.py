@@ -60,3 +60,32 @@ def test_revoke_consent_clears_source_attestation():
     assert error is None
     assert not sync.has_attested_daybreak_consent(row)
     assert row["daybreak_consent_at"] is None
+
+
+def test_five_minute_sync_delivers_newly_authorized_account_without_password_in_roster(monkeypatch, tmp_path):
+    monkeypatch.setattr(auto, "DATA_DIR", str(tmp_path))
+    source = {
+        "id": "fresh", "label": "Fresh Candidate", "username": "fresh@example.test",
+        "service": "Naukri", "password_enc": "secret-must-not-appear",
+        "daybreak_consent_at": "2026-11-04T00:00:00Z",
+        "daybreak_consent_email": "fresh@example.test", "daybreak_consent_by": "admin",
+    }
+    calls = []
+    deliveries = []
+    monkeypatch.setattr(sync, "authoritative_naukri_accounts", lambda: [source])
+    monkeypatch.setattr(sync, "_daybreak", lambda action, payload: (
+        calls.append((action, payload)) or
+        {"status": "ok", "sourceCount": 1, "matchedCount": 1}))
+    monkeypatch.setattr(sync, "refresh", lambda **kwargs: {})
+    monkeypatch.setattr(sync, "status_view", lambda: {
+        "workers": [{"enabled": True, "approved": True, "recipient": True, "key_problem": None}],
+        "accounts": [{"account_id": "fresh", "synced": True,
+                      "profile": {"enabled": True}, "attention_codes": [],
+                      "delivery": None}],
+    })
+    monkeypatch.setattr(sync, "deliver", lambda ids, *, actor: (
+        deliveries.append((ids, actor)) or {"delivered": ids, "refused": []}))
+    assert auto.sync_once()["delivered"] == 1
+    assert calls[0][1]["accounts"][0]["consentVerified"] is True
+    assert "secret-must-not-appear" not in str(calls)
+    assert deliveries == [(["fresh"], "automatic-data-room-sync")]
