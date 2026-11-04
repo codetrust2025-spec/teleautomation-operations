@@ -602,7 +602,7 @@ def _service_account_fields(body: dict, *, creating: bool, consent_actor: str = 
         if consent:
             email = str(body.get("username") or "").strip().lower()
             service = fields.get("service") or DEFAULT_SERVICE
-            if service != "Naukri" or not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email):
+            if service != "Naukri" or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                 return {}, "Daybreak consent requires a Naukri account with a valid email address"
             if not consent_actor:
                 return {}, "An authenticated administrator is required to attest consent"
