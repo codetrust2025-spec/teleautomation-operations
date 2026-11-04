@@ -628,7 +628,9 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
       // Editing unrelated fields must not re-attest (or revoke) existing consent.
       const previous = Boolean(modal.row?.daybreak_consent_at && modal.row?.daybreak_consent_by &&
         modal.row?.daybreak_consent_email === String(modal.row?.username || '').trim().toLowerCase())
-      if (body.daybreak_consent_confirmed === previous) delete body.daybreak_consent_confirmed
+      const identityUnchanged = String(body.username || '').trim().toLowerCase() === String(modal.row?.username || '').trim().toLowerCase()
+        && body.service === modal.row?.service
+      if (body.daybreak_consent_confirmed === previous && identityUnchanged) delete body.daybreak_consent_confirmed
     }
     if (body.service !== 'Naukri') delete body.daybreak_consent_confirmed
     if (mode === 'create' && !body.id.trim()) body.id = slugId(body.label || body.username)
