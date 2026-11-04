@@ -561,6 +561,7 @@ ATTENTION_TEXT = {
     "no_roster": "Daybreak's candidate list could not be read",
     "changed_since_delivery": "The password changed in the Data Room after it was delivered",
     "delivery_expired": "A worker did not collect the delivery within 15 minutes; deliver again",
+    "delivered_to_other_profile": "The last delivery went to an earlier Daybreak profile for this address; deliver again",
 }
 
 
@@ -603,6 +604,11 @@ def status_view() -> dict:
             current = delivery.get("credential_version") == credential_version(account)
             if not current:
                 attention.append("changed_since_delivery")
+            if profile is not None and delivery.get("profile_id") != profile.get("id"):
+                # The Daybreak profile was re-created (for example by the account-list mirror): the earlier
+                # delivery belongs to a profile that no longer exists, so this candidate holds no credential.
+                attention.append("delivered_to_other_profile")
+                current = False
             delivered = current and len(receipts) == len(delivery["enrollments"]) > 0
         profile_id = str((profile or {}).get("id") or (delivery or {}).get("profile_id") or "")
         runs = sorted(runs_of.get(profile_id, []), key=lambda r: _when(r.get("completed_at")))

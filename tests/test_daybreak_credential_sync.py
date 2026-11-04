@@ -391,6 +391,35 @@ class TestStatuses:
         creds.update_service_account("asha_rao", {"password": "Asha-Changed-9"})
         assert "changed_since_delivery" in view(env)["asha_rao"]["attention_codes"]
 
+    def test_a_delivery_to_a_profile_daybreak_since_recreated_is_delivered_again(self, env):
+        # 4 Nov 2026: three accounts were collected by both workers under Daybreak profiles that were later deleted;
+        # the account-list mirror re-created them under new ids, which hold no credential at all.
+        approve_all(env)
+        deliver(env, "asha_rao")
+        env["daybreak"].collect()
+        assert view(env)["asha_rao"]["status"] == "delivered"
+        profile = next(p for p in env["daybreak"].roster if p["id"] == P["asha"])
+        profile["id"] = "0000aaaa-0000-4000-8000-000000000000"
+        row = view(env)["asha_rao"]
+        assert "delivered_to_other_profile" in row["attention_codes"] and row["delivered"] is False
+        from services import daybreak_credential_auto_sync as auto
+        chosen, blocked = auto.plan(view(env)["_"])
+        assert blocked is None and "asha_rao" in chosen
+        assert deliver(env, "asha_rao").json()["delivered"] == ["asha_rao"]
+        env["daybreak"].collect()
+        row = view(env)["asha_rao"]
+        assert row["status"] == "delivered" and "delivered_to_other_profile" not in row["attention_codes"]
+
+    def test_a_recreated_profile_without_consent_is_not_delivered(self, env):
+        approve_all(env)
+        deliver(env, "asha_rao")
+        env["daybreak"].collect()
+        profile = next(p for p in env["daybreak"].roster if p["id"] == P["asha"])
+        profile.update(id="0000bbbb-0000-4000-8000-000000000000", consent_at=None)
+        from services import daybreak_credential_auto_sync as auto
+        chosen, _ = auto.plan(view(env)["_"])
+        assert "asha_rao" not in chosen
+
     def test_an_uncollected_delivery_expires_into_attention(self, env, monkeypatch):
         approve_all(env)
         deliver(env, "asha_rao")

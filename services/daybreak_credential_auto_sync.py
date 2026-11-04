@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 CHECK_INTERVAL_SEC = 300
 STARTUP_DELAY_SEC = 90
 MAX_PER_PASS = 10
-REDELIVERABLE = frozenset({"changed_since_delivery", "delivery_expired"})
+REDELIVERABLE = frozenset({"changed_since_delivery", "delivery_expired", "delivered_to_other_profile"})
 _task: asyncio.Task | None = None
 
 
