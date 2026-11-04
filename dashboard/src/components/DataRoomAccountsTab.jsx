@@ -173,6 +173,11 @@ function accountFields({ kind, mode, service }) {
     { key: 'username', label: 'Username / email', placeholder: 'name@example.com' },
     { key: 'password', label: 'Password', type: 'password' },
     { key: 'notes', label: 'Notes (optional)', type: 'textarea', rows: 3, full: true },
+    ...(service === 'Naukri' ? [{
+      key: 'daybreak_consent_confirmed',
+      label: 'I verified this account owner agreed to Daybreak connecting to Naukri',
+      type: 'checkbox', full: true,
+    }] : []),
   ]
 }
 
@@ -230,6 +235,9 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error, ima
                   </select>
                   {f.hint && <small id={`dr-field-hint-${f.key}`} className="dr-field-hint">{f.hint}</small>}
                 </>
+              ) : f.type === 'checkbox' ? (
+                <input type="checkbox" checked={form[f.key] === true}
+                  onChange={e => onChange({ ...form, [f.key]: e.target.checked })} />
               ) : f.type === 'textarea' ? (
                 <textarea
                   className="cand-input"
@@ -548,7 +556,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     // The type the list is narrowed to. Under Dashboard / Tool Logins that is a
     // tool login: a new sign-in to this dashboard is chosen on purpose, not by default.
     const service = activeFilter === LOGIN_TYPE ? 'Tool' : SEPARATE_SERVICES.includes(activeFilter) ? activeFilter : DEFAULT_SERVICE
-    setModal({ mode: 'create', form: { id: '', label: '', reference: '', service, username: '', password: '', notes: '' } })
+    setModal({ mode: 'create', form: { id: '', label: '', reference: '', service, username: '', password: '', notes: '', daybreak_consent_confirmed: false } })
   }
 
   const openEditLogin = (login) => {
@@ -586,7 +594,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     clearImageState()
     // An account whose service was never recorded opens with none chosen, so
     // saving it asks for one rather than guessing.
-    setModal({ mode: 'edit', id: row.id, row, originalPassword: null, form: { id: row.id, label: row.label || '', service: SERVICE_TYPES.includes(row.service) ? row.service : '', username: row.username || '', password: '', notes: row.notes || '' } })
+    setModal({ mode: 'edit', id: row.id, row, originalPassword: null, form: { id: row.id, label: row.label || '', service: SERVICE_TYPES.includes(row.service) ? row.service : '', username: row.username || '', password: '', notes: row.notes || '', daybreak_consent_confirmed: Boolean(row.daybreak_consent_at && row.daybreak_consent_by && row.daybreak_consent_email === String(row.username || '').trim().toLowerCase()) } })
     if (row.has_password) {
       fetchPassword(row.id)
         .then(password => setModal(m => (m && m.id === row.id && m.mode === 'edit' && m.originalPassword === null
@@ -609,6 +617,15 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
     if (!SERVICE_TYPES.includes(form.service)) { setModalError('Choose a service type.'); return }
     const body = { ...form }
     delete body.reference
+    if (mode === 'edit') {
+      const existing = Boolean(modal.row?.daybreak_consent_at && modal.row?.daybreak_consent_by &&
+        modal.row?.daybreak_consent_email === String(modal.row?.username || '').trim().toLowerCase())
+      const sameIdentity = String(body.username || '').trim().toLowerCase() ===
+        String(modal.row?.username || '').trim().toLowerCase() &&
+        body.service === modal.row?.service
+      if (body.daybreak_consent_confirmed === existing && sameIdentity) delete body.daybreak_consent_confirmed
+    }
+    if (body.service !== 'Naukri') delete body.daybreak_consent_confirmed
     if (mode === 'create' && !body.id.trim()) body.id = slugId(body.label || body.username)
     // An edit sends the password only when it was changed; blank keeps the stored one.
     if (mode === 'edit' && (body.password === '' || body.password === originalPassword)) delete body.password
