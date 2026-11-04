@@ -264,3 +264,11 @@ class TestStandardNames:
         creds.update_service_account("kiran_kumar_naukri", {"label": "Kiran Kumar Servicenow Naukri"})
         assert on_disk(store)["kiran_kumar_naukri"]["label"] == "Kiran Kumar ServiceNow"
         assert on_disk(store)["kiran_kumar_naukri"]["username"] == "k@example.com"
+
+
+def test_service_account_enabled_is_an_explicit_boolean_and_persists(store):
+    _,error=creds.update_service_account('asha_rao_naukri',{'enabled':False})
+    assert not error
+    assert next(r for r in creds._load()['service_accounts'] if r['id']=='asha_rao_naukri')['enabled'] is False
+    _,error=creds.update_service_account('asha_rao_naukri',{'enabled':'false'})
+    assert error

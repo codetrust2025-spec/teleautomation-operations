@@ -75,10 +75,11 @@ def sync_once() -> dict:
 
         # Send a complete, signed, metadata-only snapshot. The Daybreak
         # endpoint preserves consent, sessions and existing job history.
-        source = sync._naukri_accounts()
+        source = sync.authoritative_naukri_accounts()
         roster = [{"id": str(row.get("id") or ""),
                    "label": str(row.get("label") or ""),
-                   "email": sync.normalise_email(row.get("username"))}
+                   "email": sync.normalise_email(row.get("username")),
+                   "enabled": row.get("enabled") is not False}
                   for row in source]
         mirror = sync._daybreak("roster_sync",
                                 {"accounts": roster, "sourceCount": len(roster)})
