@@ -1006,6 +1006,9 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
           onChange={(f) => setModal(s => {
             // Switching Add between a service account and a dashboard login
             // keeps the name typed so far: an account's name is a login's reference.
+            if (f.username !== s.form.username || f.service !== s.form.service) {
+              f = { ...f, daybreak_consent_confirmed: false }
+            }
             const wasLogin = s.form.service === LOGIN_TYPE
             const isLogin = f.service === LOGIN_TYPE
             if (s.mode === 'create' && wasLogin !== isLogin) {
