@@ -187,6 +187,7 @@ async def startup() -> None:
     from core.recruitment_mail_store import ensure_schema
     from core.migrations.runner import apply_migrations
     from services.gmail_reconnect import start_gmail_reconnect_loop
+    from services.daybreak_credential_auto_sync import start_daybreak_credential_sync_loop
     from services.gmail_watch_renewal_loop import start_gmail_watch_renewal_loop
     from services.interview_reminder_loop import start_interview_reminder_loop
     from services.messaging_client import start_outbox_dispatcher
@@ -225,12 +226,14 @@ async def startup() -> None:
     start_interview_reminder_loop()
     start_gmail_watch_renewal_loop()
     start_gmail_reconnect_loop()
+    start_daybreak_credential_sync_loop()
     start_outbox_dispatcher()
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
     from services.gmail_reconnect import stop_gmail_reconnect_loop
+    from services.daybreak_credential_auto_sync import stop_daybreak_credential_sync_loop
     from services.gmail_watch_renewal_loop import stop_gmail_watch_renewal_loop
     from services.interview_reminder_loop import stop_interview_reminder_loop
     from services.messaging_client import stop_outbox_dispatcher
@@ -240,6 +243,7 @@ async def shutdown() -> None:
 
     await stop_gmail_watch_renewal_loop()
     await stop_gmail_reconnect_loop()
+    await stop_daybreak_credential_sync_loop()
     await stop_interview_reminder_loop()
     await stop_outbox_dispatcher()
     await recruitment_realtime.stop_tailer()
