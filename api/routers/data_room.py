@@ -228,10 +228,11 @@ async def data_room_update_vault_item(section: str, item_id: str, body: dict, re
     from core.dashboard_access import require_fleet_admin
     from features import data_room_credentials_store as creds
 
-    require_fleet_admin(request)
+    profile = require_fleet_admin(request)
     if section == "service_accounts":
-        # Checked fields only: the service must be one of the three, and a password is encrypted, never stored as typed.
-        updated, err = creds.update_service_account(item_id, body or {})
+        # The authenticated administrator, not the submitted form, attests Daybreak consent.
+        updated, err = creds.update_service_account(item_id, body or {},
+                                                     consent_actor=str(profile.get("username") or ""))
         if err:
             return {"status": "error", "message": "Vault entry not found" if err == "Not found" else err}
         return {"status": "ok", "credentials": updated}
@@ -244,9 +245,10 @@ async def data_room_create_vault_item(section: str, body: dict, request: Request
     from core.dashboard_access import require_fleet_admin
     from features import data_room_credentials_store as creds
 
-    require_fleet_admin(request)
+    profile = require_fleet_admin(request)
     if section == "service_accounts":
-        updated, err = creds.create_service_account(body or {})
+        updated, err = creds.create_service_account(body or {},
+                                                     consent_actor=str(profile.get("username") or ""))
     else:
         updated, err = creds.create_vault_item(section, body or {})
     if err:
