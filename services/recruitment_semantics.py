@@ -126,6 +126,23 @@ _TRANSITION_ASSERTIONS: dict[str, tuple[str, ...]] = {
         r"\byou (?:have been|are) (?:invited|requested) to complete.{0,100}\b(?:background|digital employment (?:background )?|pre-employment) verification\b",
         r"\bplease (?:complete|initiate|submit).{0,100}\b(?:background verification|background check|bgv)\b",
         r"\byour (?:background verification|background check|bgv) (?:has |is )?(?:started|initiated|in progress)\b",
+        # Production, Oct-Nov 2026: genuine BGV requests that both models read
+        # as BACKGROUND_VERIFICATION at 100% were retried until they failed,
+        # because none says "please complete/initiate/submit" beside the word.
+        # Each phrasing below is an employer or its verification partner
+        # addressing this candidate's own check, inside one sentence (source
+        # recovery reads one sentence at a time):
+        #   "As part of the Background Verification (BGV) process, please fill ..."
+        #   "Request you to kindly fill the details and initiate your Background check"
+        #   "... and submit the Pre-Employment Verification Documents requested"
+        #   "Please find attached BGV form."
+        #   "This is our final follow-up regarding your Background Verification (BGV) process."
+        #   "we will be overseeing the background verification process"
+        r"\bas (?:a )?part of (?:the |your |our )?(?:background verification|background check|bgv|pre-employment verification)(?: \(bgv\))? process\b[^.!?\n]{0,160}\b(?:please|kindly|request)\b",
+        r"\b(?:please|kindly|request(?:ing)? you to)\b[^.!?\n]{0,120}\b(?:complete|initiate|submit|fill)\b[^.!?\n]{0,80}\b(?:background verification|background check|bgv|pre-employment verification)\b",
+        r"\battached (?:the |your )?(?:bgv|background verification|background check) form\b",
+        r"\byour (?:background verification|background check|bgv)(?: \(bgv\))? process\b",
+        r"\bwe (?:will be|are|shall be) (?:overseeing|conducting|handling|initiating) (?:the |your )?(?:background verification|background check|bgv)(?: \(bgv\))? process\b",
     ),
     "DOCUMENT_VERIFICATION": (
         r"\b(?:please|you (?:must|need to)) (?:upload|submit|provide|share).{0,100}\bdocuments?\b.{0,80}\b(?:for )?verification\b",
@@ -136,6 +153,8 @@ _TRANSITION_ASSERTIONS: dict[str, tuple[str, ...]] = {
         r"\b(?:selected|shortlisted).{0,100}\b(?:final )?hr (?:process|discussion|round)\b",
         r"\bpre-offer documents?\b.{0,120}\b(?:selection|final hr|offer)\b",
         r"\b(?:final hr|salary|ctc) discussion (?:is |has been )?(?:confirmed|completed)\b",
+        # "Please share below documents at earliest for HR Discussion."
+        r"\b(?:share|submit|send|provide)\b[^.!?\n]{0,80}\bdocuments?\b[^.!?\n]{0,60}\bfor (?:the |your )?hr (?:discussion|round|process)\b",
     ),
     "COMPENSATION_CONFIRMATION": (
         r"\b(?:your )?compensation (?:is |has been )?confirmed\b",
@@ -150,6 +169,25 @@ _TRANSITION_ASSERTIONS: dict[str, tuple[str, ...]] = {
         r"\b(?:you (?:have been|are|got)|your (?:profile|candidature) (?:has been|is|got)) shortlisted.{0,100}\b(?:interview|next (?:stage|round)|hr discussion)\b",
         r"\bshortlisted for (?:the )?(?:next |technical |hr )?interview\b",
         r"\byou (?:have been|are) invited (?:for|to) (?:an )?interview\b",
+        # Production, Sep-Nov 2026: shortlists both models read at 80-100% were
+        # retried until they failed, because the sentence names the role or
+        # the next step rather than the word "interview":
+        #   "you have been shortlisted for the position you interviewed for"
+        #   "Your profile has been shortlisted for the role of Data Testing ..."
+        #   "your profile has been shortlisted for the AWS Devops Engineer with EKS role at TCS"
+        #   "Your profile has been Shortlisted for technical evaluation."
+        #   "Your profile is shortlisted and to proceed ahead we require the following documents"
+        #   "You've successfully progressed through the [Evaluation 2] for 141850."
+        # Always second person about this candidate; a conditional ("if your
+        # profile is shortlisted ...") is refused in evidence_entails_transition.
+        r"\b(?:you (?:have been|are|got)|your (?:profile|candidature|application) (?:has been|is|got|was)) shortlisted for (?:the |this )?(?:position|role|post|job|opening|next (?:round|stage|level)|technical (?:evaluation|round)|(?:l[1-5]|first|second|final) round)\b",
+        # "for the <role> role": a definite role. "shortlisted for our top
+        # client for a position in your industry" (resume sourcing) names none.
+        r"\b(?:you (?:have been|are)|your (?:profile|candidature|application) (?:has been|is)) shortlisted for the [^.!?\n]{1,80}\b(?:role|position)\b",
+        # RippleHire's subject: "Congratulations! You have been shortlisted by Mphasis".
+        r"\byou (?:have been|are|got) shortlisted by [a-z0-9]",
+        r"\byour (?:profile|candidature|application) (?:has been |is |got )?shortlisted\b[^.!?\n]{0,160}\b(?:to proceed|for further process|next steps?|recruitment process|interview process)\b",
+        r"\byou(?:'ve|’ve| have) (?:successfully )?(?:progressed|moved|advanced) (?:through|past|to)\b[^.!?\n]{0,60}\b(?:evaluation|round|stage|assessment|interview)\b",
     ),
     # An assessment invitation asks the candidate to sit a test, usually inside
     # a window rather than at an hour. It is recruitment activity about this
@@ -204,6 +242,9 @@ _TRANSITION_ASSERTIONS: dict[str, tuple[str, ...]] = {
 }
 
 
+_CONDITIONAL_SENSITIVE = frozenset({"INTERVIEW_SHORTLISTED", "BACKGROUND_VERIFICATION", "HR_CONFIRMATION"})
+
+
 def evidence_entails_transition(status: str, text: str) -> bool:
     """Return whether a source excerpt actually states the proposed transition."""
     proposed = str(status or "").upper()
@@ -212,6 +253,13 @@ def evidence_entails_transition(status: str, text: str) -> bool:
         for match in re.finditer(pattern, source, re.I | re.S):
             before = source[max(0, match.start() - 45):match.start()]
             if re.search(r"\b(?:not|never|no)\b[^.!?\n]{0,35}$", before, re.I):
+                continue
+            # A shortlist, verification or HR step stated as a condition has
+            # not happened: "if your profile is shortlisted for the role, we
+            # will ...", "once you complete your BGV process".
+            if proposed in _CONDITIONAL_SENSITIVE and re.search(
+                r"\b(?:if|once|when|whether|unless|until|after)\b[^.!?\n]{0,40}$", before, re.I,
+            ):
                 continue
             # The schedule assertion spans the interview and its predicate;
             # negation can be inside that span ("your client interview is not
