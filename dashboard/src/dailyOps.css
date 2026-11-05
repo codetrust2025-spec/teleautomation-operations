@@ -603,6 +603,18 @@
 /* Destructive "Remove slot" lives in the edit modal footer now; danger text on
    the shared ghost button, pushed to the left so it reads apart from Save. */
 .ops-slot-modal__remove{margin-right:auto;color:#f87171}
+/* Shared row-click Edit (utils/rowEdit.js): every editable table row looks and
+   behaves like a Daily Ops row, and Delete sits where Daily Ops puts Remove slot. */
+tr.row-edit{cursor:pointer}
+tr.row-edit:hover>td{box-shadow:inset 0 0 0 9999px rgba(148,163,184,.09)}
+tr.row-edit:active>td{box-shadow:inset 0 0 0 9999px rgba(148,163,184,.15)}
+tr.row-edit:focus-visible{outline:2px solid rgba(96,165,250,.7);outline-offset:-2px}
+tr.row-edit:focus:not(:focus-visible){outline:none}
+tr.row-edit :is(select,input,textarea,label){cursor:auto}
+tr.row-edit :is(button,a){cursor:pointer}
+.row-modal__delete{margin-right:auto;color:#f87171}
+.row-modal__delete:hover:not(:disabled){color:#fca5a5}
+
 .ops-slot-modal__remove:hover:not(:disabled){color:#fca5a5}
 .ops-row-menu__list.ops-row-menu__list--portal,.ops-dash-attend-cell .ops-row-menu__list.ops-row-menu__list--portal{position:fixed;z-index:12000;bottom:auto}
 

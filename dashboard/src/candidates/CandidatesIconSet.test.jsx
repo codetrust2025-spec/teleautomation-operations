@@ -50,8 +50,8 @@ describe("the Candidates page", () => {
       expect(button.querySelector(`svg.ta-icon--${icon}`)).not.toBeNull();
     }
     const row = document.querySelector('tr[data-cid="r1"]');
-    expect(within(row).getByRole("button", { name: "Edit Asha Rao" }).querySelector("svg.ta-icon--pencil")).not.toBeNull();
-    expect(within(row).getByRole("button", { name: "Delete Asha Rao" }).querySelector("svg.ta-icon--trash")).not.toBeNull();
+    // The row itself opens Edit (Daily Ops design): no pencil / trash buttons.
+    expect(row.querySelector("svg.ta-icon--pencil, svg.ta-icon--trash")).toBeNull();
     expect(row.querySelector(".cand-pay-proofs svg.ta-icon--paperclip")).not.toBeNull();
     expect(row.querySelector(".cand-resume-chip svg.ta-icon--file")).not.toBeNull();
     expect(row.querySelector(".cand-phone-icon svg.ta-icon--phone")).not.toBeNull();

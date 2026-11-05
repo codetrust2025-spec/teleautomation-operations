@@ -18,6 +18,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfirmProvider } from '../context/ConfirmContext.jsx'
 import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
+import { firstEditableRow } from '../test/rowEdit.js'
 
 const SAVED_ROW = {
   id: 'luxoft_2024_01',
@@ -48,7 +49,7 @@ function renderTab(offers = [SAVED_ROW]) {
 describe('offer letter dialog', () => {
   it('asks only for the candidate, the company and notes', () => {
     renderTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(firstEditableRow())
 
     // The label's own text node, not its control's value: a textarea with
     // content would otherwise read as "Notes (optional)Signed copy".
@@ -59,7 +60,7 @@ describe('offer letter dialog', () => {
 
   it('no longer exposes the values the upload derives', () => {
     renderTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(firstEditableRow())
 
     const text = screen.getByRole('dialog').textContent
     for (const gone of ['ID (stable slug)', 'Date modified', 'Size (KB)', 'Google Drive file ID']) {
@@ -88,7 +89,7 @@ describe('offer letter dialog', () => {
     })
 
     renderTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(firstEditableRow())
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(calls).toHaveLength(1))
@@ -126,7 +127,7 @@ describe('offer letter dialog', () => {
     cleanup()
 
     renderTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(firstEditableRow())
     expect(screen.getByRole('dialog').textContent).not.toContain('Choose file')
   })
 })

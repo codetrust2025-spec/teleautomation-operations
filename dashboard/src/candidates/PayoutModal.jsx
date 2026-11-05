@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
+import { useRowEdit, ROW_EDIT_CLASS } from "../utils/rowEdit.js";
 import AiNodeProgress, { useAiAnalysis } from "../components/AiNodeProgress.jsx";
 import { useDialogA11y } from "../hooks/useDialogA11y.js";
 import ReferrerPaymentAccounts, {
@@ -710,6 +711,7 @@ export default function PayoutModal({
     try {
       const res = await (await fetch(`${ve}/handler-expenses/${row.id}`, { method: "DELETE" })).json();
       if (res.status === "ok") {
+        if (editId === row.id) resetForm();
         setHandlerStats((current) => current
           ? { ...current, net_payable: (Number(current.net_payable) || 0) + (Number(row.amount) || 0) }
           : current);
@@ -721,6 +723,11 @@ export default function PayoutModal({
       else setError(res.message || "Delete failed");
     } catch (err) { setError(err.message || "Network error"); }
   }
+
+  // Row click opens an editable entry in the form above (Daily Ops row-click
+  // Edit); Delete sits beside Save changes while it is open.
+  const rowProps = useRowEdit(startEdit);
+  const editingRow = editId ? entries.find((entry) => entry.id === editId) : null;
 
   function clearFilters() { setFilterHandler("all"); setFilterMonth("all"); }
   const filtersActive = filterHandler !== "all" || filterMonth !== "all";
@@ -892,6 +899,7 @@ export default function PayoutModal({
                     {proofFile ? "Screenshot attached" : editId ? "Replace screenshot" : "Attach screenshot *"}
                   </span>
                 </div>
+                {editingRow && <button type="button" className="cand-btn cand-btn--ghost row-modal__delete" onClick={() => handleDelete(editingRow)} disabled={saving}>Delete</button>}
                 {editId && <button type="button" className="cand-btn cand-btn--ghost" onClick={resetForm}>Cancel edit</button>}
                 <button
                   type="submit"
@@ -961,11 +969,10 @@ export default function PayoutModal({
                       <th className="payout-col--classification">Classification</th>
                       <th className="payout-col--note">Note</th>
                       <th className="payout-col--proof">Proof</th>
-                      <th className="payout-col--actions">Actions</th>
                     </tr></thead>
                     <tbody>
                       {pagedRows.map(row => (
-                        <tr className={`payout-modal__row${editId === row.id ? " payout-modal__row--editing" : ""}`} key={row.id}>
+                        <tr className={`payout-modal__row${accountingEntryIds.has(row.id) ? ` ${ROW_EDIT_CLASS}` : ""}${editId === row.id ? " payout-modal__row--editing" : ""}`} key={row.id} data-editable={accountingEntryIds.has(row.id) ? "true" : undefined} {...rowProps(row, `${Jc(row.amount)} on ${rR(row.date)}`, accountingEntryIds.has(row.id))}>
                           <td className="payout-col--amount payout-col--amount-positive">{Jc(row.amount)}</td>
                           <td className="payout-col--date">{rR(row.date)}</td>
                           <td className="payout-col--classification">Handler Expense</td>
@@ -974,12 +981,6 @@ export default function PayoutModal({
                             {(row.proofs?.length > 0)
                               ? <button type="button" className="cand-link" onClick={() => setPreviewProof(row.proofs[0])}>View proof</button>
                               : <em>—</em>}
-                          </td>
-                          <td className="payout-col--actions">
-                            {accountingEntryIds.has(row.id) ? <>
-                              <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" onClick={() => startEdit(row)} title="Edit">✎</button>
-                              <button type="button" className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost" onClick={() => handleDelete(row)} title="Delete">🗑</button>
-                            </> : <em>—</em>}
                           </td>
                         </tr>
                       ))}

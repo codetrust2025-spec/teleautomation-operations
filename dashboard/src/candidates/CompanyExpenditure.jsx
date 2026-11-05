@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRowEdit, ROW_EDIT_CLASS } from "../utils/rowEdit.js";
 import "./CompanyExpenditure.css";
 import { CandidateSelectedBadge } from "./SelectedBadge.jsx";
 
@@ -172,9 +173,14 @@ export default function CompanyExpenditure({ onClose, apiBase = "" }) {
       variant: 'danger',
     });
     if (!ok) return;
-    try { const res = await (await fetch(`${apiBase}/company-expenses/${row.id}`, { method: "DELETE", credentials: "include" })).json(); if (res.status === "ok") fetchData(); else setError(res.message || "Delete failed"); }
+    try { const res = await (await fetch(`${apiBase}/company-expenses/${row.id}`, { method: "DELETE", credentials: "include" })).json(); if (res.status === "ok") { if (editId === row.id) resetForm(); fetchData(); } else setError(res.message || "Delete failed"); }
     catch (e) { setError(e.message || "Network error"); }
   }
+
+  // Row click opens the row in the form above (Daily Ops row-click Edit);
+  // Delete sits beside Update while a row is open.
+  const rowProps = useRowEdit(startEdit);
+  const editingRow = editId ? expenses.find(r => r.id === editId) : null;
 
   return (
     <div className="cand-modal-backdrop" onClick={ev => ev.target === ev.currentTarget && onClose?.()}>
@@ -384,7 +390,7 @@ export default function CompanyExpenditure({ onClose, apiBase = "" }) {
                 </div>
                 <div className="compexp-form-row2">
                   <label className="compexp-field compexp-field--note"><span className="cand-field-label">Note</span><input className="cand-input" value={form.note} onChange={ev => setForm(f => ({ ...f, note: ev.target.value }))} placeholder="Optional description" /></label>
-                  <div className="compexp-form-actions">{editId && <button type="button" className="cand-btn cand-btn--ghost" onClick={resetForm}>Cancel</button>}<button type="submit" className="cand-btn cand-btn--primary" disabled={saving}>{saving ? "Saving…" : editId ? "Update" : "+ Add"}</button></div>
+                  <div className="compexp-form-actions">{editingRow && <button type="button" className="cand-btn cand-btn--ghost row-modal__delete" onClick={() => handleDelete(editingRow)} disabled={saving}>Delete</button>}{editId && <button type="button" className="cand-btn cand-btn--ghost" onClick={resetForm}>Cancel</button>}<button type="submit" className="cand-btn cand-btn--primary" disabled={saving}>{saving ? "Saving…" : editId ? "Update" : "+ Add"}</button></div>
                 </div>
               </form>
               {error && <div className="cand-modal-error">{error}</div>}
@@ -396,8 +402,8 @@ export default function CompanyExpenditure({ onClose, apiBase = "" }) {
               {loading ? <p className="compexp-empty">Loading…</p> : filtered.length === 0 ? (
                 <p className="compexp-empty">No company expenses logged{filterMonth !== "all" ? " for this period" : ""}.</p>
               ) : (
-                <div className="compexp-table-wrap"><table className="compexp-table"><thead><tr><th>Title</th><th>Amount</th><th>Category</th><th>Date</th><th>Note</th><th>Actions</th></tr></thead><tbody>
-                  {pagedRows.map(row => (<tr className={editId === row.id ? "compexp-row--editing" : ""} key={row.id}><td className="compexp-td--title">{row.title || "—"}</td><td className="compexp-td--amount">{fmt(row.amount)}</td><td><span className={`compexp-cat compexp-cat--${row.category}`}>{CATEGORIES.find(c => c.value === row.category)?.label || row.category}</span></td><td className="compexp-td--date">{fmtDate(row.date)}</td><td className="compexp-td--note">{row.note || "—"}</td><td className="compexp-td--actions"><button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" onClick={() => startEdit(row)} title="Edit">✎</button><button type="button" className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost" onClick={() => handleDelete(row)} title="Delete">🗑</button></td></tr>))}
+                <div className="compexp-table-wrap"><table className="compexp-table"><thead><tr><th>Title</th><th>Amount</th><th>Category</th><th>Date</th><th>Note</th></tr></thead><tbody>
+                  {pagedRows.map(row => (<tr className={`${ROW_EDIT_CLASS}${editId === row.id ? " compexp-row--editing" : ""}`} key={row.id} {...rowProps(row, row.title || "expense")}><td className="compexp-td--title">{row.title || "—"}</td><td className="compexp-td--amount">{fmt(row.amount)}</td><td><span className={`compexp-cat compexp-cat--${row.category}`}>{CATEGORIES.find(c => c.value === row.category)?.label || row.category}</span></td><td className="compexp-td--date">{fmtDate(row.date)}</td><td className="compexp-td--note">{row.note || "—"}</td></tr>))}
                 </tbody></table></div>
               )}
               {totalPages > 1 && (<div className="compexp-pagination"><button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" disabled={page === 0} onClick={() => setPage(p => p - 1)}>← Prev</button><span>Page {page + 1} of {totalPages}</span><button type="button" className="cand-btn cand-btn--ghost cand-btn--xs" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Next →</button></div>)}

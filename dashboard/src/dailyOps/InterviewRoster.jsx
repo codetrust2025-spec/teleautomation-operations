@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { shouldActivateRow, isRowActivationKey } from '../utils/rowEdit'
 import { createPortal } from 'react-dom'
 import { API } from '../config.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -166,26 +167,7 @@ function SlotScreenshotModal({ row, onClose }) {
   )
 }
 
-// Making the whole row a trigger must never swallow a click meant for a control
-// inside it (the attendance select, the screenshot View button, a link, an
-// input, the kebab itself, the open menu, …). We decide by walking up from the
-// click target to the row with Element.closest() — robust and not coordinate
-// based — and bail if we pass through anything interactive first.
-const ROW_INTERACTIVE_SELECTOR = [
-  'button', 'a', 'select', 'input', 'textarea', 'label',
-  '[role="menu"]', '[role="menuitem"]', '[role="dialog"]',
-  '.ops-attendance-select', '.ops-slot-shot-thumb',
-].join(',')
-
-function rowEventHitsInteractive(event, rowEl) {
-  const target = event.target
-  if (!(target instanceof Element)) return false
-  const hit = target.closest(ROW_INTERACTIVE_SELECTOR)
-  // A match only counts when it is inside this row (closest can escape via the
-  // portalled menu, which lives on document.body — that is handled separately).
-  return !!hit && (!rowEl || rowEl.contains(hit))
-}
-
+// Row activation (which clicks open Edit) is shared: utils/rowEdit.js.
 function SlotEditModal({ row, busy, onClose, onSave, onRemove }) {
   const [attendee, setAttendee] = useState(row.interview_attendee_resolved || row.interview_attendee || 'Bhavana')
   const [feedback, setFeedback] = useState(row.interview_feedback || '')
@@ -328,18 +310,12 @@ export function InterviewRoster({
   // from a portal (a dialog on document.body) is not a click on the row.
   const openRowEdit = useCallback(row => setEditing({ row }), [])
   const activateRow = useCallback((row, event) => {
-    const rowEl = event.currentTarget
-    if (!(event.target instanceof Node) || !rowEl.contains(event.target)) return
-    if (rowEventHitsInteractive(event, rowEl)) return
-    const selection = typeof window !== 'undefined' && window.getSelection && window.getSelection()
-    if (selection && String(selection).length > 0) return
-    openRowEdit(row)
+    if (shouldActivateRow(event)) openRowEdit(row)
   }, [openRowEdit])
   // Enter / Space open Edit when the row itself has focus; keys aimed at a
   // control inside the row are left to that control.
   const activateRowByKey = useCallback((row, event) => {
-    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
-    if (event.target !== event.currentTarget) return
+    if (!isRowActivationKey(event)) return
     event.preventDefault()
     openRowEdit(row)
   }, [openRowEdit])

@@ -6,6 +6,7 @@ import { copyToClipboard } from '../utils/copyToClipboard.js'
 import { formatCredentialBlock } from './dataRoomCredentialBlock.js'
 import { LOGINS_TYPE, credentialType, standardCredentialName } from '../utils/credentialNames.js'
 import { Icon } from './ui/Icon.jsx'
+import { useRowEdit, ROW_EDIT_CLASS } from '../utils/rowEdit.js'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -176,7 +177,7 @@ function accountFields({ kind, mode, service }) {
   ]
 }
 
-function VaultModal({ title, fields, form, onChange, onSave, onClose, error, imagePanel }) {
+function VaultModal({ onDelete = null, title, fields, form, onChange, onSave, onClose, error, imagePanel }) {
   // Mounted only while open, so the dialog is open for its whole life.
   const dialogRef = useDialogA11y(true, onClose)
   useEffect(() => {
@@ -252,6 +253,7 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error, ima
           ))}
         </div>
         <div className="dr-modal-actions">
+          {onDelete && <button type="button" className="cand-btn cand-btn--ghost row-modal__delete" onClick={onDelete}>Delete</button>}
           <button type="button" className="cand-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="cand-btn cand-btn--primary" onClick={onSave}>Save</button>
         </div>
@@ -554,14 +556,15 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
   const openEditLogin = (login) => {
     setModalError('')
     clearImageState()
-    setModal({ mode: 'edit', kind: 'login', username: login.username, form: { username: login.username, reference: login.reference || '', password: '', notes: login.notes || '' } })
+    setModal({ mode: 'edit', kind: 'login', username: login.username, login, form: { username: login.username, reference: login.reference || '', password: '', notes: login.notes || '' } })
   }
 
   const deleteLogin = async (login) => {
     const ok = await confirm({ title: 'Remove handler?', message: `Delete handler "${login.reference || login.username}"?`, confirmLabel: 'Delete', variant: 'danger' })
-    if (!ok) return
+    if (!ok) return false
     await fetch(`${API_BASE}/data-room/credentials/handlers/${login.username}`, { method: 'DELETE', credentials: 'include' })
     onReload()
+    return true
   }
 
   // A handler is saved where it always was, apart from the service accounts.
@@ -598,9 +601,17 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
 
   const handleDelete = async (row) => {
     const ok = await confirm({ title: 'Delete credential?', message: `Remove "${accountName(row)}"?`, confirmLabel: 'Delete', variant: 'danger' })
-    if (!ok) return
+    if (!ok) return false
     await fetch(`${API_BASE}/data-room/credentials/vault/service_accounts/${row.id}`, { method: 'DELETE', credentials: 'include' })
     onReload()
+    return true
+  }
+
+  const openRow = (item) => (item.kind === 'login' ? openEditLogin(item.row) : openEdit(item.row))
+  const rowProps = useRowEdit(openRow)
+  const deleteFromModal = async () => {
+    const removed = modalKind(modal) === 'login' ? await deleteLogin(modal.login) : await handleDelete(modal.row)
+    if (removed) setModal(null)
   }
 
   const handleSave = async () => {
@@ -834,7 +845,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                 // its role line already says: it is named by its role instead.
                 const name = loginName(login, item.isAdmin)
                 return (
-                  <tr key={item.key} className="dr-acct-login-row">
+                  <tr key={item.key} className={`dr-acct-login-row${item.isAdmin ? '' : ` ${ROW_EDIT_CLASS}`}`} {...rowProps(item, name, !item.isAdmin)}>
                     <td data-label="Credential">
                       <div className="dr-acct-cell">
                         <span className="dr-acct-dot dr-acct-dot--active" />
@@ -881,10 +892,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                             Account menu
                           </button>
                         ) : (
-                          <>
-                            <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEditLogin(login)} aria-label={`Edit ${name}`}>Edit</button>
-                            <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => deleteLogin(login)} aria-label={`Delete ${name}`}>Delete</button>
-                          </>
+                          null
                         )}
                       </div>
                     </td>
@@ -896,7 +904,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
               const status = accountStatus(row)
               const primary = isPrimary(row)
               return (
-                <tr key={item.key}>
+                <tr key={item.key} className={ROW_EDIT_CLASS} {...rowProps(item, name)}>
                   <td data-label="Credential">
                     <div className="dr-acct-cell">
                       <span className={`dr-acct-dot dr-acct-dot--${status}`} />
@@ -958,8 +966,6 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
                         <Icon name={activeKey === `${row.id}-all` ? 'check' : 'copy'} size={13} />
                         {activeKey === `${row.id}-all` ? 'Copied' : 'Copy all'}
                       </button>
-                      <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)} aria-label={`Edit ${name}`}>Edit</button>
-                      <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)} aria-label={`Delete ${name}`}>Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -979,6 +985,7 @@ export function DataRoomAccountsTab({ accounts = [], logins = null, site = '', v
 
       {modal && (
         <VaultModal
+          onDelete={modal.mode === 'edit' ? deleteFromModal : null}
           title={modalKind(modal) === 'login'
             ? (modal.mode === 'create' ? 'Add dashboard login' : 'Edit dashboard login')
             : (modal.mode === 'create' ? 'Add credential' : 'Edit credential')}

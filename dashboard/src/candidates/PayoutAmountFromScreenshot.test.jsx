@@ -15,6 +15,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import PayoutModal from "./PayoutModal.jsx";
+import { findEditableRow } from '../test/rowEdit.js'
 
 class FakeEventSource {
   constructor(url) { this.url = url; }
@@ -487,7 +488,7 @@ describe("editing an expense", () => {
     const inCurrentMonth = `${new Date().toISOString().slice(0, 7)}-06`;
     server.store.push({ id: "e-0", reference: "Thrilok", amount: 3000, category: "commission", note: "", date: inCurrentMonth, proofs: [] });
     await openModal(OWED - 3000);
-    fireEvent.click(await screen.findByTitle("Edit"));
+    fireEvent.click(await findEditableRow());
     expect(amountField()).not.toHaveAttribute("readonly");
     expect(amountField().value).toBe("3000");
     attach();

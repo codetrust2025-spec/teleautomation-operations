@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfirmProvider } from '../context/ConfirmContext.jsx'
 import { DataRoomAccountsTab } from './DataRoomAccountsTab.jsx'
+import { firstEditableRow } from '../test/rowEdit.js'
 
 afterEach(() => {
   cleanup()
@@ -142,7 +143,7 @@ describe('DataRoomAccountsTab service account modal', () => {
         />
       </ConfirmProvider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: /^Edit/ }))
+    fireEvent.click(firstEditableRow())
     const view = screen.getByRole('link', { name: 'View image' })
     expect(view).toHaveAttribute('href', expect.stringContaining('/data-room/service-accounts/gmail_a/image'))
     expect(screen.getByAltText('Screenshot for Gmail A')).toBeInTheDocument()

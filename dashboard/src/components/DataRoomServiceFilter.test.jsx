@@ -16,6 +16,7 @@ vi.mock('../utils/copyToClipboard.js', () => ({ copyToClipboard: vi.fn(() => Pro
 
 import { copyToClipboard } from '../utils/copyToClipboard.js'
 import { DataRoomAccountsTab, LOGIN_TYPE, SERVICE_FILTER_KEY, UNSET_SERVICE } from './DataRoomAccountsTab.jsx'
+import { editRow } from '../test/rowEdit.js'
 
 // Invented names, addresses and secrets.
 const ACCOUNTS = [
@@ -258,7 +259,7 @@ describe('adding and editing', () => {
 
   it('asks for a service before saving an account that has none, rather than guessing', async () => {
     renderTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit unknown_one' }))   // no name: shown by its id
+    fireEvent.click(editRow('unknown_one'))   // no name: shown by its id
     expect(field('Credential type').value).toBe('')
     save()
     expect(await screen.findByText('Choose a service type.')).toBeInTheDocument()
@@ -272,7 +273,7 @@ describe('adding and editing', () => {
 
   it('changes the service without resending the password', async () => {
     renderTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Ops Mailbox' }))
+    fireEvent.click(editRow('Ops Mailbox'))
     await waitFor(() => expect(field('Password').value).toBe('ops-5'))   // read so it can be seen and changed
     fireEvent.change(field('Credential type'), { target: { value: 'Naukri' } })
     save()
@@ -283,7 +284,7 @@ describe('adding and editing', () => {
 
   it('sends a password only when it is changed', async () => {
     renderTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Asha Rao' }))
+    fireEvent.click(editRow('Asha Rao'))
     await waitFor(() => expect(field('Password').value).toBe('Asha-Pass-1 '))
     fireEvent.change(field('Password'), { target: { value: 'Brand-New-9' } })
     save()

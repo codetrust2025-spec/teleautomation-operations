@@ -16,6 +16,7 @@ import { isSelectedCandidate, stageLabel } from "./candidateOutcome.js";
 import { consumePendingWorkOpenIntent } from "../dailyOps/PendingWorksProvider.jsx";
 import { PendingWorksTab } from "./PendingWorksTab.jsx";
 import { Icon } from "../components/ui/Icon.jsx";
+import { useRowEdit, ROW_EDIT_CLASS } from "../utils/rowEdit.js";
 import PayoutModal from "./PayoutModal.jsx";
 import "./PayoutModal.css";
 import EarningsBreakdown from "./EarningsBreakdown.jsx";
@@ -2541,6 +2542,9 @@ export function CandidateEditModal({
   isAdmin: i = false,
   referenceOptions: refOpts = [],
   onServerChange,
+  // Delete lives in the dialog (row-click Edit, Daily Ops design): the table
+  // row has no Edit / Delete buttons of its own.
+  onDelete = null,
 }) {
   const { confirm: confirmModal } = nc();
   const [l, c] = w.useState(() => {
@@ -3602,6 +3606,16 @@ export function CandidateEditModal({
         </div>
         {h && <div className="cand-modal-error">{h}</div>}
         <footer className="cand-modal-footer">
+          {e && onDelete && (
+            <button
+              type="button"
+              className="cand-btn cand-btn--ghost row-modal__delete"
+              onClick={() => onDelete(e)}
+              disabled={d}
+            >
+              Delete row
+            </button>
+          )}
           <button
             type="button"
             className="cand-btn cand-btn--ghost"
@@ -6456,7 +6470,7 @@ function CandidatesPanelImpl() {
       document
         .querySelectorAll(".cand-page .cand-table tbody tr[data-cid]")
         .forEach((row) => {
-          const actions = row.querySelector(".cand-cell-actions");
+          const actions = row.querySelector(".cand-cell-resume");
           if (!actions || actions.querySelector("[data-candidate-mailbox]"))
             return;
           const button = document.createElement("button");
@@ -6792,7 +6806,11 @@ function CandidatesPanelImpl() {
     Y(null);
     M(true);
   };
+  // The table row the Edit dialog was opened from: Delete in the dialog
+  // describes and removes exactly that row, as the row's own button did.
+  const [editTableRow, setEditTableRow] = w.useState(null);
   const I = async (ge) => {
+    setEditTableRow(ge);
     let candidate = ge;
     try {
       const response = await fetch(`${ve}/candidates/${ge.id}`, {
@@ -6812,6 +6830,7 @@ function CandidatesPanelImpl() {
   const Oe = () => {
     M(false);
     Y(null);
+    setEditTableRow(null);
   };
   async function Re(ge) {
     const Ge = C ? `${ve}/candidates/${C.id}` : `${ve}/candidates`;
@@ -6849,11 +6868,13 @@ function CandidatesPanelImpl() {
       })
     ).json();
     if (Be.status === "ok") {
+      Oe();
       fe();
     } else {
       v(Be.message || "Delete failed");
     }
   }
+  const candidateRowProps = useRowEdit(I);
   const De = i.length;
   const ye = w.useMemo(
     () =>
@@ -7148,7 +7169,6 @@ function CandidatesPanelImpl() {
                 <th className="cand-th--phone">Phone</th>
                 {a && <th className="cand-th--ref">Reference</th>}
                 <th className="cand-th--resume">Resume</th>
-                <th className="cand-th--actions">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -7180,8 +7200,8 @@ function CandidatesPanelImpl() {
                     const Ge = fR(ge.stage);
                     return (
                       <tr
-                        className={`cand-row${ge.needs_followup ? ` cand-row--pending cand-row--due-${Number(ge.payment) > 0 ? "partial" : "unpaid"}` : ""}`}
-                        onClick={() => I(ge)}
+                        className={`cand-row ${ROW_EDIT_CLASS}${ge.needs_followup ? ` cand-row--pending cand-row--due-${Number(ge.payment) > 0 ? "partial" : "unpaid"}` : ""}`}
+                        {...candidateRowProps(ge, ge.name)}
                         key={ge.id}
                         data-cid={ge.id}
                       >
@@ -7277,31 +7297,6 @@ function CandidatesPanelImpl() {
                         >
                           <ResumeCell candidate={ge} onRefresh={fe} />
                         </td>
-                        <td
-                          className="cand-cell-actions"
-                          onClick={(Ze) => Ze.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            className="cand-btn cand-btn--ghost cand-btn--xs cand-tip cand-tip--left"
-                            onClick={() => I(ge)}
-                            aria-label={`Edit ${ge.name}`}
-                            data-tip="Edit candidate: details, payment and proofs"
-                          >
-                            <Icon name="pencil" size={14} />
-                          </button>
-                          {a && (
-                            <button
-                              type="button"
-                              className="cand-btn cand-btn--ghost cand-btn--xs cand-btn--danger-ghost cand-tip cand-tip--left"
-                              onClick={() => Pe(ge)}
-                              aria-label={`Delete ${ge.name}`}
-                              data-tip="Delete this row. You will be asked to confirm first."
-                            >
-                              <Icon name="trash" size={14} />
-                            </button>
-                          )}
-                        </td>
                       </tr>
                     );
                   })
@@ -7324,6 +7319,7 @@ function CandidatesPanelImpl() {
           onClose={Oe}
           onSave={Re}
           onServerChange={fe}
+          onDelete={a && editTableRow ? () => Pe(editTableRow) : null}
         />
       )}
       {ce && (

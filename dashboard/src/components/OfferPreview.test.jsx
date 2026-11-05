@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConfirmProvider } from '../context/ConfirmContext.jsx'
 import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
 import { pdfLoader } from './OfferPreviewModal.jsx'
+import { firstEditableRow } from '../test/rowEdit.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(HERE, '..', 'index.css'), 'utf8').replace(/\r\n/g, '\n')
@@ -240,7 +241,7 @@ describe('the preview of an image', () => {
 describe('from the edit dialog', () => {
   it('opens the same preview over it, and Escape closes only the preview', async () => {
     renderTab([OFFERS[0]])
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(firstEditableRow())
     const edit = screen.getByRole('dialog', { name: 'Edit offer letter' })
     fireEvent.click(within(edit).getByRole('button', { name: 'View PDF' }))
     await waitFor(() => expect(pages()).toHaveLength(2))

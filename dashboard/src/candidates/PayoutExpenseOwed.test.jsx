@@ -253,7 +253,7 @@ describe("editing an expense", () => {
     await openModal();
     await waitFor(() => expect(history().amounts).toContain("₹5,000"));
     const row = screen.getByText("₹5,000", { selector: ".payout-col--amount" }).closest("tr");
-    fireEvent.click(within(row).getByTitle("Edit"));
+    fireEvent.click(row);
     fireEvent.change(screen.getByLabelText("Expense amount (₹) *"), { target: { value: "6000" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(banner()).toBeTruthy());

@@ -191,22 +191,27 @@ describe("4. the payment cell", () => {
   });
 });
 
-describe("5. Edit and Delete say what they do, and Delete asks first", () => {
-  it("both have a name for assistive technology and a visible tooltip", async () => {
+describe("5. The row opens Edit (Daily Ops design); Delete is in the dialog and asks first", () => {
+  const openDialog = async (name) => {
+    fireEvent.click(rowOf(name));
+    return screen.findByRole("button", { name: "Delete row" });
+  };
+
+  it("the row is the Edit control: focusable, named, and carries no Edit / Delete buttons", async () => {
     await renderTable();
     const row = rowOf("Complete Person");
-    const edit = within(row).getByRole("button", { name: "Edit Complete Person" });
-    const del = within(row).getByRole("button", { name: "Delete Complete Person" });
-    expect(edit.getAttribute("data-tip")).toMatch(/Edit candidate/);
-    expect(del.getAttribute("data-tip")).toMatch(/asked to confirm first/);
-    expect(edit.className).toContain("cand-tip");
-    expect(del.className).toContain("cand-tip");
+    expect(row).toHaveAttribute("tabindex", "0");
+    expect(row).toHaveAttribute("aria-haspopup", "dialog");
+    expect(row.getAttribute("aria-label")).toBe("Complete Person — press Enter to edit");
+    expect(row.className).toContain("row-edit");
+    expect(within(row).queryByRole("button", { name: /^(Edit|Delete) / })).toBeNull();
+    expect(document.querySelector(".cand-table thead th.cand-th--actions")).toBeNull();
   });
 
   it("asks, naming exactly what is removed, and deletes nothing if declined", async () => {
     confirmMock.mockResolvedValue(false);
     await renderTable();
-    fireEvent.click(within(rowOf("Complete Person")).getByRole("button", { name: "Delete Complete Person" }));
+    fireEvent.click(await openDialog("Complete Person"));
     await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
     const ask = confirmMock.mock.calls[0][0];
     expect(ask.title).toBe("Delete Complete Person?");
@@ -219,20 +224,26 @@ describe("5. Edit and Delete say what they do, and Delete asks first", () => {
     expect(ask.message).toContain("cannot be undone");
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    // Declining leaves the dialog open on the same candidate.
+    expect(screen.getByRole("button", { name: "Delete row" })).toBeInTheDocument();
   });
 
-  it("deletes that one row when confirmed", async () => {
+  it("deletes that one row when confirmed, and closes the dialog", async () => {
     confirmMock.mockResolvedValue(true);
     await renderTable();
-    fireEvent.click(within(rowOf("Lost Person")).getByRole("button", { name: "Delete Lost Person" }));
+    fireEvent.click(await openDialog("Lost Person"));
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
     expect(calls.find((c) => c.method === "DELETE").url).toMatch(/\/candidates\/row-lost$/);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Delete row" })).toBeNull());
   });
 
-  it("Edit still opens the candidate", async () => {
+  it("a click on the row, or Enter on it, opens the candidate", async () => {
     await renderTable();
-    fireEvent.click(within(rowOf("Partial Person")).getByRole("button", { name: "Edit Partial Person" }));
+    fireEvent.click(rowOf("Partial Person"));
     await waitFor(() => expect(calls.some((c) => /\/candidates\/row-partial$/.test(c.url))).toBe(true));
+    const before = calls.filter((c) => /\/candidates\/row-lost$/.test(c.url)).length;
+    fireEvent.keyDown(rowOf("Lost Person"), { key: "Enter" });
+    await waitFor(() => expect(calls.filter((c) => /\/candidates\/row-lost$/.test(c.url)).length).toBe(before + 1));
   });
 
   it("the confirmation message for a bare row stays short and accurate", () => {

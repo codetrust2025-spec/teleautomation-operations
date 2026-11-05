@@ -33,6 +33,7 @@ import { captureLayout } from '../test/captureLayout.js'
 import { copyToClipboard } from '../utils/copyToClipboard.js'
 import { DataRoomAccountsTab, LOGIN_TYPE, SERVICE_FILTER_KEY } from './DataRoomAccountsTab.jsx'
 import { DataRoomPanel } from './DataRoomPanel.jsx'
+import { editRow } from '../test/rowEdit.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(HERE, '..', 'index.css'), 'utf8').replace(/\r\n/g, '\n')
@@ -221,11 +222,11 @@ describe('a dashboard login row', () => {
     expect(copyToClipboard.mock.calls[0][0]).toBe(`Site: ${SITE}\nUsername: kiran\nPassword: Not available (hashed)\nRole: handler\nReference: Kiran`)
   })
 
-  it('gives a handler Edit and Delete, and the admin the account-menu pointer instead', () => {
+  it('opens a handler row in Edit, and gives the admin row only the account-menu pointer', () => {
     renderTable()
     const handler = rowOf('Kiran')
-    expect(within(handler).getByRole('button', { name: 'Edit Kiran' })).toBeInTheDocument()
-    expect(within(handler).getByRole('button', { name: 'Delete Kiran' })).toBeInTheDocument()
+    expect(handler).toBe(editRow('Kiran'))
+    expect(within(handler).queryByRole('button', { name: /^(Edit|Delete) / })).toBeNull()
     const admin = rowOf('Admin')
     // Named by its role, not by its stored reference, which in production is "Full dashboard".
     expect(admin.querySelector('.dr-acct-role').textContent).toBe('Full dashboard')
@@ -240,12 +241,15 @@ describe('a dashboard login row', () => {
     expect(menu.className).toContain('cand-btn--ghost')
     expect(menu.getAttribute('title')).toMatch(/account menu/i)
     expect(within(admin).queryByRole('button', { name: /^(Edit|Delete) / })).toBeNull()
+    expect(admin).not.toHaveAttribute('aria-haspopup')
+    fireEvent.click(admin)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('is edited at the handlers endpoint, its password sent only when typed', async () => {
     const onReload = vi.fn()
     renderTable({ onReload })
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Kiran' }))
+    fireEvent.click(editRow('Kiran'))
     expect(screen.getByRole('dialog', { name: 'Edit dashboard login' })).toBeInTheDocument()
     expect(fieldLabels()).toEqual(['Reference (display name)', 'Username', 'Password (leave blank to keep)', 'Notes (optional)'])
     expect(field('Username')).toHaveAttribute('readonly')
@@ -260,27 +264,34 @@ describe('a dashboard login row', () => {
     const onReload = vi.fn()
     renderTable({ onReload })
     confirmMock.answer = false
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Kiran' }))
+    fireEvent.click(editRow('Kiran'))
+    const dialog = screen.getByRole('dialog', { name: 'Edit dashboard login' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(confirmMock.asked).toHaveLength(1))
     expect(writes()).toHaveLength(0)
+    expect(screen.getByRole('dialog', { name: 'Edit dashboard login' })).toBeInTheDocument()
     confirmMock.answer = true
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Kiran' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(onReload).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit dashboard login' })).toBeNull())
     expect(confirmMock.asked[1]).toMatchObject({ title: 'Remove handler?' })
     expect(writes()).toEqual([{ url: expect.stringMatching(/\/data-room\/credentials\/handlers\/kiran$/), method: 'DELETE', body: null }])
   })
 })
 
 describe('a service account row', () => {
-  it('keeps Show password, Copy all, Edit and Delete, and reads a password only when asked', async () => {
+  it('keeps Show password and Copy all, opens Edit from the row, and reads a password only when asked', async () => {
     renderTable()
     const row = rowOf('Ops')
-    for (const name of ['Show password for Ops', 'Copy password', 'Copy all', 'Edit Ops', 'Delete Ops']) {
+    expect(row).toBe(editRow('Ops'))
+    for (const name of ['Show password for Ops', 'Copy password', 'Copy all']) {
       expect(within(row).getByRole('button', { name })).toBeInTheDocument()
     }
     expect(calls.some((c) => c.url.includes('/password'))).toBe(false)
     fireEvent.click(within(row).getByRole('button', { name: 'Show password for Ops' }))
     expect(await within(row).findByText(SECRET)).toBeInTheDocument()
+    // Show and Copy are the row's own controls: they never open Edit.
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(calls.filter((c) => c.url.includes('/password')).map((c) => c.url))
       .toEqual([expect.stringMatching(/\/service-accounts\/tg_ops\/password$/)])
   })
@@ -342,7 +353,7 @@ describe('Add', () => {
 
   it('never offers to turn a service account into a login when editing it', () => {
     renderTable()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Ops' }))
+    fireEvent.click(editRow('Ops'))
     expect([...field('Credential type').options].map((o) => o.value)).toEqual(['Naukri', 'Gmail', 'Telegram', 'Tool'])
   })
 })

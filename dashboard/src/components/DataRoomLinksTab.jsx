@@ -3,6 +3,7 @@ import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
 import { copyToClipboard } from '../utils/copyToClipboard.js'
 import { Icon } from './ui/Icon.jsx'
+import { useRowEdit, ROW_EDIT_CLASS } from '../utils/rowEdit.js'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -59,7 +60,7 @@ export function keyLinkDisplayUrl(url) {
   return String(url || '').trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '')
 }
 
-function VaultModal({ title, fields, form, onChange, onSave, onClose, error }) {
+function VaultModal({ onDelete = null, title, fields, form, onChange, onSave, onClose, error }) {
   // Mounted only while open, so the dialog is open for its whole life.
   const dialogRef = useDialogA11y(true, onClose)
   return (
@@ -80,6 +81,7 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error }) {
           ))}
         </div>
         <div className="dr-modal-actions">
+          {onDelete && <button type="button" className="cand-btn cand-btn--ghost row-modal__delete" onClick={onDelete}>Delete</button>}
           <button type="button" className="cand-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="cand-btn cand-btn--primary" onClick={onSave}>Save</button>
         </div>
@@ -104,15 +106,18 @@ export function DataRoomLinksTab({ resources = [], onReload }) {
 
   const openEdit = (row) => {
     setModalError('')
-    setModal({ mode: 'edit', id: row.id, form: { id: row.id, title: row.title || '', url: row.url || '', notes: row.notes || '' } })
+    setModal({ mode: 'edit', id: row.id, row, form: { id: row.id, title: row.title || '', url: row.url || '', notes: row.notes || '' } })
   }
 
   const handleDelete = async (row) => {
     const ok = await confirm({ title: 'Delete link?', message: `Remove "${row.title || row.url}"?`, confirmLabel: 'Delete', variant: 'danger' })
-    if (!ok) return
+    if (!ok) return false
     await fetch(`${API_BASE}/data-room/credentials/vault/resources/${row.id}`, { method: 'DELETE', credentials: 'include' })
     onReload()
+    return true
   }
+
+  const rowProps = useRowEdit(openEdit)
 
   const handleCopy = async (row) => {
     const name = row.title || row.id
@@ -191,7 +196,7 @@ export function DataRoomLinksTab({ resources = [], onReload }) {
               const description = keyLinkDescription(row)
               const isCopied = copied === row.id
               return (
-                <tr key={row.id} className="dr-kl-row">
+                <tr key={row.id} className={`dr-kl-row ${ROW_EDIT_CLASS}`} {...rowProps(row, name)}>
                   <td className="dr-kl-title-cell" data-label="Title">
                     <span className="dr-kl-title" title={name}>{name}</span>
                   </td>
@@ -236,12 +241,6 @@ export function DataRoomLinksTab({ resources = [], onReload }) {
                           <Icon name="external-link" size={15} />
                         </button>
                       )}
-                      <button type="button" className="dr-kl-icon-btn" onClick={() => openEdit(row)} aria-label={`Edit ${name}`} title="Edit link">
-                        <Icon name="pencil" size={15} />
-                      </button>
-                      <button type="button" className="dr-kl-icon-btn dr-kl-icon-btn--danger" onClick={() => handleDelete(row)} aria-label={`Delete ${name}`} title="Delete link">
-                        <Icon name="trash" size={15} />
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -260,6 +259,7 @@ export function DataRoomLinksTab({ resources = [], onReload }) {
           onChange={(f) => setModal(s => ({ ...s, form: f }))}
           onSave={handleSave}
           onClose={() => setModal(null)}
+          onDelete={modal.mode === 'edit' ? async () => { if (await handleDelete(modal.row)) setModal(null) } : null}
           error={modalError}
         />
       )}

@@ -9,6 +9,7 @@ import { DataRoomLinksTab } from './DataRoomLinksTab.jsx'
 import { DataRoomOffersTab } from './DataRoomOffersTab.jsx'
 import { DataRoomDaybreakTab } from './DataRoomDaybreakTab.jsx'
 import { OPERATIONS_PUBLIC_URL } from '../config.js'
+import { useRowEdit, ROW_EDIT_CLASS } from '../utils/rowEdit.js'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -231,6 +232,7 @@ export function DataRoomPanel() {
     setEditor({
       mode: 'edit',
       id: row.id,
+      row,
       form: {
         opportunity_type: row.opportunity_type || 'other',
         status: row.status || 'new',
@@ -273,6 +275,8 @@ export function DataRoomPanel() {
     load()
   }
 
+  const rowProps = useRowEdit(openEdit)
+
   const removeRow = async (row) => {
     const ok = await confirm({
       title: 'Remove opportunity?',
@@ -280,12 +284,13 @@ export function DataRoomPanel() {
       confirmLabel: 'Delete',
       variant: 'danger',
     })
-    if (!ok) return
+    if (!ok) return false
     await fetch(`${API_BASE}/data-room/${row.id}`, {
       method: 'DELETE',
       credentials: 'include',
     })
     load()
+    return true
   }
 
   const statCards = useMemo(() => {
@@ -415,19 +420,18 @@ export function DataRoomPanel() {
               <th>Status</th>
               <th>Last contact</th>
               <th>Summary</th>
-              <th />
             </tr>
           </thead>
           <tbody>
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="dr-empty">
+                <td colSpan={7} className="dr-empty">
                   No opportunities yet. Partner DMs are captured automatically when Karthik detects vendor or support-provider threads.
                 </td>
               </tr>
             )}
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} className={ROW_EDIT_CLASS} {...rowProps(row, row.name || row.summary || row.id)}>
                 <td>
                   <span className={`dr-badge dr-badge--${row.opportunity_type}`}>
                     {TYPE_LABELS[row.opportunity_type] || row.opportunity_type}
@@ -457,14 +461,6 @@ export function DataRoomPanel() {
                   title={row.opportunity_type === 'dashboard_login' ? (row.notes || '') : (row.source_snippet || '')}
                 >
                   {row.summary || row.source_snippet?.slice(0, 80) || '—'}
-                </td>
-                <td className="dr-actions">
-                  <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)}>
-                    Edit
-                  </button>
-                  <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => removeRow(row)}>
-                    Delete
-                  </button>
                 </td>
               </tr>
             ))}
@@ -615,6 +611,7 @@ export function DataRoomPanel() {
               </label>
             </div>
             <div className="dr-modal-actions">
+              {editor.mode === 'edit' && editor.row && <button type="button" className="cand-btn cand-btn--ghost row-modal__delete" onClick={async () => { if (await removeRow(editor.row)) setEditor(null) }}>Delete</button>}
               <button type="button" className="cand-btn" onClick={() => setEditor(null)}>Cancel</button>
               <button type="button" className="cand-btn cand-btn--primary" onClick={saveEditor}>Save</button>
             </div>

@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import { useDialogA11y } from '../hooks/useDialogA11y.js'
 import { copyToClipboard } from '../utils/copyToClipboard.js'
+import { useRowEdit, ROW_EDIT_CLASS } from '../utils/rowEdit.js'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -21,7 +22,7 @@ const PROMPT_FIELDS = [
   { key: 'body', label: 'Prompt body', type: 'textarea', rows: 8, full: true },
 ]
 
-function VaultModal({ title, fields, form, onChange, onSave, onClose, error }) {
+function VaultModal({ onDelete = null, title, fields, form, onChange, onSave, onClose, error }) {
   // Mounted only while open, so the dialog is open for its whole life.
   const dialogRef = useDialogA11y(true, onClose)
   return (
@@ -42,6 +43,7 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error }) {
           ))}
         </div>
         <div className="dr-modal-actions">
+          {onDelete && <button type="button" className="cand-btn cand-btn--ghost row-modal__delete" onClick={onDelete}>Delete</button>}
           <button type="button" className="cand-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="cand-btn cand-btn--primary" onClick={onSave}>Save</button>
         </div>
@@ -70,14 +72,17 @@ export function DataRoomPromptsTab({ prompts = [], onReload }) {
 
   const openEdit = (row) => {
     setModalError('')
-    setModal({ mode: 'edit', id: row.id, form: { id: row.id, title: row.title || '', source: row.source || '', body: row.body || '' } })
+    setModal({ mode: 'edit', id: row.id, row, form: { id: row.id, title: row.title || '', source: row.source || '', body: row.body || '' } })
   }
+
+  const rowProps = useRowEdit(openEdit)
 
   const handleDelete = async (row) => {
     const ok = await confirm({ title: 'Delete prompt?', message: `Remove "${row.title || row.id}"?`, confirmLabel: 'Delete', variant: 'danger' })
-    if (!ok) return
+    if (!ok) return false
     await fetch(`${API_BASE}/data-room/credentials/vault/prompts/${row.id}`, { method: 'DELETE', credentials: 'include' })
     onReload()
+    return true
   }
 
   const handleSave = async () => {
@@ -145,15 +150,13 @@ export function DataRoomPromptsTab({ prompts = [], onReload }) {
               <tr><td colSpan={5} className="dr-empty">No prompts yet.</td></tr>
             )}
             {prompts.map(row => (
-              <tr key={row.id} className={expanded === row.id ? 'dr-row--expanded' : ''}>
+              <tr key={row.id} className={`${ROW_EDIT_CLASS}${expanded === row.id ? ' dr-row--expanded' : ''}`} {...rowProps(row, row.title || row.id)}>
                 <td><strong>{row.title || row.id}</strong></td>
                 <td className="dr-muted">{row.source || '—'}</td>
                 <td>{(row.body || '').length} chars</td>
                 <td className="dr-prompt-preview">{(row.body || '').slice(0, 60)}{(row.body || '').length > 60 ? '…' : ''}</td>
                 <td>
                   <div className="dr-acct-actions">
-                    <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)}>Edit</button>
-                    <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)}>Delete</button>
                     <button
                       type="button"
                       className={`dr-copy-btn${activeKey === `prompt-${row.id}` ? ' dr-copy-btn--copied' : ''}`}
@@ -177,6 +180,7 @@ export function DataRoomPromptsTab({ prompts = [], onReload }) {
           onChange={(f) => setModal(s => ({ ...s, form: f }))}
           onSave={handleSave}
           onClose={() => setModal(null)}
+          onDelete={modal.mode === 'edit' ? async () => { if (await handleDelete(modal.row)) setModal(null) } : null}
           error={modalError}
         />
       )}

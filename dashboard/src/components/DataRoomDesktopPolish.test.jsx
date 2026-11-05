@@ -1,7 +1,7 @@
 /**
  * Data Room after the cleanup: no Interview Data section, tabs that say which
  * one is open, copy controls that say what they copy, Accounts actions in one
- * row (Copy all, Edit, Delete), and tables that scroll inside their box
+ * row (Copy all; Edit and Delete open from the row), and tables that scroll inside their box
  * rather than being clipped.
  */
 import React from 'react'
@@ -71,11 +71,12 @@ describe('an Accounts row', () => {
     await waitFor(() => expect(within(row).getByRole('button', { name: 'Copied username' })).toBeInTheDocument())
   })
 
-  it('keeps its actions in one row, the destructive one last', () => {
+  it('keeps its copy action in the row; Edit and Delete open from the row', () => {
     render(<DataRoomAccountsTab accounts={ACCOUNTS} onReload={() => {}} />)
     const row = screen.getByText('Ops Gmail (Current)').closest('tr')
     const actions = [...row.querySelector('.dr-acct-actions').querySelectorAll('button')].map(b => b.textContent)
-    expect(actions).toEqual(['Copy all', 'Edit', 'Delete'])
+    expect(actions).toEqual(['Copy all'])
+    expect(row.className).toContain('row-edit')
     expect(document.querySelector('thead th:last-child').className).toContain('dr-acct-th--actions')
   })
 

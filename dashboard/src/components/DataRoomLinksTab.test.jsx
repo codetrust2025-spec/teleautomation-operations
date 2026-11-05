@@ -19,6 +19,7 @@ import { captureLayout } from '../test/captureLayout.js'
 import { copyToClipboard } from '../utils/copyToClipboard.js'
 import { DataRoomLinksTab, keyLinkDescription, keyLinkDisplayUrl } from './DataRoomLinksTab.jsx'
 import { DataRoomPanel } from './DataRoomPanel.jsx'
+import { editRow } from '../test/rowEdit.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(HERE, '..', 'index.css'), 'utf8').replace(/\r\n/g, '\n')
@@ -158,7 +159,7 @@ describe('the Key Links table', () => {
   it('edits a link from the stored notes, provenance and all, and sends them back unchanged', async () => {
     const onReload = renderTab()
     const link = LINKS[6]
-    fireEvent.click(within(rowOf(link.title)).getByRole('button', { name: `Edit ${link.title}` }))
+    fireEvent.click(editRow(link.title))
     const dialog = screen.getByRole('dialog', { name: 'Edit link' })
     const notes = dialog.querySelector('textarea')
     expect(notes.value).toBe(link.notes)
@@ -174,18 +175,31 @@ describe('the Key Links table', () => {
   it('deletes a link only once the deletion is confirmed', async () => {
     const onReload = renderTab()
     const link = LINKS[2]
-    const del = within(rowOf(link.title)).getByRole('button', { name: `Delete ${link.title}` })
-    expect(del).toHaveAttribute('title', 'Delete link')
+    // Delete is in the row's Edit dialog (row-click Edit), not on the row.
+    expect(within(rowOf(link.title)).queryByRole('button', { name: /Delete/ })).toBeNull()
+    fireEvent.click(editRow(link.title))
+    const del = within(screen.getByRole('dialog', { name: 'Edit link' })).getByRole('button', { name: 'Delete' })
+    // The confirm dialog opens over the Edit dialog and comes after it in the
+    // document; its backdrop is aria-hidden, so its buttons are found with `hidden`.
+    const confirmButton = async (name) => {
+      const found = await waitFor(() => {
+        const all = screen.getAllByRole('button', { name, hidden: true })
+        if (all.length < 2) throw new Error('confirm not open')
+        return all
+      })
+      return found[found.length - 1]
+    }
 
-    // The confirm dialog's backdrop is aria-hidden, so its buttons are found with `hidden`.
     fireEvent.click(del)
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel', hidden: true }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Cancel', hidden: true })).toBeNull())
+    fireEvent.click(await confirmButton('Cancel'))
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Cancel', hidden: true })).toHaveLength(1))
     expect(calls.filter(c => c.method === 'DELETE')).toHaveLength(0)
+    expect(screen.getByRole('dialog', { name: 'Edit link' })).toBeInTheDocument()
 
     fireEvent.click(del)
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete', hidden: true }))
+    fireEvent.click(await confirmButton('Delete'))
     await waitFor(() => expect(onReload).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit link' })).toBeNull())
     const deleted = calls.filter(c => c.method === 'DELETE')
     expect(deleted).toHaveLength(1)
     expect(deleted[0].url).toMatch(/\/data-room\/credentials\/vault\/resources\/freelance_sheet$/)
@@ -208,8 +222,8 @@ describe('the Key Links table', () => {
   it('gives every action an accessible name and a tooltip, reachable from the keyboard', () => {
     renderTab()
     const actions = document.querySelectorAll('.dr-kl-icon-btn')
-    // Copy, Open, Edit, Delete on each of the nine.
-    expect(actions).toHaveLength(36)
+    // Copy and Open on each of the nine; Edit and Delete open from the row itself.
+    expect(actions).toHaveLength(18)
     for (const el of actions) {
       expect(el.getAttribute('aria-label')).toBeTruthy()
       expect(el.getAttribute('title')).toBeTruthy()
@@ -220,13 +234,17 @@ describe('the Key Links table', () => {
     }
     expect(screen.queryByRole('button', { name: /^(Edit|Delete)$/ })).toBeNull()
     expect(screen.queryByText(/Open ↗/)).toBeNull()
+    for (const row of document.querySelectorAll('tbody tr.dr-kl-row')) {
+      expect(row).toHaveAttribute('tabindex', '0')
+      expect(row).toHaveAttribute('aria-haspopup', 'dialog')
+    }
   })
 
   it('keeps a link without a URL in the table, its Open control disabled', () => {
     renderTab([{ id: 'no_url', title: 'Placeholder', notes: 'To be added.' }])
     const row = rowOf('Placeholder')
     expect(within(row).getByRole('button', { name: 'Open Placeholder: no URL' })).toBeDisabled()
-    expect(within(row).getByRole('button', { name: 'Edit Placeholder' })).toBeEnabled()
+    expect(row).toBe(editRow('Placeholder'))
     expect(within(row).queryByRole('button', { name: /Copy/ })).toBeNull()
   })
 })

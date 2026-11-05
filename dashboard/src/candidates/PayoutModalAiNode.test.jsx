@@ -13,6 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import PayoutModal from "./PayoutModal.jsx";
+import { findEditableRow } from '../test/rowEdit.js'
 
 class FakeEventSource {
   static instances = [];
@@ -175,7 +176,7 @@ describe("edit referrer expense with a new screenshot", () => {
   it("follows the node verifying the replacement screenshot", async () => {
     const server = stubServer();
     await openModal();
-    fireEvent.click(await screen.findByTitle("Edit"));
+    fireEvent.click(await findEditableRow());
     attachScreenshot();
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 

@@ -61,12 +61,12 @@ async function renderTable() {
 const rowById = (id) => document.querySelector(`tr[data-cid="${id}"]`);
 
 describe("headings", () => {
-  it("names the actions column and gives every column a class for its width", async () => {
+  it("ends at Resume (the row opens Edit) and gives every column a class for its width", async () => {
     await renderTable();
     const heads = [...document.querySelectorAll(".cand-table thead th")];
-    expect(heads.at(-1).textContent).toBe("Actions");
+    expect(heads.at(-1).textContent).toBe("Resume");
     expect(heads.map((th) => th.className.match(/cand-th--(\w+)/)?.[1])).toEqual(
-      ["name", "service", "tech", "stage", "pay", "date", "phone", "ref", "resume", "actions"],
+      ["name", "service", "tech", "stage", "pay", "date", "phone", "ref", "resume"],
     );
   });
 });

@@ -4,6 +4,7 @@ import { useDialogA11y } from '../hooks/useDialogA11y.js'
 import { offerLetterDownloadApiUrl, offerLetterPreviewApiUrl } from '../utils/offerLetterUrls.js'
 import { OfferPreviewModal, offerIsImage } from './OfferPreviewModal.jsx'
 import { Icon } from './ui/Icon.jsx'
+import { useRowEdit, ROW_EDIT_CLASS } from '../utils/rowEdit.js'
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '3000'
@@ -69,7 +70,7 @@ function pagesLabel(row) {
 
 // `suspended` while the letter's preview is open over this dialog, so the two
 // do not both answer Escape or both hold the Tab key.
-function VaultModal({ title, fields, form, onChange, onSave, onClose, error, uploadPanel, saving, suspended = false }) {
+function VaultModal({ onDelete = null, title, fields, form, onChange, onSave, onClose, error, uploadPanel, saving, suspended = false }) {
   // Mounted only while open, so the dialog is open for its whole life.
   const dialogRef = useDialogA11y(!suspended, onClose)
   return (
@@ -91,6 +92,7 @@ function VaultModal({ title, fields, form, onChange, onSave, onClose, error, upl
           ))}
         </div>
         <div className="dr-modal-actions">
+          {onDelete && <button type="button" className="cand-btn cand-btn--ghost row-modal__delete" onClick={onDelete}>Delete</button>}
           <button type="button" className="cand-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="cand-btn cand-btn--primary" onClick={onSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
@@ -127,11 +129,14 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
     setModal({ mode: 'edit', id: row.id, row, form: { candidate: row.candidate || '', company_name: row.company_name || '', notes: row.notes || '' } })
   }
 
+  const rowProps = useRowEdit(openEdit)
+
   const handleDelete = async (row) => {
     const ok = await confirm({ title: 'Delete offer letter?', message: `Remove "${row.filename || row.id}"?`, confirmLabel: 'Delete', variant: 'danger' })
-    if (!ok) return
+    if (!ok) return false
     await fetch(`${API_BASE}/data-room/credentials/vault/offer_letters/${row.id}`, { method: 'DELETE', credentials: 'include' })
     onReload()
+    return true
   }
 
   const handleSave = async () => {
@@ -298,7 +303,7 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
               <tr><td colSpan={7} className="dr-empty">No offer letters yet.</td></tr>
             )}
             {offers.map(row => (
-              <tr key={row.id}>
+              <tr key={row.id} className={ROW_EDIT_CLASS} {...rowProps(row, rowName(row))}>
                 <td data-label="Candidate" className="dr-offer-candidate">{row.candidate || '—'}</td>
                 <td data-label="File"><strong className="dr-offer-filename">{row.filename || row.id}</strong></td>
                 <td data-label="Company">{row.company_name || '—'}</td>
@@ -338,8 +343,6 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
                     >
                       <Icon name="download" size={14} />
                     </a>
-                    <button type="button" className="cand-btn cand-btn--sm" onClick={() => openEdit(row)}>Edit</button>
-                    <button type="button" className="cand-btn cand-btn--sm cand-btn--danger" onClick={() => handleDelete(row)}>Delete</button>
                     <label className={`cand-btn cand-btn--sm${uploading && uploadId === row.id ? ' cand-btn--disabled' : ''}`} title="Upload a new PDF or image">
                       {uploading && uploadId === row.id ? '…' : '↑'}
                       <input type="file" accept={OFFER_FILE_ACCEPT} style={{ display: 'none' }} onChange={(e) => { const chosen = e.target.files[0]; e.target.value = ''; handleUpload(row.id, chosen) }} />
@@ -360,6 +363,7 @@ export function DataRoomOffersTab({ offers = [], onReload }) {
           onChange={(f) => setModal(s => ({ ...s, form: f }))}
           onSave={handleSave}
           onClose={() => setModal(null)}
+          onDelete={modal.mode === 'edit' && modal.row ? async () => { if (await handleDelete(modal.row)) setModal(null) } : null}
           error={modalError}
           saving={saving}
           suspended={Boolean(preview)}
