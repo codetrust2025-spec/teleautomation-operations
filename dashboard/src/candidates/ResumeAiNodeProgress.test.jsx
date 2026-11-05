@@ -10,7 +10,7 @@ import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ResumeAutoFill, ResumeCell } from "./candidatesModule.jsx";
+import { ResumeAutoFill } from "./candidatesModule.jsx";
 
 class FakeEventSource {
   static instances = [];
@@ -135,54 +135,44 @@ describe("resume auto-fill", () => {
   });
 });
 
-describe("resume upload from the candidates table", () => {
-  const CANDIDATE = { id: "cand-1", name: "Ravi", resume_count: 0 };
-
-  it("follows the node reading a PDF in the cell", async () => {
+describe("resume upload from the Edit dialog of a saved candidate", () => {
+  // The table's Upload / Update moved here (5 Nov); the row only shows a summary.
+  it("follows the node reading a PDF filed on the candidate", async () => {
     const server = stubServer();
-    const onRefresh = vi.fn(async () => {});
-    const { container } = render(<ResumeCell candidate={CANDIDATE} onRefresh={onRefresh} />);
+    const { container } = render(<ResumeAutoFill candidateId="cand-1" onReading={() => ({ filled: [] })} />);
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
 
     await waitFor(() => expect(server.requests).toHaveLength(1));
+    expect(server.requests[0].url).toBe("/candidates/cand-1/resumes");
     expect(server.requests[0].options.body.get("analysis_id")).toMatch(/^[0-9a-f]{32}$/);
     push({ state: "running", node: "RTX 4060" });
-    expect(document.querySelector(".ai-node-progress--compact").textContent).toContain("● RTX 4060 · Analysing…");
-
-    await server.answer({ status: "ok", resume: { id: "resume-1" }, analysis: RTX });
-    expect(await screen.findByText(/^✓ Analysed by RTX 4060 in \d+\.\ds$/)).toBeTruthy();
-    expect(onRefresh).toHaveBeenCalled();
+    expect(document.querySelector(".ai-node-progress").textContent).toContain("RTX 4060");
   });
 
-  it("shows no AI status for a document no node reads", async () => {
+  it("files a DOC / DOCX with no AI status and refreshes the list", async () => {
     const server = stubServer();
-    const { container } = render(<ResumeCell candidate={CANDIDATE} onRefresh={async () => {}} />);
+    const onServerChange = vi.fn();
+    const { container } = render(<ResumeAutoFill candidateId="cand-1" onServerChange={onServerChange} onReading={() => ({ filled: [] })} />);
+    expect(container.querySelector('input[type="file"]').getAttribute("accept")).toContain(".docx");
     const docx = new File(["PK"], "resume.docx", {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     });
     fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [docx] } });
 
     await waitFor(() => expect(server.requests).toHaveLength(1));
+    expect(server.requests[0].url).toBe("/candidates/cand-1/resumes");
     expect(server.requests[0].options.body.get("analysis_id")).toBeNull();
     expect(document.querySelector(".ai-node-progress")).toBeNull();
     expect(FakeEventSource.instances).toHaveLength(0);
-    await server.answer({ status: "ok", resume: { id: "resume-1" } });
-    expect(document.querySelector(".ai-node-progress")).toBeNull();
+    await server.answer({ status: "ok", resume: { id: "resume-1", original_name: "resume.docx" } });
+    await waitFor(() => expect(onServerChange).toHaveBeenCalled());
+    expect(screen.getByRole("link", { name: "View resume resume.docx" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download resume resume.docx" })).toBeInTheDocument();
+    expect(screen.getByText("Resume saved. Only a PDF is read to fill the fields.")).toBeInTheDocument();
   });
 
-  it("follows the node when Update uploads a newer resume", async () => {
-    const saved = { id: "resume-0", original_name: "Old.pdf", uploaded_at: "2026-09-01T10:00:00Z" };
-    const server = stubServer();
-    const onRefresh = vi.fn(async () => {});
-    const { container } = render(<ResumeCell candidate={{ ...CANDIDATE, resume_count: 1, active_resume: saved }} onRefresh={onRefresh} />);
-    fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [pdf()] } });
-
-    await waitFor(() => expect(server.requests).toHaveLength(1));
-    expect(server.requests[0].url).toBe("/candidates/cand-1/resumes");
-    push({ state: "running", node: "Praveen" });
-    expect(document.querySelector(".ai-node-progress--compact").textContent).toContain("● Praveen · Analysing…");
-    await server.answer({ status: "ok", resume: { id: "resume-1" }, analysis: { ...RTX, node: "Praveen", analysed_by: ["Praveen"] } });
-    expect(await screen.findByText(/^✓ Analysed by Praveen in \d+\.\ds$/)).toBeTruthy();
-    expect(onRefresh).toHaveBeenCalled();
+  it("a new candidate's dialog still takes a PDF only", () => {
+    const { container } = render(<ResumeAutoFill onReading={() => ({ filled: [] })} />);
+    expect(container.querySelector('input[type="file"]').getAttribute("accept")).toBe(".pdf,application/pdf");
   });
 });

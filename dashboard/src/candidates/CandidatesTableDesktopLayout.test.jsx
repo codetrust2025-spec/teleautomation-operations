@@ -90,16 +90,17 @@ describe("phone and referrer under the name", () => {
 });
 
 describe("the resume cell", () => {
-  it("is one control either way: Upload resume, or the one resume's View, Download and Update", async () => {
+  it("is a summary either way: Saved or None, with nothing to press", async () => {
     await renderTable();
-    const none = within(rowById("r3").querySelector(".cand-cell-resume")).getAllByRole("button");
-    expect(none.map((b) => b.textContent)).toEqual(["Upload resume"]);
+    const none = rowById("r3").querySelector(".cand-cell-resume");
+    expect(none.textContent).toBe("None");
     const cell = rowById("r1").querySelector(".cand-cell-resume");
-    expect(cell.querySelectorAll(".cand-resume-chip")).toHaveLength(1);
-    expect(within(cell).getByRole("link", { name: "View resume Ram_Charan.pdf" })).toBeInTheDocument();
-    expect(within(cell).getByRole("link", { name: "Download resume Ram_Charan.pdf" })).toBeInTheDocument();
-    expect(within(cell).getByRole("button", { name: "Update resume Ram_Charan.pdf" }).textContent).toBe("Update");
-    expect(cell.textContent).not.toMatch(/\d+ resumes?/);
+    expect(cell.textContent).toBe("Saved");
+    expect(cell.querySelector(".cand-resume-status--on").getAttribute("title")).toBe("Ram_Charan.pdf");
+    for (const td of [none, cell]) {
+      expect(within(td).queryByRole("button")).toBeNull();
+      expect(within(td).queryByRole("link")).toBeNull();
+    }
   });
 });
 

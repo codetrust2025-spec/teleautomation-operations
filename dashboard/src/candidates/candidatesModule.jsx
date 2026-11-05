@@ -1649,6 +1649,27 @@ export function ResumeAutoFill({
     setNotes([]);
     setReadOnlyFile(null);
     setHeldReading(null);
+    if (candidateId && resumeIsWordFile(file)) {
+      // DOC / DOCX: filed on the candidate as the table's Update did; only a
+      // PDF is read by an AI node, so nothing is filled from it.
+      try {
+        const body = new FormData();
+        body.append("file", file);
+        const res = await (
+          await fetch(`${ve}/candidates/${candidateId}/resumes`, { method: "POST", body })
+        ).json();
+        if (res.status !== "ok") throw new Error(res.message || "Upload failed");
+        if (res.resume?.id) setSaved(res.resume);
+        onServerChange?.();
+        setNotes([{ tone: "muted", text: "Resume saved. Only a PDF is read to fill the fields." }]);
+      } catch (err) {
+        setError(err.message || "Resume upload failed");
+      } finally {
+        setBusy(false);
+        if (inputRef.current) inputRef.current.value = "";
+      }
+      return;
+    }
     let run = beginAnalysis();
     let serverAnalysis = null;
     let outcome = { ok: false, failureLabel: "Could not read" };
@@ -1849,7 +1870,7 @@ export function ResumeAutoFill({
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,application/pdf"
+          accept={candidateId ? ".pdf,.doc,.docx,application/pdf" : ".pdf,application/pdf"}
           hidden
           onChange={(ev) => handleFile(ev.target.files?.[0])}
           disabled={busy}
@@ -1865,7 +1886,9 @@ export function ResumeAutoFill({
           {busy ? "Reading resume…" : "Upload Resume (PDF)"}
         </button>
         <span className="cand-resume-bar-hint">
-          Upload to auto-fill name, phone, email and technology
+          {candidateId
+            ? "A PDF auto-fills name, phone, email and technology; DOC and DOCX are saved only"
+            : "Upload to auto-fill name, phone, email and technology"}
         </span>
         {viewUrl ? (
           <div className="cand-resume-file" data-resume-id={saved.id}>
@@ -1956,131 +1979,26 @@ export function ResumeAutoFill({
     </div>
   );
 }
-// Only a PDF is read by an AI node before it is filed -- the server checks the
-// same content type -- so only a PDF upload follows one.
-const resumeIsReadByAi = (file) => /pdf/i.test(file?.type || "");
-const resumeFailureLabel = (result) =>
-  result?.ai_extraction?.is_resume === false ? "Not a resume" : "Not saved";
+// Only a PDF is read by an AI node before it is filed; a Word resume (which the
+// Edit dialog also takes for a saved candidate) is filed without a read.
+const resumeIsWordFile = (file) =>
+  /\.docx?$/i.test(file?.name || "") || /msword|wordprocessingml/i.test(file?.type || "");
 
-export function ResumeCell({ candidate, onRefresh }) {
-  const inputRef = w.useRef(null);
-  const [busy, setBusy] = w.useState(false);
-  const {
-    analysis,
-    begin: beginAnalysis,
-    reset: resetAnalysis,
-  } = useAiAnalysis(ve);
-  // One resume per candidate: the newest whose file is stored (the server's
-  // active_resume). The cell used to count every slot row's records -- lost
-  // files and copies included -- and showed "10 resumes".
+/** The Candidates table's Resume cell: whether the one active resume is
+ *  stored ("Saved" / "None"), and nothing to press. View, Download and Update are in the row's
+ *  Edit dialog (5 Nov), which the row opens. */
+export function ResumeSummary({ candidate }) {
   const active = latestResumeOf(candidate);
-  const viewUrl = active ? `${ve}/candidates/${candidate.id}/resumes/${active.id}/preview` : "";
-  const downloadUrl = active ? `${ve}/candidates/${candidate.id}/resumes/${active.id}` : "";
   const fileName = active ? active.original_name || active.filename || "resume.pdf" : "";
-  const pickFile = (ev) => {
-    ev.stopPropagation();
-    ev.preventDefault();
-    if (inputRef.current) inputRef.current.click();
-  };
-
-  async function upload(file) {
-    if (!file || !candidate.id) return;
-    setBusy(true);
-    const run = resumeIsReadByAi(file) ? beginAnalysis() : null;
-    if (!run) resetAnalysis();
-    try {
-      const body = new FormData();
-      body.append("file", file);
-      if (run) body.append("analysis_id", run.id);
-      const result = await (
-        await fetch(`${ve}/candidates/${candidate.id}/resumes`, {
-          method: "POST",
-          body,
-        })
-      ).json();
-      run?.finish(result.analysis, {
-        ok: result.status === "ok",
-        failureLabel: resumeFailureLabel(result),
-      });
-      if (result.status !== "ok")
-        throw new Error(result.message || "Upload failed");
-      if (onRefresh) await onRefresh();
-    } catch (err) {
-      run?.finish(null, { ok: false, failureLabel: "Not saved" });
-      window.alert(err.message || "Resume upload failed");
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-
   return (
-    <span
-      className="cand-resume-cell-react"
-      onMouseDown={(ev) => ev.stopPropagation()}
-      onClick={(ev) => ev.stopPropagation()}
-    >
-      {active && (
-        <span className="cand-resume-chip cand-resume-chip--active" title={fileName}>
-          <a
-            className="cand-resume-chip__view"
-            href={viewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onMouseDown={(ev) => ev.stopPropagation()}
-            aria-label={`View resume ${fileName}`}
-          >
-            <Icon name="file" size={13} />
-            View
-          </a>
-          <a
-            className="cand-resume-chip__download"
-            href={downloadUrl}
-            download={fileName}
-            onMouseDown={(ev) => ev.stopPropagation()}
-            title="Download resume"
-            aria-label={`Download resume ${fileName}`}
-          >
-            <Icon name="download" size={13} />
-          </a>
-          <button
-            type="button"
-            className="cand-resume-chip__cta"
-            onMouseDown={(ev) => ev.stopPropagation()}
-            onClick={pickFile}
-            disabled={busy}
-            title="Upload a newer resume; it replaces this one"
-            aria-label={`Update resume ${fileName}`}
-          >
-            {busy ? "…" : "Update"}
-          </button>
+    <span className="cand-resume-cell-react">
+      {active ? (
+        <span className="cand-resume-status cand-resume-status--on" title={fileName}>
+          <Icon name="file" size={13} />
+          Saved
         </span>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".pdf,.doc,.docx"
-        hidden
-        onChange={(ev) => upload(ev.target.files && ev.target.files[0])}
-        disabled={busy}
-      />
-      {!active && (
-        <button
-          type="button"
-          className="cand-btn cand-btn--ghost cand-btn--xs cand-resume-chip cand-resume-chip--upload"
-          onMouseDown={(ev) => ev.stopPropagation()}
-          onClick={pickFile}
-          title="Upload a resume (PDF, DOC or DOCX)"
-          disabled={busy}
-        >
-          {busy ? "…" : "Upload resume"}
-        </button>
-      )}
-      {analysis && (
-        <AiNodeProgress
-          analysis={analysis}
-          className="ai-node-progress--compact"
-        />
+      ) : (
+        <span className="cand-resume-status cand-resume-status--none">None</span>
       )}
     </span>
   );
@@ -6093,7 +6011,7 @@ export function proofReviewSummary(proofs) {
   }
   return summary;
 }
-export function _Component27({ row: e, onViewProofs: t }) {
+export function _Component27({ row: e }) {
   const r = Number(e.expected_payment) || 20000;
   const n = Number(e.payment) || 0;
   const a = Math.max(0, r - n);
@@ -6114,17 +6032,11 @@ export function _Component27({ row: e, onViewProofs: t }) {
   const proofWord = `${l} payment screenshot${l === 1 ? "" : "s"}`;
   const c =
     l > 0 ? (
-      <button
-        type="button"
-        className={`cand-pay-proofs cand-pay-proofs--btn${proofState ? ` cand-pay-proofs--${proofState.tone}` : ""}`}
-        onClick={(o) => {
-          o.stopPropagation();
-          if (t != null) {
-            t(e);
-          }
-        }}
-        title={`View ${proofWord}${proofState ? ` (${proofState.text})` : ""}`}
-        aria-label={`View ${proofWord}${proofState ? `, ${proofState.text}` : ""}`}
+      // A summary only: the proofs are viewed, downloaded and managed in the
+      // row's Edit dialog.
+      <span
+        className={`cand-pay-proofs${proofState ? ` cand-pay-proofs--${proofState.tone}` : ""}`}
+        title={`${proofWord}${proofState ? ` (${proofState.text})` : ""}`}
       >
         <Icon name="paperclip" size={12} />
         <span className="cand-pay-proofs-count">
@@ -6135,8 +6047,7 @@ export function _Component27({ row: e, onViewProofs: t }) {
             {proofState.tone === "verified" ? "✓ verified" : proofState.text}
           </span>
         )}
-        <span className="cand-pay-proofs-cta">View</span>
-      </button>
+      </span>
     ) : null;
   // Recorded above what the booking expects: the L2 row that holds ₹10,000
   // against ₹5,000. Shown, not corrected -- someone has to say which it is.
@@ -7266,7 +7177,7 @@ function CandidatesPanelImpl() {
                           )}
                         </td>
                         <td className="cand-cell-pay">
-                          <_Component27 row={ge} onViewProofs={Z} />
+                          <_Component27 row={ge} />
                         </td>
                         <td className="cand-cell-mono cand-cell-date">
                           {pR(ge.logged_date || ge.created_at || ge.date)}
@@ -7288,14 +7199,8 @@ function CandidatesPanelImpl() {
                             {ge.reference || "—"}
                           </td>
                         )}
-                        <td
-                          className="cand-cell-resume"
-                          onClick={(Ze) => {
-                            Ze.stopPropagation();
-                            Ze.nativeEvent.stopImmediatePropagation();
-                          }}
-                        >
-                          <ResumeCell candidate={ge} onRefresh={fe} />
+                        <td className="cand-cell-resume">
+                          <ResumeSummary candidate={ge} />
                         </td>
                       </tr>
                     );

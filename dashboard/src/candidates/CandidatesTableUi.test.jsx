@@ -169,7 +169,9 @@ describe("4. the payment cell", () => {
     expect(cell.querySelector(".cand-pay-pill").textContent).toMatch(/10k due/i);
     const proofs = cell.querySelector(".cand-pay-proofs");
     expect(proofs.querySelector(".cand-pay-proofs-count").textContent).toBe("1 proof");
-    expect(proofs.querySelector(".cand-pay-proofs-cta").textContent).toBe("View");
+    // A summary only: no View on the row.
+    expect(proofs.querySelector(".cand-pay-proofs-cta")).toBeNull();
+    expect(within(cell).queryByRole("button")).toBeNull();
   });
 
   it("keeps the PROOF FILE LOST state", async () => {
@@ -184,10 +186,20 @@ describe("4. the payment cell", () => {
     expect(pay("Missing Person").querySelector(".cand-pay-proofs")).toBeNull();
   });
 
-  it("still opens the proofs from View", async () => {
+  it("a click on the payment summary opens the row's Edit, where the proofs are", async () => {
     await renderTable();
-    fireEvent.click(within(rowOf("Complete Person")).getByRole("button", { name: /View 1 payment screenshot/ }));
-    expect(calls.some((c) => /\/candidates\/row-complete$/.test(c.url) && c.method === "GET")).toBe(true);
+    const row = rowOf("Complete Person");
+    expect(within(row).queryByRole("button", { name: /payment screenshot/ })).toBeNull();
+    fireEvent.click(row.querySelector(".cand-pay-proofs"));
+    await waitFor(() => expect(calls.some((c) => /\/candidates\/row-complete$/.test(c.url) && c.method === "GET")).toBe(true));
+    expect(await screen.findByRole("button", { name: "Delete row" })).toBeInTheDocument();
+  });
+
+  it("a click on the Resume cell opens Edit too", async () => {
+    await renderTable();
+    const before = calls.filter((c) => /\/candidates\/row-partial$/.test(c.url)).length;
+    fireEvent.click(rowOf("Partial Person").querySelector(".cand-cell-resume"));
+    await waitFor(() => expect(calls.filter((c) => /\/candidates\/row-partial$/.test(c.url)).length).toBe(before + 1));
   });
 });
 

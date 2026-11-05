@@ -138,7 +138,7 @@ describe("Upload and View are separate", () => {
     renderModal({ resumes: [] });
     expect(screen.queryByRole("link", { name: /View resume/ })).toBeNull();
     expect(screen.queryByRole("link", { name: /Download resume/ })).toBeNull();
-    expect(screen.getByText(/Upload to auto-fill name, phone, email and technology/)).toBeInTheDocument();
+    expect(screen.getByText(/A PDF auto-fills name, phone, email and technology; DOC and DOCX are saved only/)).toBeInTheDocument();
   });
 
   it("a newly uploaded resume becomes the one View opens", async () => {

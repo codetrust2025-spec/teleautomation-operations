@@ -43,19 +43,21 @@ const cellText = () => document.querySelector(".cand-pay").textContent.replace(/
 describe("the payment cell", () => {
   it("marks verified screenshots as verified", () => {
     render(<PaymentCell row={row({ payment_proofs: [proof("p1", "VERIFIED_COMPANY_PAYMENT")] })} />);
-    expect(cellText()).toMatch(/Paid.*1 proof.*✓ verified.*View/);
+    expect(cellText()).toMatch(/Paid.*1 proof.*✓ verified$/);
     expect(document.querySelector(".cand-pay-proofs--verified")).not.toBeNull();
   });
 
   it("says a screenshot is awaiting review instead of letting Paid stand alone", () => {
     render(<PaymentCell row={row({ payment_proofs: [proof("p1", "UNKNOWN_RECEIVER")] })} />);
     expect(cellText()).toMatch(/Paid.*1 proof.*awaiting review/);
-    expect(screen.getByRole("button", { name: /View 1 payment screenshot, awaiting review/ })).toBeTruthy();
+    // A summary, not a control: the proofs are opened from the row's Edit dialog.
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector(".cand-pay-proofs").getAttribute("title")).toBe("1 payment screenshot (awaiting review)");
   });
 
   it("shows a proof waiting on a ₹0 row, beside what is due", () => {
     render(<PaymentCell row={row({ payment: 0, payment_proofs: [proof("p1", "INCOMPLETE_PAYMENT_EVIDENCE")] })} />);
-    expect(cellText()).toMatch(/₹0.*₹5k due.*1 proof.*awaiting review.*View/);
+    expect(cellText()).toMatch(/₹0.*₹5k due.*1 proof.*awaiting review$/);
   });
 
   it("flags an amount above what the row expects, and changes nothing", () => {
@@ -67,7 +69,7 @@ describe("the payment cell", () => {
 
   it("leaves older screenshots with no review state as a plain count", () => {
     render(<PaymentCell row={row({ payment_proofs: [proof("p1", undefined)] })} />);
-    expect(cellText()).toMatch(/Paid.*1 proof.*View/);
+    expect(cellText()).toMatch(/Paid.*1 proof$/);
     expect(document.querySelector(".cand-pay-proofs-state")).toBeNull();
   });
 

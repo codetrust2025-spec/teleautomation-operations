@@ -19145,6 +19145,10 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 /* Resume: one control in the same place on every row -- "Upload resume" when
    there is none, "1 resume · Update" (opens the manager) when there is. */
 .cand-resume-cell-react { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+/* 5 Nov: the cell is a summary; the row opens Edit, where the resume is. */
+.cand-resume-status { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+.cand-resume-status--on { color: #a5b4fc; }
+.cand-resume-status--none { color: #64748b; }
 .cand-resume-cell-react .cand-resume-chip {
   display: inline-flex;
   align-items: center;

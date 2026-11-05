@@ -53,7 +53,7 @@ describe("the Candidates page", () => {
     // The row itself opens Edit (Daily Ops design): no pencil / trash buttons.
     expect(row.querySelector("svg.ta-icon--pencil, svg.ta-icon--trash")).toBeNull();
     expect(row.querySelector(".cand-pay-proofs svg.ta-icon--paperclip")).not.toBeNull();
-    expect(row.querySelector(".cand-resume-chip svg.ta-icon--file")).not.toBeNull();
+    expect(row.querySelector(".cand-resume-status svg.ta-icon--file")).not.toBeNull();
     expect(row.querySelector(".cand-phone-icon svg.ta-icon--phone")).not.toBeNull();
   });
 
