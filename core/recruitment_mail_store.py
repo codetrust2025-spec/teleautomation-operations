@@ -31,6 +31,7 @@ CANONICAL_CLASSIFICATIONS = {
     "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
     "interview_cancelled", "candidate_rejected",
     "not_relevant", "ai_retry_pending", "final_round_cleared", "hr_confirmation",
+    "post_interview_shortlisted",
     # A mail the reader gave up on that plainly describes an interview. Not
     # `ai_retry_pending`: that one means another attempt is coming, and for
     # these there is none -- a person has to read it.
@@ -52,6 +53,9 @@ TRACKED_NOTIFICATION_CLASSIFICATIONS = {
     "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
     "interview_cancelled",
     "final_round_cleared", "hr_confirmation",
+    # A shortlist that follows the interviews (HR discussion, documents,
+    # a cleared evaluation). Selection Related, unlike interview_shortlisted.
+    "post_interview_shortlisted",
     # An interview mail the reader could not read. Tracked because the
     # alternative is what happened to three of one candidate's interviews in
     # September: the pipeline gave up on the invitations, wrote the analysis,
@@ -157,6 +161,7 @@ _CLASSIFICATION_STATUS = {
     "hr_confirmation": "HR Confirmation",
     "interview_update": "Interview In Progress",
     "interview_shortlisted": "Interview Shortlisted",
+    "post_interview_shortlisted": "Shortlisted After Interview",
     "assessment_invited": "Assessment Pending",
     "interview_confirmed": "Interview Confirmed",
     "interview_rescheduled": "Interview Rescheduled",
@@ -2360,7 +2365,7 @@ def booking_source_message(provider_message_id: str) -> dict[str, Any] | None:
 def notification_priority(classification: str, *, confidence: float, requires_review: bool = False) -> str:
     if requires_review or confidence < float(__import__('os').getenv('OLLAMA_CONFIDENCE_THRESHOLD', '0.75')):
         return "retry_pending"
-    if classification in {"job_selection_confirmed", "offer_received", "joining_confirmed", "offer_accepted", "onboarding_started", "interview_confirmed", "interview_rescheduled", "interview_cancelled", "final_round_cleared"}:
+    if classification in {"job_selection_confirmed", "offer_received", "joining_confirmed", "offer_accepted", "onboarding_started", "interview_confirmed", "interview_rescheduled", "interview_cancelled", "final_round_cleared", "post_interview_shortlisted"}:
         return "high"
     if classification in {"background_verification", "document_verification", "compensation_confirmation", "joining_date_updated", "hr_confirmation"}:
         return "medium"

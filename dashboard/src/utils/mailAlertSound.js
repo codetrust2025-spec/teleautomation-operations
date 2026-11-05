@@ -24,6 +24,9 @@ export const SELECTION_CLASSIFICATIONS = [
   'offer_accepted', 'offer_declined', 'offer_revoked', 'joining_confirmed',
   'joining_date_updated', 'onboarding_started', 'background_verification',
   'document_verification', 'compensation_confirmation', 'hr_confirmation',
+  // A shortlist after the interviews (HR discussion, documents, a cleared
+  // evaluation) is a selection outcome.
+  'post_interview_shortlisted',
 ]
 
 /** Interview slot movement — booked, moved or dropped. */

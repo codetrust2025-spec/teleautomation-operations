@@ -23,6 +23,7 @@ from services.recruitment_semantics import (
     classify_context,
     evidence_entails_transition,
     extract_interview_schedule,
+    is_post_interview_shortlist,
     redact_sensitive_text,
     validate_interview_event,
     validate_lifecycle_event,
@@ -1234,6 +1235,29 @@ def _needs_review_status(proposed: str) -> str | None:
     return None
 
 
+def _file_post_interview_shortlist(
+    value: dict[str, Any], message: dict[str, Any] | None,
+    attachments: list[dict[str, Any]] | None,
+) -> None:
+    """File a proven shortlist that follows the interviews as a selection outcome.
+
+    Only the classification moves -- to `post_interview_shortlisted`, which is
+    in the Selection Related group. The status stays INTERVIEW_SHORTLISTED and
+    a shortlist books nothing either way, so no booking decision changes.
+    """
+    if (
+        str(value.get("status") or "").upper() != "INTERVIEW_SHORTLISTED"
+        or value.get("classification") != "interview_shortlisted"
+        or value.get("backend_transition_validated") is not True
+    ):
+        return
+    texts = [str((message or {}).get("subject") or ""), str((message or {}).get("body") or "")]
+    texts += [str(item.get("text") or item.get("extracted_text") or "") for item in attachments or [] if isinstance(item, dict)]
+    if any(is_post_interview_shortlist(clean_email(text)) for text in texts if text):
+        value["classification"] = "post_interview_shortlisted"
+        value["candidate_status"] = store._CLASSIFICATION_STATUS["post_interview_shortlisted"]
+
+
 def validate_result(
     value: dict[str, Any], message: dict[str, Any] | None = None,
     attachments: list[dict[str, Any]] | None = None,
@@ -1242,6 +1266,7 @@ def validate_result(
 ) -> None:
     """Validate evidence, then expose only an automated operational decision."""
     _validate_result(value, message, attachments, deterministic_context=deterministic_context, relevance=relevance)
+    _file_post_interview_shortlist(value, message, attachments)
     from services.recruitment_automation import normalize_analysis
     normalize_analysis(value)
 

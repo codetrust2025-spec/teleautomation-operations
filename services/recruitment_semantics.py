@@ -244,6 +244,50 @@ _TRANSITION_ASSERTIONS: dict[str, tuple[str, ...]] = {
 
 _CONDITIONAL_SENSITIVE = frozenset({"INTERVIEW_SHORTLISTED", "BACKGROUND_VERIFICATION", "HR_CONFIRMATION"})
 
+# A shortlist that comes *after* the interviews is a selection outcome, not
+# interview work. Mail Alerts filed every shortlist under Interview Related, so
+# HCLTech's "you have been shortlisted for the position you interviewed for ...
+# share below documents at earliest for HR Discussion", its "You've
+# successfully progressed through the [Evaluation 2]" and Fractal's
+# "shortlisted ... we require all candidates to undergo a background
+# verification (BGV) check" sat beside interview invitations.
+#
+# Each phrase places this candidate past an interview: the interview is
+# referred to in the past, a round is behind them, or what is asked for is
+# what an employer asks for before an offer (HR discussion, background check,
+# payslips, current offer letter). A shortlist that only leads to an interview
+# ("shortlisted for the L1 Technical Discussion", "for further interview
+# process") matches none of them and stays Interview Related.
+_POST_INTERVIEW_SHORTLIST_PATTERNS: tuple[str, ...] = (
+    r"\b(?:position|role|job|opening) you (?:have |had )?interviewed for\b",
+    r"\b(?:after|following|based on) (?:reviewing )?(?:your|the) (?:interview|interviews|interview performance|technical (?:round|discussion|interview)s?)\b",
+    r"\byou(?:'ve|’ve| have) (?:successfully )?(?:progressed|moved|advanced) (?:through|past)\b[^.!?\n]{0,60}\b(?:evaluation|round|stage|assessment|interview)\b",
+    r"\b(?:you have |you've |you’ve )?(?:successfully )?cleared (?:the |your |all )?(?:technical |l[1-5] |final |first |second |managerial )?(?:interview |technical )?(?:round|rounds|interview|interviews|discussion)\b",
+    r"\b(?:for|before) (?:the |your )?hr (?:discussion|round)\b",
+    r"\b(?:undergo|initiate|complete|proceed with)\b[^.!?\n]{0,40}\b(?:background verification|background check|bgv)\b",
+    r"\b(?:pay ?slips?|salary slips?|appraisal letter|relieving letter|current (?:employer )?offer letter)\b",
+)
+
+
+def is_post_interview_shortlist(text: str) -> bool:
+    """Whether a shortlist mail places the candidate past the interviews.
+
+    Read one sentence at a time, the way transition proof is, and a phrase
+    stated as a condition or a negation ("if you clear the technical round",
+    "you have not cleared") does not count.
+    """
+    source = str(text or "")
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", source):
+        for pattern in _POST_INTERVIEW_SHORTLIST_PATTERNS:
+            for match in re.finditer(pattern, sentence, re.I):
+                before = sentence[max(0, match.start() - 45):match.start()]
+                if re.search(r"\b(?:not|never|no|if|once|when|whether|unless|until)\b[^.!?\n]{0,40}$", before, re.I):
+                    continue
+                if pattern.startswith(r"\b(?:you have |you've") and re.search(r"\bnot\b", match.group(), re.I):
+                    continue
+                return True
+    return False
+
 
 def evidence_entails_transition(status: str, text: str) -> bool:
     """Return whether a source excerpt actually states the proposed transition."""

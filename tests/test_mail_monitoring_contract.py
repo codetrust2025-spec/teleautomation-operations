@@ -17,6 +17,9 @@ def test_every_requested_classification_is_stable():
         # Added: generic walk-in recruitment campaigns retained in All Alerts
         # as an audit record; excluded from Unread Invitations and unread counter.
         'recruitment_walkin',
+        # Added 5 Nov 2026: a shortlist that follows the interviews (HR
+        # discussion, documents, a cleared evaluation), Selection Related.
+        'post_interview_shortlisted',
     }
 
 

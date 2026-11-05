@@ -17,7 +17,7 @@ import { Icon } from "./ui/Icon.jsx";
 // Adding recruitment_walkin here without a matching group entry breaks both.
 export const TRACKED_CLASSIFICATIONS = [
   "job_selection_confirmed", "offer_received", "final_round_cleared",
-  "hr_confirmation", "offer_accepted",
+  "hr_confirmation", "post_interview_shortlisted", "offer_accepted",
   "offer_declined", "offer_revoked", "joining_confirmed",
   "joining_date_updated", "onboarding_started", "background_verification",
   "document_verification", "compensation_confirmation",
@@ -27,7 +27,7 @@ export const TRACKED_CLASSIFICATIONS = [
 // Tracked categories for the compact notification-type filter.
 const JOB_CONFIRMED_CLASSIFICATIONS = [
   "job_selection_confirmed", "offer_received", "final_round_cleared",
-  "hr_confirmation", "offer_accepted",
+  "hr_confirmation", "post_interview_shortlisted", "offer_accepted",
   "offer_declined", "offer_revoked", "joining_confirmed",
   "joining_date_updated", "onboarding_started", "background_verification",
   "document_verification", "compensation_confirmation", "candidate_rejected",
