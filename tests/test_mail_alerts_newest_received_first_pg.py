@@ -77,6 +77,14 @@ def test_oldest_first_is_the_exact_reverse(mails):
 
 
 def test_the_download_follows_the_same_order(mails):
+    # The download joins each alert to its stored message and attachments;
+    # only the columns it reads are created, and no message is stored.
+    with mails() as conn, conn.cursor() as cur:
+        cur.execute("""CREATE TABLE mailbox_messages(
+            id text, provider_message_id text, recipient_email text, sent_at timestamptz,
+            rfc_message_id text, body_text text, html_body_text text, created_at timestamptz)""")
+        cur.execute("""CREATE TABLE mailbox_attachments(
+            mailbox_message_id text, filename text, mime_type text, size bigint, created_at timestamptz)""")
     exported = [row["notification_id"] for row in store.export_notifications({"sort": "newest"})]
     assert exported == ["newest", "second", "third", "fourth", "recovered"]
 
