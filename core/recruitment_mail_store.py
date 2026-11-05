@@ -3021,6 +3021,27 @@ def notification_order_sql(order: str = "DESC", prefix: str = "") -> str:
             f"{p}id {direction}")
 
 
+# One company section per candidate: the same name however it was spaced or
+# capitalised. The screen keys its sections with the same rule
+# (`companyKey` in MailMonitoringNotifications.jsx).
+NOTIFICATION_COMPANY_KEY_SQL = "lower(btrim(COALESCE(company_name, '')))"
+
+
+def grouped_notification_order_sql(order: str = "DESC") -> str:
+    """Candidate -> Company -> Mail, each by its latest Mail received.
+
+    Candidates follow their newest mail (ties by id, exactly as the candidate
+    page is chosen), each candidate's companies follow that company's newest
+    mail, and the mails of one company are newest first.
+    """
+    direction = "ASC" if str(order).upper() == "ASC" else "DESC"
+    received = "COALESCE(email_received_at, created_at)"
+    company = NOTIFICATION_COMPANY_KEY_SQL
+    return (f"max({received}) OVER (PARTITION BY candidate_id) {direction}, candidate_id, "
+            f"max({received}) OVER (PARTITION BY candidate_id, {company}) {direction}, {company}, "
+            f"{received} {direction}, id {direction}")
+
+
 def count_notifications(filters: dict[str, Any] | None = None) -> int:
     """Exact count of notifications matching the filters without grouping."""
     booking_result = str((filters or {}).get("booking_result") or "").strip().lower()
@@ -3192,7 +3213,7 @@ def list_notifications(
             cur.execute(
                 f"""SELECT * FROM mail_monitoring_notifications
                      WHERE {clause} AND candidate_id IN ({placeholders})
-                     ORDER BY {notification_order_sql(order)}""",
+                     ORDER BY {grouped_notification_order_sql(order)}""",
                 params + candidate_ids,
             )
             # `total` counts candidates here, so only rows are dropped from it.

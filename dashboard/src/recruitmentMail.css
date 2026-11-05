@@ -2660,8 +2660,8 @@
   box-shadow: inset 3px 0 0 rgba(167, 139, 250, 0.6);
 }
 
-/* Selection Related is grouped by candidate: one <tbody> per candidate, whose
-   first row is the parent. The parent must not inherit `.mail-table th`'s
+/* Mail Alerts is grouped Candidate -> Company -> Mail: one <tbody> per
+   candidate, whose first row is the parent, then a heading per company. The parent must not inherit `.mail-table th`'s
    sticky positioning - every group heading would then pile up under the column
    headings instead of staying with its own mails. */
 .mail-group + .mail-group {
@@ -2686,6 +2686,28 @@
   margin-left: 8px;
   color: var(--muted, #94a3b8);
   font-weight: 400;
+}
+.mail-company__head th {
+  position: static;
+  padding: 8px 12px 6px 34px;
+  background: rgba(148, 163, 184, 0.06);
+  color: var(--text, #e2e8f0);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+.mail-company__name {
+  color: #c7d2fe;
+}
+.mail-company__count {
+  margin-left: 10px;
+  color: var(--muted, #94a3b8);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 .mail-group__count {
   float: right;
@@ -2894,6 +2916,8 @@
   .mail-table tbody,
   .mail-table tbody > tr.mail-group__head,
   .mail-table .mail-group__head th,
+  .mail-table tbody > tr.mail-company__head,
+  .mail-table .mail-company__head th,
   .mail-table tr.mail-empty-row,
   .mail-table tr.mail-empty-row td { display: block; }
   .mail-table thead { display: none; }
@@ -3371,6 +3395,8 @@
   /* Grouped by candidate: the name is on the group heading already. */
   .mail-table tr.mail-notification-row > .mail-cell--candidate.mail-row__nested { display: none; }
   .mail-table .mail-group__head th { display: block; padding: 8px 2px 6px; }
+  .mail-table tbody > tr.mail-company__head { display: block; }
+  .mail-table .mail-company__head th { display: block; padding: 6px 2px 4px 12px; }
   .mail-table td.mail-empty { display: block; padding: 16px 4px; }
   .mail-pagination { flex-wrap: wrap; gap: 6px; }
 }

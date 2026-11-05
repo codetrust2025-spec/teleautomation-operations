@@ -78,7 +78,11 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const renderScreen = () => render(<ConfirmProvider><MailMonitoringNotifications /></ConfirmProvider>);
 const rows = () => [...document.querySelectorAll("tr.mail-notification-row")];
-const rowOf = (id) => rows().find((tr) => tr.textContent.includes(`Candidate ${id}`));
+// Rows sit under their candidate's heading (Candidate -> Company -> Mail), and
+// every invented candidate here holds one alert.
+const groupOf = (id) => [...document.querySelectorAll("tbody.mail-group")]
+  .find((tbody) => tbody.querySelector(".mail-group__head strong")?.textContent === `Candidate ${id}`);
+const rowOf = (id) => groupOf(id)?.querySelector("tr.mail-notification-row");
 // The table's own request; with a filter set each tab is also counted with limit=1.
 const lastList = () => calls.filter((c) => c.href.includes("/mail-monitoring/notifications?") && !c.href.includes("limit=1&")).at(-1)?.href || "";
 const posts = () => calls.filter((c) => c.method === "POST").map((c) => c.href.replace(/^.*\/notifications\//, ""));
@@ -108,7 +112,8 @@ describe("the alerts table", () => {
   it("shows every alert of the page, with the count and the pages", async () => {
     renderScreen();
     await waitFor(() => expect(rows()).toHaveLength(20));
-    expect(screen.getByText("184 notifications")).toBeInTheDocument();
+    // The page unit is the candidate; the mails are counted beside it.
+    expect(screen.getByText("184 candidates · 184 mails")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
@@ -131,7 +136,7 @@ describe("the alerts table", () => {
     await waitFor(() => expect(rows()).toHaveLength(20));
     const a1 = rowOf("a1");
     expect(a1.querySelector(".mail-cell--subject")).toHaveAttribute("title", LONG_SUBJECT);
-    expect(a1.querySelector(".mail-cell--candidate strong")).toHaveAttribute("title", "Candidate a1 · candidatea1@example.com");
+    expect(groupOf("a1").querySelector(".mail-group__head small").textContent).toBe("candidatea1@example.com");
     expect(a1.querySelector(".mail-cell--company .mail-cell__text")).toHaveAttribute("title", "Example Analytics");
     expect(a1.querySelector(".mail-status")).toHaveAttribute("title", "Interview Automatically Booked");
   });

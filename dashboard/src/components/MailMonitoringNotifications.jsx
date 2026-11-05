@@ -299,6 +299,38 @@ export const MAIL_TABS = [
 // and sets the new tab's key, while leaving candidate / alert-type / search
 // / booking-result untouched so users can filter within a tab.
 const TAB_OWNED_KEYS = new Set(["read", "priority"]);
+// The same company however it was spaced or capitalised; the server orders
+// with the same rule (NOTIFICATION_COMPANY_KEY_SQL).
+export const companyKey = (item) => String(item?.company_name || "").trim().toLowerCase();
+// Candidate -> Company -> Mail, in the order the server returned the rows
+// (each level by its latest Mail received). Built from that order rather than
+// re-sorted here, so the screen cannot disagree with paging. Nothing is merged:
+// every mail stays its own row.
+export function groupByCandidateAndCompany(items) {
+  const candidates = new Map();
+  for (const item of items) {
+    const candidateId = item.candidate_id || item.candidate_email || item.id;
+    if (!candidates.has(candidateId)) {
+      candidates.set(candidateId, {
+        key: String(candidateId), name: item.candidate_name || "Candidate",
+        email: item.candidate_email || "", count: 0, companies: new Map(),
+      });
+    }
+    const candidate = candidates.get(candidateId);
+    const company = companyKey(item);
+    if (!candidate.companies.has(company)) {
+      candidate.companies.set(company, {
+        key: `${candidate.key}::${company}`,
+        name: String(item.company_name || "").trim() || "Company not identified",
+        items: [],
+      });
+    }
+    candidate.companies.get(company).items.push(item);
+    candidate.count += 1;
+  }
+  return [...candidates.values()].map((candidate) => ({ ...candidate, companies: [...candidate.companies.values()] }));
+}
+const mailsLabel = (count) => `${count} ${count === 1 ? "mail" : "mails"}`;
 // The person's filters with a tab's own key applied: exactly what that tab's
 // table asks the server for.
 export function filtersForTab(filters, tabId) {
@@ -310,16 +342,16 @@ export function filtersForTab(filters, tabId) {
 }
 // The list request's filter parameters. The table and the tab counts both
 // build from this, so a badge cannot count a set the table does not show.
-// Every view is one flat list in Mail received order, newest first, so the
-// latest mail is the first row whatever the candidate, page or filter. The
-// Selection view used to be grouped by candidate, which put a candidate's
-// older mails above another candidate's newer one.
-export function filterParams(filters) {
+// The table asks for `group_by=candidate`: the page unit is the candidate, so
+// a candidate's mails never straddle two pages, and the server orders them
+// Candidate -> Company -> Mail by Mail received. A tab badge counts mails, so
+// its request stays ungrouped.
+export function filterParams(filters, { grouped = false } = {}) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries({
     search: filters.search, classification_group: filters.classificationGroup,
     candidate_id: filters.candidateId, booking_result: filters.bookingResult,
-    priority: filters.priority, is_read: filters.read,
+    priority: filters.priority, is_read: filters.read, group_by: grouped ? "candidate" : "",
   })) if (value !== "" && value !== undefined && value !== null) params.set(key, String(value));
   return params;
 }
@@ -412,7 +444,7 @@ export function MailMonitoringNotifications() {
   const effectiveFilters = useMemo(() => filtersForTab(filters, activeTab), [filters, activeTab]);
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: "20", offset: String(page * 20), sort: "newest" });
-    for (const [key, value] of filterParams(effectiveFilters)) params.set(key, value);
+    for (const [key, value] of filterParams(effectiveFilters, { grouped: true })) params.set(key, value);
     return params.toString();
   }, [effectiveFilters, page]);
   // Search, candidate, alert type and booking result apply inside every tab,
@@ -529,7 +561,9 @@ export function MailMonitoringNotifications() {
     }
   }, [load]);
   const clearAll = async () => {
-    const count=summary.visible_total ?? total;
+    // `total` counts candidates, so it is not a usable fallback for a dialog
+    // that deletes notifications: better no number than the wrong one.
+    const count=summary.visible_total ?? null;
     const confirmed = await confirm({
       title: "Clear all mail notifications?",
       message: count === null
@@ -602,6 +636,35 @@ export function MailMonitoringNotifications() {
   const tabCounts = filtersActive && filteredCounts ? filteredCounts : tabTotals;
   const activeLabel = (MAIL_TABS.find((t) => t.id === activeTab) || MAIL_TABS[0]).label;
   const hiddenByFilters = filtersActive ? tabTotals[activeTab] || 0 : 0;
+  const sections = useMemo(() => groupByCandidateAndCompany(items), [items]);
+  // One mail row; the candidate and company are on the headings above it.
+  const mailRow = (item) => <tr
+        key={item.id}
+        className={`${item.is_read ? "" : "is-unread"} mail-notification-row${mailAlertCategory(item) ? ` mail-notification-row--${mailAlertCategory(item)}` : ""}`}
+        tabIndex={0}
+        aria-label={`Open email notification: ${item.email_subject || "no subject"}`}
+        onClick={() => openNotification(item)}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return;
+          event.preventDefault();
+          openNotification(item);
+        }}
+      >{/* Every long value is cut to one line on a desktop and carries its whole
+          text as a tooltip; the alert itself shows everything. */}
+      <td className="mail-cell mail-cell--candidate mail-row__nested"><span className="mail-row__thread" aria-hidden="true" /></td><td className="mail-cell mail-cell--company"><span className="mail-cell__text" title={item.company_name || undefined}>{item.company_name || "—"}</span><small title={item.job_role || undefined}>{item.job_role || ""}</small></td><td className="mail-cell mail-cell--status"><span title={statusLabel(item)} className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{statusLabel(item)}</span>{(() => {
+        const reason = blockingReason(item);
+        if (!reason) return null;
+        // Shown in the row itself: a blocked booking is unusable information
+        // until you know why, and making that a click away hides it.
+        return <span
+          className="mail-status__reason"
+          title={reason.action ? `What to do: ${reason.action}` : undefined}
+        >Reason: {reason.reason}</span>;
+      })()}</td><td className="mail-cell mail-cell--subject" title={item.email_subject || undefined}><span className="mail-cell__subject">{item.email_subject || "(no subject)"}</span></td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received"><AlertTime value={item.email_received_at} /></td><td className="mail-cell mail-cell--detected"><AlertTime value={item.created_at} /></td><td className="mail-cell mail-cell--automation"><span className={`mail-automation mail-automation--${automationTone(item)}`} title={automationLabel(item)}>{automationLabel(item)}</span></td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="mail-action" aria-label="Open alert" title="Open alert" onClick={() => openNotification(item)}><Icon name="eye" size={15} /></button>
+        <button type="button" className="mail-action" aria-label={item.is_read ? "Mark as unread" : "Mark as read"} title={item.is_read ? "Mark as unread" : "Mark as read"} onClick={() => act(item, item.is_read ? "unread" : "read")}><Icon name={item.is_read ? "mail" : "check"} size={15} /></button>
+        <button type="button" className="mail-action mail-action--dismiss" aria-label="Dismiss alert" title="Dismiss alert" onClick={() => act(item, "dismiss")}><Icon name="x" size={15} /></button>
+      </td></tr>;
   return <section className="mail-monitoring-page">
     {/* The tabs and the page's two controls share one row: the page is named
         once, in the shell header, so the controls needed no row of their own. */}
@@ -629,7 +692,7 @@ export function MailMonitoringNotifications() {
         );
       })}
     </nav>
-    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><div className="mail-download-group"><button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button><button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button></div><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? total) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
+    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><div className="mail-download-group"><button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button><button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button></div><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? emailCount) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
     </div>
     <div className="mail-filters mail-filters--compact">
       <input aria-label="Search notifications" placeholder="Search candidate, email, company or subject" value={filters.search} onChange={set("search")} />
@@ -670,36 +733,24 @@ export function MailMonitoringNotifications() {
         {BOOKING_RESULTS.map((result) => <option value={result.value} key={result.value}>{result.label}</option>)}
       </select>
     </div>
-    <div ref={wrapRef} className={`mail-table-wrap${loading ? " is-loading" : ""}`}>{loading && <OverlayLoader label="Loading notifications…" />}<table className="mail-table"><thead><tr><th className="mail-col mail-col--candidate">Candidate</th><th className="mail-col mail-col--company">Company</th><th className="mail-col mail-col--status">Detected status</th><th className="mail-col mail-col--subject">Email subject</th><th className="mail-col mail-col--confidence">Confidence</th><th className="mail-col mail-col--received">Mail received</th><th className="mail-col mail-col--detected">Tool detected</th><th className="mail-col mail-col--automation">Automation</th><th className="mail-col mail-col--actions">Action</th></tr></thead>
-      <tbody>
-      {items.map((item) => <tr
-        key={item.id}
-        className={`${item.is_read ? "" : "is-unread"} mail-notification-row${mailAlertCategory(item) ? ` mail-notification-row--${mailAlertCategory(item)}` : ""}`}
-        tabIndex={0}
-        aria-label={`Open email notification: ${item.email_subject || "no subject"}`}
-        onClick={() => openNotification(item)}
-        onKeyDown={(event) => {
-          if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return;
-          event.preventDefault();
-          openNotification(item);
-        }}
-      >{/* Every long value is cut to one line on a desktop and carries its whole
-          text as a tooltip; the alert itself shows everything. */}
-      <td className="mail-cell mail-cell--candidate"><strong title={[item.candidate_name, item.candidate_email].filter(Boolean).join(" · ") || undefined}>{item.candidate_name || "Candidate"}</strong><small title={item.candidate_email || undefined}>{item.candidate_email || ""}</small></td><td className="mail-cell mail-cell--company"><span className="mail-cell__text" title={item.company_name || undefined}>{item.company_name || "—"}</span><small title={item.job_role || undefined}>{item.job_role || ""}</small></td><td className="mail-cell mail-cell--status"><span title={statusLabel(item)} className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{statusLabel(item)}</span>{(() => {
-        const reason = blockingReason(item);
-        if (!reason) return null;
-        // Shown in the row itself: a blocked booking is unusable information
-        // until you know why, and making that a click away hides it.
-        return <span
-          className="mail-status__reason"
-          title={reason.action ? `What to do: ${reason.action}` : undefined}
-        >Reason: {reason.reason}</span>;
-      })()}</td><td className="mail-cell mail-cell--subject" title={item.email_subject || undefined}><span className="mail-cell__subject">{item.email_subject || "(no subject)"}</span></td><td className="mail-cell mail-cell--confidence">{confidence(item.ai_confidence)}</td><td className="mail-cell mail-cell--received"><AlertTime value={item.email_received_at} /></td><td className="mail-cell mail-cell--detected"><AlertTime value={item.created_at} /></td><td className="mail-cell mail-cell--automation"><span className={`mail-automation mail-automation--${automationTone(item)}`} title={automationLabel(item)}>{automationLabel(item)}</span></td><td className="mail-cell mail-cell--actions" onClick={(event) => event.stopPropagation()}>
-        <button type="button" className="mail-action" aria-label="Open alert" title="Open alert" onClick={() => openNotification(item)}><Icon name="eye" size={15} /></button>
-        <button type="button" className="mail-action" aria-label={item.is_read ? "Mark as unread" : "Mark as read"} title={item.is_read ? "Mark as unread" : "Mark as read"} onClick={() => act(item, item.is_read ? "unread" : "read")}><Icon name={item.is_read ? "mail" : "check"} size={15} /></button>
-        <button type="button" className="mail-action mail-action--dismiss" aria-label="Dismiss alert" title="Dismiss alert" onClick={() => act(item, "dismiss")}><Icon name="x" size={15} /></button>
-      </td></tr>)}
-      </tbody>
+    <div ref={wrapRef} className={`mail-table-wrap${loading ? " is-loading" : ""}`}>{loading && <OverlayLoader label="Loading notifications…" />}<table className="mail-table mail-table--grouped"><thead><tr><th className="mail-col mail-col--candidate">Candidate</th><th className="mail-col mail-col--company">Company</th><th className="mail-col mail-col--status">Detected status</th><th className="mail-col mail-col--subject">Email subject</th><th className="mail-col mail-col--confidence">Confidence</th><th className="mail-col mail-col--received">Mail received</th><th className="mail-col mail-col--detected">Tool detected</th><th className="mail-col mail-col--automation">Automation</th><th className="mail-col mail-col--actions">Action</th></tr></thead>
+      {/* One <tbody> per candidate; inside it one heading per company, then
+          that company's mails. Headings are static, not sticky, so each stays
+          with its own mails. */}
+      {sections.map((candidate) => <tbody key={candidate.key} className="mail-group">
+      <tr className="mail-group__head"><th colSpan={9} scope="colgroup">
+        <strong>{candidate.name}</strong>
+        {candidate.email && <small>{candidate.email}</small>}
+        <span className="mail-group__count">{mailsLabel(candidate.count)} · {candidate.companies.length} {candidate.companies.length === 1 ? "company" : "companies"}</span>
+      </th></tr>
+      {candidate.companies.map((company) => <React.Fragment key={company.key}>
+        <tr className="mail-company__head"><th colSpan={9} scope="rowgroup">
+          <span className="mail-company__name">{company.name}</span>
+          <span className="mail-company__count">{mailsLabel(company.items.length)}</span>
+        </th></tr>
+        {company.items.map(mailRow)}
+      </React.Fragment>)}
+      </tbody>)}
       {!loading && loadError && <tbody><tr className="mail-empty-row"><td colSpan={9} className="mail-empty">
         <div className="mail-empty-state" role="alert">
           <strong>Mail alerts could not be loaded.</strong>
@@ -732,7 +783,7 @@ export function MailMonitoringNotifications() {
         </div>
       </td></tr></tbody>}
     </table></div>
-    {total > 20 && <footer className="mail-pagination"><span>{total} notifications</span><button disabled={page===0} onClick={() => setPage((value) => value-1)}>Previous</button><span>Page {page+1}</span><button disabled={(page+1)*20>=total} onClick={() => setPage((value) => value+1)}>Next</button></footer>}
+    {total > 20 && <footer className="mail-pagination"><span>{total} candidates · {mailsLabel(emailCount)}</span><button disabled={page===0} onClick={() => setPage((value) => value-1)}>Previous</button><span>Page {page+1}</span><button disabled={(page+1)*20>=total} onClick={() => setPage((value) => value+1)}>Next</button></footer>}
     {selected && <NotificationDetail item={selected} onClose={() => setSelected(null)} />}
   </section>;
 }

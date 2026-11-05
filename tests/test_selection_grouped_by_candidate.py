@@ -118,7 +118,7 @@ class TestThePageUnitIsTheCandidate:
             filters={"classification_group": "selection", "sort": "oldest"},
             group_by_candidate=True)
         assert "ORDER BY max(COALESCE(email_received_at, created_at)) ASC" in grouped.executed[1][0]
-        assert "ORDER BY COALESCE(email_received_at, created_at) ASC, id ASC" in grouped.executed[2][0]
+        assert "ORDER BY " + store.grouped_notification_order_sql("ASC") in grouped.executed[2][0]
 
     def test_no_candidates_skips_the_row_query(self, monkeypatch):
         cursor = GroupingCursor(candidate_ids=())
