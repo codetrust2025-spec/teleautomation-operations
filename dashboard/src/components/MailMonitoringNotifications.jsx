@@ -39,8 +39,8 @@ const AUTO_BOOKING_CLASSIFICATIONS = [
   "interview_cancelled", "interview_needs_reading",
 ];
 
-// The Selection view is the grouped one. Named rather than spelled inline so
-// the filter option, the request and the render cannot drift apart.
+// Named rather than spelled inline so the filter option and the request
+// cannot drift apart.
 export const SELECTION_GROUP = "selection";
 // The filter offers two groups instead of eighteen classifications. Built from
 // the lists above rather than restating them, so the screen and the server
@@ -310,12 +310,16 @@ export function filtersForTab(filters, tabId) {
 }
 // The list request's filter parameters. The table and the tab counts both
 // build from this, so a badge cannot count a set the table does not show.
-export function filterParams(filters, { grouped = filters.classificationGroup === SELECTION_GROUP } = {}) {
+// Every view is one flat list in Mail received order, newest first, so the
+// latest mail is the first row whatever the candidate, page or filter. The
+// Selection view used to be grouped by candidate, which put a candidate's
+// older mails above another candidate's newer one.
+export function filterParams(filters) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries({
     search: filters.search, classification_group: filters.classificationGroup,
     candidate_id: filters.candidateId, booking_result: filters.bookingResult,
-    priority: filters.priority, is_read: filters.read, group_by: grouped ? "candidate" : "",
+    priority: filters.priority, is_read: filters.read,
   })) if (value !== "" && value !== undefined && value !== null) params.set(key, String(value));
   return params;
 }
@@ -414,12 +418,12 @@ export function MailMonitoringNotifications() {
   // Search, candidate, alert type and booking result apply inside every tab,
   // so with any of them set the summary's totals are not what the tabs would
   // show: Unread said 7 above an empty table. Each tab is then counted with
-  // the same request its table makes (ungrouped, so a badge counts mails).
+  // the same request its table makes.
   const filtersActive = personFiltersActive(filters);
   const countQueries = useMemo(() => (filtersActive
     ? MAIL_TABS.map((tab) => {
       const params = new URLSearchParams({ limit: "1", offset: "0", sort: "newest" });
-      for (const [key, value] of filterParams(filtersForTab(filters, tab.id), { grouped: false })) params.set(key, value);
+      for (const [key, value] of filterParams(filtersForTab(filters, tab.id))) params.set(key, value);
       return [tab.id, params.toString()];
     })
     : []), [filters, filtersActive]);
@@ -479,30 +483,6 @@ export function MailMonitoringNotifications() {
     })();
     return () => { cancelled = true; };
   }, []);
-  // The Selection view is grouped; the Interview view and the unfiltered view
-  // stay flat. Interview mails cannot appear here at all - `classification_group
-  // =selection` is applied on the server, and the two groups are disjoint by
-  // construction, so nothing interview-related reaches this list to be grouped.
-  const grouped = effectiveFilters.classificationGroup === SELECTION_GROUP;
-  // One parent per candidate, in the order the server returned them, holding
-  // every one of that candidate's mails as its own row. Nothing is merged or
-  // deduplicated: two mails from the same company on the same day are two
-  // alerts and must both stay readable and actionable.
-  const candidateGroups = useMemo(() => {
-    const order = [];
-    const byCandidate = new Map();
-    for (const item of items) {
-      // candidate_id is NOT NULL in the table; the fallbacks only stop a row
-      // with a missing id from being merged into one nameless parent.
-      const key = item.candidate_id || item.candidate_email || item.id;
-      if (!byCandidate.has(key)) {
-        byCandidate.set(key, { key, name: item.candidate_name || "Candidate", email: item.candidate_email || "", items: [] });
-        order.push(key);
-      }
-      byCandidate.get(key).items.push(item);
-    }
-    return order.map((key) => byCandidate.get(key));
-  }, [items]);
   const set = (key) => (event) => { setPage(0); setFilters((value) => ({ ...value, [key]: event.target.value })); };
   const act = async (item, action) => { await request(`/api/mail-monitoring/notifications/${item.id}/${action}`, { method:"POST", body:"{}" }); load({ silent:true }); };
   // Switching tabs resets page only — user's candidate/alert-type/search/booking
@@ -549,11 +529,7 @@ export function MailMonitoringNotifications() {
     }
   }, [load]);
   const clearAll = async () => {
-    // `total` counts candidates while the Selection view is grouped, so it is
-    // not a usable fallback here: this dialog deletes notifications across
-    // every filter, and understating how many would be a destructive prompt
-    // with the wrong number on it. Better to omit the count than to invent it.
-    const count=summary.visible_total ?? (grouped ? null : total);
+    const count=summary.visible_total ?? total;
     const confirmed = await confirm({
       title: "Clear all mail notifications?",
       message: count === null
@@ -694,18 +670,9 @@ export function MailMonitoringNotifications() {
         {BOOKING_RESULTS.map((result) => <option value={result.value} key={result.value}>{result.label}</option>)}
       </select>
     </div>
-    <div ref={wrapRef} className={`mail-table-wrap${loading ? " is-loading" : ""}`}>{loading && <OverlayLoader label="Loading notifications…" />}<table className={`mail-table${grouped ? " mail-table--grouped" : ""}`}><thead><tr><th className="mail-col mail-col--candidate">Candidate</th><th className="mail-col mail-col--company">Company</th><th className="mail-col mail-col--status">Detected status</th><th className="mail-col mail-col--subject">Email subject</th><th className="mail-col mail-col--confidence">Confidence</th><th className="mail-col mail-col--received">Mail received</th><th className="mail-col mail-col--detected">Tool detected</th><th className="mail-col mail-col--automation">Automation</th><th className="mail-col mail-col--actions">Action</th></tr></thead>
-      {/* One <tbody> per candidate when grouped, so the parent is a real table
-          section rather than a row pretending to be a heading. The row itself is
-          the same in both modes - only the candidate cell differs, because in
-          grouped mode the name is already on the parent above it. */}
-      {(grouped ? candidateGroups : [{ key: "all", items }]).map((group) => <tbody key={group.key} className={grouped ? "mail-group" : undefined}>
-      {grouped && <tr className="mail-group__head"><th colSpan={9} scope="colgroup">
-        <strong>{group.name}</strong>
-        {group.email && <small>{group.email}</small>}
-        <span className="mail-group__count">{group.items.length} selection {group.items.length === 1 ? "mail" : "mails"}</span>
-      </th></tr>}
-      {group.items.map((item) => <tr
+    <div ref={wrapRef} className={`mail-table-wrap${loading ? " is-loading" : ""}`}>{loading && <OverlayLoader label="Loading notifications…" />}<table className="mail-table"><thead><tr><th className="mail-col mail-col--candidate">Candidate</th><th className="mail-col mail-col--company">Company</th><th className="mail-col mail-col--status">Detected status</th><th className="mail-col mail-col--subject">Email subject</th><th className="mail-col mail-col--confidence">Confidence</th><th className="mail-col mail-col--received">Mail received</th><th className="mail-col mail-col--detected">Tool detected</th><th className="mail-col mail-col--automation">Automation</th><th className="mail-col mail-col--actions">Action</th></tr></thead>
+      <tbody>
+      {items.map((item) => <tr
         key={item.id}
         className={`${item.is_read ? "" : "is-unread"} mail-notification-row${mailAlertCategory(item) ? ` mail-notification-row--${mailAlertCategory(item)}` : ""}`}
         tabIndex={0}
@@ -718,9 +685,7 @@ export function MailMonitoringNotifications() {
         }}
       >{/* Every long value is cut to one line on a desktop and carries its whole
           text as a tooltip; the alert itself shows everything. */}
-      <td className={`mail-cell mail-cell--candidate${grouped ? " mail-row__nested" : ""}`}>{grouped
-        ? <span className="mail-row__thread" aria-hidden="true" />
-        : <><strong title={[item.candidate_name, item.candidate_email].filter(Boolean).join(" · ") || undefined}>{item.candidate_name || "Candidate"}</strong><small title={item.candidate_email || undefined}>{item.candidate_email || ""}</small></>}</td><td className="mail-cell mail-cell--company"><span className="mail-cell__text" title={item.company_name || undefined}>{item.company_name || "—"}</span><small title={item.job_role || undefined}>{item.job_role || ""}</small></td><td className="mail-cell mail-cell--status"><span title={statusLabel(item)} className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{statusLabel(item)}</span>{(() => {
+      <td className="mail-cell mail-cell--candidate"><strong title={[item.candidate_name, item.candidate_email].filter(Boolean).join(" · ") || undefined}>{item.candidate_name || "Candidate"}</strong><small title={item.candidate_email || undefined}>{item.candidate_email || ""}</small></td><td className="mail-cell mail-cell--company"><span className="mail-cell__text" title={item.company_name || undefined}>{item.company_name || "—"}</span><small title={item.job_role || undefined}>{item.job_role || ""}</small></td><td className="mail-cell mail-cell--status"><span title={statusLabel(item)} className={`mail-status mail-status--${mailStatusTone(item)}${mailAlertCategory(item) ? ` mail-status--${mailAlertCategory(item)}` : ""}`}>{statusLabel(item)}</span>{(() => {
         const reason = blockingReason(item);
         if (!reason) return null;
         // Shown in the row itself: a blocked booking is unusable information
@@ -734,7 +699,7 @@ export function MailMonitoringNotifications() {
         <button type="button" className="mail-action" aria-label={item.is_read ? "Mark as unread" : "Mark as read"} title={item.is_read ? "Mark as unread" : "Mark as read"} onClick={() => act(item, item.is_read ? "unread" : "read")}><Icon name={item.is_read ? "mail" : "check"} size={15} /></button>
         <button type="button" className="mail-action mail-action--dismiss" aria-label="Dismiss alert" title="Dismiss alert" onClick={() => act(item, "dismiss")}><Icon name="x" size={15} /></button>
       </td></tr>)}
-      </tbody>)}
+      </tbody>
       {!loading && loadError && <tbody><tr className="mail-empty-row"><td colSpan={9} className="mail-empty">
         <div className="mail-empty-state" role="alert">
           <strong>Mail alerts could not be loaded.</strong>
@@ -767,7 +732,7 @@ export function MailMonitoringNotifications() {
         </div>
       </td></tr></tbody>}
     </table></div>
-    {total > 20 && <footer className="mail-pagination"><span>{total} {grouped ? "candidates" : "notifications"}</span><button disabled={page===0} onClick={() => setPage((value) => value-1)}>Previous</button><span>Page {page+1}</span><button disabled={(page+1)*20>=total} onClick={() => setPage((value) => value+1)}>Next</button></footer>}
+    {total > 20 && <footer className="mail-pagination"><span>{total} notifications</span><button disabled={page===0} onClick={() => setPage((value) => value-1)}>Previous</button><span>Page {page+1}</span><button disabled={(page+1)*20>=total} onClick={() => setPage((value) => value+1)}>Next</button></footer>}
     {selected && <NotificationDetail item={selected} onClose={() => setSelected(null)} />}
   </section>;
 }

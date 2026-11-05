@@ -3006,6 +3006,21 @@ def notification_filter_sql(
     return clause, params, order
 
 
+def notification_order_sql(order: str = "DESC", prefix: str = "") -> str:
+    """Mail Alerts order: when the mail was received, newest first.
+
+    The list used to follow `created_at`, the moment the tool detected the
+    mail, so a mail recovered or re-read today sat above one received an hour
+    ago. The order is now the Mail received column itself; a row with no
+    received time (none in production) falls back to its detection time, and
+    the id breaks ties so paging never repeats or skips a row.
+    """
+    direction = "ASC" if str(order).upper() == "ASC" else "DESC"
+    p = f"{prefix}." if prefix else ""
+    return (f"COALESCE({p}email_received_at, {p}created_at) {direction}, "
+            f"{p}id {direction}")
+
+
 def count_notifications(filters: dict[str, Any] | None = None) -> int:
     """Exact count of notifications matching the filters without grouping."""
     booking_result = str((filters or {}).get("booking_result") or "").strip().lower()
@@ -3062,7 +3077,7 @@ def export_notifications(
                 SELECT {select_fields}
                 FROM mail_monitoring_notifications n
                 WHERE {clause}
-                ORDER BY n.created_at {order}
+                ORDER BY {notification_order_sql(order, "n")}
                 LIMIT %s OFFSET %s
             """
             cur.execute(query, params + [batch_size, offset])
@@ -3166,7 +3181,7 @@ def list_notifications(
             total = int(cur.fetchone()[0])
             cur.execute(
                 f"""SELECT candidate_id FROM mail_monitoring_notifications WHERE {clause}
-                     GROUP BY candidate_id ORDER BY max(created_at) {order}, candidate_id
+                     GROUP BY candidate_id ORDER BY max(COALESCE(email_received_at, created_at)) {order}, candidate_id
                      LIMIT %s OFFSET %s""",
                 params + [page, skip],
             )
@@ -3177,7 +3192,7 @@ def list_notifications(
             cur.execute(
                 f"""SELECT * FROM mail_monitoring_notifications
                      WHERE {clause} AND candidate_id IN ({placeholders})
-                     ORDER BY created_at {order}""",
+                     ORDER BY {notification_order_sql(order)}""",
                 params + candidate_ids,
             )
             # `total` counts candidates here, so only rows are dropped from it.
@@ -3186,7 +3201,7 @@ def list_notifications(
             )
         cur.execute(f"SELECT count(*) FROM mail_monitoring_notifications WHERE {clause}", params)
         total = int(cur.fetchone()[0])
-        cur.execute(f"SELECT * FROM mail_monitoring_notifications WHERE {clause} ORDER BY created_at {order} LIMIT %s OFFSET %s", params + [page, skip])
+        cur.execute(f"SELECT * FROM mail_monitoring_notifications WHERE {clause} ORDER BY {notification_order_sql(order)} LIMIT %s OFFSET %s", params + [page, skip])
         rows = _rows(cur)
     return _booking_result_page(reconcile_booking_claims(rows), total, booking_result)
 
