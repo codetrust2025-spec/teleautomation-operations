@@ -71,7 +71,9 @@ function install(notifications = SELECTION_ROWS, total = 2) {
 }
 
 const lastQuery = () => {
-  const list = calls.filter((c) => c.includes("/mail-monitoring/notifications?"));
+  // The table's own request; with a filter set each tab is also counted with
+  // limit=1, ungrouped so a badge counts mails.
+  const list = calls.filter((c) => c.includes("/mail-monitoring/notifications?") && !c.includes("limit=1&"));
   return list[list.length - 1] || "";
 };
 

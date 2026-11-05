@@ -387,7 +387,8 @@ describe("booking result filter", () => {
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-  const lastList = () => listRequests[listRequests.length - 1];
+  // The table's own request; with a filter set each tab is also counted with limit=1.
+  const lastList = () => listRequests.filter((p) => p.get("limit") !== "1").at(-1);
   const bookingFilter = () => screen.getByRole("combobox", { name: "Booking result filter" });
 
   it("sits last in the filter row with the three labels", async () => {
@@ -429,17 +430,20 @@ describe("booking result filter", () => {
     expect(lastList().get("offset")).toBe("0");
   });
 
-  it("leaves the summary counts global", async () => {
+  it("counts the tabs under the booking filter while the summary stays global", async () => {
     renderNotifications();
     await screen.findByText("Rahul Kumar");
+    const allTab = screen.getByRole("tab", { name: /All Alerts/ });
+    // No filter: the badge is the summary's visible_total (109, shown as 99+).
+    expect(allTab.textContent).toContain("99+");
     fireEvent.change(bookingFilter(), { target: { value: "booked" } });
     await waitFor(() => expect(lastList().get("booking_result")).toBe("booked"));
-    // The tab counts come from the summary endpoint, whatever the table is filtered to.
+    // The summary (sidebar, bell) is never filtered...
     expect(summaryRequests.every((path) => !path.includes("?"))).toBe(true);
-    // The All Alerts tab badge reflects visible_total (109) from the summary.
-    // Counts > 99 are capped at "99+" by the component.
-    const allTab = screen.getByRole("tab", { name: /All Alerts/ });
-    expect(allTab.textContent).toContain("99+");
+    // ...but the badge counts what the All Alerts table holds under the filter.
+    await waitFor(() => expect(allTab.querySelector(".mail-tab__count").textContent).toBe("1"));
+    expect(allTab).toHaveAttribute("title", "1 of 109 match the filters");
+    expect(listRequests.some((p) => p.get("limit") === "1" && p.get("booking_result") === "booked" && !p.has("is_read") && !p.has("priority"))).toBe(true);
   });
 
   it("switching to All Alerts tab removes tab-owned filter params", async () => {

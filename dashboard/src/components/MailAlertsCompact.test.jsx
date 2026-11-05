@@ -79,7 +79,8 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const renderScreen = () => render(<ConfirmProvider><MailMonitoringNotifications /></ConfirmProvider>);
 const rows = () => [...document.querySelectorAll("tr.mail-notification-row")];
 const rowOf = (id) => rows().find((tr) => tr.textContent.includes(`Candidate ${id}`));
-const lastList = () => calls.filter((c) => c.href.includes("/mail-monitoring/notifications?")).at(-1)?.href || "";
+// The table's own request; with a filter set each tab is also counted with limit=1.
+const lastList = () => calls.filter((c) => c.href.includes("/mail-monitoring/notifications?") && !c.href.includes("limit=1&")).at(-1)?.href || "";
 const posts = () => calls.filter((c) => c.method === "POST").map((c) => c.href.replace(/^.*\/notifications\//, ""));
 
 describe("labels", () => {
@@ -194,7 +195,8 @@ describe("an empty result", () => {
     await waitFor(() => expect(rows()).toHaveLength(20));
     listed = [];
     fireEvent.change(screen.getByLabelText("Search notifications"), { target: { value: "nobody" } });
-    await screen.findByText("No notifications match these filters.");
+    // The filter hides the 6 unread alerts the badge counted before it was set.
+    await screen.findByText("None of the 6 in Unread Invitations match these filters.");
     expect(lastList()).toContain("search=nobody");
     expect(screen.getByText("Try another search, or clear the filters to see every alert in this tab.")).toBeInTheDocument();
     captureLayout("mail-alerts-empty", document.querySelector(".mail-monitoring-page"));

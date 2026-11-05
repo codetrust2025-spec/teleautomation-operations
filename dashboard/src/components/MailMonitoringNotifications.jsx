@@ -299,6 +299,29 @@ export const MAIL_TABS = [
 // and sets the new tab's key, while leaving candidate / alert-type / search
 // / booking-result untouched so users can filter within a tab.
 const TAB_OWNED_KEYS = new Set(["read", "priority"]);
+// The person's filters with a tab's own key applied: exactly what that tab's
+// table asks the server for.
+export function filtersForTab(filters, tabId) {
+  const tab = MAIL_TABS.find((t) => t.id === tabId) || MAIL_TABS[0];
+  const merged = { ...filters };
+  for (const key of TAB_OWNED_KEYS) merged[key] = "";
+  if (tab.filterKey) merged[tab.filterKey] = tab.filterValue;
+  return merged;
+}
+// The list request's filter parameters. The table and the tab counts both
+// build from this, so a badge cannot count a set the table does not show.
+export function filterParams(filters, { grouped = filters.classificationGroup === SELECTION_GROUP } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries({
+    search: filters.search, classification_group: filters.classificationGroup,
+    candidate_id: filters.candidateId, booking_result: filters.bookingResult,
+    priority: filters.priority, is_read: filters.read, group_by: grouped ? "candidate" : "",
+  })) if (value !== "" && value !== undefined && value !== null) params.set(key, String(value));
+  return params;
+}
+// The filters a person set, as opposed to a tab's own.
+export const personFiltersActive = (filters) =>
+  Boolean(filters.search || filters.candidateId || filters.classificationGroup || filters.bookingResult);
 
 // Read-only. The panel reports what the pipeline decided and offers the two
 // ways of acting on it that live outside this screen -- opening the booking and
@@ -382,29 +405,53 @@ export function MailMonitoringNotifications() {
   // Tab-owned keys (read, priority) are overridden by the tab; all others
   // pass through unchanged so candidate / alert-type / search / booking-result
   // keep working inside any tab.
-  const effectiveFilters = useMemo(() => {
-    const tab = MAIL_TABS.find((t) => t.id === activeTab) || MAIL_TABS[0];
-    const merged = { ...filters };
-    for (const key of TAB_OWNED_KEYS) merged[key] = "";
-    if (tab.filterKey) merged[tab.filterKey] = tab.filterValue;
-    return merged;
-  }, [filters, activeTab]);
+  const effectiveFilters = useMemo(() => filtersForTab(filters, activeTab), [filters, activeTab]);
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: "20", offset: String(page * 20), sort: "newest" });
-    for (const [key, value] of Object.entries({ search:effectiveFilters.search,classification_group:effectiveFilters.classificationGroup,candidate_id:effectiveFilters.candidateId,booking_result:effectiveFilters.bookingResult,priority:effectiveFilters.priority,is_read:effectiveFilters.read,group_by:effectiveFilters.classificationGroup === SELECTION_GROUP ? "candidate" : "" })) if (value !== "") params.set(key, String(value));
+    for (const [key, value] of filterParams(effectiveFilters)) params.set(key, value);
     return params.toString();
   }, [effectiveFilters, page]);
+  // Search, candidate, alert type and booking result apply inside every tab,
+  // so with any of them set the summary's totals are not what the tabs would
+  // show: Unread said 7 above an empty table. Each tab is then counted with
+  // the same request its table makes (ungrouped, so a badge counts mails).
+  const filtersActive = personFiltersActive(filters);
+  const countQueries = useMemo(() => (filtersActive
+    ? MAIL_TABS.map((tab) => {
+      const params = new URLSearchParams({ limit: "1", offset: "0", sort: "newest" });
+      for (const [key, value] of filterParams(filtersForTab(filters, tab.id), { grouped: false })) params.set(key, value);
+      return [tab.id, params.toString()];
+    })
+    : []), [filters, filtersActive]);
+  const [filteredCounts, setFilteredCounts] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const load = useCallback(async ({ silent = false } = {}) => {
     const version = ++loadVersion.current;
     if (!silent) setLoading(true);
     try {
-      const [list, counts] = await Promise.all([request(`/api/mail-monitoring/notifications?${query}`),fetchMailSummary()]);
+      const [list, counts, ...tabTotals] = await Promise.all([
+        request(`/api/mail-monitoring/notifications?${query}`),
+        fetchMailSummary(),
+        ...countQueries.map(([, tabQuery]) => request(`/api/mail-monitoring/notifications?${tabQuery}`)),
+      ]);
       if (version !== loadVersion.current) return;
       setItems(list.notifications || []);setTotal(list.total || 0);setEmailCount(list.email_count ?? list.total ?? 0);setSummary(counts.summary || {});
+      setFilteredCounts(countQueries.length
+        ? Object.fromEntries(countQueries.map(([tabId], index) => [tabId, Number(tabTotals[index]?.total || 0)]))
+        : null);
+      setLoadError("");
       publishMailUnread(counts.summary?.unread);
-    } catch { /* retain last good state */ }
+    } catch (error) {
+      // A failed read used to leave the table empty under "All caught up"
+      // while the badge still said 7. Say it failed instead; a silent
+      // refresh keeps the rows already on screen.
+      if (version === loadVersion.current && !silent) {
+        setItems([]); setTotal(0);
+        setLoadError(error?.message || "Mail alerts could not be loaded.");
+      }
+    }
     finally { if (!silent && version === loadVersion.current) setLoading(false); }
-  }, [query]);
+  }, [query, countQueries]);
   useMailLive((event) => {
     if (["notification_created", "notification_updated"].includes(event?.event) && event?.notification_id) {
       pendingRenders.current.set(String(event.notification_id), event);
@@ -461,8 +508,6 @@ export function MailMonitoringNotifications() {
   // Switching tabs resets page only — user's candidate/alert-type/search/booking
   // filters are preserved so they keep working within the new tab view.
   const switchTab = (tabId) => { setActiveTab(tabId); setPage(0); };
-  // The filters a person set, as opposed to the tab's own.
-  const filtersActive = Boolean(filters.search || filters.candidateId || filters.classificationGroup || filters.bookingResult);
   const clearFilters = () => { setPage(0); setCandidateQuery(""); setFilters(EMPTY_FILTERS); };
   // The table scrolls inside its own box on a desktop, so another page, tab or
   // filter starts that box at the top rather than wherever the last one was.
@@ -480,6 +525,7 @@ export function MailMonitoringNotifications() {
         publishMailUnread(next.unread);
         return next;
       });
+      setFilteredCounts((value) => value && { ...value, unread: Math.max(0, Number(value.unread || 0) - 1) });
     }
     const detailRequest = item.ai_recruitment_event_id
       ? request(`/api/ai-recruitment/events/${item.ai_recruitment_event_id}`)
@@ -569,13 +615,17 @@ export function MailMonitoringNotifications() {
       setDownloading(null);
     }
   };
-  // Live counts shown on each tab badge, pulled from the summary endpoint so
-  // they reflect the full dataset regardless of what is currently filtered.
-  const tabCounts = {
+  // Every tab's total with no filters, from the summary endpoint.
+  const tabTotals = {
     unread: summary.unread || 0,
     retry:  summary.ai_retry_pending || 0,
     all:    summary.visible_total || 0,
   };
+  // What each badge shows: what that tab's table holds under the filters set
+  // now. With none set that is the summary's total.
+  const tabCounts = filtersActive && filteredCounts ? filteredCounts : tabTotals;
+  const activeLabel = (MAIL_TABS.find((t) => t.id === activeTab) || MAIL_TABS[0]).label;
+  const hiddenByFilters = filtersActive ? tabTotals[activeTab] || 0 : 0;
   return <section className="mail-monitoring-page">
     {/* The tabs and the page's two controls share one row: the page is named
         once, in the shell header, so the controls needed no row of their own. */}
@@ -584,12 +634,16 @@ export function MailMonitoringNotifications() {
       {MAIL_TABS.map((tab) => {
         const count = tabCounts[tab.id] ?? 0;
         const isActive = activeTab === tab.id;
+        const filteredNote = filtersActive && filteredCounts
+          ? `${count} of ${tabTotals[tab.id] ?? 0} match the filters`
+          : undefined;
         return (
           <button
             key={tab.id}
             type="button"
             role="tab"
             aria-selected={isActive}
+            title={filteredNote}
             className={`mail-tab${isActive ? " mail-tab--active" : ""}`}
             onClick={() => switchTab(tab.id)}
           >
@@ -681,14 +735,25 @@ export function MailMonitoringNotifications() {
         <button type="button" className="mail-action mail-action--dismiss" aria-label="Dismiss alert" title="Dismiss alert" onClick={() => act(item, "dismiss")}><Icon name="x" size={15} /></button>
       </td></tr>)}
       </tbody>)}
-      {!loading && !items.length && <tbody><tr className="mail-empty-row"><td colSpan={9} className="mail-empty">
+      {!loading && loadError && <tbody><tr className="mail-empty-row"><td colSpan={9} className="mail-empty">
+        <div className="mail-empty-state" role="alert">
+          <strong>Mail alerts could not be loaded.</strong>
+          <span>{loadError}</span>
+          <button type="button" className="mail-empty-state__clear" onClick={() => load()}>Retry</button>
+        </div>
+      </td></tr></tbody>}
+      {!loading && !loadError && !items.length && <tbody><tr className="mail-empty-row"><td colSpan={9} className="mail-empty">
         <div className="mail-empty-state">
           <strong>{
             // When advanced filters (search, candidate, alert-type, booking) are set, the
             // generic message is always correct regardless of tab. Tab-specific friendly
             // messages only fire when the tab itself is the sole filter applied.
+            // The filters carry across tabs, so name what they are hiding: "No
+            // unread invitations" under a badge of 7 read as a broken table.
             filtersActive
-              ? "No notifications match these filters."
+              ? (hiddenByFilters
+                ? `None of the ${hiddenByFilters} in ${activeLabel} match these filters.`
+                : "No notifications match these filters.")
               : activeTab === "unread" ? "No unread invitations. All caught up!"
               : activeTab === "retry"  ? "No alerts are waiting for AI retry."
               : "No notifications match these filters."

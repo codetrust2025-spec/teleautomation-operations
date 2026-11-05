@@ -55,7 +55,8 @@ function install(summaryOverride = {}) {
   }));
 }
 
-const lastList = () => listRequests[listRequests.length - 1];
+// The table's own request; with a filter set each tab is also counted with limit=1.
+const lastList = () => listRequests.filter((p) => p.get("limit") !== "1").at(-1);
 const renderScreen = () => render(<ConfirmProvider><MailMonitoringNotifications /></ConfirmProvider>);
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -262,5 +263,93 @@ describe("tab-aware empty state", () => {
     renderScreen();
     fireEvent.click(await screen.findByRole("tab", { name: /All Alerts/ }));
     await screen.findByText("No notifications match these filters.");
+  });
+});
+
+// ── Filters carried across tabs ───────────────────────────────────────────────
+//
+// Production, 5 Nov 2026: Unread Invitations said 7 above an empty table. The
+// badges counted every alert while the table also applied the alert-type,
+// search, candidate and booking filters, which stay set across tabs -- all 7
+// unread alerts were interview alerts, and "Selection Related" was picked.
+
+describe("badges follow the filters the table applies", () => {
+  const UNREAD_ROWS = Array.from({ length: 7 }, (_, index) => ({
+    id: `n${index}`, classification: "interview_shortlisted", candidate_id: "c1",
+    candidate_name: "Test Candidate", email_subject: `Invite ${index}`, is_read: false,
+  }));
+
+  function installFiltered() {
+    listRequests = [];
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    vi.stubGlobal("fetch", vi.fn((url) => {
+      const path = String(url);
+      if (path.includes("/notifications?")) {
+        const params = new URL(path, "http://test.invalid").searchParams;
+        listRequests.push(params);
+        // Every unread alert is interview-related, as in production.
+        const rows = params.get("classification_group") === "selection" ? []
+          : params.get("is_read") === "false" ? UNREAD_ROWS
+          : params.get("priority") === "retry_pending" ? [] : UNREAD_ROWS;
+        const limit = Number(params.get("limit") || 20);
+        return response({ notifications: rows.slice(0, limit), total: rows.length });
+      }
+      if (path.includes("/summary")) return response({ summary: { visible_total: 7, ai_retry_pending: 0, unread: 7 } });
+      if (path.includes("/candidates")) return response({ candidates: [] });
+      return response({ status: "ok" });
+    }));
+  }
+
+  beforeEach(() => installFiltered());
+
+  it("shows all 7 unread invitations with no filters set", async () => {
+    renderScreen();
+    for (let index = 0; index < 7; index += 1) await screen.findByText(`Invite ${index}`);
+    const tab = await screen.findByRole("tab", { name: /Unread Invitations/ });
+    expect(tab.textContent).toContain("7");
+  });
+
+  it("counts each tab under the alert-type filter and says what the filter hides", async () => {
+    renderScreen();
+    await screen.findByText("Invite 0");
+    fireEvent.change(screen.getByLabelText("Alert type filter"), { target: { value: "selection" } });
+    await screen.findByText("None of the 7 in Unread Invitations match these filters.");
+    const tab = screen.getByRole("tab", { name: /Unread Invitations/ });
+    await waitFor(() => expect(tab.querySelector(".mail-tab__count").textContent).toBe("0"));
+    expect(tab).toHaveAttribute("title", "0 of 7 match the filters");
+    // The count requests are the table's own, ungrouped so a badge counts mails.
+    const counted = listRequests.filter((p) => p.get("limit") === "1");
+    expect(counted.some((p) => p.get("is_read") === "false" && p.get("classification_group") === "selection" && !p.has("group_by"))).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await screen.findByText("Invite 6");
+    await waitFor(() => expect(tab.querySelector(".mail-tab__count").textContent).toBe("7"));
+    expect(tab).not.toHaveAttribute("title");
+  });
+
+  it("makes no extra count requests when no filter is set", async () => {
+    renderScreen();
+    await screen.findByText("Invite 0");
+    expect(listRequests.every((p) => p.get("limit") === "20")).toBe(true);
+  });
+});
+
+describe("a list that fails to load", () => {
+  beforeEach(() => {
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    vi.stubGlobal("fetch", vi.fn((url) => {
+      const path = String(url);
+      if (path.includes("/notifications?")) return Promise.resolve({ ok: false, json: () => Promise.resolve({ detail: "Internal Server Error" }) });
+      if (path.includes("/summary")) return response({ summary: { visible_total: 7, ai_retry_pending: 0, unread: 7 } });
+      if (path.includes("/candidates")) return response({ candidates: [] });
+      return response({ status: "ok" });
+    }));
+  });
+
+  it("says it failed instead of 'All caught up' under a badge of 7", async () => {
+    renderScreen();
+    await screen.findByText("Mail alerts could not be loaded.");
+    expect(screen.queryByText("No unread invitations. All caught up!")).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 });
