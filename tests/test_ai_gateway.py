@@ -236,7 +236,7 @@ def test_chat_reports_the_node_that_served_the_request(monkeypatch):
     )
 
     assert result.node_id == "rtx4060"
-    assert result.node_label == "RTX 4060"
+    assert result.node_label == "RTX 4060 — Primary AI"
 
 
 def test_structured_chat_rejects_schema_mismatch(monkeypatch):
