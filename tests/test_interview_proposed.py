@@ -119,5 +119,7 @@ class TestBookingRemainsGated:
         assert "INTERVIEW_PROPOSED" != "INTERVIEW_CONFIRMED"
         import inspect
         src = inspect.getsource(agent._validate_result)
-        # The downgrade sets requires_manual_review so it cannot silently book.
-        assert "requires_manual_review=True" in src
+        # An unproven reading is kept as an alert but never validated for
+        # booking or a stage change (6 Nov 2026).
+        assert "backend_validation_reason=EVIDENCE_NOT_ENTAILED" in src
+        assert 'else "AUTO_VALIDATED" if entailed else "MEDIUM_CONFIDENCE"' in src

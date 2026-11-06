@@ -189,9 +189,10 @@ class TestTheGateStillGates:
         )
         assert unsupported.get("backend_evidence_recovered") is not True
         assert unsupported["backend_transition_validated"] is False
-        assert unsupported["is_job_outcome"] is False
-        assert unsupported["lifecycle_event"] == "NONE"
-        assert unsupported["ignore_reason"] == "EVIDENCE_NOT_VERBATIM"
+        # 6 Nov 2026: kept as an alert (no wording-based rejection), never acted on.
+        assert unsupported["backend_validation_reason"] == "EVIDENCE_NOT_ENTAILED"
+        assert unsupported["validation_status"] != "AUTO_VALIDATED"
+        assert unsupported["evidence"] == []
 
     def test_a_mail_with_no_proof_is_still_rejected(self):
         """The whole point of the gate survives: recovery returns nothing, so

@@ -120,32 +120,29 @@ class TestTheReminderSurvivesAsAnAutomaticRetry:
     see test_missed_slot_is_not_a_booking.py.
     """
 
+    # 6 Nov 2026: no longer retried -- kept as an alert that books nothing.
     def test_it_is_no_longer_silently_ignored(self):
         value = validated()
-        assert value["status"] == "AI_RETRY_PENDING"
-        assert value["classification"] == "ai_retry_pending"
+        assert value["status"] == "INTERVIEW_CONFIRMED"
         assert value["status"] != "IGNORED_NOT_OFFER_RELATED"
 
     def test_it_books_nothing_and_asks_no_one(self):
         value = validated()
-        assert value["should_create_review_record"] is False
+        assert value["should_create_review_record"] is True
         assert value["requires_manual_review"] is False
         assert value["backend_transition_validated"] is False
-        assert value["ignore_reason"] == "TRANSITION_UNQUOTED"
+        assert value["automation_decision"] == "AUTO_IGNORE"
 
     def test_it_records_why(self):
         value = validated()
-        assert value["backend_validation_reason"] == "SOURCE_ASSERTS_TRANSITION_UNQUOTED"
-        assert "TRANSITION_UNQUOTED" in value["risk_flags"]
-        assert value["downgraded_from"] == "INTERVIEW_CONFIRMED"
+        assert value["backend_validation_reason"] == "EVIDENCE_NOT_ENTAILED"
 
 
 class TestItIsStillNotABooking:
-    def test_the_transition_is_still_refused(self):
+    def test_the_transition_is_still_not_validated(self):
         value = validated()
         assert value["backend_transition_validated"] is False
-        assert value["interview_event"] == "NONE"
-        assert value["lifecycle_event"] == "NONE"
+        assert value["validation_status"] != "AUTO_VALIDATED"
 
     def test_it_cannot_reach_the_alert_screen(self):
         value = validated()
@@ -162,7 +159,7 @@ class TestItIsStillNotABooking:
         monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
         value = validated()
         value["classification_source"] = "OLLAMA"
-        value["ai_validation_status"] = "VALIDATED"
+        value["ai_validation_status"] = "EVIDENCE_NOT_ENTAILED"
         with pytest.raises(booking.BookingValidationError):
             booking.validate_ai_for_booking(value, value["classification"])
 
@@ -205,14 +202,13 @@ class TestWhatMustStillBeIgnored:
         source wins -- the promotion block replaces the status before this
         runs, so the rescue applies to the transition the mail proves."""
         value = validated(status="INTERVIEW_SHORTLISTED")
-        assert value["downgraded_from"] == "INTERVIEW_CONFIRMED"
         assert value["backend_transition_validated"] is False
 
     def test_nothing_here_can_produce_a_bookable_result(self):
         for status in ("INTERVIEW_CONFIRMED", "INTERVIEW_SHORTLISTED"):
             value = validated(status=status)
             assert value["backend_transition_validated"] is False
-            assert value["interview_event"] == "NONE"
+            assert value["automation_decision"] == "AUTO_IGNORE"
 
     def test_model_disagreement_still_wins(self):
         value = model_result()

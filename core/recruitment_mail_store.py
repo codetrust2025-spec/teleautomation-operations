@@ -2600,16 +2600,16 @@ def should_route_to_mail_alert(
     if not notification_is_tracked(classification):
         return False
 
-    # Model-produced lifecycle alerts fail closed. A status is routable only
-    # when the separate relevance gate established an actual recipient hiring
-    # process and the backend's explicit status validator proved the transition.
+    # A model-produced alert needs the separate relevance gate to have
+    # established an actual recipient hiring process. Whether a quoted sentence
+    # proves the transition (`backend_transition_validated`) no longer decides
+    # whether the alert exists (owner decision, 6 Nov 2026: it withheld real
+    # offers on wording); it still decides booking and stage changes.
     # Trusted RFC calendar sources keep their existing independent path.
     source_name = str(structured.get("classification_source") or "").upper()
     if source_name == "OLLAMA":
         relevance = structured.get("recruitment_relevance_result") or {}
         if str(relevance.get("decision") or "").upper() != "ESTABLISHED":
-            return False
-        if structured.get("backend_transition_validated") is not True:
             return False
 
     if classification in {"interview_confirmed", "interview_rescheduled"}:

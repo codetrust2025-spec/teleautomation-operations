@@ -52,6 +52,9 @@ def test_unproven_model_transition_cannot_authorize_booking(monkeypatch, subject
     value = _model_result(status, body)
     agent.validate_result(value, _message(subject, body), [], relevance=dict(
         decision='ESTABLISHED', message_kind='RECIPIENT_HIRING_PROCESS'))
-    assert value['automation_decision'] == 'AI_RETRY_PENDING'
+    # 6 Nov 2026: shown as an alert, but it books nothing and is not retried.
+    assert value['automation_decision'] == 'AUTO_IGNORE'
     assert value['backend_transition_validated'] is False
+    assert value['backend_validation_reason'] == 'EVIDENCE_NOT_ENTAILED'
+    assert value['validation_status'] != 'AUTO_VALIDATED'
     assert value['requires_manual_review'] is False

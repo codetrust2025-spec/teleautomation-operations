@@ -462,17 +462,13 @@ def test_validation_enforces_evidence_and_manual_review_confidence():
     # Nothing is validated, nothing is recorded as an outcome, nothing books.
     unsupported=structured("SELECTED",.95,"invented evidence")
     agent.validate_result(unsupported,message("Congratulations","You have been selected."),[])
+    # 6 Nov 2026: wording no longer decides whether there is an alert. The
+    # reading is kept, but invented evidence is dropped and nothing is validated.
     assert unsupported["backend_transition_validated"] is False
-    assert unsupported["ignore_reason"] == "EVIDENCE_NOT_VERBATIM"
-    assert unsupported["status"] == "AI_RETRY_PENDING"
-    assert unsupported["is_selection_or_offer_related"] is False
-    assert unsupported["is_job_outcome"] is False
-    assert unsupported["lifecycle_event"] == "NONE"
-    # A source that proves nothing is still ignored outright, never reviewed.
-    unprovable=structured("SELECTED",.95,"invented evidence")
-    agent.validate_result(unprovable,message("Newsletter","The team meets on Monday."),[])
-    assert unprovable["status"] == "IGNORED_NOT_OFFER_RELATED"
-    assert unprovable["backend_transition_validated"] is False
+    assert unsupported["backend_validation_reason"] == "EVIDENCE_NOT_ENTAILED"
+    assert unsupported["status"] == "SELECTED"
+    assert unsupported["evidence"] == []
+    assert unsupported["validation_status"] != "AUTO_VALIDATED"
 
 
 def test_medium_confidence_result_keeps_its_reading_without_a_status_overwrite():

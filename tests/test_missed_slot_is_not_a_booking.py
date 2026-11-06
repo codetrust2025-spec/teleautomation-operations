@@ -206,11 +206,10 @@ class TestSourceEvidenceMayReleaseABookingNotCreateOne:
 
         source = inspect.getsource(agent._validate_result)
         start = source.index("if asserted_by_source and safe_status ==")
-        return source[start:source.index("value.update(\n            status=\"IGNORED_NOT_OFFER_RELATED\"")]
+        return source[start:source.index("    else:\n        # Promote unambiguous employer phrasing")]
 
     def test_a_cancellation_is_released_without_a_quoted_sentence(self):
-        branch = self._branch()
-        head = branch[:branch.index("if asserted_by_source:")]
+        head = self._branch()
         assert 'classification="interview_cancelled"' in head
         assert "backend_transition_validated=True" in head
         assert "SOURCE_ASSERTS_CANCELLATION_UNQUOTED" in head
@@ -220,12 +219,16 @@ class TestSourceEvidenceMayReleaseABookingNotCreateOne:
         assert 'safe_status == "INTERVIEW_CANCELLED"' in branch
 
     def test_a_confirmation_without_a_quote_still_books_nothing(self):
-        """The anti-hallucination guard, unchanged for anything that commits."""
-        branch = self._branch()
-        tail = branch[branch.index("if asserted_by_source:"):]
-        assert "AI_RETRY_PENDING" in tail
-        assert "backend_transition_validated=False" in tail
-        assert 'classification="interview_confirmed"' not in tail
+        """6 Nov 2026: shown as an alert, never validated -- see
+        test_unproven_reading_is_an_alert_not_a_booking.py for the end to end check."""
+        import inspect
+
+        from services import recruitment_mail_agent as agent
+
+        source = inspect.getsource(agent._validate_result)
+        unproven = source[source.index("if not entailed:"):source.index("if asserted_by_source and safe_status ==")]
+        assert "backend_transition_validated=False" in unproven
+        assert "backend_validation_reason=EVIDENCE_NOT_ENTAILED" in unproven
 
     def test_no_unquoted_transition_asks_a_person(self):
         branch = self._branch()

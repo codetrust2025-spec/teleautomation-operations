@@ -58,28 +58,28 @@ class TestAParaphraseGoesToReview:
         )
         assert result["status"] != "IGNORED_NOT_OFFER_RELATED"
 
-    def test_it_lands_in_needs_review(self):
+    def test_it_is_kept_as_an_alert(self):
+        """6 Nov 2026: wording no longer decides whether there is an alert."""
         result = validated(
             "INTERVIEW_CONFIRMED", .95, PARAPHRASE, REMINDER_SUBJECT, REMINDER_BODY,
         )
-        assert result["status"] == "AI_RETRY_PENDING"
-        assert result["candidate_status"] == "AI Retry Pending"
-        assert result["classification"] == "ai_retry_pending"
+        # interview_update here only because this fixture carries no readable
+        # schedule; that downgrade is the schedule check, not the evidence one.
+        assert result["classification"] in {"interview_confirmed", "interview_update"}
+        assert result["should_create_review_record"] is True
 
     def test_it_says_why(self):
         result = validated(
             "INTERVIEW_CONFIRMED", .95, PARAPHRASE, REMINDER_SUBJECT, REMINDER_BODY,
         )
-        assert result["ignore_reason"] == "EVIDENCE_NOT_VERBATIM"
-        assert result["backend_validation_reason"] == "EVIDENCE_NOT_VERBATIM"
+        assert result["backend_validation_reason"] == "EVIDENCE_NOT_ENTAILED"
 
-    def test_a_human_is_asked_to_look(self):
+    def test_no_one_is_asked_and_it_is_not_retried(self):
         result = validated(
             "INTERVIEW_CONFIRMED", .95, PARAPHRASE, REMINDER_SUBJECT, REMINDER_BODY,
         )
         assert result["requires_manual_review"] is False
-        assert result["should_create_review_record"] is False
-        assert result["automation_decision"] == "AI_RETRY_PENDING"
+        assert result["automation_decision"] == "AUTO_IGNORE"
 
     def test_it_cannot_auto_book(self):
         """No verified verbatim evidence entails it, so nothing may be booked."""
@@ -87,8 +87,7 @@ class TestAParaphraseGoesToReview:
             "INTERVIEW_CONFIRMED", .95, PARAPHRASE, REMINDER_SUBJECT, REMINDER_BODY,
         )
         assert result["backend_transition_validated"] is False
-        assert result["interview_event"] == "NONE"
-        assert result["is_job_outcome"] is False
+        assert result["validation_status"] != "AUTO_VALIDATED"
 
 
 class TestTheGuardIsUnchanged:
@@ -100,7 +99,8 @@ class TestTheGuardIsUnchanged:
             "Congratulations", "You have been selected.",
         )
         assert result["backend_transition_validated"] is False
-        assert result.get("is_selection_or_offer_related") is False
+        assert result["evidence"] == []
+        assert result["validation_status"] != "AUTO_VALIDATED"
 
     @pytest.mark.parametrize("subject,body", [
         ("Interview outcome",

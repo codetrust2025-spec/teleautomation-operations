@@ -136,12 +136,15 @@ def test_the_hr_document_request_is_hr_proof():
     ) is True
 
 
-def test_a_conditional_shortlist_is_retried_not_alerted(monkeypatch):
+def test_a_conditional_shortlist_is_shown_but_not_validated(monkeypatch):
     monkeypatch.setattr(agent, "pure_ollama_enabled", lambda: True)
     body = ("Your application will be reviewed by the Talent Acquisition Team. Your Next Action If you are "
             "shortlisted for video/face to face interview at Examplecorp, we would need your recent photograph "
             "for the next steps.")
     value = _model_result("INTERVIEW_SHORTLISTED", "Your application will be reviewed by the Talent Acquisition Team.")
     agent.validate_result(value, _message("Job application successful.", body), [], relevance=dict(ESTABLISHED))
-    assert value["status"] == "AI_RETRY_PENDING"
+    # 6 Nov 2026: the model's reading is kept as an alert; the proof is still
+    # absent, so nothing is validated.
+    assert value["status"] == "INTERVIEW_SHORTLISTED"
     assert value["backend_transition_validated"] is False
+    assert value["backend_validation_reason"] == "EVIDENCE_NOT_ENTAILED"

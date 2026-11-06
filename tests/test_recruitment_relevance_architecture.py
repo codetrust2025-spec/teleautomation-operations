@@ -201,7 +201,7 @@ def test_genuine_lifecycle_transitions_survive_backend_entailment(status, subjec
     assert value["validation_status"] == "AUTO_VALIDATED"
 
 
-def test_ollama_alert_requires_both_relevance_and_backend_validation():
+def test_ollama_alert_requires_relevance_not_backend_validation():
     structured = _model_result("SELECTED", "You have been selected for the role.")
     structured.update(
         classification_source="OLLAMA", primary_status="SELECTED",
@@ -213,9 +213,10 @@ def test_ollama_alert_requires_both_relevance_and_backend_validation():
         "validation_status": "AUTO_VALIDATED", "requires_manual_review": False,
         "structured_result": structured,
     }
-    assert not store.should_route_to_mail_alert(event, {"classification": "job_selection_confirmed"})
-    structured["backend_transition_validated"] = True
+    # 6 Nov 2026: the quoted-sentence proof no longer decides the alert.
     assert store.should_route_to_mail_alert(event, {"classification": "job_selection_confirmed"})
+    structured["recruitment_relevance_result"] = {"decision": "NOT_ESTABLISHED"}
+    assert not store.should_route_to_mail_alert(event, {"classification": "job_selection_confirmed"})
 
 
 def test_decision_trace_migration_is_additive_and_complete():

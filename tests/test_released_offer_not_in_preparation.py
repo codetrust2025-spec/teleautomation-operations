@@ -78,11 +78,14 @@ def test_an_offer_still_being_prepared_keeps_its_stage():
     assert value["classification"] == "offer_received"
 
 
-def test_a_mail_with_no_offer_in_it_is_still_refused():
+def test_a_mail_with_no_offer_in_it_keeps_the_reading_but_is_not_validated():
+    """6 Nov 2026: no wording-based rejection; the proof decides only booking and stage."""
     body = "Hi Test Candidate, thank you for attending the interview. We will get back to you."
     value = _validate("OFFER_IN_PROGRESS", "thank you for attending the interview", body=body)
-    assert value["classification"] != "offer_received"
-    assert value.get("ignore_reason") == "EVIDENCE_DOES_NOT_ENTAIL_TRANSITION"
+    assert value["status"] == "OFFER_IN_PROGRESS"
+    assert value["backend_transition_validated"] is False
+    assert value["backend_validation_reason"] == "EVIDENCE_NOT_ENTAILED"
+    assert value["validation_status"] != "AUTO_VALIDATED"
 
 
 @pytest.mark.parametrize("sentence,expected", [

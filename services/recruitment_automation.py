@@ -96,6 +96,12 @@ def decision_for(result: Mapping[str, Any]) -> AutomationState:
     if explicit in {state.value for state in DECISION_STATES}:
         return AutomationState(explicit)
 
+    # A reading kept as an alert without a quoted sentence proving it books
+    # nothing, and is not retried either: it is final as an alert.
+    if (_text(result.get("backend_validation_reason")) == "EVIDENCE_NOT_ENTAILED"
+            or _text(result.get("ai_validation_status")) == "EVIDENCE_NOT_ENTAILED"):
+        return AutomationState.AUTO_IGNORE
+
     status = _text(result.get("primary_status") or result.get("status"))
     validation = _text(result.get("validation_status"))
     classification = classification_of(result)

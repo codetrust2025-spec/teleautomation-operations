@@ -98,6 +98,18 @@ def execute_assessment_booking(
             new_booking=booking, source_event_id=event.get("id"), source_snapshot=snapshot,
         )
 
+    # The same proof interview booking requires (`validate_ai_for_booking`): a
+    # model reading kept as an alert without a quoted sentence proving it is
+    # shown, never booked. This path relied on the evidence check upstream
+    # refusing such readings outright, which it no longer does.
+    if (str(result.get("classification_source") or "").upper() == "OLLAMA"
+            and str(result.get("ai_validation_status") or "").upper() != "VALIDATED"):
+        reason = "The assessment was read by the AI but no quoted sentence proves it, so it is shown and not booked."
+        record = audit(booking_id=None, auto_booked=False, status=PENDING,
+                       failure_code="AI_NOT_VALIDATED", failure_message=reason)
+        return _outcome(PENDING, "assessment_booking_blocked", audit=record, notification=notification,
+                        failure_code="AI_NOT_VALIDATED", reason=reason)
+
     candidate = candidate_store.get_candidate(candidate_id)
     if not candidate:
         record = audit(booking_id=None, auto_booked=False, status=PENDING,

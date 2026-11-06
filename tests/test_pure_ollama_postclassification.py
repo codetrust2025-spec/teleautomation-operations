@@ -72,7 +72,10 @@ def test_pure_mode_keeps_unproven_or_uncertain_decisions_pending(monkeypatch, pr
     else:
         value['risk_flags'] = ['MODEL_DISAGREEMENT']
     agent.validate_result(value, mail, [])
-    assert value['automation_decision'] == 'AI_RETRY_PENDING'
+    # 6 Nov 2026: unproven readings are alerts that book nothing; uncertain or
+    # disputed ones are still retried.
+    unproven = problem in {'fabricated', 'negated', 'no_assertion'}
+    assert value['automation_decision'] == ('AUTO_IGNORE' if unproven else 'AI_RETRY_PENDING')
     assert value['backend_transition_validated'] is False
 
 

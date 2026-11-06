@@ -1078,6 +1078,10 @@ def _entailing_evidence_from_source(
     return []
 
 
+#: `backend_validation_reason` of a reading kept as an alert without a quoted
+#: sentence proving it. Booking and stage changes require that proof; alerts do not.
+EVIDENCE_NOT_ENTAILED = "EVIDENCE_NOT_ENTAILED"
+
 #: Offer stages that precede the offer itself, and the stages that say it was
 #: released (most specific first). See the promotion in `_validate_result`.
 _OFFER_STAGES_BEFORE_RELEASE = frozenset({"OFFER_INDICATION", "OFFER_IN_PROGRESS", "OFFER_APPROVED"})
@@ -1733,79 +1737,33 @@ def _validate_result(
         if entailing:
             supported = supported + entailing
             value["backend_evidence_recovered"] = True
-    if not entailing:
-        if pure_mode:
-            # Unproved AI intent is uncertainty, not proof of a job ad. Keep
-            # the mail on the automatic retry path without authorizing a
-            # confirmation, reschedule or cancellation from keywords alone.
-            value.update(
-                status="AI_RETRY_PENDING", classification="ai_retry_pending",
-                candidate_status="AI Retry Pending", is_selection_or_offer_related=False,
-                should_create_review_record=False, requires_manual_review=False,
-                ignore_reason="EVIDENCE_DOES_NOT_ENTAIL_TRANSITION",
-                validation_status="RETRY_PENDING", lifecycle_event="NONE",
-                interview_event="NONE", business_domain="NONE", is_job_outcome=False,
-                is_current_event=False, evidence=supported,
-                backend_transition_validated=False,
-                backend_validation_reason="EVIDENCE_DOES_NOT_ENTAIL_TRANSITION",
-                downgraded_from=proposed_status,
-            )
-            return
-        # Two different failures were landing in the same silent ignore.
+    entailed = bool(entailing)
+    if not entailed:
+        # 6 Nov 2026, owner decision: the evidence check no longer decides
+        # whether an alert exists. It rejected real mail on wording -- a
+        # conditional offer ("Please find the attached Offer of Employment")
+        # read as OFFER_IN_PROGRESS, offer signatures, onboarding and BGV
+        # mails -- and parked them after two attempts with no alert at all.
         #
-        # If the mail itself contains a sentence entailing the transition, the
-        # classification is plausibly right and the model simply failed to
-        # quote it -- it paraphrased, so nothing it cited is verbatim and the
-        # anti-hallucination guard refused to trust it. That is not the same as
-        # a mail that says no such thing. It must never auto-book, because no
-        # verified verbatim evidence entails the transition, but disappearing
-        # as "not offer related" hides a real interview from everyone.
-        #
-        # A mail whose source proves nothing stays rejected exactly as before,
-        # which is what keeps rejections and job adverts out.
-        if _entailing_evidence_from_source(sources, safe_status):
-            value.update(
-                status="MANUAL_REVIEW_REQUIRED", classification="needs_review",
-                candidate_status="Needs Review", is_selection_or_offer_related=False,
-                should_create_review_record=True, requires_manual_review=True,
-                ignore_reason="EVIDENCE_NOT_VERBATIM", validation_status="NEEDS_REVIEW",
-                lifecycle_event="NONE", interview_event="NONE", business_domain="NONE",
-                is_job_outcome=False, is_current_event=False, evidence=supported,
-                backend_transition_validated=False,
-                backend_validation_reason="EVIDENCE_NOT_VERBATIM",
-                downgraded_from=proposed_status,
-                summary=(
-                    "The email supports this outcome but the AI did not quote it "
-                    "verbatim, so it needs a human to confirm before booking."
-                ),
-            )
-            return
-        # The source can prove the transition without any single sentence
-        # entailing it. `classify_context` reads the whole mail -- interview
-        # wording, a real date, a time, a joining link -- and names the
-        # transition from that shape, while `_entailing_evidence_from_source`
-        # matches a sentence against `_TRANSITION_ASSERTIONS`. One question,
-        # two vocabularies, and they disagree: flocareer writes "Remember to
-        # attend the video interview today at 06:30 PM IST", which the shape
-        # reader calls INTERVIEW_CONFIRMED and the sentence matcher does not
-        # recognise at all.
-        #
-        # Silently ignoring those hid real interviews. Of the 26 mails refused
-        # this way in production, 23 had the deterministic layer naming the
-        # very transition the model proposed, and they read "Interview
-        # scheduled with Mphasis on Sat, August 15", "You are invited for
-        # interview with Deloitte", "Interview Call Letter".
-        #
-        # This books nothing. backend_transition_validated stays False, so
-        # should_route_to_mail_alert still refuses it and auto-booking still
-        # refuses it; the mail reaches the review queue instead of vanishing.
-        # A mail whose deterministic reading does not name this transition is
-        # still rejected exactly as before, which is what keeps rejections and
-        # job adverts out.
-        asserted_by_source = safe_status in {
+        # The model's reading is now kept and filed as an alert. What the
+        # missing proof still decides is everything that acts on the reading:
+        # `backend_transition_validated` stays False, `validation_status` is
+        # never AUTO_VALIDATED (so `apply_candidate_job_status` moves no
+        # stage), and `analyze` withholds `ai_validation_status="VALIDATED"`,
+        # which interview and assessment auto-booking both require.
+        # The unquoted-cancellation release below never ran in pure mode (the
+        # retry exit came first), so it still does not: booking behaviour,
+        # including releases, is exactly what it was.
+        asserted_by_source = not pure_mode and safe_status in {
             str(context.get("interview_event") or "NONE").upper(),
             str(context.get("lifecycle_event") or "NONE").upper(),
         }
+        if not (asserted_by_source and safe_status == "INTERVIEW_CANCELLED"):
+            value.update(
+                evidence=supported, backend_transition_validated=False,
+                backend_validation_reason=EVIDENCE_NOT_ENTAILED,
+                requires_manual_review=False,
+            )
         if asserted_by_source and safe_status == "INTERVIEW_CANCELLED":
             # Deterministic source evidence may release a booking. It may never
             # create one.
@@ -1837,52 +1795,16 @@ def _validate_result(
                 ),
             )
             return
-        if asserted_by_source:
-            # The source names this transition but nothing quoted entails it,
-            # and it is not a release. Another attempt against a different
-            # execution state often quotes it; a person is never asked.
-            value.update(
-                status="AI_RETRY_PENDING", classification="ai_retry_pending",
-                candidate_status="AI Retry Pending", is_selection_or_offer_related=False,
-                should_create_review_record=False, requires_manual_review=False,
-                ignore_reason="TRANSITION_UNQUOTED", validation_status="RETRY_PENDING",
-                lifecycle_event="NONE", interview_event="NONE", business_domain="NONE",
-                is_job_outcome=False, is_current_event=False, evidence=supported,
-                backend_transition_validated=False,
-                backend_validation_reason="SOURCE_ASSERTS_TRANSITION_UNQUOTED",
-                downgraded_from=proposed_status,
-                summary=(
-                    "The email reads as this outcome and the source parser agrees, but no "
-                    "quoted sentence entails it, so it is read again rather than booked."
-                ),
-            )
-            value["risk_flags"] = list(dict.fromkeys(
-                (value.get("risk_flags") or []) + ["TRANSITION_UNQUOTED"]
-            ))
-            return
-        value.update(
-            status="IGNORED_NOT_OFFER_RELATED", classification="not_relevant",
-            candidate_status="Profile Active", is_selection_or_offer_related=False,
-            should_create_review_record=False, requires_manual_review=False,
-            ignore_reason="EVIDENCE_DOES_NOT_ENTAIL_TRANSITION",
-            validation_status="REJECTED", lifecycle_event="NONE",
-            interview_event="NONE", business_domain="NONE", is_job_outcome=False,
-            is_current_event=False, evidence=supported,
-            backend_transition_validated=False,
-            backend_validation_reason="EVIDENCE_DOES_NOT_ENTAIL_TRANSITION",
-            downgraded_from=proposed_status,
-            summary="Source evidence does not entail the proposed candidate lifecycle transition.",
+    else:
+        # Promote unambiguous employer phrasing to a meaning code before the value
+        # is persisted, so the routing gate sees a code without being loosened.
+        value["evidence"] = [normalise_evidence_meaning(item) for item in entailing]
+        value["backend_transition_validated"] = True
+        value["backend_validation_reason"] = (
+            "EXPLICIT_TRANSITION_ENTAILED_AFTER_STAGE_CORRECTION"
+            if value.get("backend_stage_corrected_from")
+            else "EXPLICIT_TRANSITION_ENTAILED"
         )
-        return
-    # Promote unambiguous employer phrasing to a meaning code before the value
-    # is persisted, so the routing gate sees a code without being loosened.
-    value["evidence"] = [normalise_evidence_meaning(item) for item in entailing]
-    value["backend_transition_validated"] = True
-    value["backend_validation_reason"] = (
-        "EXPLICIT_TRANSITION_ENTAILED_AFTER_STAGE_CORRECTION"
-        if value.get("backend_stage_corrected_from")
-        else "EXPLICIT_TRANSITION_ENTAILED"
-    )
     auto_threshold = max(0.8, min(0.99, float(os.getenv("AI_RECRUITMENT_AUTO_ACCEPT_THRESHOLD", "0.90"))))
     review_threshold = max(0.0, min(1.0, float(os.getenv("OLLAMA_CONFIDENCE_THRESHOLD", "0.75"))))
     if confidence < review_threshold:
@@ -1934,7 +1856,12 @@ def _validate_result(
         # risk flags still fail closed and are normalized into automatic retry.
         value["requires_manual_review"] = bool(value.get("risk_flags"))
         value["ignore_reason"] = None
-        value["validation_status"] = "NEEDS_REVIEW" if value["requires_manual_review"] else "AUTO_VALIDATED"
+        value["validation_status"] = (
+            "NEEDS_REVIEW" if value["requires_manual_review"]
+            # Recorded and alerted, never acted on: AUTO_VALIDATED is what lets
+            # `apply_candidate_job_status` move a candidate's stage.
+            else "AUTO_VALIDATED" if entailed else "MEDIUM_CONFIDENCE"
+        )
     # A date the model mis-spelled in one auxiliary field is a formatting slip,
     # not grounds to throw away a correct classification. Raising here sent the
     # message back down the deterministic-failure path, where two retries said
@@ -3198,7 +3125,13 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
             normalise_shortlist_status(result, message)
         result["primary_status"] = result["status"]
         result["classification_source"] = "OLLAMA"
-        result["ai_validation_status"] = "VALIDATED"
+        # Interview and assessment auto-booking require VALIDATED. A reading
+        # kept as an alert without a quoted sentence proving it is not.
+        result["ai_validation_status"] = (
+            EVIDENCE_NOT_ENTAILED
+            if result.get("backend_validation_reason") == EVIDENCE_NOT_ENTAILED
+            else "VALIDATED"
+        )
         result["recruitment_relevance_result"] = deepcopy(relevance)
         result["_decision_trace"] = {
             "deterministic_context": {
@@ -3260,7 +3193,11 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
     if critical_attachment_failure and not route["send_to_ai"]:
         route = {"send_to_ai":True,"score":0.25,"reason":"CRITICAL_ATTACHMENT_EXTRACTION_FAILED","context":route.get("context") or {}}
     row, created = store.insert_message(mailbox, decoded, float(route["score"]))
-    _publish("mail_received", candidate_id=mailbox.get("candidate_id"), gmail_message_id=decoded.get("provider_message_id"), processing_status="Email Received")
+    # Announced once, when the mail arrives. A rescan or a Gmail retry meets
+    # the same stored mail again; re-announcing it showed one offer mail as
+    # "Email Received" eight times in an hour (6 Nov 2026).
+    if created:
+        _publish("mail_received", candidate_id=mailbox.get("candidate_id"), gmail_message_id=decoded.get("provider_message_id"), processing_status="Email Received")
     # A crash can happen after the durable message insert but before it is put
     # on the AI queue.  Resume only that transient state when Gmail retries;
     # terminal/queued rows remain idempotent.
@@ -3450,10 +3387,10 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
     normalize_analysis(result)
     if str(result.get("classification_source") or "").upper() == "OLLAMA":
         relevance = result.get("recruitment_relevance_result") or {}
-        if (
-            str(relevance.get("decision") or "").upper() != "ESTABLISHED"
-            or result.get("backend_transition_validated") is not True
-        ):
+        # Relevance still has to be established. Whether a quoted sentence
+        # proves the transition no longer decides whether the mail is recorded
+        # (owner decision, 6 Nov 2026); it decides booking and stage changes.
+        if str(relevance.get("decision") or "").upper() != "ESTABLISHED":
             result.update(
                 is_selection_or_offer_related=False,
                 should_create_review_record=False,
@@ -3462,6 +3399,17 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
                 interview_event="NONE",
                 business_domain="NONE",
             )
+    if (result.get("backend_validation_reason") == EVIDENCE_NOT_ENTAILED
+            and job_board_notification(decoded.get("sender_email", ""))):
+        # Owner decision, 6 Nov 2026: unproven readings alert, except from job
+        # boards. Replayed over production, 2,783 of the 3,587 alerts the
+        # evidence check had been withholding were Naukri/Indeed-style adverts
+        # the model labelled Selected or Shortlisted. A sender rule, not a
+        # wording one; a proven reading from any sender is unaffected.
+        result.update(
+            should_create_review_record=False, is_selection_or_offer_related=False,
+            ignore_reason="JOB_BOARD_UNPROVEN_READING",
+        )
     if not pure_ollama_enabled() and job_board_notification(decoded.get("sender_email", "")):
         # Marked not-relevant so it takes the existing ignore path: no event, no
         # lifecycle status, no notification. The analysis is still recorded, so
@@ -3512,7 +3460,8 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
         if reprocess:
             store.mark_reprocessed(row["id"], previous_status, status, "HISTORICAL_SEMANTIC_RESCAN")
         return None
-    if not result.get("evidence") and result.get("primary_status") != "MANUAL_REVIEW_REQUIRED":
+    if (not result.get("evidence") and result.get("primary_status") != "MANUAL_REVIEW_REQUIRED"
+            and result.get("backend_validation_reason") != EVIDENCE_NOT_ENTAILED):
         # The anti-hallucination guard is unchanged: a result with no
         # source-supported evidence still cannot become a lifecycle transition
         # or a booking. Only its destination changes -- another attempt rather
@@ -3578,7 +3527,10 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
             deliver_persisted(created_realtime_event)
         else:
             _publish("notification_updated", **common)
-    if common["classification"] == "assessment_invited":
+    # A reading kept as an alert without a quoted sentence proving it is shown
+    # and never booked: neither booking path is entered for it.
+    bookable = result.get("ai_validation_status") != EVIDENCE_NOT_ENTAILED
+    if bookable and common["classification"] == "assessment_invited":
         # An assessment names a window, so its slot is chosen by rule rather
         # than read from the mail. It books through its own path and appears on
         # the same roster, typed as an assessment; the interview path below is
@@ -3616,7 +3568,7 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
         except Exception as exc:
             logger.exception("Automatic assessment booking failed event=%s code=%s", event.get("id"), type(exc).__name__)
             _publish("mail_processing_failed", **common, processing_status="Processing Failed", error_code=type(exc).__name__)
-    if common["classification"] in {"interview_confirmed", "interview_rescheduled", "interview_cancelled"}:
+    if bookable and common["classification"] in {"interview_confirmed", "interview_rescheduled", "interview_cancelled"}:
         interview = result.get("interview") or {}
         _publish(
             "interview_detected", **common,
