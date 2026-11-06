@@ -114,7 +114,7 @@ class TestCandidatePaymentScreenshots:
 
         assert pool.on_node["jagadeesh"].wait(10)
         live = client.get(f"/public/slots/analysis/{analysis}").json()["analysis"]
-        assert (live["state"], live["node"]) == ("running", "Jagadeesh")
+        assert (live["state"], live["node"]) == ("running", "RTX 3050 — Backup AI")
         # The nodes panel calls it what it is: a payment, not a booking.
         assert busy_nodes() == {"jagadeesh": ["Payment analysis"]}
 
@@ -122,15 +122,15 @@ class TestCandidatePaymentScreenshots:
         worker.join(10)
         body = out["response"].json()
         assert body["status"] == "ok"
-        assert body["analysis"] == {"analysis_id": analysis, "state": "done", "node": "Jagadeesh",
-                                    "analysed_by": ["Jagadeesh"], "failed_on": []}
+        assert body["analysis"] == {"analysis_id": analysis, "state": "done", "node": "RTX 3050 — Backup AI",
+                                    "analysed_by": ["RTX 3050 — Backup AI"], "failed_on": []}
 
     def test_a_failover_is_reported_with_the_node_it_left(self, client, pool):
         pool.routes[VISION_MODEL] = ["our_machine", "rtx4060"]
         pool.failing.add("our_machine")
         body = post_proof(client, "a2" * 16).json()
-        assert body["analysis"]["analysed_by"] == ["RTX 4060"]
-        assert body["analysis"]["failed_on"] == ["Praveen"]
+        assert body["analysis"]["analysed_by"] == ["RTX 4060 — Primary AI"]
+        assert body["analysis"]["failed_on"] == ["Slim 3 — Backup AI 2"]
 
     def test_a_refused_screenshot_still_says_which_node_read_it(self, client, pool, monkeypatch):
         monkeypatch.setattr("features.payment_fraud_detection.assess_payment_proof",
@@ -138,7 +138,7 @@ class TestCandidatePaymentScreenshots:
                                                                "duplicate_matches": []})
         body = post_proof(client, "a3" * 16).json()
         assert body["status"] == "error"
-        assert body["analysis"]["analysed_by"] == ["RTX 4060"]
+        assert body["analysis"]["analysed_by"] == ["RTX 4060 — Primary AI"]
 
     def test_a_replacement_is_followed_the_same_way(self, client, pool, monkeypatch):
         from features import candidate_store, payment_evidence_store
@@ -154,7 +154,7 @@ class TestCandidatePaymentScreenshots:
         body = client.post("/candidates/cand-1/proofs/proof-1/replace", data={"analysis_id": "a4" * 16},
                            files={"file": ("receipt.png", b"receipt", "image/png")}).json()
         assert body["status"] == "ok"
-        assert body["analysis"]["analysed_by"] == ["RTX 4060"]
+        assert body["analysis"]["analysed_by"] == ["RTX 4060 — Primary AI"]
         assert body["analysis"]["analysis_id"] == "a4" * 16
 
 
@@ -172,7 +172,7 @@ class TestResumes:
         worker.join(10)
         body = out["response"].json()
         assert body["status"] == "ok"
-        assert body["analysis"]["analysed_by"] == ["Jagadeesh"]
+        assert body["analysis"]["analysed_by"] == ["RTX 3050 — Backup AI"]
 
     def test_a_document_that_is_not_a_resume_is_refused_with_its_node(self, client, pool, monkeypatch):
         monkeypatch.setattr("features.ollama_resume_extract.extract_resume_with_ollama",
@@ -180,13 +180,13 @@ class TestResumes:
         body = client.post("/candidates/cand-1/resumes", data={"analysis_id": "b2" * 16},
                            files={"file": ("offer.pdf", b"%PDF-1.4", "application/pdf")}).json()
         assert body["status"] == "error"
-        assert body["analysis"]["analysed_by"] == ["Jagadeesh"]
+        assert body["analysis"]["analysed_by"] == ["RTX 3050 — Backup AI"]
 
     def test_the_auto_fill_extraction_names_its_node(self, client, pool):
         body = client.post("/public/slots/extract-resume-ai", data={"analysis_id": "b3" * 16},
                            files={"file": ("resume.pdf", b"%PDF-1.4", "application/pdf")}).json()
         assert body["success"] is True
-        assert body["analysis"]["analysed_by"] == ["Jagadeesh"]
+        assert body["analysis"]["analysed_by"] == ["RTX 3050 — Backup AI"]
 
     def test_a_document_no_node_reads_claims_no_node(self, client, pool):
         """A .docx is filed without an AI read, so nothing is said to have read it."""
@@ -205,27 +205,27 @@ class TestReferrerExpenses:
 
         assert pool.on_node["rtx4060"].wait(10)
         live = client.get(f"/public/slots/analysis/{analysis}").json()["analysis"]
-        assert (live["state"], live["node"]) == ("running", "RTX 4060")
+        assert (live["state"], live["node"]) == ("running", "RTX 4060 — Primary AI")
         assert busy_nodes() == {"rtx4060": ["Payment analysis"]}
 
         release.set()
         worker.join(10)
         body = out["response"].json()
         assert body["status"] == "ok"
-        assert body["analysis"]["analysed_by"] == ["RTX 4060"]
+        assert body["analysis"]["analysed_by"] == ["RTX 4060 — Primary AI"]
 
     def test_a_refused_expense_screenshot_still_names_its_node(self, client, pool, monkeypatch):
         monkeypatch.setattr("features.payment_verification_engine.verify_payment_screenshot", refuse_receipt)
         body = post_expense(client, "c2" * 16).json()
         assert body["status"] == "error"
         assert "not present in the configured receiver registry" in body["message"]
-        assert body["analysis"]["analysed_by"] == ["RTX 4060"]
+        assert body["analysis"]["analysed_by"] == ["RTX 4060 — Primary AI"]
 
     def test_a_screenshot_added_to_an_existing_expense_names_its_node(self, client, pool):
         body = client.post("/handler-expenses/exp-1/proofs", data={"analysis_id": "c3" * 16},
                            files={"file": ("receipt.png", b"receipt", "image/png")}).json()
         assert body["status"] == "ok"
-        assert body["analysis"]["analysed_by"] == ["RTX 4060"]
+        assert body["analysis"]["analysed_by"] == ["RTX 4060 — Primary AI"]
 
 
 def test_an_upload_sent_without_an_id_still_works_and_is_still_tracked(client, pool):
@@ -234,4 +234,4 @@ def test_an_upload_sent_without_an_id_still_works_and_is_still_tracked(client, p
                        files={"file": ("receipt.png", b"receipt", "image/png")}).json()
     assert body["status"] == "ok" and body["proof"] == {"id": "proof-1"}
     assert ai_activity.valid_analysis_id(body["analysis"]["analysis_id"])
-    assert body["analysis"]["analysed_by"] == ["RTX 4060"]
+    assert body["analysis"]["analysed_by"] == ["RTX 4060 — Primary AI"]

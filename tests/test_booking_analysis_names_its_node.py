@@ -9,7 +9,7 @@ configuration while a different machine does the work.
 
 These drive the real gateway `chat()` with only the transport, the health probe
 and node selection replaced. Node labels come from the real registry: nothing
-here tells the code that `our_machine` is called "Praveen".
+here tells the code that `our_machine` is called "Slim 3 — Backup AI 2".
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from core.public_slot_api import install_public_slot_routes
 
 VISION_MODEL = "qwen3-vl:8b-instruct"
 TEXT_MODEL = "qwen2.5:7b"
-ALL_NODES = [("rtx4060", "RTX 4060"), ("jagadeesh", "Jagadeesh"), ("our_machine", "Praveen")]
+ALL_NODES = [("rtx4060", "RTX 4060 — Primary AI"), ("jagadeesh", "RTX 3050 — Backup AI"), ("our_machine", "Slim 3 — Backup AI 2")]
 
 
 def wait_until(predicate, timeout: float = 5.0) -> None:
@@ -179,7 +179,7 @@ class TestTheNodeShownIsTheNodeServing:
         release_mail.set()
         mail.join(5)
         worker.join(5)
-        assert status(analysis)["analysed_by"] == ["RTX 4060"]
+        assert status(analysis)["analysed_by"] == ["RTX 4060 — Primary AI"]
         assert pool.served == ["rtx4060", "rtx4060"]
 
     def test_a_failover_moves_the_named_node(self, pool):
@@ -195,20 +195,20 @@ class TestTheNodeShownIsTheNodeServing:
         assert status(analysis)["state"] == "waiting"
         assert status(analysis)["node"] is None
         # Said as a failover, not left to look like any other wait.
-        assert status(analysis)["failed_on"] == ["RTX 4060"]
+        assert status(analysis)["failed_on"] == ["RTX 4060 — Primary AI"]
         assert busy_nodes() == {}
 
         pool.hold_selection.set()
         assert pool.on_node["jagadeesh"].wait(5)
-        assert status(analysis)["node"] == "Jagadeesh"
-        assert status(analysis)["failed_on"] == ["RTX 4060"]
+        assert status(analysis)["node"] == "RTX 3050 — Backup AI"
+        assert status(analysis)["failed_on"] == ["RTX 4060 — Primary AI"]
         assert busy_nodes() == {"jagadeesh": ["Booking analysis"]}
 
         release_jagadeesh.set()
         worker.join(5)
         # Only the node that answered analysed it; the one it left is named apart.
-        assert status(analysis)["analysed_by"] == ["Jagadeesh"]
-        assert status(analysis)["failed_on"] == ["RTX 4060"]
+        assert status(analysis)["analysed_by"] == ["RTX 3050 — Backup AI"]
+        assert status(analysis)["failed_on"] == ["RTX 4060 — Primary AI"]
 
     def test_a_node_that_fails_once_and_answers_later_is_not_a_failover(self, pool):
         pool.routes[VISION_MODEL] = ["rtx4060", "jagadeesh"]
@@ -223,7 +223,7 @@ class TestTheNodeShownIsTheNodeServing:
             ai_gateway.chat(messages=[{"role": "user", "content": "summarise"}], model=TEXT_MODEL,
                             workload="payment_screenshot_text", max_retries=0)
 
-        assert status(analysis)["analysed_by"] == ["Jagadeesh", "RTX 4060"]
+        assert status(analysis)["analysed_by"] == ["RTX 3050 — Backup AI", "RTX 4060 — Primary AI"]
         assert status(analysis)["failed_on"] == []
 
     def test_between_two_calls_the_last_node_stays_named(self, pool):
@@ -250,15 +250,15 @@ class TestTheNodeShownIsTheNodeServing:
         worker.start()
         assert between.wait(5)
         assert status(analysis)["state"] == "running"
-        assert status(analysis)["node"] == "RTX 4060"
+        assert status(analysis)["node"] == "RTX 4060 — Primary AI"
         assert busy_nodes() == {}
 
         resume.set()
         assert pool.on_node["jagadeesh"].wait(5)
-        assert status(analysis)["node"] == "Jagadeesh"
+        assert status(analysis)["node"] == "RTX 3050 — Backup AI"
         release_text.set()
         worker.join(5)
-        assert status(analysis)["analysed_by"] == ["RTX 4060", "Jagadeesh"]
+        assert status(analysis)["analysed_by"] == ["RTX 4060 — Primary AI", "RTX 3050 — Backup AI"]
 
     def test_queued_behind_other_work_after_an_answer_reads_as_waiting(self, pool, monkeypatch):
         monkeypatch.setattr(ai_activity, "QUEUE_GRACE_SECONDS", 0.05)
@@ -282,7 +282,7 @@ class TestTheNodeShownIsTheNodeServing:
         release_mail.set()
         mail.join(5)
         worker.join(5)
-        assert status(analysis)["analysed_by"] == ["RTX 4060", "Jagadeesh"]
+        assert status(analysis)["analysed_by"] == ["RTX 4060 — Primary AI", "RTX 3050 — Backup AI"]
 
     def test_a_node_added_to_the_registry_is_named_without_a_code_change(self, pool, monkeypatch):
         registry = ollama_nodes.configured_nodes() + [
@@ -306,7 +306,7 @@ class TestTheNodeShownIsTheNodeServing:
             with pytest.raises(ai_gateway.AIGatewayError):
                 ai_gateway.chat(messages=[{"role": "user", "content": "x"}], model=VISION_MODEL,
                                 workload="payment_screenshot_vision", max_retries=0)
-        assert status(analysis)["analysed_by"] == ["RTX 4060"]
+        assert status(analysis)["analysed_by"] == ["RTX 4060 — Primary AI"]
 
     def test_work_outside_a_booking_is_named_from_its_workload(self, pool):
         release = pool.hold("jagadeesh")
@@ -334,7 +334,7 @@ class TestTheNodeShownIsTheNodeServing:
                 )
 
         asyncio.run(endpoint())
-        assert status(analysis)["analysed_by"] == ["RTX 4060"]
+        assert status(analysis)["analysed_by"] == ["RTX 4060 — Primary AI"]
 
 
 def _two_calls(analysis: str) -> None:
@@ -423,7 +423,7 @@ class TestTheBookingEndpoints:
         post_invite(booking_app, analysis, out).join(10)
         body = out["response"].json()
         assert body["analysis"] == {
-            "analysis_id": analysis, "state": "done", "node": "RTX 4060", "analysed_by": ["RTX 4060"],
+            "analysis_id": analysis, "state": "done", "node": "RTX 4060 — Primary AI", "analysed_by": ["RTX 4060 — Primary AI"],
             "failed_on": [],
         }
         assert body["data"]["inference_node_id"] == "rtx4060"
@@ -437,12 +437,12 @@ class TestTheBookingEndpoints:
         assert pool.on_node["our_machine"].wait(10)
 
         live = booking_app.get(f"/public/slots/analysis/{analysis}").json()["analysis"]
-        assert live["state"] == "running" and live["node"] == "Praveen"
+        assert live["state"] == "running" and live["node"] == "Slim 3 — Backup AI 2"
 
         release.set()
         worker.join(10)
         done = booking_app.get(f"/public/slots/analysis/{analysis}").json()["analysis"]
-        assert done["state"] == "done" and done["analysed_by"] == ["Praveen"]
+        assert done["state"] == "done" and done["analysed_by"] == ["Slim 3 — Backup AI 2"]
 
     def test_the_event_stream_pushes_waiting_the_node_and_done(self, booking_app, pool):
         release = pool.hold("jagadeesh")
@@ -471,9 +471,9 @@ class TestTheBookingEndpoints:
                   if line.startswith("data: ")]
         states = [(event["state"], event["node"]) for event in events]
         assert states[0] == ("waiting", None)
-        assert ("running", "Jagadeesh") in states
-        assert states[-1] == ("done", "Jagadeesh")
-        assert events[-1]["analysed_by"] == ["Jagadeesh"]
+        assert ("running", "RTX 3050 — Backup AI") in states
+        assert states[-1] == ("done", "RTX 3050 — Backup AI")
+        assert events[-1]["analysed_by"] == ["RTX 3050 — Backup AI"]
 
     def test_an_upload_without_an_id_is_still_a_booking_analysis(self, booking_app, pool):
         release = pool.hold("rtx4060")
@@ -485,7 +485,7 @@ class TestTheBookingEndpoints:
         worker.join(10)
         analysis = out["response"].json()["analysis"]
         assert ai_activity.valid_analysis_id(analysis["analysis_id"])
-        assert analysis["analysed_by"] == ["RTX 4060"]
+        assert analysis["analysed_by"] == ["RTX 4060 — Primary AI"]
 
     def test_a_refused_payment_still_reports_which_node_read_it(self, booking_app, pool, monkeypatch):
         """The JSON error path carries the analysis too."""
@@ -512,7 +512,7 @@ class TestTheBookingEndpoints:
         assert response.status_code == 400
         body = response.json()
         assert "not a registered account" in body["message"]
-        assert body["analysis"]["analysed_by"] == ["Praveen"]
+        assert body["analysis"]["analysed_by"] == ["Slim 3 — Backup AI 2"]
         assert body["analysis"]["analysis_id"] == analysis
 
     def test_a_malformed_status_id_is_refused(self, booking_app):

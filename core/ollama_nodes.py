@@ -51,11 +51,13 @@ def configured_nodes() -> list[dict[str, str]]:
     in the admin API, so they never change — ``our_machine`` stays
     ``our_machine`` even though the machine is Praveen's laptop. Business logic
     keys on the id; the label is only ever displayed.
+    Labels follow the owner's standard (7 Nov 2026), the same in Daybreak:
+    RTX 4060 — Primary AI, RTX 3050 — Backup AI, Slim 3 — Backup AI 2.
     """
     nodes = [
         {
             "id": "rtx4060",
-            "label": "RTX 4060",
+            "label": "RTX 4060 — Primary AI",
             "base_url": (
                 os.getenv("OLLAMA_NODE_RTX4060_URL")
                 or "http://127.0.0.1:11437"
@@ -63,7 +65,7 @@ def configured_nodes() -> list[dict[str, str]]:
         },
         {
             "id": "jagadeesh",
-            "label": "Jagadeesh",
+            "label": "RTX 3050 — Backup AI",
             # Deliberately does NOT fall back to OLLAMA_BASE_URL. That variable
             # names "some Ollama", not this node, and the two drifted apart in
             # production: a stale OLLAMA_BASE_URL of 11434 resolved `jagadeesh`
@@ -79,7 +81,7 @@ def configured_nodes() -> list[dict[str, str]]:
         },
         {
             "id": "our_machine",
-            "label": "Praveen",
+            "label": "Slim 3 — Backup AI 2",
             "base_url": (
                 os.getenv("OLLAMA_NODE_OUR_MACHINE_URL")
                 or "http://127.0.0.1:11436"

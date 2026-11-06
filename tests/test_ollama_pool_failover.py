@@ -76,7 +76,7 @@ def test_praveens_node_keeps_its_persisted_id_while_showing_a_clearer_label():
     """Renaming the id would orphan the persisted primary and the admin API."""
     node = ollama_nodes.node("our_machine")
     assert node["id"] == "our_machine"
-    assert node["label"] == "Praveen"
+    assert node["label"] == "Slim 3 — Backup AI 2"
 
 
 def test_the_vps_node_is_absent_unless_explicitly_enabled(monkeypatch):
