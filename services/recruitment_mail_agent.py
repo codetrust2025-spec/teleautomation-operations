@@ -1078,6 +1078,12 @@ def _entailing_evidence_from_source(
     return []
 
 
+#: Offer stages that precede the offer itself, and the stages that say it was
+#: released (most specific first). See the promotion in `_validate_result`.
+_OFFER_STAGES_BEFORE_RELEASE = frozenset({"OFFER_INDICATION", "OFFER_IN_PROGRESS", "OFFER_APPROVED"})
+_RELEASED_OFFER_STAGES = ("OFFER_LETTER_RECEIVED", "OFFER_RECEIVED")
+
+
 def _source_asserts(sources: dict[str, list[str]], status: str) -> bool:
     """Whether the verified source says this transition happened, anywhere in it.
 
@@ -1634,6 +1640,26 @@ def _validate_result(
             and _source_asserts(sources, "ASSESSMENT_INVITED")):
         value["promoted_from"] = safe_status
         safe_status = "ASSESSMENT_INVITED"
+    # An offer that has already been released is not an offer in preparation.
+    # 6 Nov 2026: a staffing firm's conditional offer of employment
+    # ("Please find the attached Offer of Employment ... sign, scan and send a
+    # copy") was read as OFFER_IN_PROGRESS by both models -- the conditions
+    # made it sound unfinished -- and then refused, because no sentence says
+    # the offer is being prepared. It was retried twice and dropped: no alert.
+    #
+    # Same rule as the assessment case above: when the source does not assert
+    # the earlier offer stage but does assert a released offer, take the stage
+    # its own words assert. Every offer stage files the same "Offer Received"
+    # alert, and the gate below still needs a verbatim excerpt entailing it.
+    if (safe_status in _OFFER_STAGES_BEFORE_RELEASE
+            and not _source_asserts(sources, safe_status)):
+        released = next(
+            (stage for stage in _RELEASED_OFFER_STAGES if _source_asserts(sources, stage)),
+            None,
+        )
+        if released:
+            value["promoted_from"] = safe_status
+            safe_status = released
     # The status is the validated transition. Model-supplied classification and
     # candidate labels are descriptive duplicates and must not contradict it.
     classification = store._STATUS_CLASSIFICATION[safe_status]

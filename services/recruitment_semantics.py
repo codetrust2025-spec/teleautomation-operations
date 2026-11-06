@@ -79,11 +79,14 @@ _TRANSITION_ASSERTIONS: dict[str, tuple[str, ...]] = {
     "OFFER_LETTER_RECEIVED": (
         r"\b(?:your (?:official )?|official )?offer letter (?:is |has been )?(?:attached|released|enclosed)\b",
         r"\b(?:find|review).{0,35}\b(?:your |the )?(?:official )?offer letter\b",
+        # "Please find the attached Offer of Employment" (live miss, 6 Nov 2026).
+        r"\b(?:find(?!\s+out\b)|review)\b[^.!?\n]{0,25}\b(?:your|the)\s+(?:attached\s+|enclosed\s+)?(?:formal\s+|official\s+)?offer of employment\b",
         r"\byour (?:formal )?offer of employment\b",
     ),
     "OFFER_RECEIVED": (
         r"\b(?:we (?:are|would be) (?:pleased|delighted)|we would like) to offer you\b",
         r"\b(?:your (?:official )?|official )?offer letter (?:is |has been )?(?:attached|released|enclosed)\b",
+        r"\b(?:find(?!\s+out\b)|review)\b[^.!?\n]{0,25}\b(?:your|the)\s+(?:attached\s+|enclosed\s+)?(?:formal\s+|official\s+)?offer of employment\b",
         r"\byour (?:formal )?offer of employment\b",
     ),
     "APPOINTMENT_LETTER_RECEIVED": (
