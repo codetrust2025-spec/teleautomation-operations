@@ -12,6 +12,8 @@ def configure(monkeypatch, tmp_path, offline=()):
     monkeypatch.setattr(ollama_nodes, 'node_health', node_health)
     monkeypatch.setattr(ai_gateway, 'health', lambda **kw: {'endpoint_reachable':kw['node_id'] not in offline,'model_available':True,'error_message':'fixture offline','error_code':'OLLAMA_UNAVAILABLE'})
     monkeypatch.setattr(ai_gateway, '_request_json', lambda *a, **kw: {'message':{'content':'fixture response'}})
+    # Nothing else is resident on these fixture nodes; see test_daybreak_ai_overload_failover.
+    monkeypatch.setattr(ollama_nodes, 'foreign_resident_models', lambda node_id, **kw: [])
     ollama_nodes.reset_breakers()
     return probes
 

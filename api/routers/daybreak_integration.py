@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException
@@ -58,6 +59,17 @@ REWRITE_PROMPT = (
 REWRITE_MODEL = "qwen2.5:7b"
 _CONNECTIVES = {"a", "an", "the", "and", "or", "of", "in", "on", "at", "for", "to", "with", "by", "from", "as",
                 "using", "via", "plus", "across", "including", "into", "through"}
+
+
+HEADLINE_BUDGET_SECONDS = 150
+
+
+def _env_seconds(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, "") or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def _terms(value: str) -> list[str]:
@@ -163,6 +175,10 @@ def generate_headline(
         # The gateway's max_retries retries transport errors, not an invalid generated headline.
         # Give Qwen one correction attempt before returning the original, and say why.
         original = payload.previous_headline.strip()
+        # One budget for the whole request, inside the Daybreak worker's own 180 s
+        # limit, so a stuck machine ends as "AI unavailable" here rather than as a
+        # worker-side timeout with nothing reported.
+        deadline = time.monotonic() + _env_seconds("DAYBREAK_HEADLINE_BUDGET_SECONDS", HEADLINE_BUDGET_SECONDS)
         attempts = 0
         total_ms = 0
         candidate = None
@@ -174,6 +190,7 @@ def generate_headline(
                     messages=[{"role": "user", "content": REWRITE_PROMPT + "\n\n" + original}],
                     model=REWRITE_MODEL, temperature=0.7, max_retries=1,
                     workload="daybreak_headline", num_predict=160, think=False,
+                    deadline_monotonic=deadline,
                 )
                 draft = result.content
             else:
@@ -182,6 +199,7 @@ def generate_headline(
                         messages=[{"role": "user", "content": _rewrite_plan_prompt(payload, result.content, reason)}],
                         schema=_rewrite_plan_schema(payload), model=REWRITE_MODEL, temperature=0.4,
                         max_retries=1, workload="daybreak_headline", num_predict=512, think=False,
+                        deadline_monotonic=deadline,
                     )
                     draft = _render_rewrite_plan(payload, result.content)
                 except AIGatewayError as error:

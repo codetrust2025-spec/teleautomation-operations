@@ -400,6 +400,44 @@ def _request(
         connection.close()
 
 
+def production_models() -> set[str]:
+    """Every model an Operations workload can ask for, by any route."""
+    names: set[str] = set()
+    try:
+        from core.ai_gateway import configured_models
+        from core.ai_model_routing import configured_model_routes
+
+        names.update(configured_model_routes().values())
+        names.update(configured_models().values())
+    except Exception:  # pragma: no cover - configuration unavailable
+        pass
+    return {str(name).strip().removesuffix(":latest") for name in names if name and str(name).strip()}
+
+
+def foreign_resident_models(
+    node_id: str, *, allowed: set[str] | frozenset[str], timeout: float = 5
+) -> list[str] | None:
+    """Models loaded on a node that no Operations workload uses.
+
+    On 7 Nov 2026 a benchmark loaded qwen3.8:27b and then qwen3.6:35b on RTX 4060.
+    Its health probe still answered in about a second, so routing kept sending
+    Daybreak there, where headlines took 35-300 s instead of 2-18 s. A resident
+    model nobody in production asks for means the machine is busy with someone
+    else's work. Returns None when /api/ps cannot be read: that says nothing
+    about load, so the caller must not treat it as busy.
+    """
+    try:
+        loaded = _request(node_id, "/api/ps", timeout=timeout)
+    except Exception:
+        return None
+    wanted = {name.removesuffix(":latest") for name in allowed}
+    resident = [
+        str(entry.get("name") or entry.get("model") or "")
+        for entry in loaded.get("models", []) or []
+    ]
+    return [name for name in resident if name and name.removesuffix(":latest") not in wanted]
+
+
 def installed_model_inventory(node_id: str, *, timeout: float = 5) -> list[dict[str, Any]]:
     """Read installed model names and on-disk sizes without pulling models."""
     tags = _request(node_id, "/api/tags", timeout=timeout)
