@@ -154,6 +154,17 @@ def _env_int(name: str, default: int) -> int:
 INTERACTIVE_QUEUE_WAIT_SECONDS = 150
 
 
+#: Daybreak headline budgets while another Daybreak machine is still left to try
+#: (7 Nov 2026). Headlines take 2.3 s at the median and 18 s at p99 on RTX 4060,
+#: 31 s at most on RTX 3050. Two accounts run at once against one slot per
+#: machine, so with the shared 30 s queue wait and 300 s request timeout an
+#: overloaded RTX 4060 failed the second account outright and held the first for
+#: up to five minutes, while RTX 3050 sat idle. On the last machine the normal
+#: limits apply, bounded by the request's own deadline.
+DAYBREAK_NODE_QUEUE_WAIT_SECONDS = 5
+DAYBREAK_NODE_RESPONSE_TIMEOUT_SECONDS = 45
+
+
 def queue_wait_seconds(interactive: bool) -> float:
     """Seconds a request may wait for its machine's slot."""
     if interactive:
@@ -423,7 +434,12 @@ def _chat(
             if node["id"] not in daybreak_order
         }
     node_budget = max(1, len(request_order()))
-    for _node_attempt in range(node_budget):
+    # Daybreak isolation skips a busy machine only while another is left. Machines
+    # skipped for being busy (never for failing) get one last-resort pass with the
+    # normal limits if every other machine is gone: busy beats nothing.
+    isolate = daybreak_order is not None
+    skipped_busy: list[str] = []
+    for _node_attempt in range(node_budget + 1):
         try:
             chosen_node = ollama_nodes.select_available_node(
                 model=chosen,
@@ -446,6 +462,11 @@ def _chat(
                 node for node in request_order()
                 if node not in excluded_nodes
             ]
+            if not remaining and skipped_busy:
+                isolate = False
+                excluded_nodes.difference_update(skipped_busy)
+                remaining = [node for node in request_order() if node in skipped_busy]
+                skipped_busy.clear()
             if not remaining:
                 break
             selected_node = remaining[0]
@@ -469,6 +490,29 @@ def _chat(
             last_error = AIGatewayError(status["error_message"], code="OLLAMA_MODEL_NOT_FOUND")
             excluded_nodes.add(selected_node)
             continue
+        if isolate and any(
+            node not in excluded_nodes and node != selected_node for node in request_order()
+        ):
+            foreign = ollama_nodes.foreign_resident_models(
+                selected_node,
+                allowed=ollama_nodes.production_models() | {chosen},
+                timeout=_remaining(deadline_monotonic, health_timeout),
+            )
+            if foreign:
+                # Benchmark isolation: the machine is running a model no
+                # Operations workload uses. Skip it for this request only. It is
+                # not a failure, so the breaker is untouched and the machine
+                # takes Daybreak work again as soon as that model is unloaded.
+                logger.warning(
+                    "Ollama node busy with a non-production model workload=%s inference_host=%s models=%s",
+                    workload, host_id, ",".join(foreign[:3]),
+                )
+                last_error = AIGatewayError(
+                    "The AI node is busy with other work.", code="OLLAMA_NODE_BUSY"
+                )
+                excluded_nodes.add(selected_node)
+                skipped_busy.append(selected_node)
+                continue
         node_failed = False
         for attempt in range(retry_limit + 1):
             logger.info(
@@ -482,10 +526,33 @@ def _chat(
             # below, because waiting for our own queue says nothing about
             # the node and must never cool it.
             queue_started = time.monotonic()
+            alternatives_left = isolate and any(
+                node not in excluded_nodes and node != selected_node for node in request_order()
+            )
+            node_wait = (
+                min(wait, _env_float("DAYBREAK_NODE_QUEUE_WAIT_SECONDS", DAYBREAK_NODE_QUEUE_WAIT_SECONDS))
+                if alternatives_left else wait
+            )
             if not _host_slots.acquire(
                 host_id, interactive=interactive,
-                timeout=_remaining(deadline_monotonic, wait),
+                timeout=_remaining(deadline_monotonic, node_wait),
             ):
+                queued += time.monotonic() - queue_started
+                logger.warning(
+                    "Ollama queue timed out workload=%s inference_host=%s model=%s waited_ms=%s moving_on=%s",
+                    workload, host_id, chosen, int((time.monotonic() - queue_started) * 1000),
+                    alternatives_left,
+                )
+                if alternatives_left:
+                    # Our own queue is full: the machine is busy, not broken. Move
+                    # this request to the next machine and leave the breaker alone.
+                    last_error = AIGatewayError(
+                        "The Ollama request queue timed out.", code="OLLAMA_QUEUE_TIMEOUT"
+                    )
+                    excluded_nodes.add(selected_node)
+                    skipped_busy.append(selected_node)
+                    node_failed = True
+                    break
                 raise AIGatewayError(
                     "The Ollama request queue timed out.", code="OLLAMA_QUEUE_TIMEOUT"
                 )
@@ -500,7 +567,13 @@ def _chat(
                     payload = _request_json(
                         "/api/chat", method="POST", body=body,
                         connect_timeout=_remaining(deadline_monotonic, connect_timeout),
-                        response_timeout=_remaining(deadline_monotonic, response_timeout),
+                        response_timeout=_remaining(
+                            deadline_monotonic,
+                            min(response_timeout, _env_float(
+                                "DAYBREAK_NODE_RESPONSE_TIMEOUT_SECONDS",
+                                DAYBREAK_NODE_RESPONSE_TIMEOUT_SECONDS,
+                            )) if alternatives_left else response_timeout,
+                        ),
                         base_url=selected_base_url,
                     )
                     answered = True
