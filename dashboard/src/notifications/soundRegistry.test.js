@@ -3,7 +3,7 @@ import { NOTIFICATION_IDS, NOTIFICATION_SOUNDS } from './soundRegistry.js'
 
 describe('Operations notification catalogue', () => {
   it('contains only Operations-owned events', () => {
-    expect(NOTIFICATION_IDS).toEqual(['mail_interview_booking', 'mail_selection', 'gmail_reconnect', 'interview_reminder'])
+    expect(NOTIFICATION_IDS).toEqual(['mail_interview_booking', 'mail_selection', 'gmail_reconnect', 'interview_reminder', 'mail_selection_alarm'])
     expect(Object.keys(NOTIFICATION_SOUNDS)).toEqual(NOTIFICATION_IDS)
   })
 

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { API } from "../config.js";
 import { subscribeMailEvents, subscribeMailStatus, traceMailAlert } from "../notifications/mailEventStream.js";
 import { fetchMailSummary, publishMailUnread } from "../notifications/mailUnread.js";
+import { acknowledgeSelectionAlarm } from "../notifications/selectionAlarm.js";
+import { SelectionAlarmControls } from "../notifications/SelectionAlarmBanner.jsx";
 import { useDialogA11y } from "../hooks/useDialogA11y.js";
 import { formatIstDate, formatIstDateTime, formatIstTime, formatScheduleDateTime, formatScheduleIstDateTime } from "../utils/istTime.js";
 import { useConfirm } from "../context/ConfirmContext.jsx";
@@ -516,7 +518,7 @@ export function MailMonitoringNotifications() {
     return () => { cancelled = true; };
   }, []);
   const set = (key) => (event) => { setPage(0); setFilters((value) => ({ ...value, [key]: event.target.value })); };
-  const act = async (item, action) => { await request(`/api/mail-monitoring/notifications/${item.id}/${action}`, { method:"POST", body:"{}" }); load({ silent:true }); };
+  const act = async (item, action) => { if (action !== "unread") acknowledgeSelectionAlarm(item.id); await request(`/api/mail-monitoring/notifications/${item.id}/${action}`, { method:"POST", body:"{}" }); load({ silent:true }); };
   // Switching tabs resets page only — user's candidate/alert-type/search/booking
   // filters are preserved so they keep working within the new tab view.
   const switchTab = (tabId) => { setActiveTab(tabId); setPage(0); };
@@ -529,6 +531,8 @@ export function MailMonitoringNotifications() {
     if (box && typeof box.scrollTo === "function") box.scrollTo({ top: 0 });
   }, [query]);
   const openNotification = useCallback(async (item) => {
+    // Opening an alert is seeing it: its selection alarm, if any, stops.
+    acknowledgeSelectionAlarm(item.id);
     setSelected({ ...item, is_read: true, detail_loading: true, detail_error: "" });
     if (!item.is_read) {
       setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, is_read: true } : row));
@@ -692,7 +696,7 @@ export function MailMonitoringNotifications() {
         );
       })}
     </nav>
-    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><div className="mail-download-group"><button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button><button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button></div><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? emailCount) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span></div></header>
+    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><div className="mail-download-group"><button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button><button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button></div><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? emailCount) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span><SelectionAlarmControls showTest /></div></header>
     </div>
     <div className="mail-filters mail-filters--compact">
       <input aria-label="Search notifications" placeholder="Search candidate, email, company or subject" value={filters.search} onChange={set("search")} />

@@ -7,6 +7,7 @@ import { subscribeMailEvents, traceMailAlert } from './mailEventStream.js'
 import { notifyGmailReconnect, notifyTrackedMail } from './notificationEvents.js'
 import { useInterviewReminders } from './useInterviewReminders.js'
 import { installSoundPreview } from './soundPreview.js'
+import { SelectionAlarmBanner } from './SelectionAlarmBanner.jsx'
 
 const GMAIL_HEALTH_POLL_MS = 120000
 
@@ -60,7 +61,9 @@ export function GlobalNotificationSounds() {
     return () => { cancelled = true; offHealth(); window.clearInterval(timer) }
   }, [authenticated])
 
-  return null
+  // The selection alarm banner is the only thing this renders, and only while
+  // a genuine selection alarm is waiting to be acknowledged.
+  return authenticated ? <SelectionAlarmBanner /> : null
 }
 
 export default GlobalNotificationSounds

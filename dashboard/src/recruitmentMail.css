@@ -3624,3 +3624,90 @@
     justify-self: start;
   }
 }
+
+/* Selection alarm: pinned while a genuine selection alert is unacknowledged. */
+.selection-alarm {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  width: min(720px, calc(100vw - 24px));
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--green, #22c55e);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface-raised, #0f172a);
+  color: var(--text-primary, #f8fafc);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35)), 0 0 0 4px rgba(34, 197, 94, 0.25);
+  animation: selection-alarm-pulse 1.2s ease-in-out infinite;
+}
+.selection-alarm__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.selection-alarm__text strong {
+  font-size: var(--text-lg, 17px);
+  text-transform: capitalize;
+}
+.selection-alarm__text span,
+.selection-alarm__text small {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary, #cbd5e1);
+}
+.selection-alarm__controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.selection-alarm__volume {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm, 13px);
+  color: var(--text-secondary, #cbd5e1);
+}
+.selection-alarm__volume input {
+  width: 110px;
+}
+.selection-alarm__volume output {
+  min-width: 3.2em;
+  text-align: right;
+}
+.selection-alarm__btn {
+  min-height: var(--ta-touch-min, 36px);
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong, #475569);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-panel, #1e293b);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.selection-alarm__btn[aria-pressed="true"] {
+  border-color: var(--yellow, #f59e0b);
+  color: var(--yellow, #f59e0b);
+}
+.selection-alarm__btn--stop {
+  border-color: var(--red, #ef4444);
+  background: var(--red, #ef4444);
+  color: #fff;
+}
+.mail-monitoring-page__actions .selection-alarm__controls {
+  margin-left: auto;
+}
+@keyframes selection-alarm-pulse {
+  50% { box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35)), 0 0 0 10px rgba(34, 197, 94, 0.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .selection-alarm { animation: none; }
+}

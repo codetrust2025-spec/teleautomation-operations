@@ -1,6 +1,7 @@
 import { SELECTION_CLASSIFICATIONS, isTrackedMailAlert, showMailAlertNotification } from '../utils/mailAlertSound.js'
 import { describeReconnectTargets, needsReconnect } from '../utils/mailboxStatus.js'
 import { playNotification } from './notificationSounds.js'
+import { isGenuineSelection, raiseSelectionAlarm } from './selectionAlarm.js'
 
 const recentMailEvents = new Map()
 const MAIL_DEDUPE_LIMIT = 500
@@ -24,6 +25,15 @@ export function notifyTrackedMail(payload) {
   // transport retries can use a different event ID, but neither is a new alert
   // and neither may produce another sound.
   if (!firstSightOfMailEvent(payload.notification_id || payload.event_id)) return false
+  // A genuine selection gets the long repeating alarm instead of the short
+  // fanfare, never both. raiseSelectionAlarm refuses an id this browser has
+  // already alarmed for or acknowledged, so a second tab or a reload cannot
+  // restart it; such an alert stays silent rather than falling back.
+  if (isGenuineSelection(payload.classification)) {
+    const raised = raiseSelectionAlarm(payload)
+    if (raised) showMailAlertNotification(payload)
+    return raised
+  }
   const selection = SELECTION_CLASSIFICATIONS.includes(payload.classification)
   const played = playNotification(selection ? 'mail_selection' : 'mail_interview_booking')
   showMailAlertNotification(payload)
