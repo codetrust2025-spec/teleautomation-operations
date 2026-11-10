@@ -394,21 +394,21 @@ def test_the_job_title_is_the_approved_role_or_a_role_shaped_summary_opening():
                          "profile_facts": "6 Years of Experience in Web Technologies"})))
 
 
-# A wording Daybreak's own fences already refused for this candidate must not come back. The service
-# cannot see Daybreak's 30-day duplicate history, so without being told it re-proposes the same
-# phrasing and the save is refused again -- which is how three of the four accounts that ended a
-# production round "unchanged" on 10 November did so, with no rewrite ever judged invalid.
+# One generation session may not offer the same wording twice: without being told what it has
+# already said, the model repeats itself and the attempt is wasted. A wording used on an earlier day
+# is welcome back -- Daybreak no longer fences those -- and the comparison is exact, so one
+# character of difference is a different headline.
 USED_JAVA = "Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs"
 
 
-def test_a_wording_the_caller_already_had_refused_is_refused_again():
+def test_only_an_identical_repeat_within_the_session_is_refused():
     assert integration._rewrite_candidate(java_request(), USED_JAVA)[1] == "accepted"
     request = java_request(avoid=[USED_JAVA])
     assert integration._rewrite_candidate(request, USED_JAVA)[1] == "already_used"
-    # Refused however it is dressed: Daybreak keys its duplicate history past spacing, punctuation
-    # and case, so a draft that differs only in those would be refused there too.
-    for disguise in (USED_JAVA.replace(", ", ",  "), USED_JAVA.replace(", ", " | "), USED_JAVA.upper()):
-        assert integration._rewrite_candidate(request, disguise)[1] == "already_used", disguise
+    # One character apart is a different headline, and nothing fences it any more.
+    for variant in (USED_JAVA.replace(", ", ",  "), USED_JAVA.replace(", ", " | "),
+                    USED_JAVA.upper(), USED_JAVA + "."):
+        assert integration._rewrite_candidate(request, variant)[1] == "accepted", variant
     fresh = "Java Developer with 4 Years 3 Months across Spring Boot, MySQL, Kafka and REST APIs"
     assert integration._rewrite_candidate(request, fresh)[1] == "accepted"
 

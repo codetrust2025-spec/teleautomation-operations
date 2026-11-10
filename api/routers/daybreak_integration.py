@@ -44,10 +44,9 @@ class DaybreakHeadlineRequest(BaseModel):
     # Every request with a current headline is rewritten; neither flag changes what happens.
     editorial_proposal: bool = False
     rewrite: bool = False
-    # Wordings the caller already knows it cannot save -- drafts its own fences refused for this
-    # candidate. The service cannot see Daybreak's 30-day duplicate history, so without this it
-    # re-proposes the same phrasing and the save is refused again. Optional: an older worker that
-    # sends nothing behaves exactly as before.
+    # Wordings this generation session has already offered. A headline used on an earlier day may
+    # come back; what one session may not do is propose the same wording twice, and without being
+    # told, the model does exactly that. Optional: a worker that sends nothing behaves as before.
     avoid: list[str] = Field(default_factory=list, max_length=10)
 
 
@@ -206,10 +205,11 @@ def _authorized(authorization: str | None) -> bool:
 
 
 def _same_wording(left: str, right: str) -> bool:
-    """True when two headlines differ by nothing a save could evidence.
+    """True when two headlines say the same thing in the same order.
 
-    Exact text first, then spacing, then punctuation and case -- the last matches how Daybreak keys
-    its own duplicate history, so a draft this says is the same wording is one its fence would refuse.
+    Used to judge whether a *rearrangement* is worth offering, never to refuse a draft: a reshuffle
+    that only swaps "|" for "," is a poor rewrite even though it is a real change. Refusals compare
+    exactly, so one character of difference is a different headline.
     """
     if left == right or " ".join(left.split()) == " ".join(right.split()):
         return True
@@ -223,7 +223,13 @@ def _avoided(request: DaybreakHeadlineRequest) -> list[str]:
 
 
 def _already_used(request: DaybreakHeadlineRequest, candidate: str) -> bool:
-    return any(_same_wording(candidate, used) for used in _avoided(request))
+    """Exactly one of the wordings this session has already offered.
+
+    Only an identical repeat is refused. A headline saved on an earlier day may be used again, and
+    one character of difference makes a different headline -- the same rule Daybreak's own server
+    applies to the session it is recording.
+    """
+    return any(candidate == used for used in _avoided(request))
 
 
 def _rewrite_fragments(original: str) -> list[str]:
