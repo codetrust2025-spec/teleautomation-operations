@@ -233,7 +233,11 @@ def test_an_unchanged_draft_is_told_why_and_then_falls_back_to_reordering_its_ow
     response, calls = _rewrite_call(monkeypatch, JAVA_HEADLINE)
     assert response.status_code == 200
     assert response.json()["rewrite_attempts"] == 3 and len(calls) == 3
-    assert response.json()["headline"] == "Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs"
+    # The phrases in their original order would only swap "|" for "," -- a real change by the
+    # character rule, but the same wording under the key Daybreak dedupes by, so its 30-day fence
+    # would refuse it and the candidate would end the run unchanged anyway. The reorder keeps every
+    # phrase verbatim and offers an arrangement that is genuinely new.
+    assert response.json()["headline"] == "Java Developer, 4 Years 3 Months, MySQL, Kafka, REST APIs, Spring Boot"
     assert response.json()["rewrite_accepted"] is True
     # The second attempt is still P10, with a refusal block naming what to fix -- not a different prompt.
     second = calls[1]["messages"][0]["content"]
@@ -388,3 +392,84 @@ def test_the_job_title_is_the_approved_role_or_a_role_shaped_summary_opening():
     assert "job title" not in integration._rewrite_prompt(integration.DaybreakHeadlineRequest.model_validate(
         java_body(facts={"target_role": "", "experience": "6 Years", "skills": ["React"],
                          "profile_facts": "6 Years of Experience in Web Technologies"})))
+
+
+# A wording Daybreak's own fences already refused for this candidate must not come back. The service
+# cannot see Daybreak's 30-day duplicate history, so without being told it re-proposes the same
+# phrasing and the save is refused again -- which is how three of the four accounts that ended a
+# production round "unchanged" on 10 November did so, with no rewrite ever judged invalid.
+USED_JAVA = "Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs"
+
+
+def test_a_wording_the_caller_already_had_refused_is_refused_again():
+    assert integration._rewrite_candidate(java_request(), USED_JAVA)[1] == "accepted"
+    request = java_request(avoid=[USED_JAVA])
+    assert integration._rewrite_candidate(request, USED_JAVA)[1] == "already_used"
+    # Refused however it is dressed: Daybreak keys its duplicate history past spacing, punctuation
+    # and case, so a draft that differs only in those would be refused there too.
+    for disguise in (USED_JAVA.replace(", ", ",  "), USED_JAVA.replace(", ", " | "), USED_JAVA.upper()):
+        assert integration._rewrite_candidate(request, disguise)[1] == "already_used", disguise
+    fresh = "Java Developer with 4 Years 3 Months across Spring Boot, MySQL, Kafka and REST APIs"
+    assert integration._rewrite_candidate(request, fresh)[1] == "accepted"
+
+
+def test_the_used_wordings_are_named_on_the_first_attempt_not_only_in_a_correction():
+    prompt = integration._rewrite_prompt(java_request(avoid=[USED_JAVA]))
+    assert "ALREADY_USED" in prompt and USED_JAVA in prompt
+    assert "ALREADY_USED" not in integration._rewrite_prompt(java_request())
+    refusal = integration._refusal(java_request(avoid=[USED_JAVA]), USED_JAVA, "already_used")
+    assert refusal["wordings_that_must_not_come_back"] == [USED_JAVA, JAVA_HEADLINE]
+
+
+def test_a_worker_that_sends_no_avoid_list_behaves_exactly_as_before():
+    body = java_body()
+    body.pop("avoid", None)
+    request = integration.DaybreakHeadlineRequest.model_validate(body)
+    assert request.avoid == []
+    assert integration._rewrite_candidate(request, USED_JAVA)[1] == "accepted"
+
+
+def test_every_character_still_counts_once_a_wording_is_being_avoided():
+    # An unrelated wording, so these cases turn only on the comparison against the current headline.
+    request = java_request(avoid=["Backend Engineer, 9 Years, Go, Postgres, Kubernetes"])
+    # The avoid list changes nothing about how the current headline itself is compared.
+    assert integration._rewrite_candidate(request, JAVA_HEADLINE)[1] == "unchanged"
+    assert integration._rewrite_candidate(request, JAVA_HEADLINE.replace(", Kafka", " Kafka"))[1] == "accepted"
+    assert integration._rewrite_candidate(request, JAVA_HEADLINE.replace("Java Developer", "java Developer"))[1] == "accepted"
+    assert integration._rewrite_candidate(request, JAVA_HEADLINE.replace(" | 4", "  | 4"))[1] == "whitespace_only"
+
+
+# The last attempt rebuilds the headline from its own phrases. The model may put every phrase in one
+# group, and the sort is stable, so it handed back the original order and rebuilt the headline it was
+# asked to change. One production account ended five runs out of five "unchanged" that way, with no
+# rewrite ever refused. The shape that does it: a comma-separated headline whose opening phrase
+# states the experience, so every other phrase sorts into one group behind it.
+FLAT_HEADLINE = ("A seasoned Platform Reliability Engineer with 7+ years of experience in Terraform Go, "
+                 "Incident Response, and Chaos Testing, skilled in Prometheus and Grafana, "
+                 "specializing in capacity and failover planning.")
+
+
+def flat_request(**overrides):
+    return integration.DaybreakHeadlineRequest.model_validate({
+        "candidate_ref": "candidate-reliability", "previous_headline": FLAT_HEADLINE,
+        "facts": {"target_role": "Platform Reliability Engineer", "experience": "7 Years 2 Months",
+                  "skills": ["Terraform Go", "Incident Response", "Chaos Testing", "Prometheus",
+                             "Grafana", "Terraform", "Go"], "profile_facts": ""},
+        "max_length": 250, "rewrite": True, **overrides})
+
+
+def test_the_reordering_attempt_never_hands_back_the_headline_it_was_asked_to_change():
+    request = flat_request()
+    fragments = integration._rewrite_fragments(FLAT_HEADLINE)
+    assert len(fragments) > 2
+    # Every phrase in one group: the plan the model actually returned for this candidate.
+    flat = json.dumps({"groups": {str(i): 2 for i in range(len(fragments))}})
+    draft = integration._render_rewrite_plan(request, flat)
+    assert draft != FLAT_HEADLINE
+    candidate, reason = integration._rewrite_candidate(request, draft)
+    assert reason == "accepted" and candidate == draft
+    # Rotating phrases copies them verbatim, so the rewrite still cannot lose or invent a fact.
+    assert integration._dropped_facts(request, draft) == []
+    assert integration._invented_terms(request, draft) == []
+    # And it does not land on a wording the caller has already had refused.
+    assert integration._render_rewrite_plan(flat_request(avoid=[draft]), flat) not in (draft, FLAT_HEADLINE)
