@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -29,6 +30,31 @@ def payload():
     }
 
 
+#: A candidate whose approved facts actually match their current headline, so every verified fact is
+#: genuinely required and the strict rules can be exercised. payload() deliberately does not match.
+JAVA_HEADLINE = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
+
+
+def java_body(**overrides):
+    return {
+        "candidate_ref": "candidate-java",
+        "previous_headline": JAVA_HEADLINE,
+        "facts": {
+            "target_role": "Java Developer",
+            "experience": "4 Years 3 Months",
+            "skills": ["Spring Boot", "MySQL", "Kafka", "REST APIs", "Docker"],
+            "profile_facts": "",
+        },
+        "max_length": 250,
+        "rewrite": True,
+        **overrides,
+    }
+
+
+def java_request(**overrides):
+    return integration.DaybreakHeadlineRequest.model_validate(java_body(**overrides))
+
+
 def test_daybreak_headline_requires_dedicated_bearer_token(monkeypatch):
     c = client(monkeypatch)
     assert c.post("/api/integrations/daybreak/headline", json=payload()).status_code == 401
@@ -41,7 +67,9 @@ def test_daybreak_headline_uses_shared_gateway_and_returns_selected_node(monkeyp
     def fake_chat(**kwargs):
         calls.append(kwargs)
         return SimpleNamespace(
-            content="React.js and JavaScript developer with 6 years",
+            # Keeps the exact job title and experience, and adds one approved skill the headline
+            # did not show. Dropping "React developer" for "JavaScript developer" would be refused.
+            content="React developer, 6 years, JavaScript",
             node_id="rtx4060", node_label="RTX 4060", model="qwen2.5:7b", duration_ms=47,
         )
 
@@ -50,7 +78,7 @@ def test_daybreak_headline_uses_shared_gateway_and_returns_selected_node(monkeyp
     response = c.post("/api/integrations/daybreak/headline", headers={"Authorization": "Bearer " + "d" * 48}, json=payload())
     assert response.status_code == 200
     assert response.json() == {
-        "status": "ok", "headline": "React.js and JavaScript developer with 6 years",
+        "status": "ok", "headline": "React developer, 6 years, JavaScript",
         "rewrite_accepted": True, "rewrite_reason": "", "rewrite_attempts": 1,
         "node_id": "rtx4060", "node_label": "RTX 4060", "model": "qwen2.5:7b", "duration_ms": 47,
     }
@@ -122,22 +150,44 @@ def test_rewrite_sends_the_exact_tested_prompt_and_the_current_headline_to_qwen(
     assert response.json()["rewrite_accepted"] is True
     assert response.json()["rewrite_attempts"] == 1
     assert len(calls) == 1
-    prompt = calls[0]["messages"][0]["content"]
-    assert prompt == integration.REWRITE_PROMPT + "\n\nJava Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
-    assert integration.REWRITE_PROMPT == ("Rewrite the current Naukri headline into a genuinely different, natural, professional sentence within 250 characters. Reorganize sentence structure and skill order. Preserve all existing skills, job titles, experience and factual details. Do not invent, exaggerate or omit information. Avoid unnecessary filler. Return only the rewritten headline.")
+    # P10 "Free safe restructure", verbatim, with this candidate's title, experience and headline.
+    assert calls[0]["messages"][0]["content"] == (
+        "Rewrite the current Naukri resume headline.\n"
+        "TASK: Rewrite more creatively with a different sentence structure and skill order. "
+        "A small change is fine, but preserve every verified fact exactly.\n\n"
+        "STRICT RULES:\n"
+        "- Preserve the exact job title 'React developer'.\n"
+        "- Preserve '6 years' without shortening or increasing experience.\n"
+        "- Preserve ALL listed technical skills, without omissions, additions or altered spellings.\n"
+        "- No invented results, roles, credentials, achievements, or exaggerated claims.\n"
+        "- Maximum 250 characters in the COMPLETE output.\n"
+        "- Return ONLY the headline, without explanations, labels or numbering.\n\n"
+        "ORIGINAL HEADLINE:\n" + JAVA_HEADLINE
+    )
+    # The settings the prompt was measured with. num_ctx comes from the gateway's own 4096 floor.
+    assert integration.REWRITE_MODEL == "qwen2.5:7b"
+    assert (integration.REWRITE_TEMPERATURE, integration.REWRITE_NUM_PREDICT) == (0.7, 160)
     assert calls[0]["model"] == "qwen2.5:7b" and calls[0]["workload"] == "daybreak_headline"
+    assert calls[0]["temperature"] == 0.7 and calls[0]["num_predict"] == 160 and calls[0]["think"] is False
+    from core.ai_gateway import MIN_NUM_CTX, resolved_num_ctx
+    assert MIN_NUM_CTX == 4096 and resolved_num_ctx() >= 4096
 
 
-def test_content_validation_removed_rewrites_are_not_blocked_by_word_order_or_terms(monkeypatch):
-    for content in (
-        "Java Developer with 4 Years 3 Months building REST APIs on MySQL and Spring Boot",
-        "Java Developer with 3 Years 4 Months building REST APIs on Kafka, MySQL and Spring Boot",
-        "Too short",
+def test_a_rewrite_that_drops_or_alters_a_verified_fact_is_refused(monkeypatch):
+    """Reverses #442: dropping a skill, the title or the exact experience is no longer accepted."""
+    request = java_request()
+    for draft, dropped in (
+        # Kafka is an approved skill the current headline shows.
+        ("Java Developer with 4 Years 3 Months building REST APIs on MySQL and Spring Boot", ["Kafka"]),
+        # The experience is reversed, which is a different claim about the candidate.
+        ("Java Developer with 3 Years 4 Months on Spring Boot, MySQL, Kafka and REST APIs", ["4 Years 3 Months"]),
+        # The exact job title is gone.
+        ("Spring Boot, MySQL, Kafka and REST APIs over 4 Years 3 Months", ["Java Developer"]),
     ):
-        response, calls = _rewrite_call(monkeypatch, content)
-        assert response.status_code == 200 and response.json()["headline"] == content
-        assert response.json()["rewrite_accepted"] is True
-        assert response.json()["rewrite_attempts"] == 1 and len(calls) == 1
+        assert integration._dropped_facts(request, draft) == dropped, draft
+        assert integration._rewrite_candidate(request, draft) == (None, "dropped_facts"), draft
+    # A skill the current headline never showed is not demanded of the rewrite: Docker is approved but absent.
+    assert "Docker" not in integration._required_facts(request)
 
 
 def test_rewrite_corrects_a_too_long_first_draft_without_losing_skills(monkeypatch):
@@ -178,14 +228,18 @@ def test_rewrite_corrects_a_too_long_first_draft_without_losing_skills(monkeypat
     assert len(valid) <= 250
 
 
-def test_unchanged_first_draft_gets_a_single_corrective_retry(monkeypatch):
-    original = "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs"
-    response, calls = _rewrite_call(monkeypatch, original)
+def test_an_unchanged_draft_is_told_why_and_then_falls_back_to_reordering_its_own_phrases(monkeypatch):
+    """Three attempts: P10, P10 told what was refused, then a verbatim reorder that cannot lose a fact."""
+    response, calls = _rewrite_call(monkeypatch, JAVA_HEADLINE)
     assert response.status_code == 200
-    assert response.json()["rewrite_attempts"] == 2 and len(calls) == 2
-    # Without the deleted editorial gate, a changed separator/order response is returned.
+    assert response.json()["rewrite_attempts"] == 3 and len(calls) == 3
     assert response.json()["headline"] == "Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs"
     assert response.json()["rewrite_accepted"] is True
+    # The second attempt is still P10, with a refusal block naming what to fix -- not a different prompt.
+    second = calls[1]["messages"][0]["content"]
+    assert second.startswith("Rewrite the current Naukri resume headline.\nTASK: " + integration.REWRITE_TASK)
+    refusal = json.loads(second.split("\nREFUSAL=", 1)[1])
+    assert refusal["reason"] == "unchanged" and refusal["maximum_characters"] == 250
 
 
 def test_old_worker_flags_still_get_a_rewrite_not_the_removed_selection(monkeypatch):
@@ -236,7 +290,7 @@ def test_invalid_corrective_plan_is_reported_unchanged_without_extra_model_attem
     assert response.json()["headline"] == original
     assert response.json()["rewrite_accepted"] is False
     assert response.json()["rewrite_reason"] == "invalid_rewrite_plan"
-    assert len(calls) == response.json()["rewrite_attempts"] == 2
+    assert len(calls) == response.json()["rewrite_attempts"] == 3
 
 
 def test_schema_rejection_on_correction_returns_unchanged_without_weakening_validation(monkeypatch):
@@ -250,30 +304,87 @@ def test_schema_rejection_on_correction_returns_unchanged_without_weakening_vali
     assert response.json()["rewrite_reason"] == "invalid_rewrite_plan"
 
 
-def test_removed_content_filter_does_not_reject_terms_or_proficiency_claims(monkeypatch):
-    for term in ("AWS", "Proficient", "specializing"):
-        candidate = f"Java Developer with 4 Years 3 Months in REST APIs on Kafka, MySQL and Spring Boot {term}"
-        request = integration.DaybreakHeadlineRequest.model_validate({
-            **payload(),
-            "previous_headline": "Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs",
-            "rewrite": True,
-        })
-        assert integration._rewrite_candidate(request, candidate) == (candidate, "accepted")
-        response, calls = _rewrite_call(monkeypatch, candidate)
-        assert response.json()["rewrite_accepted"] is True
-        assert response.json()["headline"] == candidate
-        assert response.json()["rewrite_attempts"] == 1 and len(calls) == 1
+def test_a_word_absent_from_the_approved_facts_is_refused(monkeypatch):
+    """Reverses #442: an unapproved skill, a seniority word or a proficiency claim cannot be added."""
+    request = java_request()
+    for term in ("AWS", "Proficient", "Senior", "certified"):
+        draft = f"Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs, {term}"
+        assert integration._invented_terms(request, draft) == [term.lower()], draft
+        assert integration._rewrite_candidate(request, draft) == (None, "invented_terms"), draft
+    # Connectives are not claims, and an approved skill may be added even when the headline omits it.
+    approved = "Java Developer with 4 Years 3 Months across Spring Boot, MySQL, Kafka, REST APIs and Docker"
+    assert integration._invented_terms(request, approved) == []
+    assert integration._rewrite_candidate(request, approved) == (approved, "accepted")
+    # End to end, an unapproved word is refused twice and the verbatim reorder is what gets returned,
+    # so the candidate still receives a changed headline that invented nothing.
+    response, calls = _rewrite_call(monkeypatch, "Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs, AWS")
+    assert response.json()["rewrite_attempts"] == 3 and len(calls) == 3
+    assert response.json()["rewrite_accepted"] is True
+    assert "AWS" not in response.json()["headline"]
+    refused = json.loads(calls[1]["messages"][0]["content"].split("REFUSAL=", 1)[1])
+    assert refused["words_not_in_the_approved_facts"] == ["aws"]
 
 
-def test_rewrite_allows_additional_terms_without_approval():
-    request = payload() | {'previous_headline': 'Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka | REST APIs', 'rewrite': True}
-    candidate = 'Java Developer with 4 Years 3 Months in REST APIs on Kafka, MySQL and Spring Boot with AWS'
-    assert integration._rewrite_candidate(integration.DaybreakHeadlineRequest.model_validate(request), candidate) == (candidate, 'accepted')
+def test_every_character_counts_and_whitespace_is_never_folded_away():
+    request = java_request(previous_headline="Java Developer | 4 Years")
+    assert integration._rewrite_candidate(request, "   ") == (None, "empty")
+    assert integration._rewrite_candidate(request, "Java Developer | 4 Years") == (None, "unchanged")
+    # One letter of case and one comma each count as a change. casefold() used to hide the first.
+    for draft in ("JAVA DEVELOPER | 4 YEARS", "Java Developer, 4 Years"):
+        assert integration._rewrite_candidate(request, draft) == (draft, "accepted"), draft
+    # A difference made only of whitespace is refused by name, not silently trimmed away: the companion
+    # reads innerText().trim() and verifies with a whitespace-collapsing compare, so it is unverifiable.
+    for draft in ("Java Developer |  4 Years", " Java Developer | 4 Years", "Java Developer\t| 4 Years"):
+        assert integration._rewrite_candidate(request, draft)[1] in {"whitespace_only", "unchanged"}, draft
+    assert integration._rewrite_candidate(request, "Java Developer |  4 Years") == (None, "whitespace_only")
+    # Only the model's own envelope is unwrapped -- a label, surrounding quotes, a wrapped line --
+    # and that happens before the comparison, so it can never hide a difference in the headline itself.
+    assert integration._clean_rewrite('Headline: "Java Developer, 4 Years"\n') == "Java Developer, 4 Years"
+    assert integration._rewrite_candidate(request, '  Java Developer | 4 Years  ') == (None, "unchanged")
+    long_draft = "Java Developer, " + ", ".join(["Spring Boot"] * 21)
+    assert len(long_draft) > 250 and integration._rewrite_candidate(request, long_draft) == (None, "too_long")
 
 
-def test_only_naukri_limits_reject_a_rewrite():
-    request = integration.DaybreakHeadlineRequest.model_validate({**payload(), 'previous_headline': 'Java Developer | 4 Years'})
-    assert integration._rewrite_candidate(request, '   ') == (None, 'empty')
-    assert integration._rewrite_candidate(request, 'x' * 251) == (None, 'too_long')
-    assert integration._rewrite_candidate(request, 'JAVA DEVELOPER | 4 YEARS') == (None, 'unchanged')
-    assert integration._rewrite_candidate(request, 'x' * 250) == ('x' * 250, 'accepted')
+def test_the_two_services_judge_the_same_drafts_alike():
+    """The agreement table.
+
+    The Daybreak companion asserts the same rows against its own implementation
+    (companion/tests/restructure-policy.test.mjs, "the companion and the gateway judge the same drafts
+    alike"). Two services validate every headline -- the gateway before it returns one, the companion
+    before it saves one -- and a disagreement would either waste a candidate's single daily save or
+    quietly let through what the other refuses.
+    """
+    request = java_request()
+    agreed = [
+        ("Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs", "accepted"),
+        ("Java Developer with 4 Years 3 Months across Spring Boot, MySQL, Kafka, REST APIs and Docker", "accepted"),
+        ("Java Developer with 4 Years 3 Months building REST APIs on MySQL and Spring Boot", "dropped_facts"),
+        ("Java Developer, 4 Years 3 Months, Spring Boot, MySQL, Kafka, REST APIs, AWS", "invented_terms"),
+        (JAVA_HEADLINE, "unchanged"),
+        ("Java Developer | 4 Years 3 Months | Spring Boot, MySQL, Kafka |  REST APIs", "whitespace_only"),
+    ]
+    for draft, expected in agreed:
+        candidate, reason = integration._rewrite_candidate(request, draft)
+        assert reason == expected, draft
+        assert (candidate == draft) is (expected == "accepted"), draft
+    assert integration._dropped_facts(request, agreed[2][0]) == ["Kafka"]
+    assert integration._invented_terms(request, agreed[3][0]) == ["aws"]
+
+
+def test_the_job_title_is_the_approved_role_or_a_role_shaped_summary_opening():
+    def title(**facts):
+        return integration._candidate_title(integration.ApprovedFacts.model_validate(
+            {"target_role": "", "experience": "", "skills": [], "profile_facts": "", **facts}))
+
+    assert title(target_role="Salesforce Developer") == "Salesforce Developer"
+    assert title(profile_facts="Salesforce Developer | 5 Years 2 Months | Apex | LWC") == "Salesforce Developer"
+    assert title(experience="4 Years 5 Months",
+                 profile_facts="Automation Test Engineer with 4 Years 5 Months | Selenium WebDriver") == "Automation Test Engineer"
+    assert title(experience="6 Years", profile_facts="Web Developer with 6 Years Experience in Javascript") == "Web Developer"
+    # A summary opening is not a job title. Claiming one would make every rewrite preserve a sentence.
+    assert title(experience="6 Years", profile_facts="6 Years of Experience in Web Technologies | React") == ""
+    assert title(profile_facts="MERN Stack Development | React.js | Node.js") == ""
+    assert title() == ""
+    assert "job title" not in integration._rewrite_prompt(integration.DaybreakHeadlineRequest.model_validate(
+        java_body(facts={"target_role": "", "experience": "6 Years", "skills": ["React"],
+                         "profile_facts": "6 Years of Experience in Web Technologies"})))

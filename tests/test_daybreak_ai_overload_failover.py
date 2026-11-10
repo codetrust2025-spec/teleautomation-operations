@@ -54,7 +54,10 @@ def pool(monkeypatch, tmp_path):
         behaviour = state["answer"].get(node)
         if behaviour is not None:
             behaviour()
-        return {"message": {"content": f"headline from {node}"}}
+        # A valid rewrite of BODY's headline: it keeps the exact job title and experience and adds
+        # no word absent from the approved facts, so these tests exercise node failover rather than
+        # the headline rules. Which node answered is asserted from the gateway result, not the text.
+        return {"message": {"content": "React developer, 6 years"}}
     monkeypatch.setattr(ai_gateway, "_request_json", request)
     ollama_nodes.reset_breakers()
     yield state
