@@ -6,6 +6,7 @@ import { DataRoomPanel } from './components/DataRoomPanel.jsx'
 import { RecruitmentMailPanel } from './components/RecruitmentMailPanel.jsx'
 import { AiControlsDashboard } from './components/AiControlsDashboard.jsx'
 import { MailMonitoringNotifications } from './components/MailMonitoringNotifications.jsx'
+import { MailCategoryPage } from './components/MailCategoryPage.jsx'
 import { ChangePasswordModal } from './components/ChangePasswordModal.jsx'
 import { AttendancePanel } from './attendance/AttendancePanel.jsx'
 import GlobalNotificationSounds from './notifications/GlobalNotificationSounds.jsx'
@@ -354,8 +355,8 @@ function OperationsShell({ view, onNavigate }) {
           {view === 'ai-recruitment' && <RecruitmentMailPanel />}
           {view === 'ai-controls' && <AiControlsDashboard />}
           {view === 'mail-notifications' && <MailMonitoringNotifications />}
-          {view === 'mail-selection' && <MailMonitoringNotifications key="selection" category="selection" />}
-          {view === 'mail-interview' && <MailMonitoringNotifications key="interview" category="interview" />}
+          {view === 'mail-selection' && <MailCategoryPage key="selection" category="selection" />}
+          {view === 'mail-interview' && <MailCategoryPage key="interview" category="interview" />}
           {view === 'data-room' && <DataRoomPanel />}
         </main>
       </div>

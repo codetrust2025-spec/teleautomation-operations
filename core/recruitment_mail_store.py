@@ -3278,6 +3278,124 @@ def list_notifications(
     return _booking_result_page(reconcile_booking_claims(rows), total, booking_result)
 
 
+# The company a group is keyed by: case, punctuation and trailing legal
+# suffixes ignored, so "VHS Professional Services Pvt. Ltd" and "... Pvt Ltd",
+# or "Fractal Analytics Limited" and "Fractal Analytics", are one company.
+# Grouping only: the stored name is untouched and still shown.
+_LEGAL_SUFFIX = r"(\s+(pvt|private|ltd|limited|llp|inc|incorporated|co|corp|corporation|india))+$"
+
+
+def _company_key_sql(prefix: str = "") -> str:
+    p = f"{prefix}." if prefix else ""
+    words = f"btrim(regexp_replace(lower(COALESCE({p}company_name, '')), '[^a-z0-9]+', ' ', 'g'))"
+    return f"regexp_replace({words}, '{_LEGAL_SUFFIX}', '')"
+
+
+def list_notification_groups(
+    *, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0,
+) -> dict[str, Any]:
+    """Mail Alerts by Candidate + Company, for the Selection / Interview pages.
+
+    A group is listed when any of its alerts matches the filters (the page's
+    category, tab, search, status and company). Its counts and its history are
+    the whole visible history of that candidate with that company, both
+    categories, because that is what expanding it shows. `latest_*` is the
+    newest alert of the page's category (or of any, without one): the latest
+    status the pipeline verified for that group. Read-only.
+    """
+    filters = dict(filters or {})
+    company_key = str(filters.pop("company_key", "") or "").strip().lower()
+    group = str(filters.get("classification_group") or "").strip().lower()
+    status_set = sorted(CLASSIFICATION_GROUPS.get(group) or (TRACKED_NOTIFICATION_CLASSIFICATIONS | {"recruitment_walkin"}))
+    clause, params, _order = notification_filter_sql(filters)
+    key = _company_key_sql()
+    if company_key:
+        clause += f" AND {key} = %s"
+        params = params + [company_key]
+    page = max(1, min(int(limit), 100))
+    skip = max(0, int(offset))
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""WITH matched AS (
+                  SELECT candidate_id, {key} AS company_key FROM mail_monitoring_notifications
+                   WHERE {clause} GROUP BY 1, 2
+                ), hist AS (
+                  SELECT n.*, {_company_key_sql("n")} AS company_key FROM mail_monitoring_notifications n
+                    JOIN matched m ON m.candidate_id = n.candidate_id AND m.company_key = {_company_key_sql("n")}
+                   WHERE {_visibility_for("n")}
+                ), latest AS (
+                  SELECT DISTINCT ON (candidate_id, company_key) candidate_id, company_key,
+                         classification, candidate_status
+                    FROM hist WHERE classification = ANY(%s)
+                   ORDER BY candidate_id, company_key, COALESCE(email_received_at, created_at) DESC, id
+                )
+                SELECT h.candidate_id, h.company_key,
+                       (array_agg(h.candidate_name ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
+                          FILTER (WHERE COALESCE(h.candidate_name, '') <> ''))[1] AS candidate_name,
+                       (array_agg(h.candidate_email ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
+                          FILTER (WHERE COALESCE(h.candidate_email, '') <> ''))[1] AS candidate_email,
+                       (array_agg(btrim(h.company_name) ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
+                          FILTER (WHERE btrim(COALESCE(h.company_name, '')) <> ''))[1] AS company_name,
+                       count(*) AS total, count(*) FILTER (WHERE NOT h.is_read) AS unread,
+                       max(COALESCE(h.email_received_at, h.created_at)) AS latest_at,
+                       l.classification AS latest_classification, l.candidate_status AS latest_status,
+                       count(*) OVER () AS group_total
+                  FROM hist h LEFT JOIN latest l USING (candidate_id, company_key)
+                 GROUP BY h.candidate_id, h.company_key, l.classification, l.candidate_status
+                 ORDER BY latest_at DESC NULLS LAST, h.candidate_id, h.company_key
+                 LIMIT %s OFFSET %s""",
+            params + _visibility_params() + [status_set, page, skip],
+        )
+        rows = _rows(cur)
+        total = int(rows[0]["group_total"]) if rows else 0
+        if not rows and skip:
+            cur.execute(
+                f"SELECT count(*) FROM (SELECT 1 FROM mail_monitoring_notifications WHERE {clause} GROUP BY candidate_id, {key}) g",
+                params,
+            )
+            total = int(cur.fetchone()[0])
+        # The company options: every company in this category, before the
+        # company, status, tab and search filters narrow it.
+        base, base_params, _ = notification_filter_sql({"classification_group": group} if group else {})
+        cur.execute(
+            f"""SELECT {key} AS key, (array_agg(btrim(company_name) ORDER BY created_at DESC))[1] AS name, count(*) AS count
+                  FROM mail_monitoring_notifications WHERE {base} AND btrim(COALESCE(company_name, '')) <> ''
+                 GROUP BY 1 ORDER BY 2""",
+            base_params,
+        )
+        companies = _rows(cur)
+    for row in rows:
+        row.pop("group_total", None)
+        row["read"] = int(row["total"]) - int(row["unread"])
+    return {"groups": rows, "total": total, "companies": companies}
+
+
+def _visibility_for(prefix: str) -> str:
+    rows_clause, _ = visible_rows_sql(prefix=prefix)
+    tracked_clause, _ = tracked_classification_sql(prefix=prefix)
+    return f"{rows_clause} AND {tracked_clause}"
+
+
+def _visibility_params() -> list[Any]:
+    _, rows_params = visible_rows_sql(prefix="n")
+    _, tracked_params = tracked_classification_sql(prefix="n")
+    return list(rows_params) + list(tracked_params)
+
+
+def list_group_emails(candidate_id: str, company_key: str, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Every visible alert of one candidate with one company, newest first, both categories."""
+    vis, vis_params = notification_visibility_sql()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT * FROM mail_monitoring_notifications
+                 WHERE {vis} AND candidate_id = %s AND {_company_key_sql()} = %s
+                 ORDER BY COALESCE(email_received_at, created_at) DESC, id
+                 LIMIT %s""",
+            list(vis_params) + [candidate_id, str(company_key or "").strip().lower(), max(1, min(int(limit), 500))],
+        )
+        return reconcile_booking_claims(_rows(cur))
+
+
 def booking_result_sql(booking_result: str, prefix: str = "") -> tuple[str, list[Any]]:
     """The Booking result filter on Mail Alerts, as a WHERE clause.
 

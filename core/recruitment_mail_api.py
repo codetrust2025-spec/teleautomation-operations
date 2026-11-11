@@ -545,6 +545,29 @@ def install_recruitment_mail_routes(app):
         response.headers['Cache-Control']='no-store, max-age=0'
         return {'status':'ok','notifications':rows,'total':total,'email_count':email_count,'grouped_by':'candidate' if grouped else None,'limit':min(max(limit,1),100),'offset':max(offset,0)}
 
+    @app.get('/api/mail-monitoring/groups')
+    async def mail_notification_groups(
+        request:Request, response:Response, search:str|None=None,
+        classification:str|None=None, classification_group:str|None=None,
+        company_key:str|None=None, priority:str|None=None, is_read:bool|None=None,
+        limit:int=20, offset:int=0,
+    ):
+        """Candidate + Company groups for the Selection / Interview Related pages."""
+        _guard();require_fleet_admin(request)
+        filters={'search':search,'classification':classification,'classification_group':classification_group,
+                 'company_key':company_key,'priority':priority,'is_read':is_read}
+        result=await asyncio.to_thread(store.list_notification_groups,filters=filters,limit=limit,offset=offset)
+        response.headers['Cache-Control']='no-store, max-age=0'
+        return {'status':'ok',**result,'limit':min(max(limit,1),100),'offset':max(offset,0)}
+
+    @app.get('/api/mail-monitoring/groups/emails')
+    async def mail_notification_group_emails(request:Request, response:Response, candidate_id:str, company_key:str=''):
+        """One group's whole history, newest first, Selection and Interview alike."""
+        _guard();require_fleet_admin(request)
+        rows=await asyncio.to_thread(store.list_group_emails,candidate_id,company_key)
+        response.headers['Cache-Control']='no-store, max-age=0'
+        return {'status':'ok','notifications':rows,'total':len(rows)}
+
     @app.get('/api/mail-monitoring/export')
     async def mail_notifications_export(
         request:Request, response:Response, format:str='xlsx',

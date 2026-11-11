@@ -198,7 +198,7 @@ function TechnicalDetails({ technical = {} }) {
   </details>;
 }
 
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -222,7 +222,7 @@ function navigate(view, detail = {}) {
  * same stream and is the only place that makes a noise, which is what stops one
  * event from being heard twice.
  */
-function useMailLive(onUpdate) {
+export function useMailLive(onUpdate) {
   const [status, setStatus] = useState("Offline");
   const callback = useRef(onUpdate);
   callback.current = onUpdate;
@@ -393,7 +393,7 @@ export const personFiltersActive = (filters) =>
 // joining the meeting. It writes nothing: the correction, re-run, dismiss and
 // confirm controls are retired. Legacy decision-writing endpoints return 410;
 // read/unread tracking remains separate from interview state.
-function NotificationDetail({ item, onClose }) {
+export function NotificationDetail({ item, onClose, actions = null }) {
   // Mounted only while open, so the dialog is open for its whole life.
   const dialogRef = useDialogA11y(true, onClose);
   const originalEmail = item.event_detail?.received_email;
@@ -441,6 +441,7 @@ function NotificationDetail({ item, onClose }) {
       <footer>
         {item.booking_id && <button type="button" onClick={() => { onClose(); navigate("daily-ops", { bookingId: item.booking_id, candidateId: item.candidate_id }); }}>View booking</button>}
         {/^https?:\/\//i.test(item.meeting_link || "") && <button type="button" onClick={() => window.open(item.meeting_link, "_blank", "noopener,noreferrer")}>Open meeting link</button>}
+        {actions}
       </footer>
     </section>
   </div>;
