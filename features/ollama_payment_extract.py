@@ -183,6 +183,22 @@ def _call_text_model(prompt: str, *, timeout: int = OLLAMA_TEXT_TIMEOUT) -> str 
         return None
 
 
+def _reference_missing(parsed: dict[str, Any] | None) -> bool:
+    """A recognised receipt that carries no reference of any kind.
+
+    UPI receipts show a UTR, a transaction id, or both; a bank transfer shows a
+    reference number. A reading with none of the three is the model having
+    skipped the transfer-details block, not a receipt that lacks one -- so it is
+    worth reading again rather than refusing the payment on it.
+    """
+    if not parsed or not parsed.get("is_payment_screenshot"):
+        return False
+    return not any(
+        str(parsed.get(field) or "").strip()
+        for field in ("utr", "utr_number", "transaction_id", "reference_number")
+    )
+
+
 # ── JSON parsing ────────────────────────────────────────────────────────────
 def _parse_json_response(raw: str) -> dict[str, Any] | None:
     """Parse JSON from model response, handling markdown code blocks."""
@@ -784,20 +800,38 @@ def extract_payment_with_ollama(
         extracted = _parse_json_response(response)
 
     # ── Step 4: Backup vision model ─────────────────────────────────────────
+    # Also re-read when the primary recognised the receipt but came back without
+    # any reference at all. On 10 Nov a candidate's PhonePe receipt was refused
+    # ten times in ten minutes -- is_payment_screenshot true, amount read, UTR
+    # and transaction id both empty, so the refusal said the evidence was
+    # incomplete -- and the eleventh upload of the same file was accepted and
+    # verified. The screenshot carries both identifiers plainly; the model had
+    # skipped its Transfer Details block. Without this the reading was final,
+    # because the backup only ran when the receipt was not recognised at all.
     if (
-        (not extracted or not extracted.get("is_payment_screenshot"))
+        (not extracted
+         or not extracted.get("is_payment_screenshot")
+         or _reference_missing(extracted))
         and OLLAMA_BACKUP_VISION_MODEL != OLLAMA_VISION_MODEL
     ):
-        logger.warning("Primary vision failed for payment, trying backup: %s", OLLAMA_BACKUP_VISION_MODEL)
+        logger.warning(
+            "Primary vision %s for payment, trying backup: %s",
+            "read no reference" if extracted else "failed",
+            OLLAMA_BACKUP_VISION_MODEL,
+        )
         backup_response = _call_vision_model(
             OLLAMA_BACKUP_VISION_MODEL, img_b64, prompt, timeout=OLLAMA_TIMEOUT
         )
         if backup_response:
             backup_parsed = _parse_json_response(backup_response)
             if backup_parsed and backup_parsed.get("is_payment_screenshot"):
-                extracted = backup_parsed
-                used_model = OLLAMA_BACKUP_VISION_MODEL
-                used_raw_response = backup_response
+                # Never trade a reading that has a reference for one that does
+                # not: the backup is here to recover what the primary missed.
+                recovered = not _reference_missing(backup_parsed)
+                if recovered or not extracted or not extracted.get("is_payment_screenshot"):
+                    extracted = backup_parsed
+                    used_model = OLLAMA_BACKUP_VISION_MODEL
+                    used_raw_response = backup_response
 
     # ── Build final result ──────────────────────────────────────────────────
     if extracted and extracted.get("is_payment_screenshot"):

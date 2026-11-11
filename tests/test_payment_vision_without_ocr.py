@@ -250,3 +250,92 @@ def test_the_refusal_tells_the_payer_which_screen_carries_the_reference():
         assert "TRANSACTION_REFERENCE_MISSING" in source
         marker = source.index('if "TRANSACTION_REFERENCE_MISSING" in reason_codes:')
         assert "View Details" in source[marker:marker + 700]
+
+
+# ── A recognised receipt whose reference the model skipped ──────────────────
+#
+# Production, 10 Nov 2026, 06:44-06:54. A candidate uploaded one PhonePe receipt
+# to the public slot form and was refused ten times: payment_refusals.jsonl
+# records is_payment_screenshot true, amount readable, confidence 75, and
+# has_utr / has_transaction_id / has_reference all false, so the refusal was
+# INCOMPLETE_PAYMENT_EVIDENCE with TRANSACTION_REFERENCE_MISSING. The eleventh
+# upload of the same file -- same sha256 -- was accepted and verified at 06:56
+# with confidence 100. The receipt carries both identifiers plainly; the model
+# had skipped its Transfer Details block.
+#
+# The backup model only ran when the receipt was not recognised at all, so a
+# recognised-but-referenceless reading was final. OCR is deliberately off
+# (ocr_policy: "a hidden fallback would make OCR off untrue"), so the recovery
+# has to come from reading again, not from Tesseract.
+REFERENCELESS_JSON = json.dumps({
+    "amount": 6000,
+    "payment_status": "SUCCESS",
+    "receiver_name": "J Ravinder",
+    "receiver_upi_id": "",
+    "receiver_phone_number": "",
+    "transaction_id": "",
+    "utr": "",
+    "reference_number": "",
+    "provider": "PhonePe",
+    "is_payment_screenshot": True,
+})
+
+
+def test_a_recognised_receipt_with_no_reference_is_read_again(monkeypatch, ocr_off):
+    """The ten refusals. The primary skips the reference; the backup recovers it."""
+    seen: list[dict] = []
+
+    def _fake(model_name, image_base64, prompt, *, timeout=0):
+        seen.append({"model": model_name, "prompt": prompt})
+        return REFERENCELESS_JSON if model_name == extractor.OLLAMA_VISION_MODEL else VISION_JSON
+
+    monkeypatch.setattr(extractor, "_call_vision_model", _fake)
+
+    result = extractor.extract_payment_with_ollama(IMAGE) or {}
+
+    assert [s["model"] for s in seen] == [
+        extractor.OLLAMA_VISION_MODEL,
+        extractor.OLLAMA_BACKUP_VISION_MODEL,
+    ], "the primary's referenceless reading must not be final"
+    assert result.get("utr_number") == UTR
+    assert result.get("transaction_id") == TXN_ID
+    assert ocr_off == [], "recovery must not depend on Tesseract; OCR is off"
+
+
+def test_a_reading_that_has_a_reference_is_never_read_again(monkeypatch, ocr_off):
+    """The common case stays one call: re-reading costs a minute on the node."""
+    seen: list[dict] = []
+    _vision_returns(monkeypatch, VISION_JSON, seen)
+
+    result = extractor.extract_payment_with_ollama(IMAGE) or {}
+
+    assert [s["model"] for s in seen] == [extractor.OLLAMA_VISION_MODEL]
+    assert result.get("utr_number") == UTR
+
+
+def test_a_backup_without_a_reference_never_replaces_a_primary_that_has_one(monkeypatch, ocr_off):
+    """The backup is here to recover what the primary missed, not to lose it."""
+    def _fake(model_name, image_base64, prompt, *, timeout=0):
+        # Primary: recognised, no reference. Backup: recognised, also none.
+        return REFERENCELESS_JSON
+
+    monkeypatch.setattr(extractor, "_call_vision_model", _fake)
+
+    result = extractor.extract_payment_with_ollama(IMAGE) or {}
+
+    # Still refused -- nothing was invented to make it pass.
+    assert not str(result.get("utr_number") or "").strip()
+    assert not str(result.get("transaction_id") or "").strip()
+
+
+def test_what_counts_as_a_missing_reference():
+    """Any one of the three identifiers is enough; blank space is not."""
+    missing = extractor._reference_missing
+    assert missing({"is_payment_screenshot": True, "utr": "", "transaction_id": ""}) is True
+    assert missing({"is_payment_screenshot": True, "utr": "   "}) is True
+    assert missing({"is_payment_screenshot": True, "utr": UTR}) is False
+    assert missing({"is_payment_screenshot": True, "transaction_id": TXN_ID}) is False
+    assert missing({"is_payment_screenshot": True, "reference_number": "REF1"}) is False
+    # Not a receipt, or nothing parsed: a different failure, handled elsewhere.
+    assert missing({"is_payment_screenshot": False}) is False
+    assert missing(None) is False
