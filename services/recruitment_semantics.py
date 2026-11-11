@@ -494,6 +494,15 @@ def _is_transactional_alert(subject: str, body: str) -> bool:
     return any(re.search(pattern, combined, re.I) for pattern in _TRANSACTIONAL_PATTERNS)
 
 
+def is_transactional_notice(subject: str, body: str) -> bool:
+    """Public form of the OTP / bank-alert recogniser used by `classify_context`.
+
+    A positive answer means the text itself says it is a one-time password or a
+    banking/UPI notice -- not merely that no recruitment signal was found.
+    """
+    return _is_transactional_alert(subject, body)
+
+
 def _is_assertive_interview_invitation(subject: str, body: str) -> bool:
     """Recognize concrete interview invites without relying on one phrase.
 

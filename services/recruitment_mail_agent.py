@@ -24,6 +24,7 @@ from services.recruitment_semantics import (
     evidence_entails_transition,
     extract_interview_schedule,
     is_post_interview_shortlist,
+    is_transactional_notice,
     redact_sensitive_text,
     validate_interview_event,
     validate_lifecycle_event,
@@ -3163,6 +3164,40 @@ _DETERMINISTIC_AI_FAILURES = frozenset({"OLLAMA_SCHEMA_VALIDATION_FAILED"})
 _VALIDATION_RETRY_ALLOWANCE = 2
 
 
+
+#: Stage claims an OTP or bank notice can never carry. Interview events are
+#: deliberately absent: a real "Interview Access Code" mail is an OTP-shaped
+#: message about a genuine interview, and dropping one loses the interview.
+_OUTCOME_ALERT_CLASSIFICATIONS = frozenset({
+    "job_selection_confirmed", "offer_received", "offer_accepted", "offer_declined",
+    "offer_revoked", "joining_confirmed", "joining_date_updated", "onboarding_started",
+    "compensation_confirmation", "final_round_cleared", "hr_confirmation",
+    "interview_shortlisted", "post_interview_shortlisted",
+})
+
+
+def transactional_outcome_without_entailment(result: dict[str, Any], decoded: dict[str, Any]) -> bool:
+    """An employment outcome the source never stated, read off an OTP/bank notice.
+
+    10 Nov 2026: an HCLTech "Verification Code" mail ("To proceed with your
+    application, please enter the OTP. Your OTP is: ...") reached Mail Alerts as
+    job_selection_confirmed at confidence 1.0. The deterministic layer had said
+    exactly what it was -- transactional, recruitment relevance NOT_ESTABLISHED --
+    and validate_lifecycle_event refused the transition, so no stage moved. But
+    Pure Ollama detection sends every mail to the model, and a non-entailed
+    outcome is still recorded at MEDIUM_CONFIDENCE and alerted.
+
+    This answers True only when all three hold: the text positively identifies
+    itself as an OTP or banking notice, the classification is an employment
+    outcome, and the backend did not validate the transition from the source.
+    The event is still recorded; only the alert is withheld.
+    """
+    if result.get("backend_transition_validated"):
+        return False
+    if store.canonical_classification(result) not in _OUTCOME_ALERT_CLASSIFICATIONS:
+        return False
+    return is_transactional_notice(str(decoded.get("subject") or ""), str(decoded.get("body") or ""))
+
 def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment_texts: list[dict[str, str]] | None = None, *, reprocess: bool = False, defer_ai: bool = False) -> dict[str, Any] | None:
     from services.mail_attachment_processor import extract_attachment
     # Re-select from both stored MIME alternatives on every processing pass.
@@ -3475,6 +3510,10 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
                       reason="The AI result lacks source-supported evidence")
         if _queued_for_another_attempt():
             return None
+    if transactional_outcome_without_entailment(result, decoded):
+        logger.info("Outcome on an OTP/transactional notice was not entailed; recorded without a Mail Alert")
+        result["_suppress_monitoring_notification"] = True
+        result["_suppressed_reason"] = "TRANSACTIONAL_NOTICE_OUTCOME_NOT_ENTAILED"
     if reprocess:
         # Downstream booking must distinguish delayed historical recovery from
         # a live message. This marker is persisted in the structured analysis
