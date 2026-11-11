@@ -41,8 +41,19 @@ def test_neither_group_is_empty():
 
 
 def test_interview_group_holds_only_interview_classifications():
-    for value in INTERVIEW_RELATED_CLASSIFICATIONS:
+    # A shortlist after the interviews and a cleared round are interview
+    # progress, never a confirmed selection (owner, 12 Nov 2026).
+    progress = {"post_interview_shortlisted", "final_round_cleared"}
+    for value in INTERVIEW_RELATED_CLASSIFICATIONS - progress:
         assert value.startswith("interview_"), value
+    assert progress <= INTERVIEW_RELATED_CLASSIFICATIONS
+
+
+def test_selection_is_selected_offer_joining_and_final_hr_only():
+    from services.recruitment_semantics import SELECTION_ALERT_CLASSIFICATIONS
+    assert SELECTION_RELATED_CLASSIFICATIONS == SELECTION_ALERT_CLASSIFICATIONS
+    progress = {"post_interview_shortlisted", "final_round_cleared", "interview_shortlisted"}
+    assert not (SELECTION_RELATED_CLASSIFICATIONS & progress)
 
 
 def test_selection_group_holds_no_interview_classification():

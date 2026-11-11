@@ -58,5 +58,6 @@ def test_the_dashboard_invents_no_status_the_backend_does_not_have():
 def test_the_two_specific_statuses_that_were_silent():
     """Named so a future edit that drops them again fails for the right reason."""
     selection = js_list("SELECTION_CLASSIFICATIONS")
-    assert "final_round_cleared" in selection
+    assert "final_round_cleared" in js_list("INTERVIEW_BOOKING_CLASSIFICATIONS")
+    assert "final_round_cleared" not in selection
     assert "hr_confirmation" in selection

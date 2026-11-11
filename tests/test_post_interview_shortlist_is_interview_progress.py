@@ -1,4 +1,4 @@
-"""A shortlist after the interviews is a selection outcome.
+"""A shortlist after the interviews is told apart, and stays interview progress.
 
 Mail Alerts filed every shortlist under Interview Related. HCLTech's "you have
 been shortlisted for the position you interviewed for ... Please share below
@@ -6,9 +6,9 @@ documents at earliest for HR Discussion" sat beside interview invitations, and
 so did its "You've successfully progressed through the [Evaluation 2]" and
 Fractal's "shortlisted ... undergo a background verification (BGV) check".
 
-Such a shortlist is now `post_interview_shortlisted`, in the Selection Related
-group. A shortlist that only leads to an interview keeps
-`interview_shortlisted` and stays Interview Related. Nothing about booking
+Such a shortlist is `post_interview_shortlisted`. Owner, 12 Nov 2026: it is
+interview progress, never a confirmed selection, so it is Interview Related
+like a shortlist that only leads to an interview (`interview_shortlisted`). Nothing about booking
 changes: a shortlist books nothing either way.
 
 Texts keep production wording; names and companies are invented.
@@ -73,12 +73,13 @@ def _pure(monkeypatch):
 
 
 @pytest.mark.parametrize("subject,body", POST_INTERVIEW, ids=[p[0][:30] for p in POST_INTERVIEW])
-def test_a_shortlist_after_the_interviews_is_selection_related(subject, body):
+def test_a_shortlist_after_the_interviews_is_interview_related(subject, body):
     value = _validate(subject, body)
     assert value["status"] == "INTERVIEW_SHORTLISTED"
     assert value["classification"] == "post_interview_shortlisted"
     assert value["candidate_status"] == "Shortlisted After Interview"
-    assert "post_interview_shortlisted" in store.CLASSIFICATION_GROUPS["selection"]
+    assert "post_interview_shortlisted" in store.CLASSIFICATION_GROUPS["interview"]
+    assert "post_interview_shortlisted" not in store.CLASSIFICATION_GROUPS["selection"]
     assert store.canonical_classification(value) == "post_interview_shortlisted"
     # Booking is untouched: a shortlist never books.
     assert decision_for(value).value == "AUTO_IGNORE"
@@ -100,7 +101,7 @@ def test_an_unproven_shortlist_is_not_reclassified():
 
 def test_the_new_classification_is_tracked_and_in_exactly_one_group():
     groups = [name for name, members in store.CLASSIFICATION_GROUPS.items() if "post_interview_shortlisted" in members]
-    assert groups == ["selection"]
+    assert groups == ["interview"]
     assert "post_interview_shortlisted" in store.TRACKED_NOTIFICATION_CLASSIFICATIONS
     assert store.notification_priority("post_interview_shortlisted", confidence=0.95) == "high"
 

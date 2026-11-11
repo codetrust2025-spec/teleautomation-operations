@@ -18,27 +18,32 @@ import { Icon } from "./ui/Icon.jsx";
 // CLASSIFICATION_GROUPS exactly — both frontend tests assert this invariant.
 // Adding recruitment_walkin here without a matching group entry breaks both.
 export const TRACKED_CLASSIFICATIONS = [
-  "job_selection_confirmed", "offer_received", "final_round_cleared",
-  "hr_confirmation", "post_interview_shortlisted", "offer_accepted",
+  "job_selection_confirmed", "offer_received",
+  "hr_confirmation", "offer_accepted",
   "offer_declined", "offer_revoked", "joining_confirmed",
   "joining_date_updated", "onboarding_started", "background_verification",
   "document_verification", "compensation_confirmation",
   "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
-  "interview_cancelled", "candidate_rejected", "interview_needs_reading",
+  "interview_cancelled", "interview_needs_reading",
+  "post_interview_shortlisted", "final_round_cleared",
 ];
-// Tracked categories for the compact notification-type filter.
+// Selection: selected, offer, joining and the final HR confirmation, and the
+// post-selection checks that follow them. Never a shortlist or a round.
 const JOB_CONFIRMED_CLASSIFICATIONS = [
-  "job_selection_confirmed", "offer_received", "final_round_cleared",
-  "hr_confirmation", "post_interview_shortlisted", "offer_accepted",
+  "job_selection_confirmed", "offer_received",
+  "hr_confirmation", "offer_accepted",
   "offer_declined", "offer_revoked", "joining_confirmed",
   "joining_date_updated", "onboarding_started", "background_verification",
-  "document_verification", "compensation_confirmation", "candidate_rejected",
+  "document_verification", "compensation_confirmation",
 ];
+// Interview: invitations, scheduling, rescheduling, assessments, rounds and
+// shortlists, including a shortlist after the interviews and a cleared round.
 const AUTO_BOOKING_CLASSIFICATIONS = [
   "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
   // An interview mail the reader could not read is interview work too, and
   // the server groups it here (INTERVIEW_RELATED_CLASSIFICATIONS).
   "interview_cancelled", "interview_needs_reading",
+  "post_interview_shortlisted", "final_round_cleared",
 ];
 
 // Named rather than spelled inline so the filter option and the request
@@ -292,15 +297,21 @@ export function MailNotificationBell({ compact = false }) {
 // Using tab state rather than hard-coding filter values keeps the existing
 // server-side filter parameters as the single source of truth: the tab merely
 // pre-sets them; the advanced dropdowns still work on top.
+// Selection Related and Interview Related are tabs of their own, each with its
+// own count; All Alerts shows both.
 export const MAIL_TABS = [
-  { id: "unread",  label: "Unread Invitations", filterKey: "read",     filterValue: "false"         },
-  { id: "retry",   label: "AI Retry Pending",   filterKey: "priority", filterValue: "retry_pending" },
-  { id: "all",     label: "All Alerts",          filterKey: null,       filterValue: null            },
+  { id: "unread",    label: "Unread Invitations", filterKey: "read",                filterValue: "false"         },
+  { id: "retry",     label: "AI Retry Pending",   filterKey: "priority",            filterValue: "retry_pending" },
+  { id: "selection", label: "Selection Related",  filterKey: "classificationGroup", filterValue: SELECTION_GROUP },
+  { id: "interview", label: "Interview Related",  filterKey: "classificationGroup", filterValue: "interview"     },
+  { id: "all",       label: "All Alerts",          filterKey: null,                  filterValue: null            },
 ];
 // Which filter fields a tab owns. Switching tabs clears exactly these keys
 // and sets the new tab's key, while leaving candidate / alert-type / search
-// / booking-result untouched so users can filter within a tab.
+// / booking-result untouched so users can filter within a tab. The alert
+// type belongs to the person except on Selection and Interview, which set it.
 const TAB_OWNED_KEYS = new Set(["read", "priority"]);
+const GROUP_TABS = new Set(["selection", "interview"]);
 // The same company however it was spaced or capitalised; the server orders
 // with the same rule (NOTIFICATION_COMPANY_KEY_SQL).
 export const companyKey = (item) => String(item?.company_name || "").trim().toLowerCase();
@@ -339,6 +350,7 @@ export function filtersForTab(filters, tabId) {
   const tab = MAIL_TABS.find((t) => t.id === tabId) || MAIL_TABS[0];
   const merged = { ...filters };
   for (const key of TAB_OWNED_KEYS) merged[key] = "";
+  if (GROUP_TABS.has(tab.id)) merged.classificationGroup = "";
   if (tab.filterKey) merged[tab.filterKey] = tab.filterValue;
   return merged;
 }
@@ -633,6 +645,8 @@ export function MailMonitoringNotifications() {
   const tabTotals = {
     unread: summary.unread || 0,
     retry:  summary.ai_retry_pending || 0,
+    selection: summary.selection_related || 0,
+    interview: summary.interview_related || 0,
     all:    summary.visible_total || 0,
   };
   // What each badge shows: what that tab's table holds under the filters set
@@ -728,10 +742,10 @@ export function MailMonitoringNotifications() {
           {candidates.map((row) => <option value={row.candidate_id} key={row.candidate_id}>{candidateLabel(row)}</option>)}
         </select>
       )}
-      <select aria-label="Alert type filter" value={filters.classificationGroup} onChange={set("classificationGroup")}>
+      {!GROUP_TABS.has(activeTab) && <select aria-label="Alert type filter" value={filters.classificationGroup} onChange={set("classificationGroup")}>
         <option value="">All alert types</option>
         {CLASSIFICATION_GROUPS.map((group) => <option value={group.value} key={group.value}>{group.label}</option>)}
-      </select>
+      </select>}
       <select aria-label="Booking result filter" value={filters.bookingResult} onChange={set("bookingResult")}>
         <option value="">All booking results</option>
         {BOOKING_RESULTS.map((result) => <option value={result.value} key={result.value}>{result.label}</option>)}

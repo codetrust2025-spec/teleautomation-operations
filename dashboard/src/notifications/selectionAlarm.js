@@ -1,7 +1,7 @@
 /**
  * The loud, repeating alarm for genuine Selection Related mail.
  *
- * A genuine selection (shortlisted after interview, selected, offer, BGV,
+ * A genuine selection (selected, offer, final HR confirmation, BGV,
  * onboarding, joining) starts a 30-second alarm that repeats every 60 seconds
  * until someone acknowledges it. Acknowledging is "Stop Sound" on the banner,
  * or opening, reading or dismissing that alert in Mail Alerts.
@@ -36,7 +36,7 @@ const PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000
  * news, so they keep the short fanfare and never start the alarm.
  */
 export const GENUINE_SELECTION_CLASSIFICATIONS = new Set([
-  'post_interview_shortlisted', 'job_selection_confirmed', 'final_round_cleared',
+  'job_selection_confirmed',
   'offer_received', 'offer_accepted', 'joining_confirmed', 'joining_date_updated',
   'onboarding_started', 'background_verification', 'document_verification',
   'compensation_confirmation', 'hr_confirmation',

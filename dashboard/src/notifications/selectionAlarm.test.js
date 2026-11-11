@@ -48,6 +48,17 @@ describe('which mail can start the selection alarm', () => {
     expect(sound.start).not.toHaveBeenCalled()
   })
 
+  it('a shortlist after the interviews or a cleared round rings the interview bell, never the selection alarm', () => {
+    for (const classification of ['post_interview_shortlisted', 'final_round_cleared']) {
+      expect(SELECTION_CLASSIFICATIONS).not.toContain(classification)
+      expect(isGenuineSelection(classification)).toBe(false)
+      expect(notifyTrackedMail(offer(`p-${classification}`, { classification }))).toBe(true)
+    }
+    expect(other.play).toHaveBeenCalledWith('mail_interview_booking')
+    expect(other.play).not.toHaveBeenCalledWith('mail_selection')
+    expect(sound.start).not.toHaveBeenCalled()
+  })
+
   it('declined and revoked offers keep the short fanfare, not the alarm', () => {
     for (const classification of ['offer_declined', 'offer_revoked']) {
       expect(isGenuineSelection(classification)).toBe(false)

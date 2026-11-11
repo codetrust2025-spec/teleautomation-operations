@@ -182,7 +182,7 @@ describe("the controls", () => {
     renderScreen();
     await waitFor(() => expect(rows()).toHaveLength(20));
     const topbar = document.querySelector(".mail-topbar");
-    expect(within(topbar).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Unread Invitations6", "AI Retry Pending17", "All Alerts99+"]);
+    expect(within(topbar).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Unread Invitations6", "AI Retry Pending17", "Selection Related0", "Interview Related0", "All Alerts99+"]);
     expect(within(topbar).getByRole("button", { name: "Clear all notifications" })).toBeInTheDocument();
     expect(within(topbar).getByText("Live")).toBeInTheDocument();
     const filters = document.querySelector(".mail-filters");

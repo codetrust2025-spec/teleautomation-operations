@@ -292,6 +292,144 @@ def is_post_interview_shortlist(text: str) -> bool:
     return False
 
 
+# Mail Alerts keeps Selection (selected, offer, joining, final HR confirmation)
+# and Interview (invitations, scheduling, assessments, rounds, shortlists)
+# apart, and a mail is filed under Selection only when its own text states a
+# confirmed selection outcome. Live, 11 Nov 2026: "HCLTech | Evaluation 2
+# Selection" (progressed through an evaluation), a TEKsystems "Reconfirmation
+# Details" (shortlisted for an interview) and an "RTR Mail" sat under Selection.
+_SELECTION_PROOF_STATUSES: tuple[str, ...] = (
+    "SELECTED", "FINAL_SELECTION_CONFIRMED", "OFFER_INDICATION", "OFFER_IN_PROGRESS",
+    "OFFER_APPROVED", "OFFER_LETTER_RECEIVED", "OFFER_RECEIVED",
+    "APPOINTMENT_LETTER_RECEIVED", "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_REVOKED",
+    "JOINING_CONFIRMED", "JOINING_DATE_UPDATED", "JOINED", "POST_SELECTION_ONBOARDING",
+    "COMPENSATION_CONFIRMATION",
+)
+# Post-selection checks: a selection step unless the same mail is a shortlist.
+_POST_SELECTION_CHECK_STATUSES: tuple[str, ...] = ("BACKGROUND_VERIFICATION", "DOCUMENT_VERIFICATION")
+# The final HR confirmation. "Shortlisted for the HR round" or "documents for
+# HR discussion" is the next round, not a confirmation.
+_FINAL_HR_PATTERNS: tuple[str, ...] = (
+    r"\bpre-offer documents?\b.{0,120}\b(?:selection|final hr|offer)\b",
+    r"\b(?:final hr|salary|ctc) discussion (?:is |has been )?(?:confirmed|completed)\b",
+)
+# "You have been selected for the next round / for the interview": progress.
+_SELECTED_FOR_A_ROUND = re.compile(
+    r"\bselected\b[^.!?\n]{0,40}\bfor (?:the |your |an? )?(?:next |further |subsequent |second |third |final |"
+    r"technical |managerial |hr |client |l[1-5] |face[- ]to[- ]face |f2f |virtual |online |walk[- ]?in )*"
+    r"(?:round|rounds|interview|interviews|assessment|evaluation|discussion|test|stage|process)\b",
+    re.I,
+)
+_INTERVIEW_PROGRESS_STATUSES: tuple[str, ...] = (
+    "INTERVIEW_SHORTLISTED", "FINAL_ROUND_CLEARED", "INTERVIEW_CONFIRMED",
+    "INTERVIEW_RESCHEDULED", "HR_CONFIRMATION",
+)
+
+
+def _entails_without_progress(status: str, text: str) -> bool:
+    if status != "SELECTED":
+        return evidence_entails_transition(status, text)
+    # A "selected" sentence that names the next round proves progress only.
+    kept = " ".join(
+        sentence for sentence in re.split(r"(?<=[.!?])\s+|\n+", text)
+        if not _SELECTED_FOR_A_ROUND.search(sentence)
+    )
+    return evidence_entails_transition(status, kept)
+
+
+def states_confirmed_selection(texts: list[str] | tuple[str, ...]) -> bool:
+    """Whether a mail's own text states a confirmed selection outcome."""
+    texts = [str(text or "") for text in texts if text]
+    if any(_entails_without_progress(status, text) for text in texts for status in _SELECTION_PROOF_STATUSES):
+        return True
+    if any(re.search(pattern, text, re.I | re.S) for text in texts for pattern in _FINAL_HR_PATTERNS):
+        return True
+    check = any(evidence_entails_transition(status, text) for text in texts for status in _POST_SELECTION_CHECK_STATUSES)
+    return check and not states_interview_progress(texts)
+
+
+# The rounds-and-interviews half of _POST_INTERVIEW_SHORTLIST_PATTERNS. Its
+# background-check and payslip phrases are post-selection steps too ("Request
+# for BGV Documentation", "Congratulations on joining ... supporting
+# documents"), so they never prove interview progress on their own.
+_ROUND_PROGRESS_PATTERNS: tuple[str, ...] = _POST_INTERVIEW_SHORTLIST_PATTERNS[:5]
+_HR_ROUND_INVITE_PATTERNS: tuple[str, ...] = (
+    r"\b(?:selected|shortlisted).{0,100}\b(?:final )?hr (?:process|discussion|round)\b",
+    r"\b(?:share|submit|send|provide)\b[^.!?\n]{0,80}\bdocuments?\b[^.!?\n]{0,60}\bfor (?:the |your )?hr (?:discussion|round|process)\b",
+)
+
+
+def _states(patterns: tuple[str, ...], text: str) -> bool:
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+        for pattern in patterns:
+            for match in re.finditer(pattern, sentence, re.I):
+                before = sentence[max(0, match.start() - 45):match.start()]
+                if re.search(r"\b(?:not|never|no|if|once|when|whether|unless|until)\b[^.!?\n]{0,40}$", before, re.I):
+                    continue
+                if re.search(r"\bnot\b", match.group(), re.I):
+                    continue
+                return True
+    return False
+
+
+def states_interview_progress(texts: list[str] | tuple[str, ...]) -> bool:
+    """Whether a mail's own text states a shortlist, a round, or interview progress."""
+    texts = [str(text or "") for text in texts if text]
+    return any(
+        _states(_ROUND_PROGRESS_PATTERNS + _HR_ROUND_INVITE_PATTERNS, text)
+        or _SELECTED_FOR_A_ROUND.search(text)
+        or any(evidence_entails_transition(status, text) for status in _INTERVIEW_PROGRESS_STATUSES if status != "HR_CONFIRMATION")
+        for text in texts
+    )
+
+
+def states_post_interview_progress(texts: list[str] | tuple[str, ...]) -> bool:
+    """Interview progress that places the candidate past an interview or round."""
+    texts = [str(text or "") for text in texts if text]
+    return any(
+        _states(_ROUND_PROGRESS_PATTERNS + _HR_ROUND_INVITE_PATTERNS, text)
+        or evidence_entails_transition("FINAL_ROUND_CLEARED", text)
+        for text in texts
+    )
+
+
+SELECTION_ALERT_CLASSIFICATIONS = frozenset({
+    "job_selection_confirmed", "offer_received", "offer_accepted", "offer_declined",
+    "offer_revoked", "joining_confirmed", "joining_date_updated", "onboarding_started",
+    "background_verification", "document_verification", "compensation_confirmation",
+    "hr_confirmation",
+})
+
+
+# "Selected" and "HR confirmation" are claims a mail has to make; a recruiter's
+# "please share your LWD and Aadhaar" is neither.
+_CLAIMS_NEEDING_PROOF = frozenset({"job_selection_confirmed", "hr_confirmation"})
+
+
+def selection_alert_filing(
+    classification: str, texts: list[str] | tuple[str, ...], *, selection_context: bool = False,
+) -> str:
+    """Which Mail Alerts classification a Selection alert is filed under, from its mail.
+
+    A Selection alert stays Selection when its mail states a selection outcome.
+    It moves to Interview when the mail states interview progress or a
+    shortlist and no selection outcome, and a bare "Selected" or "HR
+    confirmation" claim with no proof moves too unless the candidate
+    already has a selection outcome with that company (`selection_context`):
+    Workday tasks after an offer say only "Review Documents". Everything else
+    keeps the classification it was given. Only the alert's filing changes;
+    the analysis, the event and the candidate's lifecycle are untouched.
+    """
+    if classification not in SELECTION_ALERT_CLASSIFICATIONS:
+        return classification
+    if states_confirmed_selection(texts):
+        return classification
+    progress = states_interview_progress(texts)
+    if not progress and not (classification in _CLAIMS_NEEDING_PROOF and not selection_context):
+        return classification
+    return "post_interview_shortlisted" if states_post_interview_progress(texts) else "interview_shortlisted"
+
+
 def evidence_entails_transition(status: str, text: str) -> bool:
     """Return whether a source excerpt actually states the proposed transition."""
     proposed = str(status or "").upper()

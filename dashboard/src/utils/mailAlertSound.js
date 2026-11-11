@@ -20,13 +20,10 @@
  * someone already looking at the screen.
  */
 export const SELECTION_CLASSIFICATIONS = [
-  'job_selection_confirmed', 'final_round_cleared', 'offer_received',
+  'job_selection_confirmed', 'offer_received',
   'offer_accepted', 'offer_declined', 'offer_revoked', 'joining_confirmed',
   'joining_date_updated', 'onboarding_started', 'background_verification',
   'document_verification', 'compensation_confirmation', 'hr_confirmation',
-  // A shortlist after the interviews (HR discussion, documents, a cleared
-  // evaluation) is a selection outcome.
-  'post_interview_shortlisted',
 ]
 
 /** Interview slot movement — booked, moved or dropped. */
@@ -35,6 +32,9 @@ export const INTERVIEW_BOOKING_CLASSIFICATIONS = [
   // An interview mail the reader gave up on. It sounds like the rest: nobody
   // is coming back to it, so the only thing that reaches a person is this.
   'interview_cancelled', 'interview_needs_reading',
+  // A shortlist after the interviews and a cleared round are interview
+  // progress (owner, 12 Nov 2026): the interview bell, never the selection alarm.
+  'post_interview_shortlisted', 'final_round_cleared',
 ]
 
 const ALERT_CLASSIFICATIONS = new Set([

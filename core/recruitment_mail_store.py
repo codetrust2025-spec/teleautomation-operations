@@ -89,6 +89,10 @@ INTERVIEW_RELATED_CLASSIFICATIONS = {
     # An unread interview invitation is interview work, and belongs with the
     # interviews rather than in a group of its own.
     "interview_needs_reading",
+    # Owner, 12 Nov 2026: Selection is only selected, offer, joining and the
+    # final HR confirmation. A shortlist after the interviews and a cleared
+    # round are interview progress, never a confirmed selection.
+    "post_interview_shortlisted", "final_round_cleared",
 }
 SELECTION_RELATED_CLASSIFICATIONS = (
     TRACKED_NOTIFICATION_CLASSIFICATIONS - INTERVIEW_RELATED_CLASSIFICATIONS
@@ -2644,6 +2648,39 @@ def should_route_to_mail_alert(
     return True
 
 
+# Classifications whose alert, with this company, shows the candidate is past selection.
+_SELECTION_CONTEXT_CLASSIFICATIONS = (
+    "offer_received", "offer_accepted", "joining_confirmed", "joining_date_updated",
+    "onboarding_started", "background_verification", "document_verification",
+    "compensation_confirmation",
+)
+
+
+# What a Selection mail may be filed under instead (`selection_alert_filing`).
+_SELECTION_REFILINGS = ("interview_shortlisted", "post_interview_shortlisted")
+
+
+def _selection_alert_filing(cur, event, structured, classification, message_id, subject) -> str:
+    """Selection only on the mail's own evidence (`selection_alert_filing`)."""
+    from services.recruitment_semantics import SELECTION_ALERT_CLASSIFICATIONS, selection_alert_filing
+    if classification not in SELECTION_ALERT_CLASSIFICATIONS:
+        return classification
+    from services.recruitment_mail_agent import clean_email
+    cur.execute("SELECT coalesce(nullif(body_text,''),html_body_text,'') FROM mailbox_messages WHERE id=%s", (message_id,))
+    row = cur.fetchone()
+    company = str((structured.get("company") or {}).get("name") or event.get("company_name") or "").strip().lower()
+    context = False
+    if company:
+        cur.execute(f"""SELECT 1 FROM mail_monitoring_notifications WHERE candidate_id=%s
+          AND split_part({NOTIFICATION_COMPANY_KEY_SQL},' ',1)=split_part(%s,' ',1)
+          AND classification = ANY(%s) LIMIT 1""",
+          (event.get("candidate_id"), company, list(_SELECTION_CONTEXT_CLASSIFICATIONS)))
+        context = cur.fetchone() is not None
+    return selection_alert_filing(
+        classification, [str(subject or ""), clean_email(str((row or [""])[0] or ""))], selection_context=context,
+    )
+
+
 def create_monitoring_notification(
     event: dict[str, Any],
     analysis: dict[str, Any],
@@ -2678,6 +2715,10 @@ def create_monitoring_notification(
         if not source:
             raise ValueError("Mailbox message not found for notification")
         provider_id,thread_id,subject,sender_name,sender_email,sent_at,mailbox_id,recipient_email = source
+        filed = _selection_alert_filing(cur, event, structured, classification, message_id, subject)
+        if filed != classification:
+            classification = filed
+            candidate_status = _CLASSIFICATION_STATUS[filed]
         source_row = {
             "provider_message_id": provider_id,
             "provider_thread_id": thread_id,
@@ -2698,6 +2739,16 @@ def create_monitoring_notification(
             canonical_candidate_id(str(event['candidate_id']))
             if classification in _INTERVIEW_CLASSIFICATIONS else event['candidate_id']
         )
+        # A Selection mail filed before under another of its possible
+        # classifications is the same alert: a later offer from that company
+        # can change how a re-read mail is filed.
+        if str(analysis["classification"]) in SELECTION_RELATED_CLASSIFICATIONS:
+            cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now()
+              WHERE gmail_message_id=%s AND classification = ANY(%s) RETURNING *""",
+              (provider_id, sorted({str(analysis["classification"]), *_SELECTION_REFILINGS})))
+            existing = _rows(cur)
+            if existing:
+                return existing[0]
         notification_id = _id()
         company = structured.get("company") or {}
         job = structured.get("job") or {}
@@ -3708,9 +3759,12 @@ def notification_summary() -> dict[str, Any]:
             AND NOT (booking_status IN ('AI_RETRY_PENDING','Booking Removed') AND COALESCE(booking_id,'')<>'')
             AND dismissed_at IS NULL) ai_retry_pending,
           count(*) FILTER(WHERE classification IN ('offer_received','offer_accepted','job_selection_confirmed') AND dismissed_at IS NULL) job_confirmed_count,
-          count(*) FILTER(WHERE classification IN ('interview_confirmed','interview_rescheduled','interview_cancelled') AND dismissed_at IS NULL) interview_booking_count
+          count(*) FILTER(WHERE classification IN ('interview_confirmed','interview_rescheduled','interview_cancelled') AND dismissed_at IS NULL) interview_booking_count,
+          count(*) FILTER(WHERE classification = ANY(%s) AND dismissed_at IS NULL) selection_related,
+          count(*) FILTER(WHERE classification = ANY(%s) AND dismissed_at IS NULL) interview_related
           FROM mail_monitoring_notifications
-          WHERE """ + visibility, params)
+          WHERE """ + visibility,
+          [sorted(SELECTION_RELATED_CLASSIFICATIONS), sorted(INTERVIEW_RELATED_CLASSIFICATIONS), *params])
         names = [d.name for d in cur.description]
         return dict(zip(names, cur.fetchone()))
 

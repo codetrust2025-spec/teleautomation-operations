@@ -27,7 +27,7 @@ class FakeWebSocket {
   close() { this.onclose?.(); }
 }
 
-const SUMMARY = { visible_total: 109, ai_retry_pending: 17, unread: 34 };
+const SUMMARY = { visible_total: 109, ai_retry_pending: 17, unread: 34, selection_related: 12, interview_related: 88 };
 
 function response(body) {
   return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
@@ -64,11 +64,13 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 // ── Tab definition ────────────────────────────────────────────────────────────
 
 describe("MAIL_TABS definition", () => {
-  it("exports exactly three tabs in the required order", () => {
-    expect(MAIL_TABS.map((t) => t.id)).toEqual(["unread", "retry", "all"]);
+  it("exports five tabs in the required order", () => {
+    expect(MAIL_TABS.map((t) => t.id)).toEqual(["unread", "retry", "selection", "interview", "all"]);
     expect(MAIL_TABS.map((t) => t.label)).toEqual([
       "Unread Invitations",
       "AI Retry Pending",
+      "Selection Related",
+      "Interview Related",
       "All Alerts",
     ]);
   });
@@ -79,14 +81,16 @@ describe("MAIL_TABS definition", () => {
 describe("default tab", () => {
   beforeEach(() => install());
 
-  it("renders a tablist with three tabs", async () => {
+  it("renders a tablist with five tabs", async () => {
     renderScreen();
     const nav = await screen.findByRole("tablist", { name: "Mail alerts filter tabs" });
     const tabs = [...nav.querySelectorAll("[role='tab']")];
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(5);
     expect(tabs.map((t) => t.textContent.replace(/\d+\+?/g, "").trim())).toEqual([
       "Unread Invitations",
       "AI Retry Pending",
+      "Selection Related",
+      "Interview Related",
       "All Alerts",
     ]);
   });
@@ -130,6 +134,54 @@ describe("live count badges", () => {
     const tab = await screen.findByRole("tab", { name: /All Alerts/ });
     // 109 > 99, so the badge caps at "99+"
     expect(tab.textContent).toContain("99+");
+  });
+});
+
+// ── Selection Related and Interview Related ──────────────────────────────────
+
+describe("Selection Related and Interview Related tabs", () => {
+  beforeEach(() => install());
+
+  it("count each category on its own tab", async () => {
+    renderScreen();
+    await waitFor(() => expect(summaryRequests.length).toBeGreaterThan(0));
+    expect((await screen.findByRole("tab", { name: /Selection Related/ })).textContent).toContain("12");
+    expect((await screen.findByRole("tab", { name: /Interview Related/ })).textContent).toContain("88");
+  });
+
+  it("each asks the server for its own group only, and All Alerts for both", async () => {
+    renderScreen();
+    await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
+    fireEvent.click(await screen.findByRole("tab", { name: /Selection Related/ }));
+    await waitFor(() => expect(lastList().get("classification_group")).toBe("selection"));
+    expect(lastList().has("is_read")).toBe(false);
+    fireEvent.click(screen.getByRole("tab", { name: /Interview Related/ }));
+    await waitFor(() => expect(lastList().get("classification_group")).toBe("interview"));
+    fireEvent.click(screen.getByRole("tab", { name: /All Alerts/ }));
+    await waitFor(() => expect(lastList().has("classification_group")).toBe(false));
+  });
+
+  it("hide the alert type filter they already set, and keep the other filters", async () => {
+    renderScreen();
+    await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
+    fireEvent.click(await screen.findByRole("tab", { name: /Interview Related/ }));
+    await waitFor(() => expect(screen.queryByLabelText("Alert type filter")).toBeNull());
+    fireEvent.change(screen.getByLabelText("Search notifications"), { target: { value: "Infosys" } });
+    await waitFor(() => {
+      expect(lastList().get("search")).toBe("Infosys");
+      expect(lastList().get("classification_group")).toBe("interview");
+    });
+  });
+
+  it("override a group chosen on another tab, which returns when you go back", async () => {
+    renderScreen();
+    await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
+    fireEvent.click(await screen.findByRole("tab", { name: /All Alerts/ }));
+    fireEvent.change(screen.getByLabelText("Alert type filter"), { target: { value: "selection" } });
+    fireEvent.click(screen.getByRole("tab", { name: /Interview Related/ }));
+    await waitFor(() => expect(lastList().get("classification_group")).toBe("interview"));
+    fireEvent.click(screen.getByRole("tab", { name: /All Alerts/ }));
+    await waitFor(() => expect(lastList().get("classification_group")).toBe("selection"));
   });
 });
 

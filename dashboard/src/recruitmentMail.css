@@ -2254,6 +2254,7 @@
    that matches the existing dark-navy design language. */
 .mail-tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 2px;
   padding: 4px;
@@ -2265,7 +2266,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 auto;
   justify-content: center;
   padding: 10px 16px;
   border: none;
@@ -3332,10 +3333,13 @@
   .mail-summary--compact strong { font-size: 18px; line-height: 1.2; }
   .mail-summary--compact span { font-size: 11px; line-height: 1.2; }
 
-  /* Tab strip — stack vertically so each tab gets a full-width row */
-  .mail-tabs { flex-direction: column; gap: 2px; border-radius: 10px; }
-  .mail-tab { justify-content: flex-start; padding: 11px 14px; font-size: 13.5px; }
-  .mail-tab__count { margin-left: auto; }
+  /* Five tabs in two columns: Unread | Retry, Selection | Interview, then All
+     Alerts across. A long label wraps inside its tab rather than past it. */
+  .mail-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; border-radius: 10px; }
+  .mail-tab { min-width: 0; justify-content: flex-start; padding: 10px 12px; font-size: 13px; text-align: left; }
+  .mail-tab:last-child { grid-column: 1 / -1; }
+  .mail-tab__label { min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+  .mail-tab__count { flex: none; margin-left: auto; }
 
   .mail-filters--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .mail-filters--compact > input:first-child,
