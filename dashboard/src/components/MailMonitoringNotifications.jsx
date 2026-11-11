@@ -459,8 +459,10 @@ export function MailMonitoringNotifications({ category = "" } = {}) {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
-  // activeTab defaults to "unread" so the panel opens on actionable alerts.
-  const [activeTab, setActiveTab] = useState("unread");
+  // The main page opens on Unread Invitations, the actionable alerts. A
+  // category page opens on All Alerts: Selection Related held 27 alerts, all
+  // read, and opened on an empty Unread tab under a count of 27 (12 Nov 2026).
+  const [activeTab, setActiveTab] = useState(category ? "all" : "unread");
   // Candidates that actually have alerts. Fetched once; the filter matches on
   // candidate_id, so the options have to be ids this table really holds.
   const [candidates, setCandidates] = useState([]);

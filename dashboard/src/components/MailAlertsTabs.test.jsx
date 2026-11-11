@@ -154,13 +154,22 @@ describe("Selection Related and Interview Related pages", () => {
     expect(counted.some((p) => p.get("priority") === "retry_pending")).toBe(true);
   });
 
+  it.each(["selection", "interview"])("%s opens on All Alerts, so read alerts show without a click", async (category) => {
+    renderCategory(category);
+    const all = await screen.findByRole("tab", { name: /All Alerts/ });
+    expect(all).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(lastList().get("classification_group")).toBe(category));
+    expect(lastList().has("is_read")).toBe(false);
+    expect(lastList().has("priority")).toBe(false);
+  });
+
   it("switching tabs keeps the category", async () => {
     renderCategory("interview");
     await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
-    fireEvent.click(await screen.findByRole("tab", { name: /All Alerts/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /^Unread/ }));
     await waitFor(() => {
       expect(lastList().get("classification_group")).toBe("interview");
-      expect(lastList().has("is_read")).toBe(false);
+      expect(lastList().get("is_read")).toBe("false");
     });
   });
 

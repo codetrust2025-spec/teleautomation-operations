@@ -234,6 +234,8 @@ describe("the Selection Related and Interview Related pages", () => {
   it("says what Selection holds when it is empty, not invitations", async () => {
     install([], 0);
     renderCategory("selection");
+    await screen.findByText("No selection alerts yet.");
+    fireEvent.click(screen.getByRole("tab", { name: /^Unread/ }));
     await screen.findByText("No unread selection alerts. All caught up!");
     expect(screen.getByText("New selections, offers, joining and final HR confirmations appear here as soon as they arrive.")).toBeInTheDocument();
     expect(screen.queryByText(/invitations/i)).toBeNull();
@@ -243,6 +245,8 @@ describe("the Selection Related and Interview Related pages", () => {
   it("says what Interview holds when it is empty", async () => {
     install([], 0);
     renderCategory("interview");
+    await screen.findByText("No interview alerts yet.");
+    fireEvent.click(screen.getByRole("tab", { name: /^Unread/ }));
     await screen.findByText("No unread interview alerts. All caught up!");
     expect(screen.getByText("New interview invitations, shortlists and schedule changes appear here as soon as they arrive.")).toBeInTheDocument();
   });
