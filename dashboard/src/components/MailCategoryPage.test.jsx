@@ -97,21 +97,21 @@ describe("a Candidate + Company card", () => {
   it("shows total, unread and read, and the latest verified status", async () => {
     renderPage();
     const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    expect(within(card).getByText("3 Emails")).toBeInTheDocument();
-    expect(card.textContent).toContain("Unread: 2");
-    expect(card.textContent).toContain("Opened: 1");
+    expect(within(card).getByLabelText("3 emails")).toBeInTheDocument();
+    expect(within(card).getByText("2 unread")).toBeInTheDocument();
+    expect(within(card).getByLabelText("1 opened")).toBeInTheDocument();
     expect(within(card).getByTitle("Latest verified status").textContent).toBe("Joining Confirmed");
     expect(screen.getByText("2 Results")).toBeInTheDocument();
   });
 
   it("shows the status the mail states, not an unproven Joining Confirmed", async () => {
     install({
-      groups: [{ ...GROUPS[0], latest_status: "Background Verification", latest_status_evidence: "joining not stated" }],
-      history: [{ ...HISTORY[0], verified_status: "Background Verification", status_evidence: "joining not stated" }],
+      groups: [{ ...GROUPS[0], latest_status: "Background Verification", latest_status_evidence: "different step" }],
+      history: [{ ...HISTORY[0], verified_status: "Background Verification", status_evidence: "different step" }],
     });
     renderPage();
     const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    expect(within(card).getByTitle(/does not state joining/).textContent).toBe("Background Verification");
+    expect(within(card).getByTitle(/states this step, not the detected label/).textContent).toBe("Background Verification");
     fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
     const list = await within(card).findByRole("list", { name: "Emails, newest first" });
     await waitFor(() => expect(list.textContent).toContain("Selection · Background Verification"));
@@ -149,7 +149,7 @@ describe("a Candidate + Company card", () => {
     const items = within(list).getAllByRole("listitem");
     expect(items[1].className).toContain("mcp-mail--read");
     expect(items[0].className).toContain("mcp-mail--unread");
-    expect(card.textContent).toContain("Unread: 1");
+    expect(within(card).getByText("1 unread")).toBeInTheDocument();
     expect(await screen.findByRole("dialog", { name: "Mail monitoring notification" })).toBeInTheDocument();
   });
 });
@@ -186,6 +186,42 @@ describe("filters", () => {
     renderPage("selection");
     expect(await screen.findByRole("group", { name: "Selection alarm sound" })).toBeInTheDocument();
     captureLayout("mail-category", document.querySelector(".mcp"));
+  });
+});
+
+describe("the compact mockup", () => {
+  it("counts Unread, Opened, AI Retry and All Alerts in one row; Opened asks for read mail", async () => {
+    renderPage();
+    const tabs = await screen.findByRole("tablist", { name: "Selection Related tabs" });
+    expect(within(tabs).getAllByRole("tab").map((t) => t.querySelector(".mcp-tile__label").textContent))
+      .toEqual(["Unread", "Opened", "AI Retry", "All Alerts"]);
+    fireEvent.click(within(tabs).getByRole("tab", { name: /Opened/ }));
+    await waitFor(() => expect(groupsRequests().at(-1).get("is_read")).toBe("true"));
+  });
+
+  it("downloads Excel or JSON from one Download menu", async () => {
+    renderPage();
+    const button = await screen.findByRole("button", { name: /Download/ });
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+    const menu = screen.getByRole("menu", { name: "Download format" });
+    expect(within(menu).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Excel (27)", "JSON (27)"]);
+  });
+
+  it("has no Mute/Unmute text toggle: mute and test are icon buttons", async () => {
+    renderPage();
+    const sound = await screen.findByRole("group", { name: "Selection alarm sound" });
+    expect(within(sound).queryByText(/^(Mute|Unmute|ON|OFF)$/)).toBeNull();
+    const mute = within(sound).getByRole("button", { name: "Mute selection alarm" });
+    expect(mute).toHaveAttribute("aria-pressed", "false");
+    expect(within(sound).getByRole("slider", { name: "Selection alarm volume" })).toBeInTheDocument();
+    expect(within(sound).getByRole("button", { name: "Test alarm" })).toBeInTheDocument();
+  });
+
+  it("drops the helper description", async () => {
+    renderPage();
+    await screen.findByRole("tablist", { name: "Selection Related tabs" });
+    expect(screen.queryByText(/Selected, offers, joining/)).toBeNull();
   });
 });
 

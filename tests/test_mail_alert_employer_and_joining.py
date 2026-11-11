@@ -45,9 +45,25 @@ WELCOME = "Welcome! Here are your Workday login credentials. Countdown: 1 day to
 
 def test_joining_confirmed_needs_its_mail_to_say_so():
     assert store.verified_status("joining_confirmed", "Joining Confirmed", ["Joining details", JOINING]) == ("Joining Confirmed", "stated")
-    assert store.verified_status("joining_confirmed", "Joining Confirmed", ["BGV", BGV]) == ("Background Verification", "joining not stated")
-    assert store.verified_status("joining_confirmed", "Joining Confirmed", ["Welcome!", WELCOME]) == ("Onboarding", "joining not stated")
+    assert store.verified_status("joining_confirmed", "Joining Confirmed", ["BGV", BGV]) == ("Background Verification", "different step")
+    assert store.verified_status("joining_confirmed", "Joining Confirmed", ["Welcome!", WELCOME]) == ("Needs Review", "not stated")
 
 
-def test_other_statuses_are_shown_as_classified():
-    assert store.verified_status("offer_received", "Offer Received", [WELCOME]) == ("Offer Received", "classified")
+def test_a_withdrawal_is_not_an_offer_declined():
+    # Production wording (Accenture, 6 Nov 2026), name invented.
+    text = ("Hi Ravi, We regret to know that you are no longer interested in pursuing your application for "
+            "Data Engineer with Acme. Please note: If there was any offer released to you, it stands withdrawn.")
+    assert store.verified_status("offer_declined", "Offer Declined", ["Update on your Application", text]) == ("Application Withdrawn", "not a selection")
+
+
+def test_an_extended_offer_is_an_offer():
+    text = "Dear Ravi, Congratulations! We are delighted to extend an offer of employment to you."
+    assert store.verified_status("offer_received", "Offer Received", ["Acme offer has been released", text]) == ("Offer Received", "stated")
+
+
+def test_an_unproven_selection_label_needs_review():
+    assert store.verified_status("job_selection_confirmed", "Selected", ["A Task Awaits You: Review Documents", "Log in to Workday."]) == ("Needs Review", "not stated")
+
+
+def test_interview_statuses_are_shown_as_classified():
+    assert store.verified_status("interview_confirmed", "Interview Confirmed", [WELCOME]) == ("Interview Confirmed", "classified")

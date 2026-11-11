@@ -303,6 +303,8 @@ function OperationsShell({ view, onNavigate }) {
             <p className="business-header__eyebrow">{parentOf(view)?.label || 'Operations workspace'}</p>
             <h1 className="business-header__title">{activeView.label}</h1>
           </div>
+          {/* The Selection / Interview pages carry their live state beside the title. */}
+          {parentOf(view)?.id === 'mail-notifications' && <span className="mail-live mail-live--live business-header__live">Live</span>}
           <div className="desktop-header__status-center business-header__status">
             <span className="desktop-header__status-pulse" aria-hidden />
             <span className="desktop-header__status-text">Operations service connected</span>

@@ -3416,26 +3416,83 @@ def _employer_key_sql(prefix: str = "") -> str:
             f" AND a.raw_key = {raw}), {raw})")
 
 
-# What a Joining Confirmed alert's own mail must state; without it the alert
-# shows the step its mail does state (live, 12 Nov 2026: 12 of 13 were
-# background checks, onboarding tasks and welcome mails). Display only: the
-# stored classification is untouched.
-_JOINING_PROOF = ("JOINING_CONFIRMED", "JOINED", "JOINING_DATE_UPDATED")
+# The status a Selection alert shows is the one its own mail states, checked
+# against the same proof phrases the pipeline validates transitions with
+# (live, 12 Nov 2026: 12 of 13 "Joining Confirmed" were background checks,
+# onboarding tasks and welcome mails; an "Offer Declined" was the candidate
+# withdrawing). Display only: the stored classification is untouched.
+_PROOF = {
+    "job_selection_confirmed": ("SELECTED", "FINAL_SELECTION_CONFIRMED"),
+    "offer_received": ("OFFER_INDICATION", "OFFER_IN_PROGRESS", "OFFER_APPROVED", "OFFER_LETTER_RECEIVED",
+                       "OFFER_RECEIVED", "APPOINTMENT_LETTER_RECEIVED"),
+    "offer_accepted": ("OFFER_ACCEPTED",),
+    "offer_declined": ("OFFER_DECLINED",),
+    "offer_revoked": ("OFFER_REVOKED",),
+    "joining_confirmed": ("JOINING_CONFIRMED", "JOINED", "JOINING_DATE_UPDATED"),
+    "joining_date_updated": ("JOINING_DATE_UPDATED", "JOINING_CONFIRMED"),
+    "onboarding_started": ("POST_SELECTION_ONBOARDING",),
+    "background_verification": ("BACKGROUND_VERIFICATION",),
+    "document_verification": ("DOCUMENT_VERIFICATION",),
+    "compensation_confirmation": ("COMPENSATION_CONFIRMATION",),
+    "hr_confirmation": ("HR_CONFIRMATION",),
+}
+# Wording the pipeline's proof phrases miss, seen in production. Display only.
+_EXTRA_PROOF = {
+    "offer_received": (
+        r"\b(?:extend|extending|extended)\b[^.!?\n]{0,20}\boffer of employment\b",
+        r"\boffer (?:letter )?has been released\b",
+    ),
+    "onboarding_started": (
+        r"\b(?:as part of|complete|start)\b[^.!?\n]{0,30}\b(?:the |your )?(?:onboarding|pre-?joining)\b",
+        r"\bjoining form\b",
+    ),
+}
+_WITHDRAWN = (
+    r"\bno longer interested in pursuing your application\b",
+    r"\byou (?:have )?withdrawn? your (?:application|candidature)\b",
+)
+# When the mail states a different step than its label: the first one stated.
+_STEP_ORDER = (
+    ("joining_confirmed", "Joining Confirmed"), ("offer_accepted", "Offer Accepted"),
+    ("offer_received", "Offer Received"), ("job_selection_confirmed", "Selected"),
+    ("background_verification", "Background Verification"), ("document_verification", "Document Verification"),
+    ("onboarding_started", "Onboarding"), ("compensation_confirmation", "Compensation Confirmation"),
+)
+
+
+def _states(classification: str, texts: list[str]) -> bool:
+    from services.recruitment_semantics import evidence_entails_transition as entails
+    if any(entails(status, text) for status in _PROOF.get(classification, ()) for text in texts):
+        return True
+    return any(re.search(pattern, text, re.I) for pattern in _EXTRA_PROOF.get(classification, ()) for text in texts)
 
 
 def verified_status(classification: str, stored_status: str, texts: list[str]) -> tuple[str, str]:
-    """(status to show, evidence) for an alert, from its own mail text."""
-    if classification not in {"joining_confirmed", "joining_date_updated"}:
+    """(status to show, evidence) for an alert, from its own mail text.
+
+    evidence: "stated" (the mail states the label), "different step" (it
+    states another step, shown instead), "not a selection" (a rejection or a
+    withdrawal), "not stated" (shown as Needs Review), or "classified" for
+    alerts outside Selection, whose label is shown as it is.
+    """
+    if classification not in _PROOF:
         return stored_status, "classified"
     from services.recruitment_semantics import evidence_entails_transition as entails
     texts = [str(t or "") for t in texts if t]
-    if any(entails(status, text) for status in _JOINING_PROOF for text in texts):
-        return stored_status or "Joining Confirmed", "stated"
-    if any(entails("BACKGROUND_VERIFICATION", text) for text in texts):
-        return "Background Verification", "joining not stated"
-    if any(entails("DOCUMENT_VERIFICATION", text) for text in texts):
-        return "Document Verification", "joining not stated"
-    return "Onboarding", "joining not stated"
+    if any(re.search(pattern, text, re.I) for pattern in _WITHDRAWN for text in texts):
+        return "Application Withdrawn", "not a selection"
+    if any(entails("CANDIDATE_REJECTED", text) for text in texts):
+        return "Not Selected", "not a selection"
+    if _states(classification, texts):
+        return stored_status or displayable_status(classification), "stated"
+    for step, label in _STEP_ORDER:
+        if step != classification and _states(step, texts):
+            return label, "different step"
+    return "Needs Review", "not stated"
+
+
+def displayable_status(classification: str) -> str:
+    return _CLASSIFICATION_STATUS.get(classification) or classification.replace("_", " ").title()
 
 
 def _mail_texts(cur, ids: list[str]) -> dict[str, list[str]]:
@@ -3572,7 +3629,7 @@ def list_group_emails(candidate_id: str, company_key: str, *, limit: int = 200) 
             alias_params + list(vis_params) + [candidate_id, str(company_key or "").strip().lower(), max(1, min(int(limit), 500))],
         )
         rows = reconcile_booking_claims(_rows(cur))
-        texts = _mail_texts(cur, [r["id"] for r in rows if r.get("classification") in {"joining_confirmed", "joining_date_updated"}])
+        texts = _mail_texts(cur, [r["id"] for r in rows if r.get("classification") in _PROOF])
     for row in rows:
         row["verified_status"], row["status_evidence"] = verified_status(
             row.get("classification") or "", row.get("candidate_status") or "", texts.get(row["id"], []))

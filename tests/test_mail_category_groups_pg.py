@@ -71,11 +71,11 @@ def test_a_selection_group_counts_its_whole_history(mails):
     assert result["total"] == 2 and len(by) == 2  # Capgemini has no selection mail
     ashok = by[("ashok", "hcltech")]
     assert (ashok["total"], ashok["unread"], ashok["read"]) == (3, 1, 2)
-    # Its newest selection mail is Joining Confirmed, but no mail text says so.
-    assert (ashok["latest_status"], ashok["latest_status_evidence"]) == ("Onboarding", "joining not stated")
+    # Its newest selection mail is Joining Confirmed, but no mail text states anything.
+    assert (ashok["latest_status"], ashok["latest_status_evidence"]) == ("Needs Review", "not stated")
     vhs = by[("gopal", "northwind professional services")]
     assert (vhs["total"], vhs["unread"]) == (2, 0)
-    assert vhs["latest_status"] == "Offer Received"
+    assert (vhs["latest_classification"], vhs["latest_status"]) == ("offer_received", "Needs Review")  # no mail text
     assert [g["candidate_id"] for g in result["groups"]] == ["ashok", "gopal"]
 
 

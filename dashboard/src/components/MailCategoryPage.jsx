@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API } from "../config.js";
-import { acknowledgeSelectionAlarm } from "../notifications/selectionAlarm.js";
-import { SelectionAlarmControls } from "../notifications/SelectionAlarmBanner.jsx";
-import { InterviewBellControls } from "../notifications/InterviewBellControls.jsx";
+import {
+  acknowledgeSelectionAlarm, getSelectionAlarmState, setSelectionAlarmMuted, setSelectionAlarmVolumeLevel,
+  stopSelectionAlarmTest, subscribeSelectionAlarm, testSelectionAlarm,
+} from "../notifications/selectionAlarm.js";
+import { isInterviewBellMuted, setInterviewBellMuted, subscribeInterviewBell, testInterviewBell } from "../notifications/interviewBell.js";
+import { unlockNotificationSound } from "../utils/notificationSound.js";
 import { fetchMailSummary, publishMailCategoryUnread, publishMailUnread } from "../notifications/mailUnread.js";
 import { OverlayLoader } from "../Loader.jsx";
 import "./MailCategoryPage.css";
@@ -12,10 +15,12 @@ import {
 } from "./MailMonitoringNotifications.jsx";
 
 /**
- * Selection Related and Interview Related, as the approved mockup draws them:
- * three counter tiles that are the tabs, search, company and status filters,
- * then one card per Candidate + Company. A card shows that group's whole mail
- * count, unread and read, and its latest verified status; expanded, it lists
+ * Selection Related and Interview Related, as the approved mockups draw them:
+ * one compact row of counters that are the tabs (Unread, Opened, AI Retry, All
+ * Alerts), one row of search, company and status filters, a Download menu and
+ * the page's alert sound controls, then one card per Candidate + Company. A
+ * card shows that group's mail count, unread and opened, and its latest
+ * evidence-checked status; expanded, it lists
  * every mail of the group newest first -- Selection and Interview alike, each
  * labelled -- unread ones in blue, read ones muted. Opening a mail marks that
  * one mail read and nothing else.
@@ -25,9 +30,10 @@ import {
  */
 
 const PAGE_SIZE = 20;
-// The mockup's tiles: Unread, AI Retry, All Alerts. Same filters as the tabs.
+// The mockup's counters, in its order. Each is a tab with its own filter.
 export const CATEGORY_TILES = [
   { id: "unread", label: "Unread", icon: "mail", params: { is_read: "false" } },
+  { id: "opened", label: "Opened", icon: "eye", params: { is_read: "true" } },
   { id: "retry", label: "AI Retry", icon: "sparkles", params: { priority: "retry_pending" } },
   { id: "all", label: "All Alerts", icon: "layers", params: {} },
 ];
@@ -44,6 +50,12 @@ const SVG = {
   eye: <><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.8" /></>,
   dots: <><circle cx="12" cy="5.5" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="12" cy="18.5" r="1.3" /></>,
   check: <><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12.2 2.4 2.4 4.6-4.9" /></>,
+  download: <><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" /><path d="M4.5 16.5v3h15v-3" /></>,
+  sheet: <><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M9 12h6M9 15h6M9 18h4" /></>,
+  braces: <><path d="M9 4.5c-2 0-2.5 1-2.5 3v2c0 1.5-.8 2.5-2 2.5 1.2 0 2 1 2 2.5v2c0 2 .5 3 2.5 3" /><path d="M15 4.5c2 0 2.5 1 2.5 3v2c0 1.5.8 2.5 2 2.5-1.2 0-2 1-2 2.5v2c0 2-.5 3-2.5 3" /></>,
+  speaker: <><path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></>,
+  bell: <><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2h-14z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>,
+  bellOff: <><path d="M6.5 16.5V11a5.5 5.5 0 0 1 9.3-4" /><path d="M17.5 11v5.5l1.5 2H8.5M10 20.5a2 2 0 0 0 4 0M4 4l16 16" /></>,
 };
 function Glyph({ name, size = 20 }) {
   return <svg className={`mcp-glyph mcp-glyph--${name}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{SVG[name]}</svg>;
@@ -69,10 +81,23 @@ export function mailWhen(value, now = new Date()) {
 }
 
 const CATEGORY_NAME = { selection: "Selection", interview: "Interview" };
-// The status the alert's own mail states (server: verified_status). A "Joining
-// Confirmed" whose mail never says so shows the step it does say.
+// The status the alert's own mail states (server: verified_status and its
+// evidence). Shown as stated; a step other than the label, a rejection or
+// withdrawal, or Needs Review when the mail states none.
 const statusText = (item) => displayLabel(item.verified_status || item.candidate_status || item.classification);
-const unproven = (item) => item.status_evidence === "joining not stated" || item.latest_status_evidence === "joining not stated";
+const EVIDENCE_NOTE = {
+  "different step": "The email states this step, not the detected label.",
+  "not a selection": "The email states a rejection or a withdrawal, not a selection.",
+  "not stated": "The email does not state this status; open it to review.",
+};
+const evidenceOf = (item) => item.status_evidence || item.latest_status_evidence || "";
+function StatusPill({ label, evidence, tone }) {
+  const kind = evidence === "not stated" ? "review" : evidence === "not a selection" ? "muted" : tone;
+  return <span className={`mcp-pill mcp-pill--status mcp-pill--${kind}`}
+    title={EVIDENCE_NOTE[evidence] ? `Latest status. ${EVIDENCE_NOTE[evidence]}` : "Latest verified status"}>
+    <Glyph name={evidence === "not stated" || evidence === "not a selection" ? "info" : "check"} size={16} />{label}
+  </span>;
+}
 const groupKey = (group) => `${group.candidate_id}::${group.company_key || ""}`;
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -85,72 +110,124 @@ function query(params) {
 }
 
 function GroupCard({ group, expanded, onToggle, history, onOpen, onMarkAllRead }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const close = (event) => { if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [menuOpen]);
   const company = group.company_name || "Company not identified";
   const status = group.latest_status || displayLabel(group.latest_classification || "");
   const tone = mailStatusTone({ candidate_status: group.latest_status, classification: group.latest_classification });
   const listId = `mcp-history-${groupKey(group).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-  const latest = history?.items?.[0];
-  return <article className={`mcp-group${expanded ? " mcp-group--open" : ""}`} aria-label={`${group.candidate_name || "Candidate"}, ${company}`}>
+  const unread = Number(group.unread) || 0;
+  const name = group.candidate_name || "Candidate";
+  return <article className={`mcp-group${expanded ? " mcp-group--open" : ""}${unread ? " mcp-group--unread" : ""}`} aria-label={`${name}, ${company}`}>
     <div className="mcp-group__head">
       <div className="mcp-logo" aria-hidden="true"><span>{company}</span></div>
-      <div className="mcp-group__who">
-        <strong className="mcp-group__name">{group.candidate_name || "Candidate"}</strong>
-        {group.candidate_email && <span className="mcp-group__email">{group.candidate_email}</span>}
-        <span className="mcp-group__company">{company}</span>
+      <div className="mcp-group__main">
+        <strong className="mcp-group__name">{name}</strong>
+        <span className="mcp-group__meta">
+          {group.candidate_email && <span className="mcp-group__email">{group.candidate_email}</span>}
+          <span className="mcp-group__company">{company}</span>
+        </span>
+        <span className="mcp-group__badges">
+          <span className="mcp-pill mcp-pill--count" title={plural(Number(group.total) || 0, "email")} aria-label={plural(Number(group.total) || 0, "email")}>
+            <Glyph name="mail" size={16} />{group.total}
+          </span>
+          {unread > 0 && <span className="mcp-pill mcp-pill--new">{unread} unread</span>}
+          {status && <StatusPill label={status} evidence={group.latest_status_evidence} tone={tone} />}
+        </span>
       </div>
-      <div className="mcp-group__badges">
-        <span className="mcp-pill mcp-pill--count">{plural(Number(group.total) || 0, "Email")}</span>
-        {status && <span className={`mcp-pill mcp-pill--status mcp-pill--${tone}`} title={unproven(group)
-          ? "Latest verified status (detected as Joining Confirmed; the email does not state joining)"
-          : "Latest verified status"}><Glyph name="check" size={16} />{status}</span>}
-      </div>
+      <span className="mcp-group__opened" title={`${group.read} opened`} aria-label={`${group.read} opened`}><Glyph name="eye" size={20} />{group.read}</span>
       <button type="button" className={`mcp-chevron${expanded ? " mcp-chevron--open" : ""}`} aria-expanded={expanded} aria-controls={listId}
-        aria-label={`${expanded ? "Hide" : "Show"} emails for ${group.candidate_name || "candidate"} at ${company}`} onClick={onToggle}>
+        aria-label={`${expanded ? "Hide" : "Show"} emails for ${name} at ${company}`} onClick={() => onToggle()}>
         <Glyph name="chevron" size={22} />
       </button>
     </div>
-    <div className="mcp-group__bar">
-      <span className="mcp-group__counts"><span>Unread: <b>{group.unread}</b></span><span className="mcp-sep" aria-hidden="true" /><span>Opened: <b>{group.read}</b></span></span>
-      <button type="button" className="mcp-view" onClick={() => (latest ? onOpen(latest) : onToggle(true))}><Glyph name="eye" size={18} />View</button>
-      <div className="mcp-menu" ref={menuRef}>
-        <button type="button" className="mcp-kebab" aria-label="More actions" aria-expanded={menuOpen} aria-haspopup="menu" onClick={() => setMenuOpen((open) => !open)}><Glyph name="dots" size={18} /></button>
-        {menuOpen && <div className="mcp-menu__list" role="menu">
-          <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onToggle(!expanded); }}>{expanded ? "Hide emails" : "Show emails"}</button>
-          <button type="button" role="menuitem" disabled={!Number(group.unread)} onClick={() => { setMenuOpen(false); onMarkAllRead(); }}>Mark all as read</button>
-        </div>}
-      </div>
-    </div>
-    {expanded && <ol className="mcp-history" id={listId} aria-label={`Emails, newest first`}>
-      {history?.loading && <li className="mcp-history__note">Loading emails…</li>}
-      {history?.error && <li className="mcp-history__note" role="alert">{history.error}</li>}
-      {(history?.items || []).map((item) => {
-        const kind = mailAlertCategory(item);
-        return <li key={item.id} className={`mcp-mail ${item.is_read ? "mcp-mail--read" : "mcp-mail--unread"}`}>
-          <span className="mcp-mail__dot" aria-hidden="true" />
-          <button type="button" className="mcp-mail__row" onClick={() => onOpen(item)}
-            aria-label={`${item.is_read ? "Opened" : "Unread"}: ${item.email_subject || "no subject"}`}>
-            <span className="mcp-mail__icon"><Glyph name="mail" size={20} /></span>
-            <span className="mcp-mail__text">
-              <span className="mcp-mail__subject">{item.email_subject || "(no subject)"}</span>
-              <span className={`mcp-mail__label${kind ? ` mcp-mail__label--${kind}` : ""}`}
-                title={unproven(item) ? "Detected as Joining Confirmed, but this email does not state joining" : undefined}>{kind ? `${CATEGORY_NAME[kind]} · ` : ""}{statusText(item)}</span>
-            </span>
-            <span className={`mcp-state mcp-state--${item.is_read ? "read" : "unread"}`}>{item.is_read ? "Opened" : "Unread"}</span>
-            <span className="mcp-mail__when">{mailWhen(item.email_received_at || item.created_at)}</span>
-          </button>
-        </li>;
-      })}
-      {history && !history.loading && !history.error && !(history.items || []).length && <li className="mcp-history__note">No emails in this group.</li>}
-    </ol>}
+    {expanded && <div className="mcp-history-wrap">
+      {unread > 0 && <button type="button" className="mcp-markall" onClick={onMarkAllRead}>Mark all as read</button>}
+      <ol className="mcp-history" id={listId} aria-label="Emails, newest first">
+        {history?.loading && <li className="mcp-history__note">Loading emails…</li>}
+        {history?.error && <li className="mcp-history__note" role="alert">{history.error}</li>}
+        {(history?.items || []).map((item) => {
+          const kind = mailAlertCategory(item);
+          const evidence = evidenceOf(item);
+          return <li key={item.id} className={`mcp-mail ${item.is_read ? "mcp-mail--read" : "mcp-mail--unread"}`}>
+            <span className="mcp-mail__dot" aria-hidden="true" />
+            <button type="button" className="mcp-mail__row" onClick={() => onOpen(item)}
+              aria-label={`${item.is_read ? "Opened" : "Unread"}: ${item.email_subject || "no subject"}`}>
+              <span className="mcp-mail__icon"><Glyph name="mail" size={18} /></span>
+              <span className="mcp-mail__text">
+                <span className="mcp-mail__subject">{item.email_subject || "(no subject)"}</span>
+                <span className={`mcp-mail__label${kind ? ` mcp-mail__label--${kind}` : ""}${evidence === "not stated" ? " mcp-mail__label--review" : ""}`}
+                  title={EVIDENCE_NOTE[evidence]}>{kind ? `${CATEGORY_NAME[kind]} · ` : ""}{statusText(item)}</span>
+              </span>
+              <span className={`mcp-state mcp-state--${item.is_read ? "read" : "unread"}`}>{item.is_read ? "Opened" : "Unread"}</span>
+              <span className="mcp-mail__when">{mailWhen(item.email_received_at || item.created_at)}</span>
+            </button>
+          </li>;
+        })}
+        {history && !history.loading && !history.error && !(history.items || []).length && <li className="mcp-history__note">No emails in this group.</li>}
+      </ol>
+    </div>}
   </article>;
+}
+
+// One Download button; Excel and JSON inside it, each with the count it holds.
+function DownloadMenu({ count, downloading, onDownload }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => { if (ref.current && !ref.current.contains(event.target)) setOpen(false); };
+    const escape = (event) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
+  }, [open]);
+  const pick = (format) => { setOpen(false); onDownload(format); };
+  return <div className="mcp-download" ref={ref}>
+    <button type="button" className="mcp-download__button" aria-haspopup="menu" aria-expanded={open}
+      disabled={!count || downloading !== null} onClick={() => setOpen((value) => !value)}>
+      <Glyph name="download" size={20} />{downloading ? "Downloading…" : "Download"}<Glyph name="chevron" size={18} />
+    </button>
+    {open && <div className="mcp-download__menu" role="menu" aria-label="Download format">
+      <button type="button" role="menuitem" onClick={() => pick("xlsx")}><Glyph name="sheet" size={20} />Excel ({count})</button>
+      <button type="button" role="menuitem" onClick={() => pick("json")}><Glyph name="braces" size={20} />JSON ({count})</button>
+    </div>}
+  </div>;
+}
+
+// The page's alert sound, as icons: Selection has the alarm's volume, mute and
+// test; Interview the bell's mute and test. Mute is a pressed/unpressed button.
+function SoundControls({ category }) {
+  const [alarm, setAlarm] = useState(getSelectionAlarmState);
+  const [bellMuted, setBellMuted] = useState(isInterviewBellMuted);
+  const [testing, setTesting] = useState(false);
+  useEffect(() => subscribeSelectionAlarm(setAlarm), []);
+  useEffect(() => subscribeInterviewBell(setBellMuted), []);
+  if (category === "interview") {
+    return <div className="mcp-sound" role="group" aria-label="Interview alert sound">
+      <span className="mcp-sound__label"><Glyph name="speaker" size={22} />Interview bell</span>
+      <button type="button" className="mcp-icon-btn" aria-pressed={bellMuted} aria-label={bellMuted ? "Unmute interview bell" : "Mute interview bell"}
+        title={bellMuted ? "Unmute" : "Mute"} onClick={() => { unlockNotificationSound(); setInterviewBellMuted(!bellMuted); }}>
+        <Glyph name={bellMuted ? "bellOff" : "bell"} size={22} />
+      </button>
+      <button type="button" className="mcp-icon-btn" aria-label="Test interview bell" title="Test bell"
+        onClick={() => { unlockNotificationSound(); testInterviewBell(); }}><Glyph name="speaker" size={22} /></button>
+    </div>;
+  }
+  const percent = Math.round((alarm.volume ?? 1) * 100);
+  return <div className="mcp-sound" role="group" aria-label="Selection alarm sound">
+    <Glyph name="speaker" size={22} />
+    <input type="range" min="0" max="100" step="5" value={percent} aria-label="Selection alarm volume" aria-valuetext={`${percent}%`}
+      onChange={(event) => setSelectionAlarmVolumeLevel(Number(event.target.value) / 100)} />
+    <output>{percent}%</output>
+    <button type="button" className="mcp-icon-btn" aria-pressed={!!alarm.muted} aria-label={alarm.muted ? "Unmute selection alarm" : "Mute selection alarm"}
+      title={alarm.muted ? "Unmute" : "Mute"} onClick={() => { unlockNotificationSound(); setSelectionAlarmMuted(!alarm.muted); }}>
+      <Glyph name="bellOff" size={22} />
+    </button>
+    {!(alarm.pending || []).length && <button type="button" className="mcp-icon-btn" aria-pressed={testing}
+      aria-label={testing ? "Stop alarm test" : "Test alarm"} title={testing ? "Stop test" : "Test alarm"}
+      onClick={() => { unlockNotificationSound(); if (testing) { stopSelectionAlarmTest(); setTesting(false); } else { testSelectionAlarm(); setTesting(true); } }}>
+      <Glyph name="bell" size={22} />
+    </button>}
+  </div>;
 }
 
 export function MailCategoryPage({ category }) {
@@ -298,49 +375,43 @@ export function MailCategoryPage({ category }) {
   const filtered = Boolean(search.trim() || companyKey || status);
   const tileLabel = CATEGORY_TILES.find((t) => t.id === tile)?.label || "All Alerts";
   return <section className={`mcp mcp--${category}`}>
-    <p className="mcp-info"><Glyph name="info" size={22} /><span>{page.description}</span></p>
-
     <div className="mcp-tiles" role="tablist" aria-label={`${page.title} tabs`}>
       {CATEGORY_TILES.map((t) => <button key={t.id} type="button" role="tab" aria-selected={tile === t.id}
         className={`mcp-tile mcp-tile--${t.id}${tile === t.id ? " mcp-tile--active" : ""}`}
         onClick={() => { setTile(t.id); setOffset(0); }}>
-        <span className="mcp-tile__icon"><Glyph name={t.icon} size={26} /></span>
+        <span className="mcp-tile__icon"><Glyph name={t.icon} size={22} /></span>
         <span className="mcp-tile__text"><span className="mcp-tile__label">{t.label}</span><span className="mcp-tile__count">{counts[t.id] ?? 0}</span></span>
       </button>)}
     </div>
 
-    <label className="mcp-search">
-      <Glyph name="search" size={22} />
-      <input aria-label="Search notifications" placeholder="Search by candidate, email or company..." value={search} onChange={reset(setSearch)} />
-    </label>
     <div className="mcp-filters">
-      <label className="mcp-select"><Glyph name="building" size={22} />
+      <label className="mcp-search">
+        <Glyph name="search" size={20} />
+        <input aria-label="Search notifications" placeholder="Search" value={search} onChange={reset(setSearch)} />
+      </label>
+      <label className="mcp-select"><Glyph name="building" size={20} />
         <select aria-label="Company filter" value={companyKey} onChange={reset(setCompanyKey)}>
           <option value="">All Companies</option>
           {data.companies.map((row) => <option key={row.key} value={row.key}>{row.name}</option>)}
         </select>
-        <Glyph name="chevron" size={20} />
+        <Glyph name="chevron" size={18} />
       </label>
-      <label className="mcp-select"><Glyph name="tag" size={22} />
+      <label className="mcp-select"><Glyph name="tag" size={20} />
         <select aria-label="Status filter" value={status} onChange={reset(setStatus)}>
           <option value="">All Status</option>
           {statuses.map((value) => <option key={value} value={value}>{displayLabel(value)}</option>)}
         </select>
-        <Glyph name="chevron" size={20} />
+        <Glyph name="chevron" size={18} />
       </label>
     </div>
 
     <div className="mcp-tools">
-      <span className="mail-live mail-live--live">Live</span>
-      <div className="mail-download-group">
-        <button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => download("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button>
-        <button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => download("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button>
-      </div>
-      {category === "interview" ? <InterviewBellControls /> : <SelectionAlarmControls showTest />}
+      <DownloadMenu count={emailCount} downloading={downloading} onDownload={download} />
+      <SoundControls category={category} />
     </div>
 
     <div className="mcp-results">
-      <h2>{CATEGORY_NAME[category]} Alerts</h2>
+      <h2><Glyph name="mail" size={24} />{CATEGORY_NAME[category]} Alerts</h2>
       <span>{plural(data.total, "Result")}</span>
     </div>
 
