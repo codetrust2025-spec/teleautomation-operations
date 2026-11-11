@@ -3559,6 +3559,8 @@ def list_notification_groups(
                        (array_agg(btrim(h.company_name) ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
                           FILTER (WHERE btrim(COALESCE(h.company_name, '')) <> ''))[1] AS company_name,
                        count(*) AS total, count(*) FILTER (WHERE NOT h.is_read) AS unread,
+                       count(*) FILTER (WHERE h.classification = ANY(%s)) AS category_total,
+                       count(*) FILTER (WHERE h.classification = ANY(%s) AND NOT h.is_read) AS category_unread,
                        max(COALESCE(h.email_received_at, h.created_at)) AS latest_at,
                        l.classification AS latest_classification, l.candidate_status AS latest_status,
                        l.latest_id, count(*) OVER () AS group_total
@@ -3566,7 +3568,7 @@ def list_notification_groups(
                  GROUP BY h.person_id, h.company_key, l.classification, l.candidate_status, l.latest_id
                  ORDER BY latest_at DESC NULLS LAST, h.person_id, h.company_key
                  LIMIT %s OFFSET %s""",
-            alias_params + params + _visibility_params() + [status_set, page, skip],
+            alias_params + params + _visibility_params() + [status_set, status_set, status_set, page, skip],
         )
         rows = _rows(cur)
         texts = _mail_texts(cur, [r["latest_id"] for r in rows if r.get("latest_id")])
@@ -3592,6 +3594,9 @@ def list_notification_groups(
     for row in rows:
         row.pop("group_total", None)
         row["read"] = int(row["total"]) - int(row["unread"])
+        # The card counts this page's category, as the counters above it do;
+        # total / unread / read are the whole history the card expands to.
+        row["category_read"] = int(row["category_total"]) - int(row["category_unread"])
         row["company_name"] = names.get(row["company_key"], row["company_name"])
         latest_id = row.pop("latest_id", None)
         if latest_id:

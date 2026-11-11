@@ -160,7 +160,7 @@
 .mcp-download__menu button:hover { background: rgba(148, 163, 184, 0.1); }
 .mcp-sound { display: flex; flex: 1 1 320px; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; color: var(--mcp-text-2); }
 .mcp-sound input[type="range"] { flex: 0 1 220px; min-width: 70px; accent-color: var(--mcp-blue); }
-.mcp-sound output { min-width: 3.2em; color: var(--mcp-text-2); font-variant-numeric: tabular-nums; }
+.mcp-sound output { flex: none; min-width: 3.4em; color: var(--mcp-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .mcp-sound__label { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; white-space: nowrap; }
 .mcp-icon-btn {
   display: grid;
@@ -200,23 +200,25 @@
   height: 60px;
   place-items: center;
   overflow: hidden;
-  padding: 5px;
+  padding: 4px;
   border-radius: 10px;
   background: #f8fafc;
 }
+/* The logo shows the company's first word whole, sized to it. */
 .mcp-logo span {
-  display: -webkit-box;
+  max-width: 100%;
   overflow: hidden;
   color: #1d4ed8;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.1;
   text-align: center;
-  word-break: normal;
-  overflow-wrap: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  white-space: nowrap;
+  text-overflow: clip;
 }
+.mcp-logo--md span { font-size: 12px; }
+.mcp-logo--lg span { font-size: 15px; }
+.mcp-logo--sm span { font-size: 10.5px; letter-spacing: -0.01em; }
 .mcp-group__main { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .mcp-group__name { overflow: hidden; color: var(--mcp-text); font-size: 17px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .mcp-group__meta { display: flex; min-width: 0; overflow: hidden; color: var(--mcp-text-2); font-size: 14px; white-space: nowrap; }
@@ -277,7 +279,11 @@
 .mcp-markall:focus-visible { outline: 2px solid var(--mcp-blue); outline-offset: 2px; }
 
 /* The history: a timeline, newest first. */
-.mcp-history-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-top: 12px; }
+.mcp-history-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.mcp-history__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.mcp-history__summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; color: var(--mcp-text-2); font-size: 13px; }
+.mcp-history__summary b { color: var(--mcp-text); }
+.mcp-history__unread { color: #93c5fd; font-weight: 600; }
 .mcp-markall {
   min-height: 32px;
   padding: 0 12px;
@@ -382,7 +388,9 @@
   .mcp-tile__icon .mcp-glyph { width: 16px; height: 16px; }
   .mcp-tile__label { font-size: 11.5px; letter-spacing: -0.01em; }
   .mcp-tile__count { font-size: 19px; }
-  .mcp-filters { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 1fr); gap: 6px; }
+  /* Search across the row; company and status side by side under it. */
+  .mcp-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+  .mcp-search { grid-column: 1 / -1; }
   /* The filter text reads in full: the selects' leading icons give way. */
   .mcp-select > .mcp-glyph:first-child { display: none; }
   .mcp-search, .mcp-select { gap: 6px; min-height: 42px; padding: 0 8px; border-radius: 10px; }
@@ -395,7 +403,7 @@
   .mcp-sound { flex: 1 1 auto; gap: 6px; }
   .mcp-sound > .mcp-glyph--speaker { display: none; }
   .mcp-sound input[type="range"] { flex: 1 1 auto; min-width: 40px; }
-  .mcp-sound output { min-width: 2.8em; font-size: 12.5px; }
+  .mcp-sound output { min-width: 3.2em; font-size: 12.5px; }
   .mcp-sound__label { display: none; }
   .mcp-icon-btn { width: 40px; height: 40px; border-radius: 10px; }
   .mcp-results h2 { gap: 8px; font-size: 18px; }
@@ -405,8 +413,13 @@
   .mcp-logo { grid-area: logo; align-self: start; width: 58px; height: 54px; }
   .mcp-logo span { font-size: 11.5px; }
   .mcp-group__main { grid-area: main; }
-  .mcp-group__name { font-size: 16px; }
-  .mcp-group__meta { font-size: 13px; }
+  /* Names and companies are read whole: a long name takes a second line. */
+  .mcp-group__name { display: -webkit-box; font-size: 16px; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .mcp-group__meta { flex-direction: column; gap: 1px; font-size: 13px; white-space: normal; }
+  .mcp-group__email { white-space: nowrap; }
+  .mcp-group__email + .mcp-group__company::before { content: none; }
+  .mcp-group__company, .mcp-group__email + .mcp-group__company { max-width: none; overflow-wrap: anywhere; white-space: normal; }
+  .mcp-history__summary { font-size: 12.5px; }
   .mcp-group__badges { gap: 6px; }
   .mcp-pill { min-height: 26px; padding: 1px 9px; font-size: 13px; }
   .mcp-group__opened { grid-area: opened; padding: 0 0 2px 10px; font-size: 15px; }
@@ -424,9 +437,6 @@
 /* The narrowest phones: the counters keep one row with the icon above. */
 @media (max-width: 385px) {
   .mcp-tile { flex-direction: column; align-items: flex-start; gap: 4px; padding: 5px 6px; }
-  .mcp-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .mcp-search { grid-column: 1 / -1; }
-  .mcp-sound output { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mcp-chevron .mcp-glyph { transition: none; }

@@ -24,6 +24,7 @@ const GROUPS = [
   {
     candidate_id: "c-ashok", company_key: "hcltech", candidate_name: "Ashok Rao",
     candidate_email: "ashok@example.com", company_name: "HCLTech", total: 3, unread: 2, read: 1,
+    category_total: 1, category_unread: 1, category_read: 0,
     latest_at: "2026-11-11T11:22:31Z", latest_classification: "joining_confirmed", latest_status: "Joining Confirmed",
   },
   {
@@ -97,9 +98,10 @@ describe("a Candidate + Company card", () => {
   it("shows total, unread and read, and the latest verified status", async () => {
     renderPage();
     const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    expect(within(card).getByLabelText("3 emails")).toBeInTheDocument();
-    expect(within(card).getByText("2 unread")).toBeInTheDocument();
-    expect(within(card).getByLabelText("1 opened")).toBeInTheDocument();
+    // The card counts Selection mail, like the counters; the history counts all.
+    expect(within(card).getByLabelText("1 Selection email")).toBeInTheDocument();
+    expect(card.querySelector(".mcp-pill--new").textContent).toBe("1 unread");
+    expect(within(card).getByLabelText("0 opened")).toBeInTheDocument();
     expect(within(card).getByTitle("Latest verified status").textContent).toBe("Joining Confirmed");
     expect(screen.getByText("2 Results")).toBeInTheDocument();
   });
@@ -149,7 +151,9 @@ describe("a Candidate + Company card", () => {
     const items = within(list).getAllByRole("listitem");
     expect(items[1].className).toContain("mcp-mail--read");
     expect(items[0].className).toContain("mcp-mail--unread");
-    expect(within(card).getByText("1 unread")).toBeInTheDocument();
+    // m2 is an Interview mail: the history's unread drops, the Selection card's does not.
+    await waitFor(() => expect(card.querySelector(".mcp-history__unread").textContent).toBe("1 unread"));
+    expect(card.querySelector(".mcp-pill--new").textContent).toBe("1 unread");
     expect(await screen.findByRole("dialog", { name: "Mail monitoring notification" })).toBeInTheDocument();
   });
 });
@@ -186,6 +190,24 @@ describe("filters", () => {
     renderPage("selection");
     expect(await screen.findByRole("group", { name: "Selection alarm sound" })).toBeInTheDocument();
     captureLayout("mail-category", document.querySelector(".mcp"));
+  });
+});
+
+describe("unread counts", () => {
+  it("the history line shows every mail with the company, by kind, and its unread", async () => {
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    await waitFor(() => expect(card.querySelector(".mcp-history__summary").textContent)
+      .toBe("All emails with HCLTech: 3 (1 Selection, 2 Interview)2 unread"));
+  });
+
+  it("logo text is the company's first word, whole", async () => {
+    const { logoText } = await import("./MailCategoryPage.jsx");
+    expect(logoText("Fractal Analytics Private Limited")).toBe("Fractal");
+    expect(logoText("VHS Professional Services Pvt. Ltd")).toBe("VHS");
+    expect(logoText("HCLTech")).toBe("HCLTech");
+    expect(logoText("Onni Global Services India Pvt Ltd")).toBe("Onni");
   });
 });
 
