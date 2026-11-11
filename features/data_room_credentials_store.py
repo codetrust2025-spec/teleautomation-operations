@@ -580,7 +580,7 @@ def service_accounts_with_passwords() -> list[dict]:
     return sorted(out, key=_section_sort_key("service_accounts"))
 
 
-def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | None]:
+def _service_account_fields(body: dict, *, creating: bool, consent_actor: str = "") -> tuple[dict, str | None]:
     """The fields an operator may set on a service account, checked."""
     fields: dict = {}
     for key in ("label", "username", "notes"):
@@ -595,6 +595,22 @@ def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | 
         if not service:
             return {}, f"Service must be one of {', '.join(SERVICE_TYPES)}"
         fields["service"] = service
+    if "daybreak_consent_confirmed" in body:
+        consent = body["daybreak_consent_confirmed"]
+        if type(consent) is not bool:
+            return {}, "Daybreak consent confirmation must be a boolean"
+        if consent:
+            email = str(body.get("username") or "").strip().lower()
+            if (fields.get("service") != "Naukri" or
+                    not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)):
+                return {}, "Verified Naukri consent requires a valid Naukri email"
+            if not consent_actor:
+                return {}, "An authenticated administrator must verify consent"
+            fields.update(daybreak_consent_at=_now_iso(),
+                          daybreak_consent_email=email, daybreak_consent_by=consent_actor)
+        else:
+            fields.update(daybreak_consent_at=None, daybreak_consent_email=None,
+                          daybreak_consent_by=None)
     password = body.get("password")
     # An edit sends a password only when it is changed; a blank one keeps what is stored.
     if isinstance(password, str) and password != "":
@@ -602,8 +618,8 @@ def _service_account_fields(body: dict, *, creating: bool) -> tuple[dict, str | 
     return fields, None
 
 
-def create_service_account(body: dict) -> tuple[dict | None, str | None]:
-    fields, error = _service_account_fields(body or {}, creating=True)
+def create_service_account(body: dict, *, consent_actor: str = "") -> tuple[dict | None, str | None]:
+    fields, error = _service_account_fields(body or {}, creating=True, consent_actor=consent_actor)
     if error:
         return None, error
     if "label" in fields:
@@ -612,10 +628,21 @@ def create_service_account(body: dict) -> tuple[dict | None, str | None]:
     return create_vault_item("service_accounts", {"id": str((body or {}).get("id") or "").strip(), **fields})
 
 
-def update_service_account(item_id: str, body: dict) -> tuple[dict | None, str | None]:
-    fields, error = _service_account_fields(body or {}, creating=False)
+def update_service_account(item_id: str, body: dict, *, consent_actor: str = "") -> tuple[dict | None, str | None]:
+    current = _find_service_row(_load(), item_id) or {}
+    incoming = dict(body or {})
+    if "daybreak_consent_confirmed" in incoming:
+        incoming.setdefault("username", current.get("username") or "")
+        incoming.setdefault("service", current.get("service") or "")
+    fields, error = _service_account_fields(incoming, creating=False, consent_actor=consent_actor)
     if error:
         return None, error
+    identity_changed = (str(fields.get("username", current.get("username", ""))).strip().lower()
+                        != str(current.get("username", "")).strip().lower()
+                        or fields.get("service", current.get("service")) != current.get("service"))
+    if identity_changed and incoming.get("daybreak_consent_confirmed") is not True:
+        fields.update(daybreak_consent_at=None, daybreak_consent_email=None,
+                      daybreak_consent_by=None)
     if "label" in fields:
         current = _find_service_row(_load(), item_id) or {}
         fields["label"] = standard_credential_name(fields["label"], fields.get("service") or current.get("service"))
