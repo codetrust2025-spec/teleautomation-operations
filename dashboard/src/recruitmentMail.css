@@ -3733,3 +3733,62 @@
 @media (max-width: 640px) {
   .mail-category-intro { margin-bottom: 8px; padding: 7px 10px; font-size: 12.5px; }
 }
+
+/* Mail Alerts on a phone, all three pages (12 Nov 2026). The actions row could
+   neither wrap nor shrink, so at 390px Download, JSON, Live and the alarm
+   volume ran off the left edge; the candidate heading floated its count into
+   the email beside it; and on Selection / Interview Related, with no alert
+   type filter, the candidate filter sat half-width beside an empty cell. */
+@media (max-width: 640px) {
+  .mail-topbar { flex-direction: column-reverse; flex-wrap: nowrap; align-items: stretch; gap: 8px; }
+  .mail-topbar .mail-tabs { flex: none; }
+  .mail-topbar .mail-monitoring-page__head { width: 100%; min-width: 0; }
+  .mail-monitoring-page__actions {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    min-width: 0;
+    justify-content: flex-start;
+    row-gap: 8px;
+  }
+  .mail-monitoring-page__actions .mail-live { margin-left: auto; }
+  /* The sound controls take a row of their own, slider stretching between
+     the label and the buttons. The visible "Alarm volume" text goes; the
+     slider keeps its accessible name. */
+  .mail-monitoring-page__actions .selection-alarm__controls {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    min-width: 0;
+    margin-left: 0;
+    gap: 6px;
+  }
+  .mail-monitoring-page__actions .selection-alarm__volume { flex: 1 1 auto; min-width: 0; }
+  .mail-monitoring-page__actions .selection-alarm__volume > span:first-child {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .mail-monitoring-page__actions .selection-alarm__volume input { flex: 1 1 auto; width: auto; min-width: 60px; }
+  .mail-monitoring-page__actions .selection-alarm__btn { flex: none; min-height: 34px; padding: 5px 10px; font-size: 12.5px; }
+  .mail-monitoring-page__actions .interview-bell__label { flex: 1 1 auto; }
+
+  .mail-monitoring-page--selection .mail-filters--compact,
+  .mail-monitoring-page--interview .mail-filters--compact { grid-template-columns: minmax(0, 1fr); }
+
+  .mail-table .mail-group__head th { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .mail-group__head strong { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .mail-group__count { float: none; flex: none; order: 2; }
+  .mail-group__head small {
+    order: 3; flex: 1 1 100%; min-width: 0; margin-left: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mail-category-intro { margin: 0; }
+  /* The empty message inherited the table cell's nowrap and ran off both edges. */
+  .mail-table td.mail-empty,
+  .mail-table .mail-empty-state span,
+  .mail-table .mail-empty-state strong { white-space: normal; overflow-wrap: anywhere; }
+}
+/* A tablet: the actions row (Download, Live, the alarm controls) was wider
+   than the screen at 768px and started off its left edge. Let it wrap,
+   still on the right; the desktop layout above 1023px is unchanged. */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .mail-topbar .mail-monitoring-page__head { flex: 1 1 100%; min-width: 0; }
+  .mail-monitoring-page__actions { flex-wrap: wrap; flex-shrink: 1; min-width: 0; justify-content: flex-end; row-gap: 8px; }
+}

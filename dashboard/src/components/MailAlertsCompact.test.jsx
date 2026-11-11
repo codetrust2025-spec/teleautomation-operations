@@ -222,6 +222,32 @@ describe("an empty result", () => {
   });
 });
 
+describe("the Selection Related and Interview Related pages", () => {
+  const renderCategory = (category) => render(<ConfirmProvider><MailMonitoringNotifications category={category} /></ConfirmProvider>);
+
+  it.each(["selection", "interview"])("%s lays out its rows, controls and filters", async (category) => {
+    renderCategory(category);
+    await waitFor(() => expect(rows()).toHaveLength(20));
+    captureLayout(`mail-alerts-${category}`, document.querySelector(".mail-monitoring-page"));
+  });
+
+  it("says what Selection holds when it is empty, not invitations", async () => {
+    install([], 0);
+    renderCategory("selection");
+    await screen.findByText("No unread selection alerts. All caught up!");
+    expect(screen.getByText("New selections, offers, joining and final HR confirmations appear here as soon as they arrive.")).toBeInTheDocument();
+    expect(screen.queryByText(/invitations/i)).toBeNull();
+    captureLayout("mail-alerts-selection-empty", document.querySelector(".mail-monitoring-page"));
+  });
+
+  it("says what Interview holds when it is empty", async () => {
+    install([], 0);
+    renderCategory("interview");
+    await screen.findByText("No unread interview alerts. All caught up!");
+    expect(screen.getByText("New interview invitations, shortlists and schedule changes appear here as soon as they arrive.")).toBeInTheDocument();
+  });
+});
+
 describe("a time in the table", () => {
   it("is its date over its time of day, the whole of it on hover, so it never runs into the next column", async () => {
     renderScreen();

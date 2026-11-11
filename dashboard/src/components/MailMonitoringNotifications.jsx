@@ -314,11 +314,17 @@ export const MAIL_CATEGORY_PAGES = {
     title: "Selection Related",
     description: "Selected, offers, joining, final HR confirmation, BGV and onboarding.",
     unreadLabel: "Unread",
+    emptyUnread: "No unread selection alerts. All caught up!",
+    emptyAll: "No selection alerts yet.",
+    arriving: "New selections, offers, joining and final HR confirmations appear here as soon as they arrive.",
   },
   interview: {
     title: "Interview Related",
     description: "Invitations, shortlisting, assessments, interview rounds, scheduling and rescheduling.",
     unreadLabel: "Unread",
+    emptyUnread: "No unread interview alerts. All caught up!",
+    emptyAll: "No interview alerts yet.",
+    arriving: "New interview invitations, shortlists and schedule changes appear here as soon as they arrive.",
   },
 };
 // The same company however it was spaced or capitalised; the server orders
@@ -806,14 +812,16 @@ export function MailMonitoringNotifications({ category = "" } = {}) {
               ? (hiddenByFilters
                 ? `None of the ${hiddenByFilters} in ${activeLabel} match these filters.`
                 : "No notifications match these filters.")
-              : activeTab === "unread" ? (categoryPage ? `No unread ${categoryPage.title} alerts. All caught up!` : "No unread invitations. All caught up!")
+              : activeTab === "unread" ? (categoryPage ? categoryPage.emptyUnread : "No unread invitations. All caught up!")
               : activeTab === "retry"  ? "No alerts are waiting for AI retry."
+              : categoryPage ? categoryPage.emptyAll
               : "No notifications match these filters."
           }</strong>
           <span>{filtersActive
             ? "Try another search, or clear the filters to see every alert in this tab."
-            : activeTab === "unread" ? "New invitations appear here as soon as they arrive."
             : activeTab === "retry" ? "Mails the AI could not read yet appear here until a retry succeeds."
+            : categoryPage ? categoryPage.arriving
+            : activeTab === "unread" ? "New invitations appear here as soon as they arrive."
             : "Mail alerts appear here as they arrive."}</span>
           {filtersActive && <button type="button" className="mail-empty-state__clear" onClick={clearFilters}>Clear filters</button>}
         </div>
