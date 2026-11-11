@@ -116,3 +116,21 @@ def test_name_variants_of_one_employer_are_one_card(schema):
     acme = cards["acme analytics"]
     assert (acme["total"], acme["unread"], acme["read"]) == (3, 1, 2)
     assert [r["id"] for r in store.list_group_emails("meera", "acme analytics")] == ["a-1", "a-2", "a-3"]
+
+
+def test_an_alerts_mail_is_read_in_the_app_with_gmail_optional(schema):
+    add(schema, "r-1", candidate="ravi", company="Acme", hours_ago=1, classification="interview_needs_reading")
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO mailbox_messages(id, mailbox_id, candidate_id, provider_message_id, provider_thread_id,
+                   sender_name, sender_email, recipient_email, subject, body_text)
+               VALUES ('mm-1', 'mb-1', 'ravi', 'gm-r-1', 'th-1', 'Acme HR', 'hr@acme.example',
+                       'ravi@example.com', 'Interview on Monday', 'Please join at 10 am.')""")
+        cur.execute("UPDATE mail_monitoring_notifications SET gmail_thread_id = 'th-1' WHERE id = 'r-1'")
+    result = store.notification_email("r-1")
+    assert result["email"]["subject"] == "Interview on Monday"
+    assert result["email"]["body"] == "Please join at 10 am."
+    assert result["gmail"] == {"message_id": "gm-r-1", "thread_id": "th-1", "account": "ravi@example.com"}
+    # Reading is not marking read.
+    assert store.list_group_emails("ravi", "acme")[0]["is_read"] is False
+    assert store.notification_email("no-such-alert") is None

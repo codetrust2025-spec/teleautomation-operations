@@ -193,7 +193,7 @@
   background: var(--mcp-bg-card);
 }
 .mcp-group--unread { border-color: rgba(59, 130, 246, 0.55); }
-.mcp-group__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px; }
+.mcp-group__head { cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px; }
 .mcp-logo {
   display: grid;
   width: 64px;
@@ -440,4 +440,45 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .mcp-chevron .mcp-glyph { transition: none; }
+}
+
+/* An email opened inside its card. */
+.mcp-mail--open .mcp-mail__row { border-bottom-right-radius: 0; border-bottom-left-radius: 0; }
+.mcp-read {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--mcp-border-soft);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: rgba(10, 16, 32, 0.7);
+  color: var(--mcp-text-2);
+  overflow-wrap: anywhere;
+}
+.mcp-read img { max-width: 100%; height: auto; }
+.mcp-read table { max-width: 100%; }
+.mcp-read__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mcp-read__actions button,
+.mcp-read__actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--mcp-border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--mcp-text);
+  font: inherit;
+  font-size: 13.5px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.mcp-read__actions .mcp-read__gmail { margin-left: auto; color: var(--mcp-text-2); }
+.mcp-read__actions button:hover,
+.mcp-read__actions a:hover { background: rgba(148, 163, 184, 0.1); }
+@media (max-width: 640px) {
+  .mcp-read { padding: 10px; }
+  .mcp-read__actions .mcp-read__gmail { margin-left: 0; }
 }

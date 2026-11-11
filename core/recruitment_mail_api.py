@@ -568,6 +568,16 @@ def install_recruitment_mail_routes(app):
         response.headers['Cache-Control']='no-store, max-age=0'
         return {'status':'ok','notifications':rows,'total':len(rows)}
 
+    @app.get('/api/mail-monitoring/notifications/{notification_id}/email')
+    async def mail_notification_email(notification_id:str, request:Request, response:Response):
+        """The mail behind one alert, to read inside Mail Alerts. Read-only: reading is not marking read."""
+        _guard();require_fleet_admin(request)
+        result=await asyncio.to_thread(store.notification_email,notification_id)
+        if result is None:
+            raise HTTPException(status_code=404,detail='Alert not found')
+        response.headers['Cache-Control']='no-store, max-age=0'
+        return {'status':'ok',**result}
+
     @app.get('/api/mail-monitoring/export')
     async def mail_notifications_export(
         request:Request, response:Response, format:str='xlsx',

@@ -3617,6 +3617,48 @@ def _visibility_params() -> list[Any]:
     return list(rows_params) + list(tracked_params)
 
 
+def notification_email(notification_id: str) -> dict[str, Any] | None:
+    """One visible alert's mail, for reading it in Mail Alerts. Read-only.
+
+    The mail is found through the alert's own analysis event when it has one,
+    otherwise by its Gmail message id (an unread-interview alert has no
+    event). `gmail` carries what an optional "Open in Gmail" link needs.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT n.id, n.gmail_message_id, n.gmail_thread_id, n.candidate_email,
+                       m.subject, m.sender_name, m.sender_email, m.recipient_email, m.sent_at,
+                       m.body_text, m.html_body_text
+                  FROM mail_monitoring_notifications n
+                  LEFT JOIN ai_recruitment_events e ON e.id = n.ai_recruitment_event_id
+                  LEFT JOIN LATERAL (
+                        SELECT * FROM mailbox_messages mm
+                         WHERE mm.id = e.mailbox_message_id
+                            OR (e.mailbox_message_id IS NULL AND mm.provider_message_id = n.gmail_message_id)
+                         ORDER BY (mm.id = e.mailbox_message_id) DESC NULLS LAST, mm.candidate_id = n.candidate_id DESC
+                         LIMIT 1) m ON true
+                 WHERE n.id = %s AND {_visibility_for("n")}""",
+            [notification_id, *_visibility_params()],
+        )
+        rows = _rows(cur)
+    if not rows:
+        return None
+    row = rows[0]
+    has_mail = any(row.get(k) for k in ("subject", "body_text", "html_body_text", "sender_email"))
+    return {
+        "email": {
+            "subject": row.get("subject"), "sender_name": row.get("sender_name"),
+            "sender_email": row.get("sender_email"), "recipient_email": row.get("recipient_email"),
+            "sent_at": row.get("sent_at"), "body": row.get("body_text") or row.get("html_body_text") or "",
+            "body_html": row.get("html_body_text") or "",
+        } if has_mail else None,
+        "gmail": {
+            "message_id": row.get("gmail_message_id"), "thread_id": row.get("gmail_thread_id"),
+            "account": row.get("recipient_email") or row.get("candidate_email"),
+        },
+    }
+
+
 def list_group_emails(candidate_id: str, company_key: str, *, limit: int = 200) -> list[dict[str, Any]]:
     """Every visible alert of one person with one employer, newest first, both categories.
 

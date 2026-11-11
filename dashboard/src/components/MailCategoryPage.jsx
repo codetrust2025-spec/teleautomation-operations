@@ -8,9 +8,11 @@ import { isInterviewBellMuted, setInterviewBellMuted, subscribeInterviewBell, te
 import { unlockNotificationSound } from "../utils/notificationSound.js";
 import { fetchMailSummary, publishMailCategoryUnread, publishMailUnread } from "../notifications/mailUnread.js";
 import { OverlayLoader } from "../Loader.jsx";
+import { formatIstDateTime } from "../utils/istTime.js";
+import { OriginalEmail } from "./OriginalEmail.jsx";
 import "./MailCategoryPage.css";
 import {
-  CLASSIFICATION_GROUPS, MAIL_CATEGORY_PAGES, NotificationDetail, displayLabel, mailAlertCategory,
+  CLASSIFICATION_GROUPS, MAIL_CATEGORY_PAGES, displayLabel, mailAlertCategory,
   mailStatusTone, request, useMailLive,
 } from "./MailMonitoringNotifications.jsx";
 
@@ -106,6 +108,40 @@ export function logoText(company) {
   const words = String(company || "").replace(/[^A-Za-z0-9&.' -]+/g, " ").split(/[\s-]+/).filter((w) => w && !LEGAL.test(w.replace(/\./g, "")));
   return (words[0] || String(company || "?").trim()).slice(0, 12);
 }
+// "Open in Gmail": optional, in a new tab, on the mailbox the mail arrived in.
+export function gmailUrl(gmail) {
+  const id = gmail?.thread_id || gmail?.message_id;
+  if (!id) return null;
+  const account = gmail.account ? `?authuser=${encodeURIComponent(gmail.account)}` : "";
+  return `https://mail.google.com/mail/u/${account}#all/${encodeURIComponent(id)}`;
+}
+const readWhen = (value) => formatIstDateTime(value, { day: "numeric", hour: "numeric", second: undefined });
+const goTo = (view, detail = {}) => window.dispatchEvent(new CustomEvent("teleautomation:navigate", { detail: { view, ...detail } }));
+
+// One mail, opened inside the card: its content as the sender wrote it, and
+// what can be done with it. Gmail is one optional action among them.
+function MailContent({ item, content, onAction }) {
+  const url = gmailUrl(content?.gmail);
+  return <div className="mcp-read" role="region" aria-label={`Email: ${item.email_subject || "no subject"}`}>
+    <OriginalEmail
+      email={content?.email}
+      loading={!content || content.loading}
+      error={content?.error}
+      fallbackSubject={item.email_subject}
+      fallbackRecipient={item.candidate_email}
+      fallbackReceivedAt={item.email_received_at}
+      formatWhen={readWhen}
+    />
+    <div className="mcp-read__actions">
+      <button type="button" onClick={() => onAction(item, "unread")}>Mark as unread</button>
+      <button type="button" onClick={() => onAction(item, "dismiss")}>Dismiss alert</button>
+      {item.booking_id && <button type="button" onClick={() => goTo("daily-ops", { bookingId: item.booking_id, candidateId: item.candidate_id })}>View booking</button>}
+      {/^https?:\/\//i.test(item.meeting_link || "") && <a href={item.meeting_link} target="_blank" rel="noopener noreferrer">Open meeting link</a>}
+      {url && <a className="mcp-read__gmail" href={url} target="_blank" rel="noopener noreferrer">Open in Gmail ↗</a>}
+    </div>
+  </div>;
+}
+
 const logoSize = (text) => (text.length <= 5 ? "lg" : text.length <= 8 ? "md" : "sm");
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -117,7 +153,7 @@ function query(params) {
   return search.toString();
 }
 
-function GroupCard({ group, category, expanded, onToggle, history, onOpen, onMarkAllRead }) {
+function GroupCard({ group, category, expanded, onToggle, history, openMails, contents, onOpenMail, onAction, onMarkAllRead }) {
   const company = group.company_name || "Company not identified";
   const status = group.latest_status || displayLabel(group.latest_classification || "");
   const tone = mailStatusTone({ candidate_status: group.latest_status, classification: group.latest_classification });
@@ -132,7 +168,9 @@ function GroupCard({ group, category, expanded, onToggle, history, onOpen, onMar
   const historyUnread = Number(group.unread) || 0;
   const logo = group.company_name ? logoText(company) : "—";
   return <article className={`mcp-group${expanded ? " mcp-group--open" : ""}${unread ? " mcp-group--unread" : ""}`} aria-label={`${name}, ${company}`}>
-    <div className="mcp-group__head">
+    {/* Tapping anywhere on the card opens its emails here, in the app; only
+        its own buttons and links do something else. */}
+    <div className="mcp-group__head" onClick={(event) => { if (!event.target.closest("button, a, input, select")) onToggle(); }}>
       <div className={`mcp-logo mcp-logo--${logoSize(logo)}`} title={company} aria-hidden="true"><span>{logo}</span></div>
       <div className="mcp-group__main">
         <strong className="mcp-group__name" title={name}>{name}</strong>
@@ -165,9 +203,10 @@ function GroupCard({ group, category, expanded, onToggle, history, onOpen, onMar
         {(history?.items || []).map((item) => {
           const itemKind = mailAlertCategory(item);
           const evidence = evidenceOf(item);
-          return <li key={item.id} className={`mcp-mail ${item.is_read ? "mcp-mail--read" : "mcp-mail--unread"}`}>
+          const open = openMails.has(item.id);
+          return <li key={item.id} className={`mcp-mail ${item.is_read ? "mcp-mail--read" : "mcp-mail--unread"}${open ? " mcp-mail--open" : ""}`}>
             <span className="mcp-mail__dot" aria-hidden="true" />
-            <button type="button" className="mcp-mail__row" onClick={() => onOpen(item)}
+            <button type="button" className="mcp-mail__row" onClick={() => onOpenMail(item)} aria-expanded={open}
               aria-label={`${item.is_read ? "Opened" : "Unread"}: ${item.email_subject || "no subject"}`}>
               <span className="mcp-mail__icon"><Glyph name="mail" size={18} /></span>
               <span className="mcp-mail__text">
@@ -178,6 +217,7 @@ function GroupCard({ group, category, expanded, onToggle, history, onOpen, onMar
               <span className={`mcp-state mcp-state--${item.is_read ? "read" : "unread"}`}>{item.is_read ? "Opened" : "Unread"}</span>
               <span className="mcp-mail__when">{mailWhen(item.email_received_at || item.created_at)}</span>
             </button>
+            {open && <MailContent item={item} content={contents[item.id]} onAction={onAction} />}
           </li>;
         })}
         {history && !history.loading && !history.error && !(history.items || []).length && <li className="mcp-history__note">No emails in this group.</li>}
@@ -281,7 +321,8 @@ export function MailCategoryPage({ category }) {
   const [loadError, setLoadError] = useState("");
   const [expanded, setExpanded] = useState(() => new Set());
   const [histories, setHistories] = useState({});
-  const [selected, setSelected] = useState(null);
+  const [openMails, setOpenMails] = useState(() => new Set());
+  const [contents, setContents] = useState({});
   const [downloading, setDownloading] = useState(null);
   const version = useRef(0);
   const statuses = useMemo(
@@ -345,41 +386,48 @@ export function MailCategoryPage({ category }) {
     setExpanded((value) => { const next = new Set(value); if (open) next.add(key); else next.delete(key); return next; });
     if (open) loadHistory(group);
   };
-  // Opening a mail marks that one mail read: the row, its group's counts and
-  // the tile, at once, then the server's own figures.
-  const openMail = useCallback(async (item) => {
-    acknowledgeSelectionAlarm(item.id);
-    setSelected({ ...item, is_read: true, detail_loading: true, detail_error: "" });
-    if (!item.is_read) {
-      setHistories((value) => Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, {
-        ...entry, items: (entry.items || []).map((row) => (row.id === item.id ? { ...row, is_read: true } : row)),
-      }])));
-      setData((value) => ({ ...value, groups: value.groups.map((group) => (
-        histories[groupKey(group)]?.items?.some((row) => row.id === item.id)
-          ? {
-            ...group, unread: Math.max(0, Number(group.unread) - 1), read: Number(group.read) + 1,
-            ...(mailAlertCategory(item) === category && group.category_unread !== undefined ? {
-              category_unread: Math.max(0, Number(group.category_unread) - 1), category_read: Number(group.category_read) + 1,
-            } : {}),
-          }
-          : group)) }));
-    }
+  // Opening a mail shows its content inside the card and marks that one mail
+  // read: the row, its group's counts and the tile at once, then the server's
+  // own figures. Opening it again closes it.
+  const loadContent = useCallback(async (item) => {
+    setContents((value) => ({ ...value, [item.id]: { ...(value[item.id] || {}), loading: !value[item.id]?.email, error: "" } }));
     try {
-      const [detail] = await Promise.all([
-        item.ai_recruitment_event_id ? request(`/api/ai-recruitment/events/${item.ai_recruitment_event_id}`) : Promise.resolve({ event: null }),
-        item.is_read ? Promise.resolve() : request(`/api/mail-monitoring/notifications/${item.id}/read`, { method: "POST", body: "{}" }),
-      ]);
-      setSelected((current) => (current?.id === item.id ? { ...current, detail_loading: false, event_detail: detail.event || null } : current));
+      const body = await request(`/api/mail-monitoring/notifications/${item.id}/email`);
+      setContents((value) => ({ ...value, [item.id]: { loading: false, email: body.email || null, gmail: body.gmail || null,
+        error: body.email ? "" : "The original email body is unavailable." } }));
     } catch (error) {
-      setSelected((current) => (current?.id === item.id ? { ...current, detail_loading: false, detail_error: error.message || "Unable to load the original email." } : current));
+      setContents((value) => ({ ...value, [item.id]: { loading: false, email: null, error: error?.message || "Unable to load the email." } }));
+    }
+  }, []);
+  const openMail = useCallback(async (item) => {
+    const closing = openMails.has(item.id);
+    setOpenMails((value) => { const next = new Set(value); if (closing) next.delete(item.id); else next.add(item.id); return next; });
+    if (closing) return;
+    acknowledgeSelectionAlarm(item.id);
+    if (!contents[item.id]?.email) loadContent(item);
+    if (item.is_read) return;
+    setHistories((value) => Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, {
+      ...entry, items: (entry.items || []).map((row) => (row.id === item.id ? { ...row, is_read: true } : row)),
+    }])));
+    setData((value) => ({ ...value, groups: value.groups.map((group) => (
+      histories[groupKey(group)]?.items?.some((row) => row.id === item.id)
+        ? {
+          ...group, unread: Math.max(0, Number(group.unread) - 1), read: Number(group.read) + 1,
+          ...(mailAlertCategory(item) === category && group.category_unread !== undefined ? {
+            category_unread: Math.max(0, Number(group.category_unread) - 1), category_read: Number(group.category_read) + 1,
+          } : {}),
+        }
+        : group)) }));
+    try {
+      await request(`/api/mail-monitoring/notifications/${item.id}/read`, { method: "POST", body: "{}" });
     } finally {
       load({ silent: true });
     }
-  }, [histories, load, category]);
+  }, [openMails, contents, histories, load, loadContent, category]);
   const act = async (item, action) => {
     if (action !== "unread") acknowledgeSelectionAlarm(item.id);
     await request(`/api/mail-monitoring/notifications/${item.id}/${action}`, { method: "POST", body: "{}" });
-    setSelected(null);
+    setOpenMails((value) => { const next = new Set(value); next.delete(item.id); return next; });
     for (const group of data.groups) if (expanded.has(groupKey(group))) loadHistory(group);
     load({ silent: true });
   };
@@ -468,18 +516,14 @@ export function MailCategoryPage({ category }) {
       </div>}
       {data.groups.map((group) => <GroupCard key={groupKey(group)} group={group}
         category={category} expanded={expanded.has(groupKey(group))} onToggle={(force) => toggle(group, force)}
-        history={histories[groupKey(group)]} onOpen={openMail} onMarkAllRead={() => markAllRead(group)} />)}
+        history={histories[groupKey(group)]} openMails={openMails} contents={contents} onOpenMail={openMail}
+        onAction={act} onMarkAllRead={() => markAllRead(group)} />)}
     </div>
     {data.total > PAGE_SIZE && <footer className="mcp-pages">
       <button type="button" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Previous</button>
       <span>{offset + 1}–{Math.min(offset + PAGE_SIZE, data.total)} of {data.total} · {tileLabel}</span>
       <button type="button" disabled={offset + PAGE_SIZE >= data.total} onClick={() => setOffset((value) => value + PAGE_SIZE)}>Next</button>
     </footer>}
-
-    {selected && <NotificationDetail item={selected} onClose={() => setSelected(null)} actions={<>
-      <button type="button" onClick={() => act(selected, "unread")}>Mark as unread</button>
-      <button type="button" onClick={() => act(selected, "dismiss")}>Dismiss alert</button>
-    </>} />}
   </section>;
 }
 

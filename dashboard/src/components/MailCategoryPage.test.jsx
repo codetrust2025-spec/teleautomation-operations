@@ -67,6 +67,14 @@ function install({ groups = GROUPS, history = HISTORY } = {}) {
       return respond({ notifications: [], total });
     }
     if (path.includes("/api/ai-recruitment/events/")) return respond({ event: null });
+    if (/\/notifications\/[^/]+\/email$/.test(path)) {
+      const id = path.split("/").at(-2);
+      return respond({
+        email: { subject: `Subject of ${id}`, sender_name: "Recruiter", sender_email: "hr@example.com",
+          recipient_email: "ashok@example.com", sent_at: "2026-11-11T05:00:00Z", body: `Body of mail ${id}.`, body_html: "" },
+        gmail: { message_id: `msg-${id}`, thread_id: `thr-${id}`, account: "ashok@example.com" },
+      });
+    }
     return respond({ status: "ok" });
   }));
 }
@@ -154,7 +162,10 @@ describe("a Candidate + Company card", () => {
     // m2 is an Interview mail: the history's unread drops, the Selection card's does not.
     await waitFor(() => expect(card.querySelector(".mcp-history__unread").textContent).toBe("1 unread"));
     expect(card.querySelector(".mcp-pill--new").textContent).toBe("1 unread");
-    expect(await screen.findByRole("dialog", { name: "Mail monitoring notification" })).toBeInTheDocument();
+    // The mail opens inside the card, not in Gmail and not in a dialog.
+    const reading = await within(card).findByRole("region", { name: "Email: Evaluation 2 Selection for 141850" });
+    await waitFor(() => expect(reading.textContent).toContain("Body of mail m2."));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 
@@ -190,6 +201,45 @@ describe("filters", () => {
     renderPage("selection");
     expect(await screen.findByRole("group", { name: "Selection alarm sound" })).toBeInTheDocument();
     captureLayout("mail-category", document.querySelector(".mcp"));
+  });
+});
+
+describe("reading mail in the app", () => {
+  it("tapping anywhere on the card opens its emails", async () => {
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    fireEvent.click(card.querySelector(".mcp-group__email"));
+    expect(await within(card).findByRole("list", { name: "Emails, newest first" })).toBeInTheDocument();
+    fireEvent.click(card.querySelector(".mcp-group__name"));
+    await waitFor(() => expect(within(card).queryByRole("list", { name: "Emails, newest first" })).toBeNull());
+  });
+
+  it("Gmail is an optional link inside the opened mail, never the default", async () => {
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    const list = await within(card).findByRole("list", { name: "Emails, newest first" });
+    await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
+    // Nothing on the card or the list links to Gmail until a mail is opened.
+    expect(card.querySelector('a[href*="mail.google.com"]')).toBeNull();
+    fireEvent.click(within(list).getByRole("button", { name: "Opened: Evaluation 1 Selection for 141850" }));
+    const gmail = await within(card).findByRole("link", { name: /Open in Gmail/ });
+    expect(gmail.getAttribute("href")).toBe("https://mail.google.com/mail/u/?authuser=ashok%40example.com#all/thr-m1");
+    expect(gmail).toHaveAttribute("target", "_blank");
+    captureLayout("mail-category-reading", document.querySelector(".mcp"));
+    // Already read: opening it posts nothing.
+    expect(calls.filter((c) => c.method === "POST")).toEqual([]);
+    // Opening it again closes it.
+    fireEvent.click(within(list).getByRole("button", { name: "Opened: Evaluation 1 Selection for 141850" }));
+    await waitFor(() => expect(within(card).queryByRole("link", { name: /Open in Gmail/ })).toBeNull());
+  });
+
+  it("iPhone Safari does not turn addresses into mail links", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "index.html"), "utf-8");
+    expect(html).toMatch(/<meta name="format-detection" content="[^"]*email=no/);
   });
 });
 
