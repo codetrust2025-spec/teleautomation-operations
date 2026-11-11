@@ -3761,10 +3761,13 @@ def notification_summary() -> dict[str, Any]:
           count(*) FILTER(WHERE classification IN ('offer_received','offer_accepted','job_selection_confirmed') AND dismissed_at IS NULL) job_confirmed_count,
           count(*) FILTER(WHERE classification IN ('interview_confirmed','interview_rescheduled','interview_cancelled') AND dismissed_at IS NULL) interview_booking_count,
           count(*) FILTER(WHERE classification = ANY(%s) AND dismissed_at IS NULL) selection_related,
-          count(*) FILTER(WHERE classification = ANY(%s) AND dismissed_at IS NULL) interview_related
+          count(*) FILTER(WHERE classification = ANY(%s) AND dismissed_at IS NULL) interview_related,
+          count(*) FILTER(WHERE classification = ANY(%s) AND NOT is_read AND dismissed_at IS NULL) selection_unread,
+          count(*) FILTER(WHERE classification = ANY(%s) AND NOT is_read AND dismissed_at IS NULL) interview_unread
           FROM mail_monitoring_notifications
           WHERE """ + visibility,
-          [sorted(SELECTION_RELATED_CLASSIFICATIONS), sorted(INTERVIEW_RELATED_CLASSIFICATIONS), *params])
+          [sorted(SELECTION_RELATED_CLASSIFICATIONS), sorted(INTERVIEW_RELATED_CLASSIFICATIONS),
+           sorted(SELECTION_RELATED_CLASSIFICATIONS), sorted(INTERVIEW_RELATED_CLASSIFICATIONS), *params])
         names = [d.name for d in cur.description]
         return dict(zip(names, cur.fetchone()))
 

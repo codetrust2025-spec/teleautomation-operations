@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API } from "../config.js";
 import { subscribeMailEvents, subscribeMailStatus, traceMailAlert } from "../notifications/mailEventStream.js";
-import { fetchMailSummary, publishMailUnread } from "../notifications/mailUnread.js";
+import { fetchMailSummary, publishMailCategoryUnread, publishMailUnread } from "../notifications/mailUnread.js";
 import { acknowledgeSelectionAlarm } from "../notifications/selectionAlarm.js";
 import { SelectionAlarmControls } from "../notifications/SelectionAlarmBanner.jsx";
+import { InterviewBellControls } from "../notifications/InterviewBellControls.jsx";
 import { useDialogA11y } from "../hooks/useDialogA11y.js";
 import { formatIstDate, formatIstDateTime, formatIstTime, formatScheduleDateTime, formatScheduleIstDateTime } from "../utils/istTime.js";
 import { useConfirm } from "../context/ConfirmContext.jsx";
@@ -297,21 +298,29 @@ export function MailNotificationBell({ compact = false }) {
 // Using tab state rather than hard-coding filter values keeps the existing
 // server-side filter parameters as the single source of truth: the tab merely
 // pre-sets them; the advanced dropdowns still work on top.
-// Selection Related and Interview Related are tabs of their own, each with its
-// own count; All Alerts shows both.
 export const MAIL_TABS = [
-  { id: "unread",    label: "Unread Invitations", filterKey: "read",                filterValue: "false"         },
-  { id: "retry",     label: "AI Retry Pending",   filterKey: "priority",            filterValue: "retry_pending" },
-  { id: "selection", label: "Selection Related",  filterKey: "classificationGroup", filterValue: SELECTION_GROUP },
-  { id: "interview", label: "Interview Related",  filterKey: "classificationGroup", filterValue: "interview"     },
-  { id: "all",       label: "All Alerts",          filterKey: null,                  filterValue: null            },
+  { id: "unread",  label: "Unread Invitations", filterKey: "read",     filterValue: "false"         },
+  { id: "retry",   label: "AI Retry Pending",   filterKey: "priority", filterValue: "retry_pending" },
+  { id: "all",     label: "All Alerts",          filterKey: null,       filterValue: null            },
 ];
 // Which filter fields a tab owns. Switching tabs clears exactly these keys
 // and sets the new tab's key, while leaving candidate / alert-type / search
-// / booking-result untouched so users can filter within a tab. The alert
-// type belongs to the person except on Selection and Interview, which set it.
+// / booking-result untouched so users can filter within a tab.
 const TAB_OWNED_KEYS = new Set(["read", "priority"]);
-const GROUP_TABS = new Set(["selection", "interview"]);
+// The two Mail Alerts submenu pages. Each is the same screen fixed to one
+// category: every request, count, export and filter on it carries the group.
+export const MAIL_CATEGORY_PAGES = {
+  selection: {
+    title: "Selection Related",
+    description: "Selected, offers, joining, final HR confirmation, BGV and onboarding.",
+    unreadLabel: "Unread",
+  },
+  interview: {
+    title: "Interview Related",
+    description: "Invitations, shortlisting, assessments, interview rounds, scheduling and rescheduling.",
+    unreadLabel: "Unread",
+  },
+};
 // The same company however it was spaced or capitalised; the server orders
 // with the same rule (NOTIFICATION_COMPANY_KEY_SQL).
 export const companyKey = (item) => String(item?.company_name || "").trim().toLowerCase();
@@ -346,12 +355,12 @@ export function groupByCandidateAndCompany(items) {
 const mailsLabel = (count) => `${count} ${count === 1 ? "mail" : "mails"}`;
 // The person's filters with a tab's own key applied: exactly what that tab's
 // table asks the server for.
-export function filtersForTab(filters, tabId) {
+export function filtersForTab(filters, tabId, category = "") {
   const tab = MAIL_TABS.find((t) => t.id === tabId) || MAIL_TABS[0];
   const merged = { ...filters };
   for (const key of TAB_OWNED_KEYS) merged[key] = "";
-  if (GROUP_TABS.has(tab.id)) merged.classificationGroup = "";
   if (tab.filterKey) merged[tab.filterKey] = tab.filterValue;
+  if (category) merged.classificationGroup = category;
   return merged;
 }
 // The list request's filter parameters. The table and the tab counts both
@@ -431,7 +440,8 @@ function NotificationDetail({ item, onClose }) {
   </div>;
 }
 
-export function MailMonitoringNotifications() {
+export function MailMonitoringNotifications({ category = "" } = {}) {
+  const categoryPage = MAIL_CATEGORY_PAGES[category] || null;
   const { confirm } = useConfirm();
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -455,7 +465,7 @@ export function MailMonitoringNotifications() {
   // Tab-owned keys (read, priority) are overridden by the tab; all others
   // pass through unchanged so candidate / alert-type / search / booking-result
   // keep working inside any tab.
-  const effectiveFilters = useMemo(() => filtersForTab(filters, activeTab), [filters, activeTab]);
+  const effectiveFilters = useMemo(() => filtersForTab(filters, activeTab, category), [filters, activeTab, category]);
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: "20", offset: String(page * 20), sort: "newest" });
     for (const [key, value] of filterParams(effectiveFilters, { grouped: true })) params.set(key, value);
@@ -465,14 +475,16 @@ export function MailMonitoringNotifications() {
   // so with any of them set the summary's totals are not what the tabs would
   // show: Unread said 7 above an empty table. Each tab is then counted with
   // the same request its table makes.
-  const filtersActive = personFiltersActive(filters);
-  const countQueries = useMemo(() => (filtersActive
+  // On a category page the alert type is the page's, not a filter the person set.
+  const filtersActive = personFiltersActive(category ? { ...filters, classificationGroup: "" } : filters);
+  // A category page always counts its own tabs: the summary's totals span both.
+  const countQueries = useMemo(() => (filtersActive || category
     ? MAIL_TABS.map((tab) => {
       const params = new URLSearchParams({ limit: "1", offset: "0", sort: "newest" });
-      for (const [key, value] of filterParams(filtersForTab(filters, tab.id))) params.set(key, value);
+      for (const [key, value] of filterParams(filtersForTab(filters, tab.id, category))) params.set(key, value);
       return [tab.id, params.toString()];
     })
-    : []), [filters, filtersActive]);
+    : []), [filters, filtersActive, category]);
   const [filteredCounts, setFilteredCounts] = useState(null);
   const [loadError, setLoadError] = useState("");
   const load = useCallback(async ({ silent = false } = {}) => {
@@ -491,6 +503,7 @@ export function MailMonitoringNotifications() {
         : null);
       setLoadError("");
       publishMailUnread(counts.summary?.unread);
+      publishMailCategoryUnread(counts.summary);
     } catch (error) {
       // A failed read used to leave the table empty under "All caught up"
       // while the badge still said 7. Say it failed instead; a silent
@@ -642,17 +655,21 @@ export function MailMonitoringNotifications() {
     }
   };
   // Every tab's total with no filters, from the summary endpoint.
-  const tabTotals = {
+  // On a category page, that category's totals (retry has no summary figure).
+  const tabTotals = category ? {
+    unread: summary[`${category}_unread`] || 0,
+    retry:  0,
+    all:    summary[`${category}_related`] || 0,
+  } : {
     unread: summary.unread || 0,
     retry:  summary.ai_retry_pending || 0,
-    selection: summary.selection_related || 0,
-    interview: summary.interview_related || 0,
     all:    summary.visible_total || 0,
   };
   // What each badge shows: what that tab's table holds under the filters set
-  // now. With none set that is the summary's total.
-  const tabCounts = filtersActive && filteredCounts ? filteredCounts : tabTotals;
-  const activeLabel = (MAIL_TABS.find((t) => t.id === activeTab) || MAIL_TABS[0]).label;
+  // now. With none set on the main page that is the summary's total.
+  const tabCounts = (filtersActive || category) ? (filteredCounts || (category ? {} : tabTotals)) : tabTotals;
+  const tabLabel = (tab) => (categoryPage && tab.id === "unread" ? categoryPage.unreadLabel : tab.label);
+  const activeLabel = tabLabel(MAIL_TABS.find((t) => t.id === activeTab) || MAIL_TABS[0]);
   const hiddenByFilters = filtersActive ? tabTotals[activeTab] || 0 : 0;
   const sections = useMemo(() => groupByCandidateAndCompany(items), [items]);
   // One mail row; the candidate and company are on the headings above it.
@@ -683,11 +700,12 @@ export function MailMonitoringNotifications() {
         <button type="button" className="mail-action" aria-label={item.is_read ? "Mark as unread" : "Mark as read"} title={item.is_read ? "Mark as unread" : "Mark as read"} onClick={() => act(item, item.is_read ? "unread" : "read")}><Icon name={item.is_read ? "mail" : "check"} size={15} /></button>
         <button type="button" className="mail-action mail-action--dismiss" aria-label="Dismiss alert" title="Dismiss alert" onClick={() => act(item, "dismiss")}><Icon name="x" size={15} /></button>
       </td></tr>;
-  return <section className="mail-monitoring-page">
+  return <section className={`mail-monitoring-page${category ? ` mail-monitoring-page--${category}` : ""}`}>
+    {categoryPage && <p className={`mail-category-intro mail-category-intro--${category}`}>{categoryPage.description}</p>}
     {/* The tabs and the page's two controls share one row: the page is named
         once, in the shell header, so the controls needed no row of their own. */}
     <div className="mail-topbar">
-    <nav className="mail-tabs" role="tablist" aria-label="Mail alerts filter tabs">
+    <nav className="mail-tabs" role="tablist" aria-label={categoryPage ? `${categoryPage.title} tabs` : "Mail alerts filter tabs"}>
       {MAIL_TABS.map((tab) => {
         const count = tabCounts[tab.id] ?? 0;
         const isActive = activeTab === tab.id;
@@ -704,13 +722,13 @@ export function MailMonitoringNotifications() {
             className={`mail-tab${isActive ? " mail-tab--active" : ""}`}
             onClick={() => switchTab(tab.id)}
           >
-            <span className="mail-tab__label">{tab.label}</span>
+            <span className="mail-tab__label">{tabLabel(tab)}</span>
             <span className={`mail-tab__count${count === 0 ? " mail-tab__count--zero" : ""}`}>{count > 99 ? "99+" : count}</span>
           </button>
         );
       })}
     </nav>
-    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><div className="mail-download-group"><button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button><button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button></div><button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? emailCount) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button><span className="mail-live mail-live--live">Live</span><SelectionAlarmControls showTest /></div></header>
+    <header className="mail-monitoring-page__head"><div className="mail-monitoring-page__actions"><div className="mail-download-group"><button type="button" className="mail-download-btn" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("xlsx")}>{downloading === "xlsx" ? "Downloading…" : `Download ${emailCount} Mails`}</button><button type="button" className="mail-download-btn mail-download-btn--json" disabled={!emailCount || downloading !== null} onClick={() => downloadMails("json")} aria-label="Download as JSON" title="Download as JSON">JSON</button></div>{/* Clear all empties every category, so it stays on the main page only. */}{!category && <button type="button" className="mail-clear-all" disabled={!(summary.visible_total ?? emailCount) || clearing} onClick={clearAll}>{clearing ? "Clearing…" : "Clear all notifications"}</button>}<span className="mail-live mail-live--live">Live</span>{category === "interview" ? <InterviewBellControls /> : <SelectionAlarmControls showTest />}</div></header>
     </div>
     <div className="mail-filters mail-filters--compact">
       <input aria-label="Search notifications" placeholder="Search candidate, email, company or subject" value={filters.search} onChange={set("search")} />
@@ -742,7 +760,7 @@ export function MailMonitoringNotifications() {
           {candidates.map((row) => <option value={row.candidate_id} key={row.candidate_id}>{candidateLabel(row)}</option>)}
         </select>
       )}
-      {!GROUP_TABS.has(activeTab) && <select aria-label="Alert type filter" value={filters.classificationGroup} onChange={set("classificationGroup")}>
+      {!category && <select aria-label="Alert type filter" value={filters.classificationGroup} onChange={set("classificationGroup")}>
         <option value="">All alert types</option>
         {CLASSIFICATION_GROUPS.map((group) => <option value={group.value} key={group.value}>{group.label}</option>)}
       </select>}
@@ -788,7 +806,7 @@ export function MailMonitoringNotifications() {
               ? (hiddenByFilters
                 ? `None of the ${hiddenByFilters} in ${activeLabel} match these filters.`
                 : "No notifications match these filters.")
-              : activeTab === "unread" ? "No unread invitations. All caught up!"
+              : activeTab === "unread" ? (categoryPage ? `No unread ${categoryPage.title} alerts. All caught up!` : "No unread invitations. All caught up!")
               : activeTab === "retry"  ? "No alerts are waiting for AI retry."
               : "No notifications match these filters."
           }</strong>

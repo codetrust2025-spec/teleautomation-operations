@@ -58,6 +58,46 @@ export function fetchMailSummary({ since = Date.now() } = {}) {
   return entry.promise
 }
 
+const CATEGORY_EVENT = 'teleautomation:mail-category-unread'
+const categoryCounts = summary => ({
+  selection: Math.max(0, Number(summary?.selection_unread) || 0),
+  interview: Math.max(0, Number(summary?.interview_unread) || 0),
+})
+
+/** Announce freshly known per-category unread counts (Selection / Interview Related). */
+export function publishMailCategoryUnread(summary) {
+  if (!summary || !('selection_unread' in summary)) return
+  window.dispatchEvent(new CustomEvent(CATEGORY_EVENT, { detail: categoryCounts(summary) }))
+}
+
+/**
+ * Unread Selection Related and Interview Related alerts, for the two Mail
+ * Alerts submenu badges. Same sources and failure rule as useMailUnreadCount.
+ */
+export function useMailCategoryUnread() {
+  const [counts, setCounts] = useState({ selection: 0, interview: 0 })
+  useEffect(() => {
+    let live = true
+    const refresh = () => {
+      fetchMailSummary()
+        .then(body => { if (live) setCounts(categoryCounts(body?.summary)) })
+        .catch(() => { /* keep the last known counts */ })
+    }
+    refresh()
+    const onPublished = event => { if (live && event?.detail) setCounts(event.detail) }
+    window.addEventListener(CATEGORY_EVENT, onPublished)
+    const unsubscribe = subscribeMailEvents(payload => {
+      if (changesMailSummary(payload)) refresh()
+    })
+    return () => {
+      live = false
+      window.removeEventListener(CATEGORY_EVENT, onPublished)
+      unsubscribe?.()
+    }
+  }, [])
+  return counts
+}
+
 export async function fetchMailUnread(options) {
   const body = await fetchMailSummary(options)
   return Math.max(0, Number(body?.summary?.unread) || 0)

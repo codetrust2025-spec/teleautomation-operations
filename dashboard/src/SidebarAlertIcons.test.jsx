@@ -95,8 +95,9 @@ describe('the shell applies this rule', () => {
     expect(app).not.toContain('showIcon')
     expect(app).toContain('<span className="desktop-sidebar__link-icon" aria-hidden><Icon name={item.icon}')
     const icons = [...app.matchAll(/\bicon:\s*'([^']+)'/g)].map((m) => m[1])
-    // Eight sections since Bookings Analytics joined below Daily Ops (21 Oct).
-    expect(icons.length).toBe(9)
+    // Nine sections since Bookings Analytics joined below Daily Ops (21 Oct),
+    // plus Mail Alerts' two submenu pages (12 Nov).
+    expect(icons.length).toBe(11)
     for (const icon of icons) expect(ICON_NAMES, `${icon} is not in the icon set`).toContain(icon)
     expect(new Set(icons).size, 'two sections share an icon').toBe(icons.length)
   })

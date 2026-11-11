@@ -115,6 +115,34 @@
   content: '';
 }
 
+/* Mail Alerts and its two pages. The toggle sits on the row's right; the pages
+   are indented under it and keep the row height a finger can hit. */
+.desktop-sidebar__group { display: flex; flex-direction: column; gap: 4px; }
+.desktop-sidebar__group-row { display: flex; align-items: center; gap: 2px; }
+.desktop-sidebar__group-row > .desktop-sidebar__link { flex: 1 1 auto; min-width: 0; }
+.desktop-sidebar__group-toggle {
+  display: grid;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #96a1b3;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform 120ms ease, background 120ms ease;
+}
+.desktop-sidebar__group-toggle--open { transform: none; }
+.desktop-sidebar__group-toggle:hover { background: rgba(255, 255, 255, 0.05); color: #e7edf6; }
+.desktop-sidebar__group-toggle:focus-visible { outline: 2px solid #7771ff; outline-offset: 1px; }
+.desktop-sidebar__subnav { display: flex; flex-direction: column; gap: 2px; padding-left: 18px; }
+.desktop-sidebar__link--sub { min-height: 38px; padding: 7px 10px; font-size: 12.5px; }
+.desktop-sidebar__link--sub.desktop-sidebar__link--active::before { left: -30px; }
+
 .desktop-sidebar__link-icon {
   display: grid;
   width: 20px;

@@ -2,6 +2,7 @@ import { SELECTION_CLASSIFICATIONS, isTrackedMailAlert, showMailAlertNotificatio
 import { describeReconnectTargets, needsReconnect } from '../utils/mailboxStatus.js'
 import { playNotification } from './notificationSounds.js'
 import { isGenuineSelection, raiseSelectionAlarm } from './selectionAlarm.js'
+import { isInterviewBellMuted } from './interviewBell.js'
 
 const recentMailEvents = new Map()
 const MAIL_DEDUPE_LIMIT = 500
@@ -35,7 +36,11 @@ export function notifyTrackedMail(payload) {
     return raised
   }
   const selection = SELECTION_CLASSIFICATIONS.includes(payload.classification)
-  const played = playNotification(selection ? 'mail_selection' : 'mail_interview_booking')
+  // Interview Related has its own mute (the Interview Related page); the
+  // alert and its desktop notification still arrive.
+  const played = !selection && isInterviewBellMuted()
+    ? false
+    : playNotification(selection ? 'mail_selection' : 'mail_interview_booking')
   showMailAlertNotification(payload)
   return played
 }

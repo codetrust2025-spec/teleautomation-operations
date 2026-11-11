@@ -32,6 +32,9 @@ const EXPECTED = [
   'Daily Ops',
   'Bookings Analytics',
   'Mail Alerts',
+  // Mail Alerts' two submenu pages, directly under it (12 Nov 2026).
+  'Selection Related',
+  'Interview Related',
   'AI Mail Review',
   'AI Controls',
   'Candidates',

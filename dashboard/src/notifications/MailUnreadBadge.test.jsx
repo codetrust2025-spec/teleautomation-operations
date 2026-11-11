@@ -201,7 +201,7 @@ describe('the real sidebar is wired to this', () => {
   const app = fs.readFileSync(path.join(__dirname, '..', 'App.jsx'), 'utf8')
 
   it('takes its count from the shared hook', () => {
-    expect(app).toContain("import { useMailUnreadCount } from './notifications/mailUnread.js'")
+    expect(app).toContain("import { useMailCategoryUnread, useMailUnreadCount } from './notifications/mailUnread.js'")
     expect(app).toContain('const mailUnread = useMailUnreadCount()')
   })
 

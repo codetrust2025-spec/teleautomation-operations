@@ -13,7 +13,7 @@ import {
   PendingWorksProvider,
   usePendingWorksContextOptional,
 } from './dailyOps/PendingWorksProvider.jsx'
-import { useMailUnreadCount } from './notifications/mailUnread.js'
+import { useMailCategoryUnread, useMailUnreadCount } from './notifications/mailUnread.js'
 import { useGmailExpiredCount } from './notifications/gmailExpired.js'
 import { useConfirmedSlotCount } from './notifications/slotBooking.js'
 import { useAuth } from './context/AuthContext.jsx'
@@ -33,7 +33,12 @@ const VIEWS = [
   { id: 'daily-ops', label: 'Daily Ops', icon: 'clipboard', badge: 'interviews' },
   // The booking analytics that used to be a popup over Daily Ops, as a page.
   { id: 'bookings-analytics', label: 'Bookings Analytics', icon: 'chart' },
-  { id: 'mail-notifications', label: 'Mail Alerts', icon: 'bell', badge: 'mail' },
+  // Mail Alerts opens every alert; its two submenu pages each hold one
+  // category, with their own counts, filters and alert sound controls.
+  { id: 'mail-notifications', label: 'Mail Alerts', icon: 'bell', badge: 'mail', subviews: [
+    { id: 'mail-selection', label: 'Selection Related', icon: 'sparkles', badge: 'mail-selection' },
+    { id: 'mail-interview', label: 'Interview Related', icon: 'calendar', badge: 'mail-interview' },
+  ] },
   { id: 'ai-recruitment', label: 'AI Mail Review', icon: 'mail', badge: 'gmail-expired' },
   { id: 'ai-controls', label: 'AI Controls', icon: 'code' },
   { id: 'candidates', label: 'Candidates', icon: 'users', badge: 'works' },
@@ -46,6 +51,10 @@ const VIEWS = [
 // sidebar - the id lives only in this state - so this one value is what login,
 // a refresh and the Operations root all land on.
 const DEFAULT_VIEW = 'daily-ops'
+
+// Every page the shell can show, submenu pages included.
+const ALL_VIEWS = VIEWS.flatMap(item => [item, ...(item.subviews || [])])
+const parentOf = id => VIEWS.find(item => item.subviews?.some(sub => sub.id === id))
 
 // Pages that lay the body out themselves rather than in the shell's padding.
 const BODY_CLASS = {
@@ -61,6 +70,8 @@ function OperationsShell({ view, onNavigate }) {
   const auth = useAuth()
   const pending = usePendingWorksContextOptional()
   const mailUnread = useMailUnreadCount()
+  const mailCategoryUnread = useMailCategoryUnread()
+  const [openGroups, setOpenGroups] = useState(() => new Set(['mail-notifications']))
   const gmailExpired = useGmailExpiredCount()
   const confirmedSlots = useConfirmedSlotCount()
   const [sidebarUserMenuOpen, setSidebarUserMenuOpen] = useState(false)
@@ -72,14 +83,14 @@ function OperationsShell({ view, onNavigate }) {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const sidebarUserMenuRef = useRef(null)
   const headerUserMenuRef = useRef(null)
-  const activeView = VIEWS.find(item => item.id === view) || VIEWS[0]
+  const activeView = ALL_VIEWS.find(item => item.id === view) || VIEWS[0]
   const displayName = auth.displayName || auth.username || 'Administrator'
   const userInitials = displayName.slice(0, 2).toUpperCase()
 
   useEffect(() => {
     const navigate = event => {
       const requested = event.detail?.view
-      if (VIEWS.some(item => item.id === requested && !item.external)) onNavigate(requested)
+      if (ALL_VIEWS.some(item => item.id === requested && !item.external)) onNavigate(requested)
     }
     window.addEventListener('teleautomation:navigate', navigate)
     return () => window.removeEventListener('teleautomation:navigate', navigate)
@@ -100,15 +111,23 @@ function OperationsShell({ view, onNavigate }) {
   }, [sidebarUserMenuOpen, headerUserMenuOpen])
 
   const navigate = id => {
-    const target = VIEWS.find(item => item.id === id)
+    const target = ALL_VIEWS.find(item => item.id === id)
     if (target?.external) {
       window.open(target.external, '_blank', 'noopener,noreferrer')
       setMobileNavOpen(false)
       return
     }
     onNavigate(id)
+    const parent = parentOf(id)
+    if (parent) setOpenGroups(groups => new Set(groups).add(parent.id))
     setMobileNavOpen(false)
   }
+  const toggleGroup = id => setOpenGroups(groups => {
+    const next = new Set(groups)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
 
   return (
     <div className="desktop-app business-desktop-app">
@@ -126,6 +145,7 @@ function OperationsShell({ view, onNavigate }) {
         <div className="business-sidebar__label">Operations</div>
         <nav className="desktop-sidebar__nav" aria-label="Operations navigation">
           {VIEWS.map(item => {
+            const link = (item, sub = false) => {
             const badgeValue = item.badge === 'works'
               // candidateCount, not count: the badge sits beside Candidates, so
               // it counts candidates needing attention rather than the tasks
@@ -135,6 +155,10 @@ function OperationsShell({ view, onNavigate }) {
                 ? pending?.pendingInterviewCount || 0
                 : item.badge === 'mail'
                   ? mailUnread
+                  : item.badge === 'mail-selection'
+                    ? mailCategoryUnread.selection
+                    : item.badge === 'mail-interview'
+                      ? mailCategoryUnread.interview
                   : item.badge === 'gmail-expired'
                     ? gmailExpired
                     : item.badge === 'slots'
@@ -144,7 +168,7 @@ function OperationsShell({ view, onNavigate }) {
               <button
                 key={item.id}
                 type="button"
-                className={`desktop-sidebar__link${view === item.id ? ' desktop-sidebar__link--active' : ''}`}
+                className={`desktop-sidebar__link${sub ? ' desktop-sidebar__link--sub' : ''}${view === item.id ? ' desktop-sidebar__link--active' : ''}`}
                 // Which section you are in was carried by the active class
                 // alone, so it existed only for people who can see the
                 // highlight. aria-current says the same thing out loud.
@@ -157,9 +181,9 @@ function OperationsShell({ view, onNavigate }) {
                     with nothing saying what the 3 counts. */}
                 {badgeValue > 0 && (
                   <span
-                    className={`desktop-sidebar__badge${item.badge === 'mail' ? ' desktop-sidebar__badge--unread' : ''}${item.badge === 'gmail-expired' ? ' desktop-sidebar__badge--fault' : ''}`}
+                    className={`desktop-sidebar__badge${String(item.badge).startsWith('mail') ? ' desktop-sidebar__badge--unread' : ''}${item.badge === 'gmail-expired' ? ' desktop-sidebar__badge--fault' : ''}`}
                     aria-label={
-                      item.badge === 'mail'
+                      String(item.badge).startsWith('mail')
                         ? `${badgeValue} unread`
                         : item.badge === 'gmail-expired'
                           // "2 pending" would read as work waiting rather than
@@ -176,6 +200,31 @@ function OperationsShell({ view, onNavigate }) {
                   </span>
                 )}
               </button>
+            )
+            }
+            if (!item.subviews) return link(item)
+            const open = openGroups.has(item.id)
+            return (
+              <div key={item.id} className="desktop-sidebar__group">
+                <div className="desktop-sidebar__group-row">
+                  {link(item)}
+                  <button
+                    type="button"
+                    className={`desktop-sidebar__group-toggle${open ? ' desktop-sidebar__group-toggle--open' : ''}`}
+                    aria-expanded={open}
+                    aria-controls={`${item.id}-subnav`}
+                    aria-label={`${open ? 'Hide' : 'Show'} ${item.label} pages`}
+                    onClick={() => toggleGroup(item.id)}
+                  >
+                    <span aria-hidden>⌄</span>
+                  </button>
+                </div>
+                {open && (
+                  <div className="desktop-sidebar__subnav" id={`${item.id}-subnav`} role="group" aria-label={`${item.label} pages`}>
+                    {item.subviews.map(sub => link(sub, true))}
+                  </div>
+                )}
+              </div>
             )
           })}
         </nav>
@@ -250,7 +299,7 @@ function OperationsShell({ view, onNavigate }) {
             ☰
           </button>
           <div className="business-header__title-wrap">
-            <p className="business-header__eyebrow">Operations workspace</p>
+            <p className="business-header__eyebrow">{parentOf(view)?.label || 'Operations workspace'}</p>
             <h1 className="business-header__title">{activeView.label}</h1>
           </div>
           <div className="desktop-header__status-center business-header__status">
@@ -305,6 +354,8 @@ function OperationsShell({ view, onNavigate }) {
           {view === 'ai-recruitment' && <RecruitmentMailPanel />}
           {view === 'ai-controls' && <AiControlsDashboard />}
           {view === 'mail-notifications' && <MailMonitoringNotifications />}
+          {view === 'mail-selection' && <MailMonitoringNotifications key="selection" category="selection" />}
+          {view === 'mail-interview' && <MailMonitoringNotifications key="interview" category="interview" />}
           {view === 'data-room' && <DataRoomPanel />}
         </main>
       </div>
