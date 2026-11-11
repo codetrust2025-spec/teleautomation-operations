@@ -72,7 +72,18 @@ if (-not (Test-Path $key)) {
     & ssh-keygen.exe -q -t ed25519 -N '""' -C "teleautomation-rtx-backup@$env:COMPUTERNAME" -f $key
     if ($LASTEXITCODE -ne 0) { throw 'ssh-keygen failed' }
 }
-icacls $key /inheritance:r /grant:r 'SYSTEM:F' 'Administrators:F' | Out-Null
+# The tasks run ssh as SYSTEM, and OpenSSH for Windows refuses a private key that any
+# other principal can read ("ssh exit 255" on every run). ssh-keygen leaves the
+# installing user as owner with an explicit ACE that /grant:r does not remove, which is
+# exactly how the first install on CODETRUST failed every two hours from 8 to 11 Nov 2026.
+# So: Administrators own it, and SYSTEM and Administrators are the only entries left.
+icacls $key /setowner 'BUILTIN\Administrators' | Out-Null
+icacls $key /inheritance:r /grant:r 'NT AUTHORITY\SYSTEM:F' 'BUILTIN\Administrators:F' | Out-Null
+(Get-Acl $key).Access |
+    Where-Object { $_.IdentityReference -notin 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators' } |
+    ForEach-Object { icacls $key /remove:g "$($_.IdentityReference)" | Out-Null }
+$extra = (Get-Acl $key).Access | Where-Object { $_.IdentityReference -notin 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators' }
+if ($extra) { throw "Could not restrict $key to SYSTEM and Administrators; ssh as SYSTEM would refuse it." }
 $knownHosts = Join-Path $Keys 'known_hosts'
 "$ServerHost $ServerHostKey" | Set-Content -Path $knownHosts -Encoding ASCII
 @{
