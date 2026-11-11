@@ -22,13 +22,13 @@ class FakeWebSocket {
 
 const GROUPS = [
   {
-    candidate_id: "c-ashok", company_key: "hcltech", candidate_name: "Ashok Uppuluri",
+    candidate_id: "c-ashok", company_key: "hcltech", candidate_name: "Ashok Rao",
     candidate_email: "ashok@example.com", company_name: "HCLTech", total: 3, unread: 2, read: 1,
     latest_at: "2026-11-11T11:22:31Z", latest_classification: "joining_confirmed", latest_status: "Joining Confirmed",
   },
   {
-    candidate_id: "c-puji", company_key: "fractal analytics", candidate_name: "Pujitha",
-    candidate_email: "puji@example.com", company_name: "Fractal Analytics", total: 8, unread: 0, read: 8,
+    candidate_id: "c-meera", company_key: "fractal analytics", candidate_name: "Meera Iyer",
+    candidate_email: "meera@example.com", company_name: "Fractal Analytics", total: 8, unread: 0, read: 8,
     latest_at: "2026-10-29T03:34:30Z", latest_classification: "offer_received", latest_status: "Offer Received",
   },
 ];
@@ -96,7 +96,7 @@ describe("the counters are the tabs", () => {
 describe("a Candidate + Company card", () => {
   it("shows total, unread and read, and the latest verified status", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Uppuluri, HCLTech" });
+    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
     expect(within(card).getByText("3 Emails")).toBeInTheDocument();
     expect(card.textContent).toContain("Unread: 2");
     expect(card.textContent).toContain("Opened: 1");
@@ -106,8 +106,8 @@ describe("a Candidate + Company card", () => {
 
   it("expands to every mail of the group, newest first, Selection and Interview labelled", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Uppuluri, HCLTech" });
-    fireEvent.click(within(card).getByRole("button", { name: /Show emails for Ashok Uppuluri at HCLTech/ }));
+    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    fireEvent.click(within(card).getByRole("button", { name: /Show emails for Ashok Rao at HCLTech/ }));
     const list = await within(card).findByRole("list", { name: "Emails, newest first" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
     const history = calls.find((c) => c.path.includes("/groups/emails")).path;
@@ -126,7 +126,7 @@ describe("a Candidate + Company card", () => {
 
   it("opening a mail marks only that mail read", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Uppuluri, HCLTech" });
+    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
     fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
     const list = await within(card).findByRole("list", { name: "Emails, newest first" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
@@ -143,7 +143,7 @@ describe("a Candidate + Company card", () => {
 describe("filters", () => {
   it("search, company and status narrow the groups and keep the category", async () => {
     renderPage();
-    await screen.findByRole("article", { name: "Ashok Uppuluri, HCLTech" });
+    await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
     fireEvent.change(screen.getByLabelText("Search notifications"), { target: { value: "Ashok" } });
     fireEvent.change(screen.getByLabelText("Company filter"), { target: { value: "hcltech" } });
     fireEvent.change(screen.getByLabelText("Status filter"), { target: { value: "joining_confirmed" } });

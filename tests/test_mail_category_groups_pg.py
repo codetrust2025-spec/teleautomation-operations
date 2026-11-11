@@ -35,9 +35,9 @@ def mails(alerts):  # noqa: F811
         classification="post_interview_shortlisted", read=True)
     add(alerts, "h-int", candidate="ashok", company="HCLTech.", hours_ago=30,
         classification="interview_confirmed", read=True)
-    add(alerts, "v-offer", candidate="gangadhar", company="VHS Professional Services Pvt. Ltd", hours_ago=10,
+    add(alerts, "v-offer", candidate="gopal", company="Northwind Professional Services Pvt. Ltd", hours_ago=10,
         classification="offer_received", read=True, status="Offer Received")
-    add(alerts, "v-join", candidate="gangadhar", company="VHS Professional Services Pvt Ltd", hours_ago=40,
+    add(alerts, "v-join", candidate="gopal", company="Northwind Professional Services Pvt Ltd", hours_ago=40,
         classification="joining_confirmed", read=True)
     add(alerts, "c-int", candidate="ravi", company="Capgemini", hours_ago=2,
         classification="interview_shortlisted")
@@ -51,10 +51,10 @@ def test_a_selection_group_counts_its_whole_history(mails):
     ashok = by[("ashok", "hcltech")]
     assert (ashok["total"], ashok["unread"], ashok["read"]) == (3, 1, 2)
     assert ashok["latest_status"] == "Joining Confirmed"
-    vhs = by[("gangadhar", "vhs professional services")]
+    vhs = by[("gopal", "northwind professional services")]
     assert (vhs["total"], vhs["unread"]) == (2, 0)
     assert vhs["latest_status"] == "Offer Received"
-    assert [g["candidate_id"] for g in result["groups"]] == ["ashok", "gangadhar"]
+    assert [g["candidate_id"] for g in result["groups"]] == ["ashok", "gopal"]
 
 
 def test_the_history_is_both_categories_newest_first(mails):
@@ -65,8 +65,8 @@ def test_the_history_is_both_categories_newest_first(mails):
 def test_tabs_and_filters_choose_groups_not_their_counts(mails):
     unread = store.list_notification_groups(filters={"classification_group": "selection", "is_read": False})
     assert [(g["candidate_id"], g["total"]) for g in unread["groups"]] == [("ashok", 3)]
-    company = store.list_notification_groups(filters={"classification_group": "selection", "company_key": "vhs professional services"})
-    assert [g["candidate_id"] for g in company["groups"]] == ["gangadhar"]
+    company = store.list_notification_groups(filters={"classification_group": "selection", "company_key": "northwind professional services"})
+    assert [g["candidate_id"] for g in company["groups"]] == ["gopal"]
     interview = store.list_notification_groups(filters={"classification_group": "interview"})
     assert {g["candidate_id"] for g in interview["groups"]} == {"ashok", "ravi"}
     assert {c["key"] for c in interview["companies"]} == {"hcltech", "capgemini"}
