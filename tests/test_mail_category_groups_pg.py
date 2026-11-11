@@ -9,10 +9,31 @@ test_booking_result_filter_pg).
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from core import recruitment_mail_store as store
+from tests.test_booking_result_filter_pg import MIGRATIONS, _create_table
 from tests.test_booking_result_filter_pg import alerts  # noqa: F401  (fixture)
+
+
+def mailbox_messages_ddl() -> list[str]:
+    """The mail table the Joining Confirmed check reads text from, as the
+    migrations define it, without its foreign key."""
+    create = _create_table("001_recruitment_mail_tracking.sql", "mailbox_messages").replace(" ON DELETE CASCADE", "")
+    alters = []
+    for migration in ("005_recruitment_mail_historical_rescan.sql", "010_recruitment_mail_lifecycle_truth.sql"):
+        alters += re.findall(r"ALTER TABLE mailbox_messages[^;]*;", (MIGRATIONS / migration).read_text())
+    return [create, *alters]
+
+
+@pytest.fixture
+def schema(alerts):  # noqa: F811
+    with alerts() as conn, conn.cursor() as cur:
+        for statement in mailbox_messages_ddl():
+            cur.execute(statement)
+    return alerts
 
 
 def add(connect, alert_id, *, candidate, company, hours_ago, classification, read=False, status=None):
@@ -28,20 +49,20 @@ def add(connect, alert_id, *, candidate, company, hours_ago, classification, rea
 
 
 @pytest.fixture
-def mails(alerts):  # noqa: F811
-    add(alerts, "h-join", candidate="ashok", company="HCLTech", hours_ago=1,
+def mails(schema):
+    add(schema, "h-join", candidate="ashok", company="HCLTech", hours_ago=1,
         classification="joining_confirmed", status="Joining Confirmed")
-    add(alerts, "h-eval", candidate="ashok", company="hcltech", hours_ago=5,
+    add(schema, "h-eval", candidate="ashok", company="hcltech", hours_ago=5,
         classification="post_interview_shortlisted", read=True)
-    add(alerts, "h-int", candidate="ashok", company="HCLTech.", hours_ago=30,
+    add(schema, "h-int", candidate="ashok", company="HCLTech.", hours_ago=30,
         classification="interview_confirmed", read=True)
-    add(alerts, "v-offer", candidate="gopal", company="Northwind Professional Services Pvt. Ltd", hours_ago=10,
+    add(schema, "v-offer", candidate="gopal", company="Northwind Professional Services Pvt. Ltd", hours_ago=10,
         classification="offer_received", read=True, status="Offer Received")
-    add(alerts, "v-join", candidate="gopal", company="Northwind Professional Services Pvt Ltd", hours_ago=40,
+    add(schema, "v-join", candidate="gopal", company="Northwind Professional Services Pvt Ltd", hours_ago=40,
         classification="joining_confirmed", read=True)
-    add(alerts, "c-int", candidate="ravi", company="Capgemini", hours_ago=2,
+    add(schema, "c-int", candidate="ravi", company="Capgemini", hours_ago=2,
         classification="interview_shortlisted")
-    return alerts
+    return schema
 
 
 def test_a_selection_group_counts_its_whole_history(mails):
@@ -50,7 +71,8 @@ def test_a_selection_group_counts_its_whole_history(mails):
     assert result["total"] == 2 and len(by) == 2  # Capgemini has no selection mail
     ashok = by[("ashok", "hcltech")]
     assert (ashok["total"], ashok["unread"], ashok["read"]) == (3, 1, 2)
-    assert ashok["latest_status"] == "Joining Confirmed"
+    # Its newest selection mail is Joining Confirmed, but no mail text says so.
+    assert (ashok["latest_status"], ashok["latest_status_evidence"]) == ("Onboarding", "joining not stated")
     vhs = by[("gopal", "northwind professional services")]
     assert (vhs["total"], vhs["unread"]) == (2, 0)
     assert vhs["latest_status"] == "Offer Received"
@@ -78,14 +100,14 @@ def test_reading_writes_nothing(mails):
     assert store.list_group_emails("ashok", "hcltech") == before
 
 
-def test_name_variants_of_one_employer_are_one_card(alerts):  # noqa: F811
+def test_name_variants_of_one_employer_are_one_card(schema):
     # "Acme" via an applicant-tracking system, "Acme Analytics" from the
     # employer: one person's one hiring process, so one card of three mails.
-    add(alerts, "a-1", candidate="meera", company="Acme", hours_ago=1, classification="joining_confirmed")
-    add(alerts, "a-2", candidate="meera", company="Acme Analytics", hours_ago=2, classification="offer_received", read=True)
-    add(alerts, "a-3", candidate="meera", company="Acme Analytics Private Limited", hours_ago=3,
+    add(schema, "a-1", candidate="meera", company="Acme", hours_ago=1, classification="joining_confirmed")
+    add(schema, "a-2", candidate="meera", company="Acme Analytics", hours_ago=2, classification="offer_received", read=True)
+    add(schema, "a-3", candidate="meera", company="Acme Analytics Private Limited", hours_ago=3,
         classification="interview_confirmed", read=True)
-    add(alerts, "z-1", candidate="meera", company="Zenith", hours_ago=4, classification="offer_received")
+    add(schema, "z-1", candidate="meera", company="Zenith", hours_ago=4, classification="offer_received")
     result = store.list_notification_groups(filters={"classification_group": "selection"})
     cards = {g["company_key"]: g for g in result["groups"] if g["candidate_id"] == "meera"}
     assert set(cards) == {"acme analytics", "zenith"}
