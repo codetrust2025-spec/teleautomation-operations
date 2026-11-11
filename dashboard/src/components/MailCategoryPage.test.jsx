@@ -104,6 +104,20 @@ describe("a Candidate + Company card", () => {
     expect(screen.getByText("2 Results")).toBeInTheDocument();
   });
 
+  it("shows the status the mail states, not an unproven Joining Confirmed", async () => {
+    install({
+      groups: [{ ...GROUPS[0], latest_status: "Background Verification", latest_status_evidence: "joining not stated" }],
+      history: [{ ...HISTORY[0], verified_status: "Background Verification", status_evidence: "joining not stated" }],
+    });
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    expect(within(card).getByTitle(/does not state joining/).textContent).toBe("Background Verification");
+    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    const list = await within(card).findByRole("list", { name: "Emails, newest first" });
+    await waitFor(() => expect(list.textContent).toContain("Selection · Background Verification"));
+    expect(list.textContent).not.toContain("Joining Confirmed");
+  });
+
   it("expands to every mail of the group, newest first, Selection and Interview labelled", async () => {
     renderPage();
     const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });

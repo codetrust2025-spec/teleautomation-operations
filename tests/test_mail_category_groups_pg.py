@@ -76,3 +76,19 @@ def test_reading_writes_nothing(mails):
     before = store.list_group_emails("ashok", "hcltech")
     store.list_notification_groups(filters={"classification_group": "selection"})
     assert store.list_group_emails("ashok", "hcltech") == before
+
+
+def test_name_variants_of_one_employer_are_one_card(alerts):  # noqa: F811
+    # "Acme" via an applicant-tracking system, "Acme Analytics" from the
+    # employer: one person's one hiring process, so one card of three mails.
+    add(alerts, "a-1", candidate="meera", company="Acme", hours_ago=1, classification="joining_confirmed")
+    add(alerts, "a-2", candidate="meera", company="Acme Analytics", hours_ago=2, classification="offer_received", read=True)
+    add(alerts, "a-3", candidate="meera", company="Acme Analytics Private Limited", hours_ago=3,
+        classification="interview_confirmed", read=True)
+    add(alerts, "z-1", candidate="meera", company="Zenith", hours_ago=4, classification="offer_received")
+    result = store.list_notification_groups(filters={"classification_group": "selection"})
+    cards = {g["company_key"]: g for g in result["groups"] if g["candidate_id"] == "meera"}
+    assert set(cards) == {"acme analytics", "zenith"}
+    acme = cards["acme analytics"]
+    assert (acme["total"], acme["unread"], acme["read"]) == (3, 1, 2)
+    assert [r["id"] for r in store.list_group_emails("meera", "acme analytics")] == ["a-1", "a-2", "a-3"]

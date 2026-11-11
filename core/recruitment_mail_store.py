@@ -3291,6 +3291,167 @@ def _company_key_sql(prefix: str = "") -> str:
     return f"regexp_replace({words}, '{_LEGAL_SUFFIX}', '')"
 
 
+# Sender domains that carry mail for many employers: a shared one says nothing
+# about two company names being one employer.
+_SHARED_SENDER_DOMAINS = frozenset({
+    "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "yahoo.com", "yahoo.co.in",
+    "myworkday.com", "successfactors.com", "adobesign.com", "docusign.net", "hirepro.in",
+    "candidates.workablemail.com", "ashbyhq.com", "kekamail.com", "naukri.com", "messages.naukri.com",
+    "linkedin.com", "indeed.com", "greenhouse.io", "lever.co", "icims.com", "smartrecruiters.com",
+})
+
+
+def _same_employer(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Two company names one candidate's mail carries, judged one employer.
+
+    Either the shorter name's words begin the longer one's ("Fractal" /
+    "Fractal Analytics", "VHS Professional Services" / "... Private Limited
+    TCS"), or one first word begins the other ("HCL" / "HCLTech") and both
+    names arrived from the employer's own domain (hcltech.com). A shared
+    applicant-tracking or mail domain is never evidence on its own.
+    """
+    wa, wb = a["key"].split(), b["key"].split()
+    if not wa or not wb:
+        return False
+    short, long_ = (wa, wb) if len(wa) <= len(wb) else (wb, wa)
+    if long_[:len(short)] == short and len(short[0]) >= 3:
+        return True
+    fa, fb = wa[0], wb[0]
+    stem = fa if len(fa) <= len(fb) else fb
+    if len(stem) < 3 or not (fa.startswith(fb) or fb.startswith(fa)):
+        return False
+    own = {d for d in (a["domains"] & b["domains"]) if d not in _SHARED_SENDER_DOMAINS and stem in d.replace(".", "")}
+    return bool(own)
+
+
+def employer_aliases(cur) -> tuple[dict[tuple[str, str], tuple[str, str]], dict[str, str]]:
+    """Who and which employer each alert belongs to, for grouping.
+
+    Returns (aliases, persons). `persons` maps a candidate id to the person
+    it is linked to (`canonical_candidate_id`: one person's selection and
+    interview alerts can carry two ids). `aliases` maps (person, company key)
+    to (employer key, employer name) for merged variants only: per person,
+    company keys judged one employer by `_same_employer` are joined, and the
+    employer is the variant that arrived from the employer's own domain, then
+    the one with most mail. Stored ids and names are never rewritten.
+    """
+    vis, vis_params = notification_visibility_sql()
+    key = _company_key_sql()
+    cur.execute(f"SELECT DISTINCT candidate_id FROM mail_monitoring_notifications WHERE {vis}", vis_params)
+    persons = {}
+    for (candidate_id,) in cur.fetchall():
+        try:
+            person = canonical_candidate_id(str(candidate_id))
+        except Exception:  # identity links unavailable: group by the id itself
+            person = candidate_id
+        if person and person != candidate_id:
+            persons[candidate_id] = person
+    cur.execute(
+        f"""SELECT candidate_id, {key} AS key, count(*) AS n,
+                   array_agg(DISTINCT lower(split_part(COALESCE(sender_email, ''), '@', 2))) AS domains,
+                   (array_agg(btrim(company_name) ORDER BY COALESCE(email_received_at, created_at) DESC))[1] AS name
+              FROM mail_monitoring_notifications
+             WHERE {vis} AND btrim(COALESCE(company_name, '')) <> ''
+             GROUP BY 1, 2""",
+        vis_params,
+    )
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for candidate_id, k, n, domains, name in cur.fetchall():
+        slot = merged.setdefault((persons.get(candidate_id, candidate_id), k), {"key": k, "n": 0, "domains": set(), "name": name})
+        slot["n"] += int(n)
+        slot["domains"] |= set(domains or []) - {""}
+    per: dict[str, list[dict[str, Any]]] = {}
+    for (person, _k), variant in merged.items():
+        per.setdefault(person, []).append(variant)
+    aliases: dict[tuple[str, str], tuple[str, str]] = {}
+    for candidate_id, variants in per.items():
+        if len(variants) < 2:
+            continue
+        parent = list(range(len(variants)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        for i in range(len(variants)):
+            for j in range(i + 1, len(variants)):
+                if _same_employer(variants[i], variants[j]):
+                    parent[find(i)] = find(j)
+        groups: dict[int, list[dict[str, Any]]] = {}
+        for i, variant in enumerate(variants):
+            groups.setdefault(find(i), []).append(variant)
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            def own_domain(v):
+                stem = v["key"].split()[0]
+                return any(stem[:4] in d.replace(".", "") for d in v["domains"] - _SHARED_SENDER_DOMAINS)
+            chosen = sorted(members, key=lambda v: (not own_domain(v), -v["n"], len(v["key"])))[0]
+            for member in members:
+                aliases[(candidate_id, member["key"])] = (chosen["key"], chosen["name"])
+    return aliases, persons
+
+
+def _alias_cte(resolved: tuple[dict[tuple[str, str], tuple[str, str]], dict[str, str]]) -> tuple[str, list[Any]]:
+    aliases, persons = resolved
+    items = sorted(aliases.items())
+    people = sorted(persons.items())
+    return (
+        "person AS (SELECT * FROM unnest(%s::text[], %s::text[]) AS pm(candidate_id, person_id)),"
+        " alias AS (SELECT * FROM unnest(%s::text[], %s::text[], %s::text[]) AS a(person_id, raw_key, employer_key))",
+        [[c for c, _ in people], [pid for _, pid in people],
+         [k[0] for k, _ in items], [k[1] for k, _ in items], [v[0] for _, v in items]],
+    )
+
+
+def _person_sql(prefix: str = "") -> str:
+    p = f"{prefix}." if prefix else "mail_monitoring_notifications."
+    return f"COALESCE((SELECT pm.person_id FROM person pm WHERE pm.candidate_id = {p}candidate_id), {p}candidate_id)"
+
+
+def _employer_key_sql(prefix: str = "") -> str:
+    raw = _company_key_sql(prefix or "mail_monitoring_notifications")
+    return (f"COALESCE((SELECT a.employer_key FROM alias a WHERE a.person_id = {_person_sql(prefix)}"
+            f" AND a.raw_key = {raw}), {raw})")
+
+
+# What a Joining Confirmed alert's own mail must state; without it the alert
+# shows the step its mail does state (live, 12 Nov 2026: 12 of 13 were
+# background checks, onboarding tasks and welcome mails). Display only: the
+# stored classification is untouched.
+_JOINING_PROOF = ("JOINING_CONFIRMED", "JOINED", "JOINING_DATE_UPDATED")
+
+
+def verified_status(classification: str, stored_status: str, texts: list[str]) -> tuple[str, str]:
+    """(status to show, evidence) for an alert, from its own mail text."""
+    if classification not in {"joining_confirmed", "joining_date_updated"}:
+        return stored_status, "classified"
+    from services.recruitment_semantics import evidence_entails_transition as entails
+    texts = [str(t or "") for t in texts if t]
+    if any(entails(status, text) for status in _JOINING_PROOF for text in texts):
+        return stored_status or "Joining Confirmed", "stated"
+    if any(entails("BACKGROUND_VERIFICATION", text) for text in texts):
+        return "Background Verification", "joining not stated"
+    if any(entails("DOCUMENT_VERIFICATION", text) for text in texts):
+        return "Document Verification", "joining not stated"
+    return "Onboarding", "joining not stated"
+
+
+def _mail_texts(cur, ids: list[str]) -> dict[str, list[str]]:
+    if not ids:
+        return {}
+    from services.recruitment_mail_agent import clean_email
+    cur.execute(
+        """SELECT n.id, n.email_subject, coalesce(nullif(m.body_text, ''), m.html_body_text, '')
+             FROM mail_monitoring_notifications n
+             LEFT JOIN mailbox_messages m ON m.provider_message_id = n.gmail_message_id AND m.candidate_id = n.candidate_id
+            WHERE n.id = ANY(%s)""",
+        (ids,),
+    )
+    return {row[0]: [row[1] or "", clean_email(row[2] or "")] for row in cur.fetchall()}
+
+
 def list_notification_groups(
     *, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0,
 ) -> dict[str, Any]:
@@ -3308,28 +3469,32 @@ def list_notification_groups(
     group = str(filters.get("classification_group") or "").strip().lower()
     status_set = sorted(CLASSIFICATION_GROUPS.get(group) or (TRACKED_NOTIFICATION_CLASSIFICATIONS | {"recruitment_walkin"}))
     clause, params, _order = notification_filter_sql(filters)
-    key = _company_key_sql()
+    key = _employer_key_sql()
     if company_key:
         clause += f" AND {key} = %s"
         params = params + [company_key]
     page = max(1, min(int(limit), 100))
     skip = max(0, int(offset))
     with get_connection() as conn, conn.cursor() as cur:
+        resolved = employer_aliases(cur)
+        alias_sql, alias_params = _alias_cte(resolved)
+        names = {v[0]: v[1] for v in resolved[0].values()}
         cur.execute(
-            f"""WITH matched AS (
-                  SELECT candidate_id, {key} AS company_key FROM mail_monitoring_notifications
+            f"""WITH {alias_sql}, matched AS (
+                  SELECT {_person_sql()} AS candidate_id, {key} AS company_key FROM mail_monitoring_notifications
                    WHERE {clause} GROUP BY 1, 2
                 ), hist AS (
-                  SELECT n.*, {_company_key_sql("n")} AS company_key FROM mail_monitoring_notifications n
-                    JOIN matched m ON m.candidate_id = n.candidate_id AND m.company_key = {_company_key_sql("n")}
+                  SELECT n.*, {_person_sql("n")} AS person_id, {_employer_key_sql("n")} AS company_key
+                    FROM mail_monitoring_notifications n
+                    JOIN matched m ON m.candidate_id = {_person_sql("n")} AND m.company_key = {_employer_key_sql("n")}
                    WHERE {_visibility_for("n")}
                 ), latest AS (
-                  SELECT DISTINCT ON (candidate_id, company_key) candidate_id, company_key,
-                         classification, candidate_status
+                  SELECT DISTINCT ON (person_id, company_key) person_id, company_key,
+                         classification, candidate_status, id AS latest_id
                     FROM hist WHERE classification = ANY(%s)
-                   ORDER BY candidate_id, company_key, COALESCE(email_received_at, created_at) DESC, id
+                   ORDER BY person_id, company_key, COALESCE(email_received_at, created_at) DESC, id
                 )
-                SELECT h.candidate_id, h.company_key,
+                SELECT h.person_id AS candidate_id, h.company_key,
                        (array_agg(h.candidate_name ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
                           FILTER (WHERE COALESCE(h.candidate_name, '') <> ''))[1] AS candidate_name,
                        (array_agg(h.candidate_email ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
@@ -3339,34 +3504,42 @@ def list_notification_groups(
                        count(*) AS total, count(*) FILTER (WHERE NOT h.is_read) AS unread,
                        max(COALESCE(h.email_received_at, h.created_at)) AS latest_at,
                        l.classification AS latest_classification, l.candidate_status AS latest_status,
-                       count(*) OVER () AS group_total
-                  FROM hist h LEFT JOIN latest l USING (candidate_id, company_key)
-                 GROUP BY h.candidate_id, h.company_key, l.classification, l.candidate_status
-                 ORDER BY latest_at DESC NULLS LAST, h.candidate_id, h.company_key
+                       l.latest_id, count(*) OVER () AS group_total
+                  FROM hist h LEFT JOIN latest l USING (person_id, company_key)
+                 GROUP BY h.person_id, h.company_key, l.classification, l.candidate_status, l.latest_id
+                 ORDER BY latest_at DESC NULLS LAST, h.person_id, h.company_key
                  LIMIT %s OFFSET %s""",
-            params + _visibility_params() + [status_set, page, skip],
+            alias_params + params + _visibility_params() + [status_set, page, skip],
         )
         rows = _rows(cur)
+        texts = _mail_texts(cur, [r["latest_id"] for r in rows if r.get("latest_id")])
         total = int(rows[0]["group_total"]) if rows else 0
         if not rows and skip:
             cur.execute(
-                f"SELECT count(*) FROM (SELECT 1 FROM mail_monitoring_notifications WHERE {clause} GROUP BY candidate_id, {key}) g",
-                params,
+                f"WITH {alias_sql} SELECT count(*) FROM (SELECT 1 FROM mail_monitoring_notifications WHERE {clause} GROUP BY {_person_sql()}, {key}) g",
+                alias_params + params,
             )
             total = int(cur.fetchone()[0])
         # The company options: every company in this category, before the
         # company, status, tab and search filters narrow it.
         base, base_params, _ = notification_filter_sql({"classification_group": group} if group else {})
         cur.execute(
-            f"""SELECT {key} AS key, (array_agg(btrim(company_name) ORDER BY created_at DESC))[1] AS name, count(*) AS count
+            f"""WITH {alias_sql} SELECT {key} AS key, (array_agg(btrim(company_name) ORDER BY created_at DESC))[1] AS name, count(*) AS count
                   FROM mail_monitoring_notifications WHERE {base} AND btrim(COALESCE(company_name, '')) <> ''
                  GROUP BY 1 ORDER BY 2""",
-            base_params,
+            alias_params + base_params,
         )
         companies = _rows(cur)
+    for company in companies:
+        company["name"] = names.get(company["key"], company["name"])
     for row in rows:
         row.pop("group_total", None)
         row["read"] = int(row["total"]) - int(row["unread"])
+        row["company_name"] = names.get(row["company_key"], row["company_name"])
+        latest_id = row.pop("latest_id", None)
+        if latest_id:
+            row["latest_status"], row["latest_status_evidence"] = verified_status(
+                row.get("latest_classification") or "", row.get("latest_status") or "", texts.get(latest_id, []))
     return {"groups": rows, "total": total, "companies": companies}
 
 
@@ -3383,17 +3556,27 @@ def _visibility_params() -> list[Any]:
 
 
 def list_group_emails(candidate_id: str, company_key: str, *, limit: int = 200) -> list[dict[str, Any]]:
-    """Every visible alert of one candidate with one company, newest first, both categories."""
+    """Every visible alert of one person with one employer, newest first, both categories.
+
+    `candidate_id` is the group's person (see `employer_aliases`) and
+    `company_key` its employer key, as `list_notification_groups` returns them.
+    """
     vis, vis_params = notification_visibility_sql()
     with get_connection() as conn, conn.cursor() as cur:
+        alias_sql, alias_params = _alias_cte(employer_aliases(cur))
         cur.execute(
-            f"""SELECT * FROM mail_monitoring_notifications
-                 WHERE {vis} AND candidate_id = %s AND {_company_key_sql()} = %s
+            f"""WITH {alias_sql} SELECT * FROM mail_monitoring_notifications
+                 WHERE {vis} AND {_person_sql()} = %s AND {_employer_key_sql()} = %s
                  ORDER BY COALESCE(email_received_at, created_at) DESC, id
                  LIMIT %s""",
-            list(vis_params) + [candidate_id, str(company_key or "").strip().lower(), max(1, min(int(limit), 500))],
+            alias_params + list(vis_params) + [candidate_id, str(company_key or "").strip().lower(), max(1, min(int(limit), 500))],
         )
-        return reconcile_booking_claims(_rows(cur))
+        rows = reconcile_booking_claims(_rows(cur))
+        texts = _mail_texts(cur, [r["id"] for r in rows if r.get("classification") in {"joining_confirmed", "joining_date_updated"}])
+    for row in rows:
+        row["verified_status"], row["status_evidence"] = verified_status(
+            row.get("classification") or "", row.get("candidate_status") or "", texts.get(row["id"], []))
+    return rows
 
 
 def booking_result_sql(booking_result: str, prefix: str = "") -> tuple[str, list[Any]]:

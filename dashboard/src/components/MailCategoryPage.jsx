@@ -69,7 +69,10 @@ export function mailWhen(value, now = new Date()) {
 }
 
 const CATEGORY_NAME = { selection: "Selection", interview: "Interview" };
-const statusText = (item) => displayLabel(item.candidate_status || item.classification);
+// The status the alert's own mail states (server: verified_status). A "Joining
+// Confirmed" whose mail never says so shows the step it does say.
+const statusText = (item) => displayLabel(item.verified_status || item.candidate_status || item.classification);
+const unproven = (item) => item.status_evidence === "joining not stated" || item.latest_status_evidence === "joining not stated";
 const groupKey = (group) => `${group.candidate_id}::${group.company_key || ""}`;
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -105,7 +108,9 @@ function GroupCard({ group, expanded, onToggle, history, onOpen, onMarkAllRead }
       </div>
       <div className="mcp-group__badges">
         <span className="mcp-pill mcp-pill--count">{plural(Number(group.total) || 0, "Email")}</span>
-        {status && <span className={`mcp-pill mcp-pill--status mcp-pill--${tone}`} title="Latest verified status"><Glyph name="check" size={16} />{status}</span>}
+        {status && <span className={`mcp-pill mcp-pill--status mcp-pill--${tone}`} title={unproven(group)
+          ? "Latest verified status (detected as Joining Confirmed; the email does not state joining)"
+          : "Latest verified status"}><Glyph name="check" size={16} />{status}</span>}
       </div>
       <button type="button" className={`mcp-chevron${expanded ? " mcp-chevron--open" : ""}`} aria-expanded={expanded} aria-controls={listId}
         aria-label={`${expanded ? "Hide" : "Show"} emails for ${group.candidate_name || "candidate"} at ${company}`} onClick={onToggle}>
@@ -135,7 +140,8 @@ function GroupCard({ group, expanded, onToggle, history, onOpen, onMarkAllRead }
             <span className="mcp-mail__icon"><Glyph name="mail" size={20} /></span>
             <span className="mcp-mail__text">
               <span className="mcp-mail__subject">{item.email_subject || "(no subject)"}</span>
-              <span className={`mcp-mail__label${kind ? ` mcp-mail__label--${kind}` : ""}`}>{kind ? `${CATEGORY_NAME[kind]} · ` : ""}{statusText(item)}</span>
+              <span className={`mcp-mail__label${kind ? ` mcp-mail__label--${kind}` : ""}`}
+                title={unproven(item) ? "Detected as Joining Confirmed, but this email does not state joining" : undefined}>{kind ? `${CATEGORY_NAME[kind]} · ` : ""}{statusText(item)}</span>
             </span>
             <span className={`mcp-state mcp-state--${item.is_read ? "read" : "unread"}`}>{item.is_read ? "Opened" : "Unread"}</span>
             <span className="mcp-mail__when">{mailWhen(item.email_received_at || item.created_at)}</span>
