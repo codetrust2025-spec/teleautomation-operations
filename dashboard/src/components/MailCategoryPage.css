@@ -14,7 +14,7 @@
   flex-direction: column;
   gap: 12px;
   /* The page fills the shell's content area (the shell keeps its own ~20px
-     gutter), so a wide monitor shows two columns of cards, not empty margins. */
+     gutter), so cards run the full width of a wide monitor. */
   width: 100%;
   max-width: none;
   margin: 0;
@@ -186,13 +186,10 @@
 .mcp-results h2 .mcp-glyph { color: #a5b4fc; }
 .mcp-results span { color: var(--mcp-text-2); font-size: 15px; white-space: nowrap; }
 
-.mcp-list { position: relative; display: flex; min-height: 100px; flex-direction: column; gap: 10px; }
-/* Wide screens: cards two by two. Each card keeps its own height (an opened
-   card does not stretch its neighbour); loaders and empty states span both. */
-@media (min-width: 1100px) {
-  .mcp-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
-  .mcp-list > :not(.mcp-group):not(.mcp-email) { grid-column: 1 / -1; }
-}
+/* One full-width card per row on every screen, Selection and Interview alike
+   (owner, 12 Nov 2026: no two-column grid on desktop). */
+.mcp-list { position: relative; display: flex; min-width: 0; min-height: 100px; flex-direction: column; gap: 10px; }
+.mcp-list > * { width: 100%; max-width: 100%; }
 
 /* One Candidate + Company: compact. */
 .mcp-group {
