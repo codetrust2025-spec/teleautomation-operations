@@ -33,6 +33,20 @@ import {
  */
 
 const PAGE_SIZE = 20;
+// Interview Related lists one compact row per email, so it can show more per
+// page; the reader picks 10 or 20 and the choice is kept on this device only.
+// Selection keeps its fixed page of groups.
+export const INTERVIEW_PAGE_SIZES = [10, 20];
+const INTERVIEW_PAGE_SIZE_KEY = "mailAlerts.interview.pageSize";
+function storedInterviewPageSize() {
+  try {
+    const value = Number(window.localStorage.getItem(INTERVIEW_PAGE_SIZE_KEY));
+    return INTERVIEW_PAGE_SIZES.includes(value) ? value : PAGE_SIZE;
+  } catch { return PAGE_SIZE; }
+}
+function storeInterviewPageSize(value) {
+  try { window.localStorage.setItem(INTERVIEW_PAGE_SIZE_KEY, String(value)); } catch { /* private mode: the choice lasts this visit */ }
+}
 // The mockup's counters, in its order. Each is a tab with its own filter.
 export const CATEGORY_TILES = [
   { id: "unread", label: "Unread", icon: "mail", params: { is_read: "false" } },
@@ -354,6 +368,8 @@ export function MailCategoryPage({ category }) {
   const [offset, setOffset] = useState(0);
   // Interview Related lists every email on its own; Selection keeps its groups.
   const perEmail = category === "interview";
+  const [interviewPageSize, setInterviewPageSize] = useState(storedInterviewPageSize);
+  const limit = perEmail ? interviewPageSize : PAGE_SIZE;
   const [data, setData] = useState({ groups: [], emails: [], total: 0, companies: [] });
   const [counts, setCounts] = useState({});
   const [emailCount, setEmailCount] = useState(0);
@@ -394,9 +410,9 @@ export function MailCategoryPage({ category }) {
         perEmail
           // The company options come with the emails: they include companies
           // resolved from an alert's evidence, so those can be filtered too.
-          ? request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`)
+          ? request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit, offset })}`)
             .then((emails) => ({ emails: emails.emails || [], total: emails.total, companies: emails.companies || [] }))
-          : request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`),
+          : request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit, offset })}`),
         fetchMailSummary(),
         ...CATEGORY_TILES.map((t) => request(`/api/mail-monitoring/notifications?${query({ ...base, ...t.params, limit: 1, offset: 0, sort: "newest" })}`)),
       ]);
@@ -415,7 +431,7 @@ export function MailCategoryPage({ category }) {
     } finally {
       if (!silent && current === version.current) setLoading(false);
     }
-  }, [filterParams, companyKey, tile, offset, perEmail, category]);
+  }, [filterParams, companyKey, tile, offset, limit, perEmail, category]);
 
   useEffect(() => { load(); }, [load]);
   useMailLive((event) => {
@@ -566,10 +582,16 @@ export function MailCategoryPage({ category }) {
         history={histories[groupKey(group)]} openMails={openMails} contents={contents} onOpenMail={openMail}
         onAction={act} onMarkAllRead={() => markAllRead(group)} />)}
     </div>
-    {data.total > PAGE_SIZE && <footer className="mcp-pages">
-      <button type="button" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Previous</button>
-      <span>{offset + 1}–{Math.min(offset + PAGE_SIZE, data.total)} of {data.total} · {tileLabel}</span>
-      <button type="button" disabled={offset + PAGE_SIZE >= data.total} onClick={() => setOffset((value) => value + PAGE_SIZE)}>Next</button>
+    {(data.total > limit || (perEmail && data.total > INTERVIEW_PAGE_SIZES[0])) && <footer className="mcp-pages">
+      <button type="button" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - limit))}>Previous</button>
+      <span>{offset + 1}–{Math.min(offset + limit, data.total)} of {data.total} · {tileLabel}</span>
+      <button type="button" disabled={offset + limit >= data.total} onClick={() => setOffset((value) => value + limit)}>Next</button>
+      {perEmail && <label className="mcp-pages__size">Per page
+        <select value={interviewPageSize} aria-label="Emails per page"
+          onChange={(event) => { const value = Number(event.target.value); setInterviewPageSize(value); storeInterviewPageSize(value); setOffset(0); }}>
+          {INTERVIEW_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+        </select>
+      </label>}
     </footer>}
   </section>;
 }

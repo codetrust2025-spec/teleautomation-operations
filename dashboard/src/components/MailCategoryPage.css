@@ -284,14 +284,22 @@
 .mcp-chevron:focus-visible,
 .mcp-markall:focus-visible { outline: 2px solid var(--mcp-blue); outline-offset: 2px; }
 
-/* Interview Related: one compact card per email. Unread has a blue edge and
-   bold text; read is muted. The whole card is one button that opens the mail. */
+/* Interview Related: one compact row per email (owner, 12 Nov 2026: as many
+   cards on screen as possible). Candidate, company, subject, status, date and
+   Unread / Opened stay on every card; spacing is what gave way. The whole card
+   is one button that opens the mail. Phone first: a short stack. As the list
+   gets wider the same spans sit on a grid -- two lines, then one line -- so one
+   markup serves every width. The breakpoints follow the list's own width, not
+   the window's, so the app's sidebar cannot squeeze the one-line row.
+   Selection's cards are not touched: everything here is under .mcp-email or
+   .mcp--interview. */
+.mcp--interview .mcp-list { gap: 4px; container: mcp-emails / inline-size; }
 .mcp-email {
   position: relative;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--mcp-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--mcp-bg-card);
 }
 .mcp-email--unread { border-color: rgba(59, 130, 246, 0.55); box-shadow: inset 3px 0 0 var(--mcp-blue); }
@@ -300,30 +308,67 @@
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 14px 10px 16px;
+  gap: 1px;
+  padding: 6px 10px 6px 12px;
   border: 0;
   background: transparent;
   color: var(--mcp-text-2);
   font: inherit;
+  line-height: 1.3;
   text-align: left;
   cursor: pointer;
 }
 .mcp-email__row:hover { background: rgba(148, 163, 184, 0.06); }
-.mcp-email__row:focus-visible { outline: 2px solid var(--mcp-blue); outline-offset: -2px; border-radius: 12px; }
-.mcp-email__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
-.mcp-email__name { overflow: hidden; color: var(--mcp-text); font-size: 15.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-email__row:focus-visible { outline: 2px solid var(--mcp-blue); outline-offset: -2px; border-radius: 8px; }
+.mcp-email__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.mcp-email__name { overflow: hidden; color: var(--mcp-text); font-size: 14.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .mcp-email--unread .mcp-email__name { font-weight: 700; }
-.mcp-email__company { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: #b9c6ff; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
-.mcp-email__company .mcp-glyph { color: var(--mcp-muted); }
+.mcp-email__company { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; color: #b9c6ff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-email__company .mcp-glyph { flex: none; width: 13px; height: 13px; color: var(--mcp-muted); }
 .mcp-email__role { color: var(--mcp-muted); }
-.mcp-email__subject { overflow: hidden; color: var(--mcp-text-2); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+/* The subject reads whole on a phone, up to two lines. */
+.mcp-email__subject { display: -webkit-box; overflow: hidden; color: var(--mcp-text-2); font-size: 13.5px; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .mcp-email--unread .mcp-email__subject { color: #fff; font-weight: 600; }
-.mcp-email__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 2px; }
-.mcp-email__foot .mcp-pill { min-height: 24px; padding: 1px 9px; font-size: 12.5px; }
-.mcp-email__foot .mcp-pill .mcp-glyph { width: 14px; height: 14px; }
-.mcp-email__when { color: var(--mcp-text-2); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.mcp-email .mcp-read { margin: 0 10px 10px; border-top: 1px solid var(--mcp-border-soft); border-radius: 10px; }
+.mcp-email__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 8px; }
+.mcp-email .mcp-pill { min-height: 20px; padding: 0 7px; gap: 4px; font-size: 12px; line-height: 1.2; }
+.mcp-email .mcp-pill .mcp-glyph { width: 12px; height: 12px; }
+.mcp-email .mcp-state { padding: 0 7px; font-size: 11.5px; line-height: 18px; }
+.mcp-email__when { color: var(--mcp-text-2); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mcp-email .mcp-read { margin: 0 6px 6px; border-top: 1px solid var(--mcp-border-soft); border-radius: 8px; }
+
+/* A tablet-wide list: two lines. Name, company, status and the read
+   state; then the subject and the date. The wrappers step aside so their
+   children sit on the grid. */
+@container mcp-emails (min-width: 560px) {
+  .mcp-email__row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 15rem) minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "name    company company state"
+      "subject subject status  when";
+    align-items: center;
+    gap: 1px 12px;
+    padding: 5px 12px 5px 14px;
+  }
+  .mcp-email__top, .mcp-email__foot { display: contents; }
+  .mcp-email__name { grid-area: name; }
+  .mcp-email__company { grid-area: company; }
+  .mcp-email__subject { grid-area: subject; display: block; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+  .mcp-email .mcp-pill--status { grid-area: status; justify-self: end; }
+  .mcp-email__when { grid-area: when; justify-self: end; }
+  .mcp-email .mcp-state { grid-area: state; justify-self: end; }
+}
+/* A desktop-wide list: one line per email, columns aligned down the list so the eye
+   runs straight down candidate, company, subject, status and date. */
+@container mcp-emails (min-width: 1100px) {
+  .mcp-email__row {
+    grid-template-columns: minmax(7rem, 13rem) minmax(6rem, 13rem) minmax(0, 1fr) auto 7.5rem 4.5rem;
+    grid-template-areas: "name company subject status when state";
+    padding: 4px 12px 4px 14px;
+  }
+  .mcp-email__when { justify-self: start; }
+  .mcp-email .mcp-state { justify-self: stretch; text-align: center; }
+}
 
 /* The history: a timeline, newest first. */
 .mcp-history-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
@@ -424,6 +469,17 @@
   cursor: pointer;
 }
 .mcp-pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; color: var(--mcp-text-2); }
+/* Interview's page size: 10 or 20 emails, beside the page buttons. */
+.mcp-pages__size { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; }
+.mcp-pages__size select {
+  min-height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--mcp-border);
+  border-radius: 9px;
+  background: var(--mcp-bg-field);
+  color: var(--mcp-text);
+  font: inherit;
+}
 .mcp-pages button:disabled { opacity: 0.45; cursor: default; }
 
 /* iPhone (320-430px), as the mockup draws it. */
@@ -483,13 +539,7 @@
 }
 @media (max-width: 640px) {
   .mcp-list { gap: 8px; }
-  .mcp-email { border-radius: 11px; }
-  .mcp-email__row { gap: 3px; padding: 9px 10px 9px 12px; }
-  .mcp-email__name { font-size: 15px; }
-  .mcp-email__company { font-size: 13px; }
-  /* The subject reads whole on a phone, up to two lines. */
-  .mcp-email__subject { display: -webkit-box; font-size: 13.5px; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .mcp-email .mcp-read { margin: 0 6px 6px; }
+  .mcp--interview .mcp-list { gap: 4px; }
 }
 /* The narrowest phones: the counters keep one row with the icon above. */
 @media (max-width: 385px) {
