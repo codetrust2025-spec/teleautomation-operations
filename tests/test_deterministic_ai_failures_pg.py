@@ -26,6 +26,7 @@ from core import recruitment_mail_store as store
 
 NOW = datetime.now(timezone.utc)
 EVIDENCE = "EVIDENCE_DOES_NOT_ENTAIL_TRANSITION"
+NOT_ENTAILED = "EVIDENCE_NOT_ENTAILED"
 RELEVANCE = "RECRUITMENT_RELEVANCE_UNRESOLVED"
 TRANSIENT = "OLLAMA_QUEUE_TIMEOUT"
 
@@ -119,7 +120,7 @@ def row(connect, message_id):
 
 
 class TestAVerdictStopsEarly:
-    @pytest.mark.parametrize("code", [EVIDENCE, RELEVANCE])
+    @pytest.mark.parametrize("code", [EVIDENCE, NOT_ENTAILED, RELEVANCE])
     def test_a_second_attempt_is_the_last_one(self, queue_db, code):
         queue(queue_db, "m1", code=code, retries=1)
 
@@ -129,7 +130,7 @@ class TestAVerdictStopsEarly:
         assert parked["status"] == "AI_PROCESSING_FAILED"
         assert parked["retry_after"] is None
 
-    @pytest.mark.parametrize("code", [EVIDENCE, RELEVANCE])
+    @pytest.mark.parametrize("code", [EVIDENCE, NOT_ENTAILED, RELEVANCE])
     def test_the_first_failure_still_gets_its_second_look(self, queue_db, code):
         """A node answers deterministically for one model load; a different node
         can legitimately differ, so one retry is kept."""
@@ -196,6 +197,18 @@ class TestTheBacklogIsNotMadeToLearnItAgain:
         assert parked["status"] == "AI_PROCESSING_FAILED"
         assert parked["code"] == EVIDENCE
 
+    def test_the_renamed_verdict_is_parked_with_its_own_reason(self, queue_db):
+        """12 Nov 2026: an Altimetrik reminder on its fourth of twelve runs,
+        refused by the evidence check under the post-6-Nov name each time."""
+        queue(queue_db, "m11", code=NOT_ENTAILED, retries=4, status="AI_RETRY_PENDING")
+
+        store.claim_ai_messages(limit=1)
+
+        parked = row(queue_db, "m11")
+        assert parked["status"] == "AI_PROCESSING_FAILED"
+        assert parked["code"] == NOT_ENTAILED
+        assert parked["retry_after"] is None
+
     def test_it_does_not_park_a_transient_failure_of_the_same_age(self, queue_db):
         queue(queue_db, "m9", code=TRANSIENT, retries=7, status="AI_QUEUED")
 
@@ -213,6 +226,6 @@ class TestTheBacklogIsNotMadeToLearnItAgain:
 
 
 def test_the_budgets_are_what_the_measurements_said():
-    assert store.DETERMINISTIC_AI_FAILURE_CODES == {EVIDENCE, RELEVANCE}
+    assert store.DETERMINISTIC_AI_FAILURE_CODES == {EVIDENCE, NOT_ENTAILED, RELEVANCE}
     assert store._deterministic_ai_attempts() == 2
     assert store._max_ai_attempts() == 12

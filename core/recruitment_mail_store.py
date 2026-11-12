@@ -1216,8 +1216,15 @@ def _max_ai_attempts() -> int:
 #: RECRUITMENT_RELEVANCE_UNRESOLVED, average 6.4 attempts, and none had. That is
 #: roughly 3,200 model runs spent, with thousands more scheduled, at a recovery
 #: rate of one in 565 -- against a pipeline that manages about 900 runs a day.
+#:
+#: EVIDENCE_NOT_ENTAILED is the same verdict under the name the agent has used
+#: since 6 Nov 2026 (f22c7cf). Missing from this set, it was budgeted like a
+#: transient failure: on 12 Nov an Altimetrik interview reminder, read as
+#: SELECTED by both models and refused by the evidence check each time, was on
+#: its fourth of twelve runs with the same answer every time.
 DETERMINISTIC_AI_FAILURE_CODES = frozenset({
     "EVIDENCE_DOES_NOT_ENTAIL_TRANSITION",
+    "EVIDENCE_NOT_ENTAILED",
     "RECRUITMENT_RELEVANCE_UNRESOLVED",
 })
 
