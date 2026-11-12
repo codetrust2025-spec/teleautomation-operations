@@ -2731,6 +2731,11 @@ def create_monitoring_notification(
         }
         if not should_route_to_mail_alert(event, analysis, source=source_row):
             return {}
+        if classification in INTERVIEW_RELATED_CLASSIFICATIONS and _alert_trashed(cur, provider_id):
+            # An operator removed this email's alert (migration 038). The
+            # database refuses the row anyway; saying so here keeps the
+            # caller's "not routed" path instead of a missing-row surprise.
+            return {}
 
         name, email = _candidate_snapshot(str(event["candidate_id"]), structured)
         # Keep source provenance on the event, but use the same stable person
@@ -2774,7 +2779,10 @@ def create_monitoring_notification(
             cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now()
               WHERE gmail_message_id=%s AND classification=%s RETURNING *""",
               (provider_id, classification))
-            return _rows(cur)[0]
+            existing = _rows(cur)
+            # Nothing inserted and nothing to update: the trash trigger skipped
+            # the row. That is "no alert", not an error.
+            return existing[0] if existing else {}
 
         notification = inserted[0]
         # The notification row and its creation event are one transaction. A
@@ -4119,9 +4127,18 @@ def visible_rows_sql(prefix: str = "") -> tuple[str, list[Any]]:
         f"{p}dismissed_at IS NULL AND COALESCE({p}booking_status,'') <> 'Historical Skipped'"
         f" AND NOT EXISTS (SELECT 1 FROM ai_recruitment_events rejected_event"
         f" WHERE rejected_event.id = {p}ai_recruitment_event_id"
-        " AND rejected_event.validation_status = 'REJECTED')",
+        " AND rejected_event.validation_status = 'REJECTED')"
+        # Trashed alerts (migration 038) wait for purge or restore off screen.
+        f" AND NOT EXISTS (SELECT 1 FROM mail_alert_trash trashed"
+        f" WHERE trashed.notification_id = {p}id)",
         [],
     )
+
+
+def _alert_trashed(cur: Any, gmail_message_id: str) -> bool:
+    """True when an operator moved this email's Interview Related alert to Trash."""
+    cur.execute("SELECT 1 FROM mail_alert_trash WHERE gmail_message_id=%s LIMIT 1", (gmail_message_id,))
+    return cur.fetchone() is not None
 
 
 def tracked_classification_sql(prefix: str = "") -> tuple[str, list[Any]]:
