@@ -140,8 +140,9 @@ def test_interview_emails_are_one_row_each_newest_first(mails):
     add(mails, "c-int2", candidate="ravi", company="Capgemini Ltd", hours_ago=3,
         classification="interview_confirmed", read=True)
     result = store.list_category_emails(filters={"classification_group": "interview"})
-    assert [r["id"] for r in result["emails"]] == ["c-int", "c-int2", "h-int"]
-    assert result["total"] == 3
+    # A shortlist after an interview is Interview progress, so h-eval is listed.
+    assert [r["id"] for r in result["emails"]] == ["c-int", "c-int2", "h-eval", "h-int"]
+    assert result["total"] == 4
     # Name variants share one employer key, as the company filter uses it.
     assert {r["company_key"] for r in result["emails"]} == {"capgemini", "hcltech"}
     assert all("verified_status" in r and "status_evidence" in r for r in result["emails"])
@@ -155,4 +156,4 @@ def test_interview_emails_follow_the_tab_company_and_paging(mails):
     cap = store.list_category_emails(filters={"classification_group": "interview", "company_key": "capgemini"})
     assert [r["id"] for r in cap["emails"]] == ["c-int", "c-int2"]
     second = store.list_category_emails(filters={"classification_group": "interview"}, limit=1, offset=1)
-    assert [r["id"] for r in second["emails"]] == ["c-int2"] and second["total"] == 3
+    assert [r["id"] for r in second["emails"]] == ["c-int2"] and second["total"] == 4
