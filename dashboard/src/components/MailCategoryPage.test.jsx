@@ -388,45 +388,52 @@ describe("Interview Related: page size", () => {
   const emailRequests = () => calls.filter((c) => c.path.includes("/mail-monitoring/emails?")).map((c) => new URL(c.path, "http://test.invalid").searchParams);
   afterEach(() => { try { window.localStorage.clear(); } catch { /* none */ } });
 
-  it("asks for 20 emails a page by default", async () => {
+  it("asks for 10 emails a page by default", async () => {
     renderPage("interview");
     await screen.findAllByRole("article");
-    expect(emailRequests().at(-1).get("limit")).toBe("20");
+    expect(emailRequests().at(-1).get("limit")).toBe("10");
   });
 
-  it("offers 10 or 20 per page; 10 asks for 10 and starts again at the first page", async () => {
+  it("falls back to 10 when the stored choice is not one it offers", async () => {
+    window.localStorage.setItem("mailAlerts.interview.pageSize", "500");
+    renderPage("interview");
+    await screen.findAllByRole("article");
+    expect(emailRequests().at(-1).get("limit")).toBe("10");
+  });
+
+  it("offers 10 or 20 per page; 20 asks for 20 and starts again at the first page", async () => {
     install({ emailTotal: 57 });
     renderPage("interview");
     await screen.findAllByRole("article");
     const size = screen.getByLabelText("Emails per page");
     expect([...size.options].map((o) => o.value)).toEqual(["10", "20"]);
-    expect(size.value).toBe("20");
-    expect(screen.getByText(/1–20 of 57/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect(emailRequests().at(-1).get("offset")).toBe("20"));
-    fireEvent.change(screen.getByLabelText("Emails per page"), { target: { value: "10" } });
-    await waitFor(() => {
-      const last = emailRequests().at(-1);
-      expect(last.get("limit")).toBe("10");
-      expect(last.get("offset")).toBe("0");
-    });
-    expect(await screen.findByText(/1–10 of 57/)).toBeInTheDocument();
+    expect(size.value).toBe("10");
+    expect(screen.getByText(/1–10 of 57/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(emailRequests().at(-1).get("offset")).toBe("10"));
+    fireEvent.change(screen.getByLabelText("Emails per page"), { target: { value: "20" } });
+    await waitFor(() => {
+      const last = emailRequests().at(-1);
+      expect(last.get("limit")).toBe("20");
+      expect(last.get("offset")).toBe("0");
+    });
+    expect(await screen.findByText(/1–20 of 57/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(emailRequests().at(-1).get("offset")).toBe("20"));
   });
 
   it("remembers the choice on this device", async () => {
     install({ emailTotal: 57 });
     renderPage("interview");
     await screen.findAllByRole("article");
-    fireEvent.change(screen.getByLabelText("Emails per page"), { target: { value: "10" } });
-    await waitFor(() => expect(emailRequests().at(-1).get("limit")).toBe("10"));
+    fireEvent.change(screen.getByLabelText("Emails per page"), { target: { value: "20" } });
+    await waitFor(() => expect(emailRequests().at(-1).get("limit")).toBe("20"));
     cleanup();
     install({ emailTotal: 57 });
     renderPage("interview");
     await screen.findAllByRole("article");
-    expect(emailRequests().at(-1).get("limit")).toBe("10");
-    expect(screen.getByLabelText("Emails per page").value).toBe("10");
+    expect(emailRequests().at(-1).get("limit")).toBe("20");
+    expect(screen.getByLabelText("Emails per page").value).toBe("20");
   });
 
   it("the size control shows once there is more than the smallest page", async () => {
