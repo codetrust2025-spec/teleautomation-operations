@@ -3,7 +3,7 @@
 Mail Alerts already shows such a company on screen (`resolved_alert_companies`
 in core.recruitment_mail_store, the resolver in core.mail_alert_company). This
 stores exactly what that resolver decides, so the alert keeps it and records
-where it came from in `company_source` (migration 039):
+where it came from in `company_source` (migration 040):
 
     python -m scripts.backfill_alert_companies                         # dry run: what would change
     python -m scripts.backfill_alert_companies --apply --backup FILE   # store it, backup first

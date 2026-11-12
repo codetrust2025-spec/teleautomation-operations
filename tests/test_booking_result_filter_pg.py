@@ -49,7 +49,7 @@ def notifications_ddl() -> list[str]:
     create = _create_table("007_recruitment_mail_notifications.sql", "mail_monitoring_notifications")
     alters = []
     for migration in ("008_recruitment_mail_auto_booking.sql", "018_recruitment_mail_booking_block_reason.sql",
-                      "039_mail_alert_company_source.sql"):
+                      "040_mail_alert_company_source.sql"):
         alters += re.findall(
             r"ALTER TABLE mail_monitoring_notifications[^;]*;", (MIGRATIONS / migration).read_text(),
         )
