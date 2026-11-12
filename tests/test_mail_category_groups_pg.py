@@ -134,3 +134,25 @@ def test_an_alerts_mail_is_read_in_the_app_with_gmail_optional(schema):
     # Reading is not marking read.
     assert store.list_group_emails("ravi", "acme")[0]["is_read"] is False
     assert store.notification_email("no-such-alert") is None
+
+
+def test_interview_emails_are_one_row_each_newest_first(mails):
+    add(mails, "c-int2", candidate="ravi", company="Capgemini Ltd", hours_ago=3,
+        classification="interview_confirmed", read=True)
+    result = store.list_category_emails(filters={"classification_group": "interview"})
+    assert [r["id"] for r in result["emails"]] == ["c-int", "c-int2", "h-int"]
+    assert result["total"] == 3
+    # Name variants share one employer key, as the company filter uses it.
+    assert {r["company_key"] for r in result["emails"]} == {"capgemini", "hcltech"}
+    assert all("verified_status" in r and "status_evidence" in r for r in result["emails"])
+
+
+def test_interview_emails_follow_the_tab_company_and_paging(mails):
+    add(mails, "c-int2", candidate="ravi", company="Capgemini Ltd", hours_ago=3,
+        classification="interview_confirmed", read=True)
+    unread = store.list_category_emails(filters={"classification_group": "interview", "is_read": False})
+    assert [r["id"] for r in unread["emails"]] == ["c-int"] and unread["total"] == 1
+    cap = store.list_category_emails(filters={"classification_group": "interview", "company_key": "capgemini"})
+    assert [r["id"] for r in cap["emails"]] == ["c-int", "c-int2"]
+    second = store.list_category_emails(filters={"classification_group": "interview"}, limit=1, offset=1)
+    assert [r["id"] for r in second["emails"]] == ["c-int2"] and second["total"] == 3

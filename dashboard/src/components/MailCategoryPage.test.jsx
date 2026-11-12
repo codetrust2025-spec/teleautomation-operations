@@ -38,6 +38,11 @@ const HISTORY = [
   { id: "m2", candidate_id: "c-ashok", company_name: "HCLTech", email_subject: "Evaluation 2 Selection for 141850", classification: "post_interview_shortlisted", candidate_status: "Shortlisted After Interview", is_read: false, email_received_at: "2026-11-11T05:00:00Z" },
   { id: "m1", candidate_id: "c-ashok", company_name: "HCLTech", email_subject: "Evaluation 1 Selection for 141850", classification: "post_interview_shortlisted", candidate_status: "Shortlisted After Interview", is_read: true, email_received_at: "2026-11-10T05:00:00Z" },
 ];
+const INTERVIEW_EMAILS = [
+  { id: "i2", candidate_id: "c-ravi", candidate_name: "Ravi Kumar", company_name: "Capgemini", job_role: "Analyst", email_subject: "Interview confirmed for 14 Nov", classification: "interview_confirmed", candidate_status: "Interview Confirmed", verified_status: "Interview Confirmed", is_read: false, email_received_at: "2026-11-11T09:00:00Z" },
+  { id: "i1", candidate_id: "c-ravi", candidate_name: "Ravi Kumar", company_name: "Capgemini", email_subject: "You are shortlisted for interview", classification: "interview_shortlisted", candidate_status: "Interview Shortlisted", is_read: true, email_received_at: "2026-11-10T09:00:00Z" },
+  { id: "i0", candidate_id: "c-ashok", candidate_name: "Ashok Rao", company_name: "HCLTech", email_subject: "Interview slot", classification: "interview_confirmed", is_read: true, email_received_at: "2026-11-09T09:00:00Z" },
+];
 const COUNTS = { unread: 2, retry: 0, all: 27 };
 
 let calls = [];
@@ -53,6 +58,11 @@ function install({ groups = GROUPS, history = HISTORY } = {}) {
     const params = new URL(path, "http://test.invalid").searchParams;
     const readNow = (row) => row.is_read || readIds.has(row.id);
     if ((options.method || "GET") === "POST" && path.endsWith("/read")) readIds.add(path.split("/").at(-2));
+    if (path.includes("/mail-monitoring/emails?")) {
+      const rows = INTERVIEW_EMAILS.map((row) => ({ ...row, is_read: readNow(row) }))
+        .filter((row) => params.get("is_read") === null || String(row.is_read) === params.get("is_read"));
+      return respond({ emails: rows, total: rows.length });
+    }
     if (path.includes("/groups/emails")) return respond({ notifications: history.map((row) => ({ ...row, is_read: readNow(row) })), total: history.length });
     if (path.includes("/groups?")) {
       // The server's counts follow what has been read, as production's do.
@@ -303,5 +313,63 @@ describe("dates", () => {
     expect(mailWhen("2026-11-11T04:28:00Z", now)).toBe("Today, 09:58 AM");
     expect(mailWhen("2026-11-10T12:50:00Z", now)).toBe("Yesterday, 06:20 PM");
     expect(mailWhen("2026-11-02T05:45:00Z", now)).toBe("Mon, 2 Nov, 11:15 AM");
+  });
+});
+
+describe("Interview Related: one card per email", () => {
+  const emailRequests = () => calls.filter((c) => c.path.includes("/mail-monitoring/emails?")).map((c) => new URL(c.path, "http://test.invalid").searchParams);
+
+  it("shows every email as its own card, with no group counts or expand control", async () => {
+    renderPage("interview");
+    const cards = await screen.findAllByRole("article");
+    expect(cards).toHaveLength(3);
+    // Two mails of one candidate with one company are two cards.
+    expect(cards.filter((c) => c.textContent.includes("Ravi Kumar"))).toHaveLength(2);
+    const first = cards[0];
+    expect(first.textContent).toContain("Capgemini");
+    expect(first.textContent).toContain("Interview confirmed for 14 Nov");
+    expect(first.textContent).toContain("Interview Confirmed");
+    expect(first.querySelector(".mcp-state").textContent).toBe("Unread");
+    expect(cards[1].querySelector(".mcp-state").textContent).toBe("Opened");
+    expect(document.querySelector(".mcp-group, .mcp-chevron, .mcp-pill--count")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Show emails/ })).toBeNull();
+    expect(screen.getByText("3 Emails")).toBeInTheDocument();
+    expect(emailRequests().at(-1).get("classification_group")).toBe("interview");
+  });
+
+  it("opening an email reads it in the card and marks only that one read", async () => {
+    renderPage("interview");
+    fireEvent.click(await screen.findByRole("button", { name: /^Unread: Interview confirmed for 14 Nov/ }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/api/mail-monitoring/notifications/i2/read"]));
+    const reading = await screen.findByRole("region", { name: "Email: Interview confirmed for 14 Nov" });
+    await waitFor(() => expect(reading.textContent).toContain("Body of mail i2."));
+    const card = reading.closest("article");
+    await waitFor(() => expect(card.querySelector(".mcp-state").textContent).toBe("Opened"));
+  });
+
+  it("tabs, search, company and status filter the emails", async () => {
+    renderPage("interview");
+    await screen.findAllByRole("article");
+    fireEvent.click(screen.getByRole("tab", { name: /Unread/ }));
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText("Search notifications"), { target: { value: "Ravi" } });
+    fireEvent.change(screen.getByLabelText("Company filter"), { target: { value: "hcltech" } });
+    fireEvent.change(screen.getByLabelText("Status filter"), { target: { value: "interview_confirmed" } });
+    await waitFor(() => {
+      const last = emailRequests().at(-1);
+      expect(last.get("is_read")).toBe("false");
+      expect(last.get("search")).toBe("Ravi");
+      expect(last.get("company_key")).toBe("hcltech");
+      expect(last.get("classification")).toBe("interview_confirmed");
+      expect(last.get("classification_group")).toBe("interview");
+    });
+    // The company options still come from the server's employer list.
+    expect([...screen.getByLabelText("Company filter").options].map((o) => o.value)).toContain("hcltech");
+  });
+
+  it("Selection Related keeps its Candidate + Company cards", async () => {
+    renderPage("selection");
+    expect(await screen.findByRole("article", { name: "Ashok Rao, HCLTech" })).toBeInTheDocument();
+    expect(calls.some((c) => c.path.includes("/mail-monitoring/emails?"))).toBe(false);
   });
 });

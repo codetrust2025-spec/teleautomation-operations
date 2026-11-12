@@ -3667,6 +3667,50 @@ def notification_email(notification_id: str) -> dict[str, Any] | None:
     }
 
 
+def list_category_emails(*, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    """One row per alert, newest first, for the Interview Related page's email cards.
+
+    The same filters as `list_notification_groups` (category, tab, search,
+    status, and the company by its employer key, aliases included), so the
+    company options and counters agree with the grouped page. Each row carries
+    its evidence-checked status (`verified_status`, `status_evidence`) and the
+    employer's display name, as the grouped cards show it. Read-only.
+    """
+    filters = dict(filters or {})
+    company_key = str(filters.pop("company_key", "") or "").strip().lower()
+    clause, params, _order = notification_filter_sql(filters)
+    key = _employer_key_sql()
+    if company_key:
+        clause += f" AND {key} = %s"
+        params = params + [company_key]
+    page = max(1, min(int(limit), 100))
+    skip = max(0, int(offset))
+    with get_connection() as conn, conn.cursor() as cur:
+        resolved = employer_aliases(cur)
+        alias_sql, alias_params = _alias_cte(resolved)
+        names = {v[0]: v[1] for v in resolved[0].values()}
+        cur.execute(
+            f"WITH {alias_sql} SELECT count(*) FROM mail_monitoring_notifications WHERE {clause}",
+            alias_params + params,
+        )
+        total = int(cur.fetchone()[0])
+        cur.execute(
+            f"""WITH {alias_sql} SELECT mail_monitoring_notifications.*, {key} AS company_key
+                  FROM mail_monitoring_notifications WHERE {clause}
+                 ORDER BY COALESCE(email_received_at, created_at) DESC, id
+                 LIMIT %s OFFSET %s""",
+            alias_params + params + [page, skip],
+        )
+        rows = reconcile_booking_claims(_rows(cur))
+        texts = _mail_texts(cur, [r["id"] for r in rows if r.get("classification") in _PROOF])
+    for row in rows:
+        row["verified_status"], row["status_evidence"] = verified_status(
+            row.get("classification") or "", row.get("candidate_status") or "", texts.get(row["id"], []))
+        if row.get("company_key"):
+            row["company_name"] = names.get(row["company_key"], row.get("company_name"))
+    return {"emails": rows, "total": total}
+
+
 def list_group_emails(candidate_id: str, company_key: str, *, limit: int = 200) -> list[dict[str, Any]]:
     """Every visible alert of one person with one employer, newest first, both categories.
 

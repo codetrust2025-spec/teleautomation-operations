@@ -20,7 +20,8 @@ import {
  * Selection Related and Interview Related, as the approved mockups draw them:
  * one compact row of counters that are the tabs (Unread, Opened, AI Retry, All
  * Alerts), one row of search, company and status filters, a Download menu and
- * the page's alert sound controls, then one card per Candidate + Company. A
+ * the page's alert sound controls, then the cards. Interview Related shows one
+ * card per email (`/api/mail-monitoring/emails`). Selection Related shows one card per Candidate + Company. A
  * card shows that group's mail count, unread and opened, and its latest
  * evidence-checked status; expanded, it lists
  * every mail of the group newest first -- Selection and Interview alike, each
@@ -226,6 +227,33 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
   </article>;
 }
 
+// Interview Related: one card per email, no grouping. Candidate, company,
+// subject, the status the mail states, when it arrived, and Unread / Opened.
+// Tapping it opens the mail here and marks that one mail read.
+export function EmailCard({ item, open, content, onOpenMail, onAction }) {
+  const name = item.candidate_name || "Candidate";
+  const company = item.company_name || "Company not identified";
+  const evidence = evidenceOf(item);
+  const unread = !item.is_read;
+  return <article className={`mcp-email${unread ? " mcp-email--unread" : " mcp-email--read"}${open ? " mcp-email--open" : ""}`}
+    aria-label={`${unread ? "Unread" : "Opened"}: ${name}, ${company}`}>
+    <button type="button" className="mcp-email__row" onClick={() => onOpenMail(item)} aria-expanded={open}
+      aria-label={`${unread ? "Unread" : "Opened"}: ${item.email_subject || "no subject"} from ${company} for ${name}`}>
+      <span className="mcp-email__top">
+        <strong className="mcp-email__name" title={name}>{name}</strong>
+        <span className={`mcp-state mcp-state--${unread ? "unread" : "read"}`}>{unread ? "Unread" : "Opened"}</span>
+      </span>
+      <span className="mcp-email__company" title={company}><Glyph name="building" size={15} />{company}{item.job_role ? <span className="mcp-email__role"> · {item.job_role}</span> : null}</span>
+      <span className="mcp-email__subject" title={item.email_subject || undefined}>{item.email_subject || "(no subject)"}</span>
+      <span className="mcp-email__foot">
+        <StatusPill label={statusText(item)} evidence={evidence} tone={mailStatusTone(item)} />
+        <span className="mcp-email__when">{mailWhen(item.email_received_at || item.created_at)}</span>
+      </span>
+    </button>
+    {open && <MailContent item={item} content={content} onAction={onAction} />}
+  </article>;
+}
+
 // One line over the history: everything with this company, by kind, and how
 // much of it is unread -- the card's own counts are this page's kind only.
 function HistorySummary({ items, total, unread, company }) {
@@ -314,7 +342,9 @@ export function MailCategoryPage({ category }) {
   const [companyKey, setCompanyKey] = useState("");
   const [status, setStatus] = useState("");
   const [offset, setOffset] = useState(0);
-  const [data, setData] = useState({ groups: [], total: 0, companies: [] });
+  // Interview Related lists every email on its own; Selection keeps its groups.
+  const perEmail = category === "interview";
+  const [data, setData] = useState({ groups: [], emails: [], total: 0, companies: [] });
   const [counts, setCounts] = useState({});
   const [emailCount, setEmailCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -351,12 +381,18 @@ export function MailCategoryPage({ category }) {
     try {
       const base = filterParams;
       const [groups, summary, ...tileCounts] = await Promise.all([
-        request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`),
+        perEmail
+          ? Promise.all([
+            request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`),
+            // The company options, as the grouped page lists them.
+            request(`/api/mail-monitoring/groups?${query({ classification_group: category, limit: 1, offset: 0 })}`),
+          ]).then(([emails, groups]) => ({ emails: emails.emails || [], total: emails.total, companies: groups.companies || [] }))
+          : request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`),
         fetchMailSummary(),
         ...CATEGORY_TILES.map((t) => request(`/api/mail-monitoring/notifications?${query({ ...base, ...t.params, limit: 1, offset: 0, sort: "newest" })}`)),
       ]);
       if (current !== version.current) return;
-      setData({ groups: groups.groups || [], total: Number(groups.total) || 0, companies: groups.companies || [] });
+      setData({ groups: groups.groups || [], emails: groups.emails || [], total: Number(groups.total) || 0, companies: groups.companies || [] });
       setCounts(Object.fromEntries(CATEGORY_TILES.map((t, index) => [t.id, Number(tileCounts[index]?.total) || 0])));
       setEmailCount(Number(tileCounts[CATEGORY_TILES.findIndex((t) => t.id === tile)]?.total) || 0);
       setLoadError("");
@@ -364,13 +400,13 @@ export function MailCategoryPage({ category }) {
       publishMailCategoryUnread(summary.summary);
     } catch (error) {
       if (current === version.current && !silent) {
-        setData((value) => ({ ...value, groups: [], total: 0 }));
+        setData((value) => ({ ...value, groups: [], emails: [], total: 0 }));
         setLoadError(error?.message || "Mail alerts could not be loaded.");
       }
     } finally {
       if (!silent && current === version.current) setLoading(false);
     }
-  }, [filterParams, companyKey, tile, offset]);
+  }, [filterParams, companyKey, tile, offset, perEmail, category]);
 
   useEffect(() => { load(); }, [load]);
   useMailLive((event) => {
@@ -409,7 +445,7 @@ export function MailCategoryPage({ category }) {
     setHistories((value) => Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, {
       ...entry, items: (entry.items || []).map((row) => (row.id === item.id ? { ...row, is_read: true } : row)),
     }])));
-    setData((value) => ({ ...value, groups: value.groups.map((group) => (
+    setData((value) => ({ ...value, emails: value.emails.map((row) => (row.id === item.id ? { ...row, is_read: true } : row)), groups: value.groups.map((group) => (
       histories[groupKey(group)]?.items?.some((row) => row.id === item.id)
         ? {
           ...group, unread: Math.max(0, Number(group.unread) - 1), read: Number(group.read) + 1,
@@ -503,18 +539,20 @@ export function MailCategoryPage({ category }) {
 
     <div className="mcp-results">
       <h2><Glyph name="mail" size={24} />{CATEGORY_NAME[category]} Alerts</h2>
-      <span>{plural(data.total, "Result")}</span>
+      <span>{plural(data.total, perEmail ? "Email" : "Result")}</span>
     </div>
 
     <div className={`mcp-list${loading ? " is-loading" : ""}`}>
       {loading && <OverlayLoader label="Loading alerts…" />}
       {!loading && loadError && <div className="mcp-empty" role="alert"><strong>Mail alerts could not be loaded.</strong><span>{loadError}</span><button type="button" onClick={() => load()}>Retry</button></div>}
-      {!loading && !loadError && !data.groups.length && <div className="mcp-empty">
+      {!loading && !loadError && !(perEmail ? data.emails : data.groups).length && <div className="mcp-empty">
         <strong>{filtered ? "No alerts match these filters." : tile === "unread" ? page.emptyUnread : tile === "retry" ? "No alerts are waiting for AI retry." : page.emptyAll}</strong>
         <span>{filtered ? "Try another search, or clear the filters." : tile === "retry" ? "Mails the AI could not read yet appear here until a retry succeeds." : page.arriving}</span>
         {filtered && <button type="button" onClick={() => { setSearch(""); setCompanyKey(""); setStatus(""); setOffset(0); }}>Clear filters</button>}
       </div>}
-      {data.groups.map((group) => <GroupCard key={groupKey(group)} group={group}
+      {perEmail && data.emails.map((item) => <EmailCard key={item.id} item={item} open={openMails.has(item.id)}
+        content={contents[item.id]} onOpenMail={openMail} onAction={act} />)}
+      {!perEmail && data.groups.map((group) => <GroupCard key={groupKey(group)} group={group}
         category={category} expanded={expanded.has(groupKey(group))} onToggle={(force) => toggle(group, force)}
         history={histories[groupKey(group)]} openMails={openMails} contents={contents} onOpenMail={openMail}
         onAction={act} onMarkAllRead={() => markAllRead(group)} />)}

@@ -560,6 +560,21 @@ def install_recruitment_mail_routes(app):
         response.headers['Cache-Control']='no-store, max-age=0'
         return {'status':'ok',**result,'limit':min(max(limit,1),100),'offset':max(offset,0)}
 
+    @app.get('/api/mail-monitoring/emails')
+    async def mail_notification_emails(
+        request:Request, response:Response, search:str|None=None,
+        classification:str|None=None, classification_group:str|None=None,
+        company_key:str|None=None, priority:str|None=None, is_read:bool|None=None,
+        limit:int=20, offset:int=0,
+    ):
+        """One alert per row, with the groups endpoint's filters: the Interview Related email cards."""
+        _guard();require_fleet_admin(request)
+        filters={'search':search,'classification':classification,'classification_group':classification_group,
+                 'company_key':company_key,'priority':priority,'is_read':is_read}
+        result=await asyncio.to_thread(store.list_category_emails,filters=filters,limit=limit,offset=offset)
+        response.headers['Cache-Control']='no-store, max-age=0'
+        return {'status':'ok',**result,'limit':min(max(limit,1),100),'offset':max(offset,0)}
+
     @app.get('/api/mail-monitoring/groups/emails')
     async def mail_notification_group_emails(request:Request, response:Response, candidate_id:str, company_key:str=''):
         """One group's whole history, newest first, Selection and Interview alike."""
