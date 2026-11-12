@@ -540,6 +540,27 @@
   .mcp-read__actions .mcp-read__gmail { margin-left: 0; }
 }
 
+/* Interview Related: the cards-per-page choice beside the results count. */
+.mcp-results__side { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; min-width: 0; }
+.mcp-perpage span { font-size: inherit; }
+.mcp-perpage { display: inline-flex; align-items: center; gap: 6px; color: var(--mcp-text-2); font-size: 13.5px; white-space: nowrap; }
+.mcp-perpage select {
+  min-height: 30px;
+  padding: 2px 8px;
+  border: 1px solid var(--mcp-border);
+  border-radius: 8px;
+  background: var(--mcp-bg-field);
+  color: var(--mcp-text);
+  font: inherit;
+  cursor: pointer;
+}
+.mcp-perpage select:focus-visible { outline: 2px solid var(--mcp-blue); outline-offset: 2px; }
+.mcp-perpage select option { background: #111a2e; color: var(--mcp-text); }
+@media (max-width: 640px) {
+  .mcp-perpage { font-size: 12.5px; }
+  .mcp-perpage select { min-height: 28px; padding: 1px 6px; }
+}
+
 /* Unread vs Opened, both category pages, every screen size (owner, 12 Nov
    2026): the difference must read at a glance, without opening anything.
    Unread: blue left edge, blue-tinted background, bold text, solid blue badge.

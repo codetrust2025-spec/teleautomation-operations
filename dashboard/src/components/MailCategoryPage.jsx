@@ -33,6 +33,19 @@ import {
  */
 
 const PAGE_SIZE = 20;
+// Interview Related shows 10 email cards a page by default, 20 on request
+// (owner, 12 Nov 2026). The choice is a per-device convenience. Selection
+// Related keeps PAGE_SIZE.
+export const INTERVIEW_PAGE_SIZES = [10, 20];
+const INTERVIEW_PAGE_SIZE_KEY = "mcp.interviewPageSize";
+function storedInterviewPageSize() {
+  try {
+    const value = Number(window.localStorage.getItem(INTERVIEW_PAGE_SIZE_KEY));
+    return INTERVIEW_PAGE_SIZES.includes(value) ? value : INTERVIEW_PAGE_SIZES[0];
+  } catch {
+    return INTERVIEW_PAGE_SIZES[0];
+  }
+}
 // The mockup's counters, in its order. Each is a tab with its own filter.
 export const CATEGORY_TILES = [
   { id: "unread", label: "Unread", icon: "mail", params: { is_read: "false" } },
@@ -354,6 +367,15 @@ export function MailCategoryPage({ category }) {
   const [offset, setOffset] = useState(0);
   // Interview Related lists every email on its own; Selection keeps its groups.
   const perEmail = category === "interview";
+  const [interviewPageSize, setInterviewPageSize] = useState(storedInterviewPageSize);
+  const pageSize = perEmail ? interviewPageSize : PAGE_SIZE;
+  const choosePageSize = (event) => {
+    const value = Number(event.target.value);
+    if (!INTERVIEW_PAGE_SIZES.includes(value)) return;
+    try { window.localStorage.setItem(INTERVIEW_PAGE_SIZE_KEY, String(value)); } catch { /* per-device only */ }
+    setOffset(0);
+    setInterviewPageSize(value);
+  };
   const [data, setData] = useState({ groups: [], emails: [], total: 0, companies: [] });
   const [counts, setCounts] = useState({});
   const [emailCount, setEmailCount] = useState(0);
@@ -394,7 +416,7 @@ export function MailCategoryPage({ category }) {
         perEmail
           // The company options come with the emails: they include companies
           // resolved from an alert's evidence, so those can be filtered too.
-          ? request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`)
+          ? request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: pageSize, offset })}`)
             .then((emails) => ({ emails: emails.emails || [], total: emails.total, companies: emails.companies || [] }))
           : request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`),
         fetchMailSummary(),
@@ -415,7 +437,7 @@ export function MailCategoryPage({ category }) {
     } finally {
       if (!silent && current === version.current) setLoading(false);
     }
-  }, [filterParams, companyKey, tile, offset, perEmail, category]);
+  }, [filterParams, companyKey, tile, offset, perEmail, category, pageSize]);
 
   useEffect(() => { load(); }, [load]);
   useMailLive((event) => {
@@ -548,7 +570,15 @@ export function MailCategoryPage({ category }) {
 
     <div className="mcp-results">
       <h2><Glyph name="mail" size={24} />{CATEGORY_NAME[category]} Alerts</h2>
-      <span>{plural(data.total, perEmail ? "Email" : "Result")}</span>
+      <span className="mcp-results__side">
+        <span>{plural(data.total, perEmail ? "Email" : "Result")}</span>
+        {perEmail && <label className="mcp-perpage">
+          <span>Per page</span>
+          <select value={interviewPageSize} onChange={choosePageSize} aria-label="Interview emails per page">
+            {INTERVIEW_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>}
+      </span>
     </div>
 
     <div className={`mcp-list${loading ? " is-loading" : ""}`}>
@@ -566,10 +596,10 @@ export function MailCategoryPage({ category }) {
         history={histories[groupKey(group)]} openMails={openMails} contents={contents} onOpenMail={openMail}
         onAction={act} onMarkAllRead={() => markAllRead(group)} />)}
     </div>
-    {data.total > PAGE_SIZE && <footer className="mcp-pages">
-      <button type="button" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Previous</button>
-      <span>{offset + 1}–{Math.min(offset + PAGE_SIZE, data.total)} of {data.total} · {tileLabel}</span>
-      <button type="button" disabled={offset + PAGE_SIZE >= data.total} onClick={() => setOffset((value) => value + PAGE_SIZE)}>Next</button>
+    {data.total > pageSize && <footer className="mcp-pages">
+      <button type="button" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - pageSize))}>Previous</button>
+      <span>{offset + 1}–{Math.min(offset + pageSize, data.total)} of {data.total} · {tileLabel}</span>
+      <button type="button" disabled={offset + pageSize >= data.total} onClick={() => setOffset((value) => value + pageSize)}>Next</button>
     </footer>}
   </section>;
 }

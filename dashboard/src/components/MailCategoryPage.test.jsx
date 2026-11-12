@@ -383,3 +383,40 @@ describe("Interview Related: one card per email", () => {
     expect(calls.some((c) => c.path.includes("/groups?"))).toBe(false);
   });
 });
+
+describe("Interview Related: cards per page", () => {
+  const emailRequests = () => calls.filter((c) => c.path.includes("/mail-monitoring/emails?")).map((c) => new URL(c.path, "http://test.invalid").searchParams);
+  beforeEach(() => { try { window.localStorage.removeItem("mcp.interviewPageSize"); } catch { /* none */ } });
+
+  it("shows 10 email cards a page by default", async () => {
+    renderPage("interview");
+    const choice = await screen.findByRole("combobox", { name: "Interview emails per page" });
+    expect(choice.value).toBe("10");
+    expect([...choice.options].map((o) => o.value)).toEqual(["10", "20"]);
+    await waitFor(() => expect(emailRequests().at(-1).get("limit")).toBe("10"));
+  });
+
+  it("asks for 20 from the first page when 20 is chosen, and remembers it", async () => {
+    renderPage("interview");
+    const choice = await screen.findByRole("combobox", { name: "Interview emails per page" });
+    fireEvent.change(choice, { target: { value: "20" } });
+    await waitFor(() => expect(emailRequests().at(-1).get("limit")).toBe("20"));
+    expect(emailRequests().at(-1).get("offset")).toBe("0");
+    expect(window.localStorage.getItem("mcp.interviewPageSize")).toBe("20");
+    cleanup();
+    renderPage("interview");
+    expect((await screen.findByRole("combobox", { name: "Interview emails per page" })).value).toBe("20");
+  });
+
+  it("ignores a stored size that is not offered", async () => {
+    window.localStorage.setItem("mcp.interviewPageSize", "500");
+    renderPage("interview");
+    expect((await screen.findByRole("combobox", { name: "Interview emails per page" })).value).toBe("10");
+  });
+
+  it("leaves Selection Related at 20 groups a page with no size choice", async () => {
+    renderPage("selection");
+    await waitFor(() => expect(groupsRequests().at(-1).get("limit")).toBe("20"));
+    expect(screen.queryByRole("combobox", { name: "Interview emails per page" })).toBeNull();
+  });
+});
