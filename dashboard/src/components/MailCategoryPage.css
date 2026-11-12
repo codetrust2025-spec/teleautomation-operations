@@ -539,3 +539,57 @@
   .mcp-read { padding: 10px; }
   .mcp-read__actions .mcp-read__gmail { margin-left: 0; }
 }
+
+/* Unread vs Opened, both category pages, every screen size (owner, 12 Nov
+   2026): the difference must read at a glance, without opening anything.
+   Unread: blue left edge, blue-tinted background, bold text, solid blue badge.
+   Opened: neutral border, darker background, normal text, quiet grey badge.
+   A Selection card counts as unread while any of its mails is. Kept last so it
+   wins over the base and phone rules above; it only sets colour and weight. */
+.mcp {
+  --mcp-unread-bg: rgba(30, 64, 175, 0.30);
+  --mcp-unread-border: rgba(96, 165, 250, 0.80);
+  --mcp-unread-edge: #3b82f6;
+  --mcp-read-bg: rgba(8, 12, 22, 0.88);
+  --mcp-read-border: rgba(100, 116, 145, 0.26);
+}
+.mcp-email--unread,
+.mcp-group--unread {
+  border-color: var(--mcp-unread-border);
+  background: var(--mcp-unread-bg);
+  box-shadow: inset 4px 0 0 var(--mcp-unread-edge), 0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+.mcp-email--read,
+.mcp-group:not(.mcp-group--unread) {
+  border-color: var(--mcp-read-border);
+  background: var(--mcp-read-bg);
+  box-shadow: none;
+}
+.mcp-email--unread .mcp-email__row:hover { background: rgba(59, 130, 246, 0.10); }
+
+.mcp-email--unread .mcp-email__name,
+.mcp-group--unread .mcp-group__name { color: #fff; font-weight: 700; }
+.mcp-email--unread .mcp-email__subject { color: #fff; font-weight: 600; }
+.mcp-email--read .mcp-email__name,
+.mcp-group:not(.mcp-group--unread) .mcp-group__name { color: var(--mcp-text-2); font-weight: 500; }
+.mcp-email--read .mcp-email__subject { color: var(--mcp-muted); font-weight: 400; }
+.mcp-email--read .mcp-email__company { color: #9aa7c7; }
+
+.mcp-mail--unread .mcp-mail__row { border-color: var(--mcp-unread-border); background: var(--mcp-unread-bg); box-shadow: inset 3px 0 0 var(--mcp-unread-edge); }
+.mcp-mail--read .mcp-mail__row { border-color: var(--mcp-read-border); background: var(--mcp-read-bg); color: var(--mcp-text-2); }
+.mcp-mail--read .mcp-mail__subject { color: var(--mcp-text-2); font-weight: 400; }
+
+.mcp-state--unread {
+  border-color: #60a5fa;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+.mcp-state--read {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: transparent;
+  color: var(--mcp-muted);
+  font-weight: 500;
+}
+.mcp-pill--new { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25); font-weight: 700; }
