@@ -1478,3 +1478,42 @@ def test_a_cancellation_cannot_release_an_interview_already_cancelled(monkeypatc
     assert outcome["failure_code"] == "BOOKING_NOT_FOUND"
     assert released == []
     assert audits[-1]["booking_status"] == "Blocked"
+
+
+# ── AI Retry holds only mail something will retry ──────────────────────────
+
+def test_a_final_block_does_not_wait_in_ai_retry(monkeypatch):
+    """A past interview will never book on a retry; the alert keeps its normal
+    priority and stays under Booking blocked instead of AI Retry."""
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    install_store_fakes(monkeypatch)
+
+    outcome = execute(result(date="2020-01-02", time="09:30 AM"))
+
+    assert outcome["failure_code"] == "PAST_INTERVIEW"
+    assert outcome["notification"]["booking_status"] == "Blocked"
+    assert outcome["notification"]["priority"] == "high"
+
+
+def test_a_block_a_retry_can_clear_still_waits_in_ai_retry(monkeypatch):
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    install_store_fakes(monkeypatch, payment_reason="Balance pending")
+
+    outcome = execute(result())
+
+    assert outcome["failure_code"] == "PAYMENT_VALIDATION_FAILED"
+    assert outcome["notification"]["priority"] == "retry_pending"
+
+
+def test_a_duplicate_is_still_low_priority(monkeypatch):
+    monkeypatch.setenv("AI_INTERVIEW_AUTO_BOOKING_ENABLED", "true")
+    install_store_fakes(monkeypatch, rows=[{
+        "id": "c1", "slot_confirmed": True,
+        "date": "2099-07-20", "time": "15:00",
+        "interview_source_message_id": "gm1",
+    }])
+
+    outcome = execute(result())
+
+    assert outcome["failure_code"] == "DUPLICATE_BOOKING"
+    assert outcome["notification"]["priority"] == "low"

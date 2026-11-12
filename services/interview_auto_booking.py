@@ -17,6 +17,7 @@ from core import recruitment_mail_store as mail_store
 from features import candidate_store
 from services import booking_block_reasons, interview_timezones
 from services import interview_lifecycle
+from services import recruitment_automation
 
 logger = logging.getLogger("teleautomation.interview_auto_booking")
 
@@ -1559,7 +1560,15 @@ def _execute_auto_booking(
         booking_status = "Duplicate Ignored" if duplicate_ignored else "Blocked"
         validation_status = "SKIPPED" if duplicate_ignored else "BLOCKED"
         display_status = "Already Booked — Duplicate Ignored" if duplicate_ignored else "Automatic Booking Blocked"
-        priority = "low" if duplicate_ignored else "retry_pending"
+        # AI Retry is for mail that will be tried again. A final block (past,
+        # stale, not actionable) keeps the alert's ordinary priority; it stays
+        # visible under Booking blocked, which is where it can be acted on.
+        if duplicate_ignored:
+            priority = "low"
+        elif exc.code in recruitment_automation.TERMINAL_BOOKING_FAILURES:
+            priority = mail_store.notification_priority(classification, confidence=1.0)
+        else:
+            priority = "retry_pending"
         event_type = "duplicate_booking_ignored" if duplicate_ignored else "slot_booking_blocked"
         # A duplicate names the booking it duplicates, so "Already booked" can
         # be followed to it -- and corrected if that booking later goes.

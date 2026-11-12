@@ -1177,6 +1177,56 @@ def _deterministic_ai_attempts() -> int:
         return 2
 
 
+#: Classifications a booking alert can carry that rank "high" (see
+#: notification_priority); any other real classification ranks "medium".
+_HIGH_PRIORITY_CLASSIFICATIONS = (
+    "job_selection_confirmed", "offer_received", "joining_confirmed", "offer_accepted",
+    "onboarding_started", "interview_confirmed", "interview_rescheduled",
+    "interview_cancelled", "final_round_cleared", "post_interview_shortlisted",
+)
+
+
+#: Booking blocks that are the AI's own doubt about the mail, not a fact about
+#: the calendar. Those alerts are the AI's work and stay in AI Retry.
+_AI_JUDGEMENT_BLOCKS = (
+    "AI_REQUIRES_REVIEW", "LOW_CONFIDENCE", "AI_NOT_VALIDATED", "MISSING_EVIDENCE",
+    "AUTO_BOOKING_DISABLED",
+)
+
+
+def release_parked_retry_flags(cur) -> list[str]:
+    """Take finished booking alerts out of AI Retry.
+
+    A blocked booking flags its alert `retry_pending` while its mail may still
+    be retried. Once the mail is no longer queued, leased or waiting for a
+    retry -- parked after its attempts, ignored, or never queued at all --
+    nothing will try again, and on 12 Nov 2026 seventeen of the twenty-one
+    alerts in AI Retry were exactly that: classified at 0.99-1.0 with nothing
+    left to retry. `review_required` is the legacy spelling of the same flag. The alert keeps its booking status and block reason, so it
+    still shows under Booking blocked. Mail the AI never classified keeps its
+    flag: that one genuinely still needs the AI.
+    """
+    # The queue runs in schemas (and tests) that hold no alerts table.
+    cur.execute("SELECT to_regclass('mail_monitoring_notifications') IS NOT NULL")
+    if not cur.fetchone()[0]:
+        return []
+    cur.execute("""UPDATE mail_monitoring_notifications n SET
+          priority=CASE WHEN n.classification=ANY(%s) THEN 'high' ELSE 'medium' END,
+          updated_at=now()
+        FROM mailbox_messages m
+        WHERE m.provider_message_id=n.gmail_message_id
+          AND n.priority IN ('retry_pending','review_required') AND n.dismissed_at IS NULL
+          AND n.booking_status IN ('Blocked','Processing Failed')
+          AND COALESCE(n.classification,'') NOT IN ('','ai_retry_pending','needs_review')
+          AND COALESCE(n.booking_failure_code,'') NOT IN %s
+          AND COALESCE(m.processing_status,'') NOT IN ('AI_QUEUED','AI_RETRY_PENDING','AI_RUNNING')
+          AND NOT EXISTS (SELECT 1 FROM mailbox_messages live
+                          WHERE live.provider_message_id=n.gmail_message_id
+                            AND live.processing_status IN ('AI_QUEUED','AI_RETRY_PENDING','AI_RUNNING'))
+        RETURNING n.id""", (list(_HIGH_PRIORITY_CLASSIFICATIONS), _AI_JUDGEMENT_BLOCKS))
+    return [str(row[0]) for row in cur.fetchall()]
+
+
 def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[str, Any]]:
     """Lease queued semantic work so crashes/timeouts cannot lose or duplicate it."""
     with get_connection() as conn, conn.cursor() as cur:
@@ -1206,6 +1256,7 @@ def claim_ai_messages(limit: int = 1, *, lease_seconds: int = 150) -> list[dict[
               AND ai_last_error_code=ANY(%s) AND ai_retry_count>=%s""",
             (sorted(DETERMINISTIC_AI_FAILURE_CODES),
              min(_deterministic_ai_attempts(), _max_ai_attempts())))
+        release_parked_retry_flags(cur)
         # Live mail first, then the backlog -- each oldest-first within itself.
         #
         # Strict `ORDER BY sent_at ASC` is FIFO over the whole table, so a large

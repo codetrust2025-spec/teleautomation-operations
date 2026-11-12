@@ -135,6 +135,13 @@ def apply_decision(result: Mapping[str, Any]) -> dict[str, Any]:
     return value
 
 
+#: Booking failures no retry can change. A mail blocked by one of these is
+#: finished: its alert must not wait in AI Retry for work nothing will do.
+TERMINAL_BOOKING_FAILURES = frozenset({
+    "STALE_INTERVIEW_EVENT", "DUPLICATE_BOOKING", "NOT_ACTIONABLE", "PAST_INTERVIEW",
+})
+
+
 def outcome_for(booking_outcome: Mapping[str, Any]) -> AutomationState:
     """Translate an executor result without ever claiming an unpersisted slot."""
     status = _text(booking_outcome.get("status"))
@@ -147,8 +154,6 @@ def outcome_for(booking_outcome: Mapping[str, Any]) -> AutomationState:
     # A stale lifecycle replay or exact duplicate is terminal and has no work
     # left to do.  All other deterministic/infrastructure failures stay in the
     # automatic queue; a payment or candidate record can become valid later.
-    if _text(booking_outcome.get("failure_code")) in {
-        "STALE_INTERVIEW_EVENT", "DUPLICATE_BOOKING", "NOT_ACTIONABLE", "PAST_INTERVIEW",
-    }:
+    if _text(booking_outcome.get("failure_code")) in TERMINAL_BOOKING_FAILURES:
         return AutomationState.AUTO_IGNORE
     return AutomationState.AI_RETRY_PENDING
