@@ -147,8 +147,23 @@ def outcome_for(booking_outcome: Mapping[str, Any]) -> AutomationState:
     # A stale lifecycle replay or exact duplicate is terminal and has no work
     # left to do.  All other deterministic/infrastructure failures stay in the
     # automatic queue; a payment or candidate record can become valid later.
-    if _text(booking_outcome.get("failure_code")) in {
+    failure = _text(booking_outcome.get("failure_code"))
+    if failure in {
         "STALE_INTERVIEW_EVENT", "DUPLICATE_BOOKING", "NOT_ACTIONABLE", "PAST_INTERVIEW",
     }:
         return AutomationState.AUTO_IGNORE
+    # A cancellation that matches no booking, or several, was read correctly:
+    # the failure is the roster's, and asking the model again cannot change it.
+    # Until 13 Nov 2026 these went back to the AI queue -- 0.99-confidence
+    # readings of "your interview is cancelled" were re-run 12 to 18 times each
+    # and parked as AI_ATTEMPTS_EXHAUSTED, with the booking step running once.
+    # The alert stays under Booking failed, saying which booking to cancel by
+    # hand; it is final rather than retried.
+    if (failure in CANCELLATION_UNMATCHED_CODES
+            and classification_of(booking_outcome) == "interview_cancelled"):
+        return AutomationState.AUTO_IGNORE
     return AutomationState.AI_RETRY_PENDING
+
+
+#: Booking outcomes that mean a cancellation found nothing it could safely cancel.
+CANCELLATION_UNMATCHED_CODES = frozenset({"BOOKING_NOT_FOUND", "BOOKING_AMBIGUOUS"})

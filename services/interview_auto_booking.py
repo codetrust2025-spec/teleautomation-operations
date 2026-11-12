@@ -1712,6 +1712,8 @@ def _execute_auto_booking(
         )
         return {
             "status": booking_status, "event_type": event_type, "failure_code": exc.code,
+            # Which change the mail asked for decides whether a refusal is final.
+            "classification": classification,
             "message": exc.message, "block_reason": block_reason,
             "audit": audit, "notification": updated_notification,
         }
