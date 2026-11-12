@@ -33,16 +33,17 @@ import {
  */
 
 const PAGE_SIZE = 20;
-// Interview Related lists one compact row per email, so it can show more per
-// page; the reader picks 10 or 20 and the choice is kept on this device only.
-// Selection keeps its fixed page of groups.
+// Interview Related: 10 emails a page unless the reader picks 20 (owner,
+// 12 Nov 2026); the choice is kept on this device only. Selection keeps its
+// fixed page of groups.
 export const INTERVIEW_PAGE_SIZES = [10, 20];
+const INTERVIEW_DEFAULT_PAGE_SIZE = 10;
 const INTERVIEW_PAGE_SIZE_KEY = "mailAlerts.interview.pageSize";
 function storedInterviewPageSize() {
   try {
     const value = Number(window.localStorage.getItem(INTERVIEW_PAGE_SIZE_KEY));
-    return INTERVIEW_PAGE_SIZES.includes(value) ? value : PAGE_SIZE;
-  } catch { return PAGE_SIZE; }
+    return INTERVIEW_PAGE_SIZES.includes(value) ? value : INTERVIEW_DEFAULT_PAGE_SIZE;
+  } catch { return INTERVIEW_DEFAULT_PAGE_SIZE; }
 }
 function storeInterviewPageSize(value) {
   try { window.localStorage.setItem(INTERVIEW_PAGE_SIZE_KEY, String(value)); } catch { /* private mode: the choice lasts this visit */ }
