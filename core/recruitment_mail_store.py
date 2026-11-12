@@ -2425,6 +2425,14 @@ def booking_source_message(provider_message_id: str) -> dict[str, Any] | None:
     return rows[0] if len(rows) == 1 else None
 
 
+# A re-read that settles a mail clears the retry flag its first read left.
+# Without this a reprocess only touched `updated_at`: the Innominds offer of
+# 24 Aug 2026 was re-read on 12 Nov as offer_received at 1.0 and still sat in
+# AI Retry. A re-read never raises a flag, and leaves any other priority alone.
+_REREAD_PRIORITY_SQL = """CASE WHEN priority IN ('retry_pending','review_required')
+                AND %s NOT IN ('retry_pending','review_required') THEN %s ELSE priority END"""
+
+
 def notification_priority(classification: str, *, confidence: float, requires_review: bool = False) -> str:
     if requires_review or confidence < float(__import__('os').getenv('OLLAMA_CONFIDENCE_THRESHOLD', '0.75')):
         return "retry_pending"
@@ -2806,18 +2814,19 @@ def create_monitoring_notification(
         # A Selection mail filed before under another of its possible
         # classifications is the same alert: a later offer from that company
         # can change how a re-read mail is filed.
+        confidence = float(event.get("confidence") or analysis.get("confidence") or 0)
+        priority = notification_priority(classification, confidence=confidence, requires_review=bool(event.get("requires_manual_review")))
         if str(analysis["classification"]) in SELECTION_RELATED_CLASSIFICATIONS:
-            cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now()
+            cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now(),
+              priority=""" + _REREAD_PRIORITY_SQL + """
               WHERE gmail_message_id=%s AND classification = ANY(%s) RETURNING *""",
-              (provider_id, sorted({str(analysis["classification"]), *_SELECTION_REFILINGS})))
+              (priority, priority, provider_id, sorted({str(analysis["classification"]), *_SELECTION_REFILINGS})))
             existing = _rows(cur)
             if existing:
                 return existing[0]
         notification_id = _id()
         company = structured.get("company") or {}
         job = structured.get("job") or {}
-        confidence = float(event.get("confidence") or analysis.get("confidence") or 0)
-        priority = notification_priority(classification, confidence=confidence, requires_review=bool(event.get("requires_manual_review")))
         reason = str(structured.get("reason") or structured.get("ignore_reason") or '')[:1000]
         action = str(structured.get("recommended_action") or '')[:1000]
         cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
@@ -2835,9 +2844,10 @@ def create_monitoring_notification(
             # A reprocess updates the existing row but is not a second alert.
             # Returning the same distinction to the caller prevents it from
             # publishing another `notification_created` event and sound.
-            cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now()
+            cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now(),
+              priority=""" + _REREAD_PRIORITY_SQL + """
               WHERE gmail_message_id=%s AND classification=%s RETURNING *""",
-              (provider_id, classification))
+              (priority, priority, provider_id, classification))
             existing = _rows(cur)
             # Nothing inserted and nothing to update: the trash trigger skipped
             # the row. That is "no alert", not an error.
