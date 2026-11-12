@@ -98,7 +98,9 @@ def alerts(monkeypatch):
         cur.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
     try:
         with connect() as conn, conn.cursor() as cur:
-            for statement in notifications_ddl() + events_ddl():
+            # The visibility rule also hides trashed alerts (migration 038).
+            trash = _create_table("038_mail_alert_trash.sql", "mail_alert_trash")
+            for statement in notifications_ddl() + events_ddl() + [trash]:
                 cur.execute(statement)
         monkeypatch.setattr(store, "get_connection", connect)
         monkeypatch.setattr(recruitment_identity, "load_links", lambda: {})
