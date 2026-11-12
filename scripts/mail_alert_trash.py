@@ -86,7 +86,8 @@ def purge(cur, ids, _args) -> int:
         SELECT p.id FROM unnest(%s::text[]) AS p(id)
         LEFT JOIN mail_alert_trash t ON t.notification_id=p.id AND t.purged_at IS NULL
         LEFT JOIN mail_monitoring_notifications n ON n.id=p.id
-        WHERE t.notification_id IS NULL OR n.id IS NULL OR to_jsonb(n) <> t.row_data""", (ids,))
+        WHERE t.notification_id IS NULL OR n.id IS NULL
+           OR jsonb_strip_nulls(to_jsonb(n)) <> jsonb_strip_nulls(t.row_data)""", (ids,))
     refused = [row[0] for row in cur.fetchall()]
     if refused:
         raise SystemExit("refused, nothing deleted -- not in Trash, already purged, or changed since "

@@ -3765,7 +3765,15 @@ def notification_email(notification_id: str) -> dict[str, Any] | None:
 
 
 _RESOLVED_TTL_SECONDS = 60.0
-_resolved_cache: dict[str, Any] = {"at": 0.0, "value": {}}
+# "at" is None until the first resolution. A number as the "never" marker is
+# not safe: time.monotonic() counts from boot, so on a host (or CI runner) up
+# for less than the TTL, `now - 0.0 < TTL` held and an empty cache was served.
+_resolved_cache: dict[str, Any] = {"at": None, "value": {}}
+
+
+def clear_resolved_companies() -> None:
+    """Forget the cached resolution, so the next read resolves afresh."""
+    _resolved_cache.update(at=None, value={})
 
 
 def _booking_companies() -> dict[str, str]:
@@ -3794,13 +3802,18 @@ def resolved_alert_companies(cur, *, refresh: bool = False) -> dict[str, tuple[s
     from services.recruitment_mail_agent import clean_email
 
     now = time.monotonic()
-    if not refresh and now - float(_resolved_cache["at"]) < _RESOLVED_TTL_SECONDS:
+    cached_at = _resolved_cache["at"]
+    if not refresh and cached_at is not None and now - cached_at < _RESOLVED_TTL_SECONDS:
         return _resolved_cache["value"]
     bookings = _booking_companies()
-    cur.execute("SELECT sender_email, company_name FROM mail_monitoring_notifications WHERE btrim(COALESCE(company_name, '')) <> ''")
+    # Only companies the alerts themselves named are evidence: one this
+    # resolver stored (company_source set) never proves another.
+    stored_only = " AND company_source IS NULL" if "company_source" in _notification_columns(cur) else ""
+    cur.execute("SELECT sender_email, company_name FROM mail_monitoring_notifications"
+                f" WHERE btrim(COALESCE(company_name, '')) <> ''{stored_only}")
     evidence = Evidence(cur.fetchall(), bookings.values())
     cur.execute(
-        f"""SELECT n.id, n.candidate_name, n.sender_email, n.email_subject, n.booking_id,
+        f"""SELECT n.id, n.candidate_name, n.sender_email, n.sender_name, n.email_subject, n.booking_id,
                    ARRAY(SELECT btrim(s.company_name) FROM mail_monitoring_notifications s
                           WHERE s.gmail_thread_id = n.gmail_thread_id AND s.id <> n.id
                             AND COALESCE(n.gmail_thread_id, '') <> '' AND btrim(COALESCE(s.company_name, '')) <> ''),
@@ -3811,9 +3824,10 @@ def resolved_alert_companies(cur, *, refresh: bool = False) -> dict[str, tuple[s
         list(_visibility_params()),
     )
     value: dict[str, tuple[str, str]] = {}
-    for alert_id, name, sender, subject, booking_id, thread, body in cur.fetchall():
+    for alert_id, name, sender, sender_name, subject, booking_id, thread, body in cur.fetchall():
         company, source = resolve(
-            {"candidate_name": name, "sender_email": sender, "email_subject": subject}, evidence,
+            {"candidate_name": name, "sender_email": sender, "sender_name": sender_name, "email_subject": subject},
+            evidence,
             booking_company=bookings.get(str(booking_id or ""), ""), thread_companies=thread or [],
             body=clean_email(body or ""),
         )
@@ -3823,18 +3837,23 @@ def resolved_alert_companies(cur, *, refresh: bool = False) -> dict[str, tuple[s
     return value
 
 
-_notification_columns_cache: list[str] = []
+# Per schema: one process may read schemas of different shapes (a migration
+# adds a column; tests build their own), and one schema's list must never
+# describe another's.
+_notification_columns_cache: dict[str, list[str]] = {}
 
 
 def _notification_columns(cur) -> list[str]:
-    if not _notification_columns_cache:
+    cur.execute("SELECT current_schema()")
+    schema = str(cur.fetchone()[0])
+    if schema not in _notification_columns_cache:
         cur.execute(
             """SELECT column_name FROM information_schema.columns
                 WHERE table_name = 'mail_monitoring_notifications' AND table_schema = current_schema()
                 ORDER BY ordinal_position"""
         )
-        _notification_columns_cache.extend(row[0] for row in cur.fetchall())
-    return _notification_columns_cache
+        _notification_columns_cache[schema] = [row[0] for row in cur.fetchall()]
+    return _notification_columns_cache[schema]
 
 
 def list_category_emails(*, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0) -> dict[str, Any]:
@@ -3865,11 +3884,13 @@ def list_category_emails(*, filters: dict[str, Any] | None = None, limit: int = 
         # resolved one -- so every filter below sees one company per alert.
         select = ", ".join(
             "COALESCE(NULLIF(btrim(t.company_name), ''), r.company) AS company_name" if column == "company_name"
-            else f"t.{column}" for column in columns
+            else f"t.{column}" for column in columns if column != "company_source"
         )
+        # A company the backfill stored keeps the source it recorded.
+        stored_source = "t.company_source" if "company_source" in columns else "NULL::text"
         shadow = (
             "resolved AS (SELECT * FROM unnest(%s::text[], %s::text[], %s::text[]) AS r(id, company, source)),"
-            f" mail_monitoring_notifications AS (SELECT {select}, r.source AS company_source"
+            f" mail_monitoring_notifications AS (SELECT {select}, COALESCE({stored_source}, r.source) AS company_source"
             f" FROM {table} t LEFT JOIN resolved r ON r.id = t.id::text)"
         )
         shadow_params = [[k for k, _ in resolved_items], [v[0] for _, v in resolved_items], [v[1] for _, v in resolved_items]]

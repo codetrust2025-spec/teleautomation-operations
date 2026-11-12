@@ -248,6 +248,9 @@ const COMPANY_SOURCE = {
   booking: "from this interview's booking",
   thread: "from the same email thread",
   sender: "from the employer's own email domain",
+  "forwarded sender": "from the forwarded mail's original sender",
+  "job board relay": "from the recruiter's own domain behind the job board",
+  "sender name": "from the sender's name",
   subject: "stated in the subject",
   "email body": "stated in the email",
 };

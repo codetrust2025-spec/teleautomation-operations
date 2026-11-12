@@ -161,9 +161,9 @@ def test_interview_emails_follow_the_tab_company_and_paging(mails):
 
 @pytest.fixture(autouse=True)
 def _fresh_company_resolution():
-    store._resolved_cache.update(at=0.0, value={})
+    store.clear_resolved_companies()
     yield
-    store._resolved_cache.update(at=0.0, value={})
+    store.clear_resolved_companies()
 
 
 def add_sent(connect, alert_id, *, candidate, company, sender, subject, hours_ago, classification="interview_confirmed", booking_id=None):
@@ -200,3 +200,55 @@ def test_an_interview_email_without_a_company_shows_the_one_its_evidence_proves(
     with schema() as conn, conn.cursor() as cur:
         cur.execute("SELECT id, company_name FROM mail_monitoring_notifications WHERE id IN ('by-domain','by-booking','unproven') ORDER BY id")
         assert cur.fetchall() == [("by-booking", ""), ("by-domain", None), ("unproven", None)]
+
+
+def test_the_backfill_stores_what_the_resolver_proves_and_can_be_undone(schema, monkeypatch, tmp_path):
+    from scripts import backfill_alert_companies as backfill
+
+    monkeypatch.setattr(store, "_booking_companies", lambda: {"bk-1": "DXC Technology"})
+    add_sent(schema, "named", candidate="ravi", company="HCLTech", sender="hr@hcltech.com", subject="HCLTech | Interview", hours_ago=9)
+    add_sent(schema, "by-domain", candidate="ravi", company=None, sender="hr-team@hcltech.com", subject="Ravi", hours_ago=1)
+    add_sent(schema, "by-booking", candidate="meera", company="", sender="a@dxc.com", subject="Tech 1 Interview || Meera", hours_ago=2, booking_id="bk-1")
+    add_sent(schema, "unproven", candidate="meera", company=None, sender="x@inbound.workablemail.com", subject="Interview for Developer job", hours_ago=3)
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute("SELECT company_name, company_source FROM mail_monitoring_notifications WHERE id = 'named'")
+        assert cur.fetchone() == ("HCLTech", None)
+
+    assert backfill.main([]) == 0  # a dry run writes nothing
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM mail_monitoring_notifications WHERE company_source IS NOT NULL")
+        assert cur.fetchone()[0] == 0
+
+    backup = tmp_path / "backup.json"
+    assert backfill.main(["--apply", "--backup", str(backup)]) == 0
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, company_name, company_source FROM mail_monitoring_notifications ORDER BY id")
+        assert cur.fetchall() == [("by-booking", "DXC Technology", "booking"), ("by-domain", "HCLTech", "sender"),
+                                  ("named", "HCLTech", None), ("unproven", None, None)]
+    # The screen shows the stored company with the source it recorded.
+    by = {r["id"]: r for r in store.list_category_emails(filters={"classification_group": "interview"})["emails"]}
+    assert (by["by-domain"]["company_name"], by["by-domain"]["company_source"]) == ("HCLTech", "sender")
+    assert by["named"]["company_source"] is None
+
+    # Idempotent: a second run finds nothing left to store.
+    with schema() as conn, conn.cursor() as cur:
+        assert backfill.plan(cur) == []
+
+    # A company set by hand after the run is kept by --restore; the rest go back.
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE mail_monitoring_notifications SET company_name = 'DXC', company_source = NULL WHERE id = 'by-booking'")
+    assert backfill.main(["--restore", str(backup)]) == 0
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, company_name, company_source FROM mail_monitoring_notifications ORDER BY id")
+        assert cur.fetchall() == [("by-booking", "DXC", None), ("by-domain", None, None),
+                                  ("named", "HCLTech", None), ("unproven", None, None)]
+
+
+def test_a_stored_resolution_is_not_evidence_for_another_alert(schema, monkeypatch):
+    monkeypatch.setattr(store, "_booking_companies", lambda: {})
+    # Only a resolved row names a company for this domain: it proves nothing.
+    add_sent(schema, "resolved", candidate="ravi", company="Northwind", sender="a@northwind.com", subject="Interview", hours_ago=2)
+    add_sent(schema, "empty", candidate="ravi", company=None, sender="b@northwind.com", subject="Round 2", hours_ago=1)
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE mail_monitoring_notifications SET company_source = 'subject' WHERE id = 'resolved'")
+        assert store.resolved_alert_companies(cur, refresh=True) == {}
