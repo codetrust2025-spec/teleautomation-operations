@@ -227,6 +227,16 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
   </article>;
 }
 
+// Where a company came from when the alert itself named none (server:
+// core/mail_alert_company.py). Shown on hover; the name itself is plain.
+const COMPANY_SOURCE = {
+  booking: "from this interview's booking",
+  thread: "from the same email thread",
+  sender: "from the employer's own email domain",
+  subject: "stated in the subject",
+  "email body": "stated in the email",
+};
+
 // Interview Related: one card per email, no grouping. Candidate, company,
 // subject, the status the mail states, when it arrived, and Unread / Opened.
 // Tapping it opens the mail here and marks that one mail read.
@@ -243,7 +253,7 @@ export function EmailCard({ item, open, content, onOpenMail, onAction }) {
         <strong className="mcp-email__name" title={name}>{name}</strong>
         <span className={`mcp-state mcp-state--${unread ? "unread" : "read"}`}>{unread ? "Unread" : "Opened"}</span>
       </span>
-      <span className="mcp-email__company" title={company}><Glyph name="building" size={15} />{company}{item.job_role ? <span className="mcp-email__role"> · {item.job_role}</span> : null}</span>
+      <span className="mcp-email__company" title={COMPANY_SOURCE[item.company_source] ? `${company} — ${COMPANY_SOURCE[item.company_source]}` : company}><Glyph name="building" size={15} />{company}{item.job_role ? <span className="mcp-email__role"> · {item.job_role}</span> : null}</span>
       <span className="mcp-email__subject" title={item.email_subject || undefined}>{item.email_subject || "(no subject)"}</span>
       <span className="mcp-email__foot">
         <StatusPill label={statusText(item)} evidence={evidence} tone={mailStatusTone(item)} />
@@ -382,11 +392,10 @@ export function MailCategoryPage({ category }) {
       const base = filterParams;
       const [groups, summary, ...tileCounts] = await Promise.all([
         perEmail
-          ? Promise.all([
-            request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`),
-            // The company options, as the grouped page lists them.
-            request(`/api/mail-monitoring/groups?${query({ classification_group: category, limit: 1, offset: 0 })}`),
-          ]).then(([emails, groups]) => ({ emails: emails.emails || [], total: emails.total, companies: groups.companies || [] }))
+          // The company options come with the emails: they include companies
+          // resolved from an alert's evidence, so those can be filtered too.
+          ? request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`)
+            .then((emails) => ({ emails: emails.emails || [], total: emails.total, companies: emails.companies || [] }))
           : request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit: PAGE_SIZE, offset })}`),
         fetchMailSummary(),
         ...CATEGORY_TILES.map((t) => request(`/api/mail-monitoring/notifications?${query({ ...base, ...t.params, limit: 1, offset: 0, sort: "newest" })}`)),

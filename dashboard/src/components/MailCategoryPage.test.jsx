@@ -41,7 +41,7 @@ const HISTORY = [
 const INTERVIEW_EMAILS = [
   { id: "i2", candidate_id: "c-ravi", candidate_name: "Ravi Kumar", company_name: "Capgemini", job_role: "Analyst", email_subject: "Interview confirmed for 14 Nov", classification: "interview_confirmed", candidate_status: "Interview Confirmed", verified_status: "Interview Confirmed", is_read: false, email_received_at: "2026-11-11T09:00:00Z" },
   { id: "i1", candidate_id: "c-ravi", candidate_name: "Ravi Kumar", company_name: "Capgemini", email_subject: "You are shortlisted for interview", classification: "interview_shortlisted", candidate_status: "Interview Shortlisted", is_read: true, email_received_at: "2026-11-10T09:00:00Z" },
-  { id: "i0", candidate_id: "c-ashok", candidate_name: "Ashok Rao", company_name: "HCLTech", email_subject: "Interview slot", classification: "interview_confirmed", is_read: true, email_received_at: "2026-11-09T09:00:00Z" },
+  { id: "i0", candidate_id: "c-ashok", candidate_name: "Ashok Rao", company_name: "HCLTech", company_source: "booking", email_subject: "Interview slot", classification: "interview_confirmed", is_read: true, email_received_at: "2026-11-09T09:00:00Z" },
 ];
 const COUNTS = { unread: 2, retry: 0, all: 27 };
 
@@ -61,7 +61,7 @@ function install({ groups = GROUPS, history = HISTORY } = {}) {
     if (path.includes("/mail-monitoring/emails?")) {
       const rows = INTERVIEW_EMAILS.map((row) => ({ ...row, is_read: readNow(row) }))
         .filter((row) => params.get("is_read") === null || String(row.is_read) === params.get("is_read"));
-      return respond({ emails: rows, total: rows.length });
+      return respond({ emails: rows, total: rows.length, companies: [{ key: "capgemini", name: "Capgemini", count: 2 }, { key: "hcltech", name: "HCLTech", count: 1 }] });
     }
     if (path.includes("/groups/emails")) return respond({ notifications: history.map((row) => ({ ...row, is_read: readNow(row) })), total: history.length });
     if (path.includes("/groups?")) {
@@ -371,5 +371,15 @@ describe("Interview Related: one card per email", () => {
     renderPage("selection");
     expect(await screen.findByRole("article", { name: "Ashok Rao, HCLTech" })).toBeInTheDocument();
     expect(calls.some((c) => c.path.includes("/mail-monitoring/emails?"))).toBe(false);
+  });
+
+  it("a company resolved from evidence says where it came from; a stored one does not", async () => {
+    renderPage("interview");
+    const cards = await screen.findAllByRole("article");
+    expect(cards[2].querySelector(".mcp-email__company").getAttribute("title")).toBe("HCLTech — from this interview's booking");
+    expect(cards[0].querySelector(".mcp-email__company").getAttribute("title")).toBe("Capgemini");
+    // The company options come from the emails endpoint, resolved names included.
+    expect([...screen.getByLabelText("Company filter").options].map((o) => o.textContent)).toEqual(["All Companies", "Capgemini", "HCLTech"]);
+    expect(calls.some((c) => c.path.includes("/groups?"))).toBe(false);
   });
 });

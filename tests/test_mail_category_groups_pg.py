@@ -157,3 +157,46 @@ def test_interview_emails_follow_the_tab_company_and_paging(mails):
     assert [r["id"] for r in cap["emails"]] == ["c-int", "c-int2"]
     second = store.list_category_emails(filters={"classification_group": "interview"}, limit=1, offset=1)
     assert [r["id"] for r in second["emails"]] == ["c-int2"] and second["total"] == 4
+
+
+@pytest.fixture(autouse=True)
+def _fresh_company_resolution():
+    store._resolved_cache.update(at=0.0, value={})
+    yield
+    store._resolved_cache.update(at=0.0, value={})
+
+
+def add_sent(connect, alert_id, *, candidate, company, sender, subject, hours_ago, classification="interview_confirmed", booking_id=None):
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO mail_monitoring_notifications(
+                   id, candidate_id, candidate_name, gmail_message_id, classification, company_name, sender_email,
+                   email_subject, is_read, booking_id, email_received_at, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,false,%s, now() - make_interval(hours => %s), now())""",
+            (alert_id, candidate, candidate.title(), "gm-" + alert_id, classification, company, sender,
+             subject, booking_id, hours_ago),
+        )
+
+
+def test_an_interview_email_without_a_company_shows_the_one_its_evidence_proves(schema, monkeypatch):
+    monkeypatch.setattr(store, "_booking_companies", lambda: {"bk-1": "DXC Technology"})
+    add_sent(schema, "named", candidate="ravi", company="HCLTech", sender="hr@hcltech.com", subject="HCLTech | Interview", hours_ago=9)
+    add_sent(schema, "by-domain", candidate="ravi", company=None, sender="hr-team@hcltech.com", subject="Ravi", hours_ago=1)
+    add_sent(schema, "by-booking", candidate="meera", company="", sender="a@dxc.com", subject="Tech 1 Interview || Meera", hours_ago=2, booking_id="bk-1")
+    add_sent(schema, "unproven", candidate="meera", company=None, sender="x@inbound.workablemail.com", subject="Interview for Developer job", hours_ago=3)
+    result = store.list_category_emails(filters={"classification_group": "interview"})
+    by = {r["id"]: r for r in result["emails"]}
+    assert (by["by-domain"]["company_name"], by["by-domain"]["company_source"]) == ("HCLTech", "sender")
+    assert (by["by-booking"]["company_name"], by["by-booking"]["company_source"]) == ("DXC Technology", "booking")
+    assert not by["unproven"]["company_name"] and by["unproven"]["company_source"] is None
+    assert by["named"]["company_source"] is None  # a stored company is shown as stored
+    # The company filter, search and options see the resolved company too.
+    hcl = store.list_category_emails(filters={"classification_group": "interview", "company_key": "hcltech"})
+    assert sorted(r["id"] for r in hcl["emails"]) == ["by-domain", "named"]
+    found = store.list_category_emails(filters={"classification_group": "interview", "search": "DXC"})
+    assert [r["id"] for r in found["emails"]] == ["by-booking"]
+    assert {c["key"] for c in result["companies"]} >= {"hcltech", "dxc technology"}
+    # Nothing is written: the stored rows still hold no company.
+    with schema() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, company_name FROM mail_monitoring_notifications WHERE id IN ('by-domain','by-booking','unproven') ORDER BY id")
+        assert cur.fetchall() == [("by-booking", ""), ("by-domain", None), ("unproven", None)]

@@ -3667,6 +3667,79 @@ def notification_email(notification_id: str) -> dict[str, Any] | None:
     }
 
 
+_RESOLVED_TTL_SECONDS = 60.0
+_resolved_cache: dict[str, Any] = {"at": 0.0, "value": {}}
+
+
+def _booking_companies() -> dict[str, str]:
+    """Booking id -> the company the booking records (`interview_company`). Read-only."""
+    try:
+        from features.candidate_store import _load as load_candidates
+        rows = load_candidates().get("candidates") or []
+    except Exception:  # candidate store unavailable: no booking evidence
+        logging.getLogger(__name__).warning("mail alert company: booking companies unavailable", exc_info=True)
+        return {}
+    return {str(r.get("id")): " ".join(str(r.get("interview_company") or "").split())
+            for r in rows if r.get("id") and str(r.get("interview_company") or "").strip()}
+
+
+def resolved_alert_companies(cur, *, refresh: bool = False) -> dict[str, tuple[str, str]]:
+    """Alert id -> (company, source) for visible alerts stored without a company.
+
+    Decided from evidence the alert already has (see core.mail_alert_company):
+    its booking, its Gmail thread, the employer's own sender domain, or a
+    company its subject or body states and the data corroborates. Alerts with
+    no such evidence are absent. Nothing is written; cached for a minute.
+    """
+    import time
+
+    from core.mail_alert_company import Evidence, resolve
+    from services.recruitment_mail_agent import clean_email
+
+    now = time.monotonic()
+    if not refresh and now - float(_resolved_cache["at"]) < _RESOLVED_TTL_SECONDS:
+        return _resolved_cache["value"]
+    bookings = _booking_companies()
+    cur.execute("SELECT sender_email, company_name FROM mail_monitoring_notifications WHERE btrim(COALESCE(company_name, '')) <> ''")
+    evidence = Evidence(cur.fetchall(), bookings.values())
+    cur.execute(
+        f"""SELECT n.id, n.candidate_name, n.sender_email, n.email_subject, n.booking_id,
+                   ARRAY(SELECT btrim(s.company_name) FROM mail_monitoring_notifications s
+                          WHERE s.gmail_thread_id = n.gmail_thread_id AND s.id <> n.id
+                            AND COALESCE(n.gmail_thread_id, '') <> '' AND btrim(COALESCE(s.company_name, '')) <> ''),
+                   COALESCE(NULLIF(m.body_text, ''), m.html_body_text, '')
+              FROM mail_monitoring_notifications n
+              LEFT JOIN mailbox_messages m ON m.provider_message_id = n.gmail_message_id AND m.candidate_id = n.candidate_id
+             WHERE {_visibility_for("n")} AND btrim(COALESCE(n.company_name, '')) = ''""",
+        list(_visibility_params()),
+    )
+    value: dict[str, tuple[str, str]] = {}
+    for alert_id, name, sender, subject, booking_id, thread, body in cur.fetchall():
+        company, source = resolve(
+            {"candidate_name": name, "sender_email": sender, "email_subject": subject}, evidence,
+            booking_company=bookings.get(str(booking_id or ""), ""), thread_companies=thread or [],
+            body=clean_email(body or ""),
+        )
+        if company:
+            value[str(alert_id)] = (company, source)
+    _resolved_cache.update(at=now, value=value)
+    return value
+
+
+_notification_columns_cache: list[str] = []
+
+
+def _notification_columns(cur) -> list[str]:
+    if not _notification_columns_cache:
+        cur.execute(
+            """SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'mail_monitoring_notifications' AND table_schema = current_schema()
+                ORDER BY ordinal_position"""
+        )
+        _notification_columns_cache.extend(row[0] for row in cur.fetchall())
+    return _notification_columns_cache
+
+
 def list_category_emails(*, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0) -> dict[str, Any]:
     """One row per alert, newest first, for the Interview Related page's email cards.
 
@@ -3674,41 +3747,74 @@ def list_category_emails(*, filters: dict[str, Any] | None = None, limit: int = 
     status, and the company by its employer key, aliases included), so the
     company options and counters agree with the grouped page. Each row carries
     its evidence-checked status (`verified_status`, `status_evidence`) and the
-    employer's display name, as the grouped cards show it. Read-only.
+    employer's display name. An alert stored without a company shows the one
+    its evidence proves (`resolved_alert_companies`), with `company_source`
+    saying where it came from; search, the company filter and the company
+    options use that name too. Read-only: the stored rows keep what they hold.
     """
     filters = dict(filters or {})
     company_key = str(filters.pop("company_key", "") or "").strip().lower()
-    clause, params, _order = notification_filter_sql(filters)
-    key = _employer_key_sql()
-    if company_key:
-        clause += f" AND {key} = %s"
-        params = params + [company_key]
+    group = str(filters.get("classification_group") or "").strip().lower()
     page = max(1, min(int(limit), 100))
     skip = max(0, int(offset))
     with get_connection() as conn, conn.cursor() as cur:
-        resolved = employer_aliases(cur)
-        alias_sql, alias_params = _alias_cte(resolved)
-        names = {v[0]: v[1] for v in resolved[0].values()}
-        cur.execute(
-            f"WITH {alias_sql} SELECT count(*) FROM mail_monitoring_notifications WHERE {clause}",
-            alias_params + params,
+        resolved = resolved_alert_companies(cur)
+        resolved_items = sorted(resolved.items())
+        columns = _notification_columns(cur)
+        cur.execute("SELECT quote_ident(current_schema())")
+        table = f"{cur.fetchone()[0]}.mail_monitoring_notifications"
+        # The query reads `mail_monitoring_notifications` through a CTE of the
+        # same name whose company_name is the stored one or, when empty, the
+        # resolved one -- so every filter below sees one company per alert.
+        select = ", ".join(
+            "COALESCE(NULLIF(btrim(t.company_name), ''), r.company) AS company_name" if column == "company_name"
+            else f"t.{column}" for column in columns
         )
+        shadow = (
+            "resolved AS (SELECT * FROM unnest(%s::text[], %s::text[], %s::text[]) AS r(id, company, source)),"
+            f" mail_monitoring_notifications AS (SELECT {select}, r.source AS company_source"
+            f" FROM {table} t LEFT JOIN resolved r ON r.id = t.id::text)"
+        )
+        shadow_params = [[k for k, _ in resolved_items], [v[0] for _, v in resolved_items], [v[1] for _, v in resolved_items]]
+        resolved_aliases = employer_aliases(cur)
+        alias_sql, alias_params = _alias_cte(resolved_aliases)
+        names = {v[0]: v[1] for v in resolved_aliases[0].values()}
+        clause, params, _order = notification_filter_sql(filters)
+        key = _employer_key_sql()
+        if company_key:
+            clause += f" AND {key} = %s"
+            params = params + [company_key]
+        head = f"WITH {shadow}, {alias_sql}"
+        head_params = shadow_params + alias_params
+        cur.execute(f"{head} SELECT count(*) FROM mail_monitoring_notifications WHERE {clause}", head_params + params)
         total = int(cur.fetchone()[0])
         cur.execute(
-            f"""WITH {alias_sql} SELECT mail_monitoring_notifications.*, {key} AS company_key
+            f"""{head} SELECT mail_monitoring_notifications.*, {key} AS company_key
                   FROM mail_monitoring_notifications WHERE {clause}
                  ORDER BY COALESCE(email_received_at, created_at) DESC, id
                  LIMIT %s OFFSET %s""",
-            alias_params + params + [page, skip],
+            head_params + params + [page, skip],
         )
         rows = reconcile_booking_claims(_rows(cur))
         texts = _mail_texts(cur, [r["id"] for r in rows if r.get("classification") in _PROOF])
+        # The company options: every company in this category, resolved
+        # names included, before the company, status, tab and search filters.
+        base, base_params, _ = notification_filter_sql({"classification_group": group} if group else {})
+        cur.execute(
+            f"""{head} SELECT {key} AS key, (array_agg(btrim(company_name) ORDER BY created_at DESC))[1] AS name, count(*) AS count
+                  FROM mail_monitoring_notifications WHERE {base} AND btrim(COALESCE(company_name, '')) <> ''
+                 GROUP BY 1 ORDER BY 2""",
+            head_params + base_params,
+        )
+        companies = _rows(cur)
+    for company in companies:
+        company["name"] = names.get(company["key"], company["name"])
     for row in rows:
         row["verified_status"], row["status_evidence"] = verified_status(
             row.get("classification") or "", row.get("candidate_status") or "", texts.get(row["id"], []))
         if row.get("company_key"):
             row["company_name"] = names.get(row["company_key"], row.get("company_name"))
-    return {"emails": rows, "total": total}
+    return {"emails": rows, "total": total, "companies": companies}
 
 
 def list_group_emails(candidate_id: str, company_key: str, *, limit: int = 200) -> list[dict[str, Any]]:
