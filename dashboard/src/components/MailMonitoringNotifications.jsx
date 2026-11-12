@@ -301,6 +301,9 @@ export function MailNotificationBell({ compact = false }) {
 export const MAIL_TABS = [
   { id: "unread",  label: "Unread Invitations", filterKey: "read",     filterValue: "false"         },
   { id: "retry",   label: "AI Retry Pending",   filterKey: "priority", filterValue: "retry_pending" },
+  // Mail the AI read correctly whose automatic booking was refused or not
+  // saved. Kept apart from AI Retry: nothing here waits on the model.
+  { id: "booking", label: "Booking Failed",     filterKey: "priority", filterValue: "booking_failed" },
   { id: "all",     label: "All Alerts",          filterKey: null,       filterValue: null            },
 ];
 // Which filter fields a tab owns. Switching tabs clears exactly these keys
@@ -668,10 +671,12 @@ export function MailMonitoringNotifications({ category = "" } = {}) {
   const tabTotals = category ? {
     unread: summary[`${category}_unread`] || 0,
     retry:  0,
+    booking: 0,
     all:    summary[`${category}_related`] || 0,
   } : {
     unread: summary.unread || 0,
     retry:  summary.ai_retry_pending || 0,
+    booking: summary.booking_failed || 0,
     all:    summary.visible_total || 0,
   };
   // What each badge shows: what that tab's table holds under the filters set

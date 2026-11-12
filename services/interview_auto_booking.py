@@ -447,7 +447,47 @@ def _stable_interview_ids(*values: Any) -> set[str]:
     return set(_STABLE_INTERVIEW_ID_RE.findall(text))
 
 
-def _reference_schedule(result: dict[str, Any], classification: str) -> dict[str, str] | None:
+_STATED_CLOCK = re.compile(r"\b(1[0-2]|0?[1-9])(?:[:.]([0-5]\d))?\s*([ap])\.?\s?m\b\.?", re.I)
+_STATED_ZONE = re.compile(r"\b(IST|UTC|GMT)\b|Asia/(?:Kolkata|Calcutta)", re.I)
+
+
+def _schedule_stated_in_mail(message: dict[str, Any] | None) -> dict[str, str] | None:
+    """The one interview time a cancellation mail states, read from its own words.
+
+    A cancellation names the sitting it cancels -- "your interview ... has been
+    cancelled Thursday, 12 November 2026 at 2:00 pm IST", "Canceled event: ...
+    @ Thu Oct 15, 2026 5pm - 5:30pm (IST)" -- but the AI reading of these mails,
+    and the plain-text cancellation parser, keep no date or time. With nothing
+    to compare, every booking the candidate held scored zero and the
+    cancellation was refused as matching no booking (12 Nov, 14 Oct).
+
+    Only the subject and the start of the body are read, the date must be
+    explicit, and the zone must be stated (IST/UTC/GMT): anything less is no
+    reading at all, and the cancellation is matched on the rest of its evidence.
+    """
+    if not message:
+        return None
+    from services import calendar_invite_parser
+    text = " ".join(str(message.get(key) or "") for key in ("subject",))
+    body = " ".join(str(message.get(key) or "") for key in ("body_text", "body"))
+    text = re.sub(r"[͏​-‏﻿]+", " ", f"{text} {body[:1500]}")
+    sent = interview_lifecycle._sent_at(message.get("sent_at")) or datetime.now(ZoneInfo("Asia/Kolkata"))
+    day = calendar_invite_parser._plain_date(text, sent)
+    clock = _STATED_CLOCK.search(text)
+    zone_hit = _STATED_ZONE.search(text)
+    if not (day and clock and zone_hit):
+        return None
+    label = (zone_hit.group(1) or "IST").upper()
+    zone = ZoneInfo("UTC") if label in {"UTC", "GMT"} else ZoneInfo("Asia/Kolkata")
+    hour = int(clock.group(1)) % 12 + (12 if clock.group(3).lower() == "p" else 0)
+    source_dt = datetime(day.year, day.month, day.day, hour, int(clock.group(2) or 0), tzinfo=zone)
+    local = source_dt.astimezone(ZoneInfo("Asia/Kolkata"))
+    return {"date": local.date().isoformat(), "time": local.strftime("%H:%M")}
+
+
+def _reference_schedule(
+    result: dict[str, Any], classification: str, message: dict[str, Any] | None = None,
+) -> dict[str, str] | None:
     """Normalize an explicitly stated old/cancelled schedule without requiring it to be future."""
     interview = result.get("interview") or {}
     prefix = "original_" if classification == "interview_rescheduled" else ""
@@ -455,7 +495,9 @@ def _reference_schedule(result: dict[str, Any], classification: str) -> dict[str
     raw_time = str(interview.get(f"{prefix}time") or "").strip()
     timezone_name = str(interview.get(f"{prefix}timezone") or "").strip()
     if not (day and raw_time and timezone_name):
-        return None
+        # A reschedule mail states two times and cannot be read this way; a
+        # cancellation states exactly the one it cancels.
+        return _schedule_stated_in_mail(message) if classification == "interview_cancelled" else None
     try:
         source_day = date.fromisoformat(day)
         source_time = parse_interview_time(raw_time)
@@ -535,7 +577,7 @@ def _resolve_existing_slot(
     role = (result.get("job") or {}).get("title")
     round_name = interview.get("round")
     thread_id = message.get("provider_thread_id")
-    reference = _reference_schedule(result, classification)
+    reference = _reference_schedule(result, classification, message)
     message_ids = _stable_interview_ids(
         message.get("subject"),
         message.get("body"),
@@ -819,8 +861,39 @@ def _source_teams_meetings(message):
 
 
 def _source_meeting_identities(message) -> set:
-    """Every exact meeting identity in a mail: Teams meetings and HirePro interview rooms."""
-    return _source_teams_meetings(message) | _source_hirepro_interviews(message)
+    """Every exact meeting identity in a mail: Teams meetings, HirePro and Cantik Prime interview rooms."""
+    return (_source_teams_meetings(message) | _source_hirepro_interviews(message)
+            | _source_cantik_interviews(message))
+
+
+_CANTIK_HOST = 'assess.cantikprime.com'
+_CANTIK_ROOM = re.compile(r'/r/([A-Za-z0-9_-]{24,128})')
+
+
+def _source_cantik_interviews(message) -> set:
+    """Exact Cantik Prime interview rooms, by the personal join token in the link.
+
+    Cantik Prime sends an interview as "...your interview ... is booked" and
+    then as "Reminder: your interview with Cantik Prime" and "Starting soon",
+    each in its own thread, with no calendar event and no Teams link in the
+    body -- only the candidate's own join link, assess.cantikprime.com/r/<token>.
+    On 12 Nov the invite and its reminder (end times 14:45 and 14:30) were
+    booked as two interviews at 14:00. The token is one candidate's one
+    interview, so it is compared exactly; the shared portal login page
+    identifies nothing.
+    """
+    from urllib.parse import urlsplit
+    text = unescape(' '.join(str(message.get(k) or '') for k in (
+        'body', 'html_body', 'body_text', 'html_body_text')))
+    found = set()
+    for url in re.findall(r'''https?://[^\s<>"']+''', text):
+        parsed = urlsplit(url)
+        if parsed.hostname != _CANTIK_HOST:
+            continue
+        room = _CANTIK_ROOM.fullmatch(parsed.path.rstrip('/'))
+        if room:
+            found.add((_CANTIK_HOST, 'interview-room', room.group(1)))
+    return found
 
 
 _HIREPRO_HOST = 'ams.hirepro.in'
@@ -921,6 +994,27 @@ def _teams_short_meeting(url: str) -> tuple[str, str, str] | None:
     if len(passcodes) > 1 or (passcodes and not re.fullmatch(r'[A-Za-z0-9]{4,64}', passcodes[0])):
         return None
     return (parsed.hostname, f'/meet/{meeting.group(1)}', passcodes[0].lower() if passcodes else '')
+
+
+def booking_claim_keys(candidate_id: str, *, message: dict[str, Any], schedule: dict[str, str]) -> list[str]:
+    """The keys one new booking claims: its source mail, and each exact room at its start.
+
+    The room keys carry the start, because a provider keeps a room when an
+    interview moves and a new start is a new sitting.
+    """
+    keys = []
+    source = str(message.get("provider_message_id") or "").strip()
+    if source:
+        keys.append(f"mail:{candidate_id}:{source}")
+    for identity in sorted(_source_meeting_identities(message), key=lambda item: tuple(map(str, item))):
+        room = "|".join(str(part) for part in identity)
+        keys.append(f"room:{candidate_id}:{schedule['date']}:{schedule['time']}:{room}")
+    return keys
+
+
+def _booking_still_stands(booking_id: str) -> bool:
+    row = candidate_store.get_candidate(booking_id)
+    return bool(row) and candidate_store.slot_still_stands(row)
 
 
 def _recover_pending_lifecycle_slot(
@@ -1150,7 +1244,12 @@ def execute_auto_booking(
         event=event, state=final_state.value, result=automated_result,
         reason=str(outcome.get("failure_code") or outcome.get("status") or "AUTOMATION_COMPLETE"),
         booking_id=str((outcome.get("booking") or {}).get("id") or "") or None,
-        details={"event_type": outcome.get("event_type"), "booking_status": outcome.get("status")},
+        details={
+            "event_type": outcome.get("event_type"), "booking_status": outcome.get("status"),
+            # The mail was read; whatever failed after that was the booking.
+            # AI failures never reach this executor with a failure code.
+            "failure_kind": "booking" if outcome.get("failure_code") else None,
+        },
     )
     outcome["automation_state"] = final_state.value
     return outcome
@@ -1442,6 +1541,23 @@ def _execute_auto_booking(
                         payment_status="PASSED", duplicate_status="DUPLICATE",
                         booking_id=str(twin["id"]),
                     )
+                # The database's word on the same question, asked before any
+                # write: a key another standing booking holds stops this one.
+                claim_keys = booking_claim_keys(
+                    str(candidate["id"]), message=message, schedule=schedule,
+                )
+                try:
+                    mail_store.claim_booking_keys(
+                        claim_keys, candidate_id=str(candidate["id"]),
+                        source_message_id=str(message.get("provider_message_id") or ""),
+                        booking_stands=_booking_still_stands,
+                    )
+                except mail_store.BookingClaimTaken as exc:
+                    raise BookingValidationError(
+                        "DUPLICATE_BOOKING", "This candidate already has the same interview booking.",
+                        payment_status="PASSED", duplicate_status="DUPLICATE",
+                        booking_id=exc.booking_id,
+                    ) from exc
                 duplicate_status = "PASSED"
                 # Different interview identities are allowed to overlap.  The
                 # system records external interview commitments, not an exclusive
@@ -1469,6 +1585,7 @@ def _execute_auto_booking(
                         payment_status="PASSED", duplicate_status="DUPLICATE",
                         booking_id=str(exc.existing.get("id") or ""),
                     ) from exc
+                mail_store.settle_booking_claims(claim_keys, booking_id=str(booking.get("id") or ""))
             booking_status, event_type = (
                 ("Approved & Booked", "slot_manually_booked")
                 if manual_reviewer else ("Auto Booked", "slot_auto_booked")
@@ -1559,7 +1676,9 @@ def _execute_auto_booking(
         booking_status = "Duplicate Ignored" if duplicate_ignored else "Blocked"
         validation_status = "SKIPPED" if duplicate_ignored else "BLOCKED"
         display_status = "Already Booked — Duplicate Ignored" if duplicate_ignored else "Automatic Booking Blocked"
-        priority = "low" if duplicate_ignored else "retry_pending"
+        # A refused booking is not an AI failure: the mail was read and the
+        # roster said no. It is filed as a booking failure, never as AI Retry.
+        priority = "low" if duplicate_ignored else mail_store.BOOKING_FAILED_PRIORITY
         event_type = "duplicate_booking_ignored" if duplicate_ignored else "slot_booking_blocked"
         # A duplicate names the booking it duplicates, so "Already booked" can
         # be followed to it -- and corrected if that booking later goes.
@@ -1609,7 +1728,7 @@ def _execute_auto_booking(
         )
         updated_notification = mail_store.attach_booking_to_notification(
             notification.get("id"), audit_id=audit["id"], booking_id=None,
-            booking_status="Processing Failed", result=result, priority="retry_pending",
+            booking_status="Processing Failed", result=result, priority=mail_store.BOOKING_FAILED_PRIORITY,
             display_status="Automatic Booking Processing Failed",
             detail="Review the mail analysis and retry after the underlying error is resolved.",
             # An unexpected error remains durable retry work; it never becomes

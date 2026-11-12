@@ -272,11 +272,11 @@ describe("unread counts", () => {
 });
 
 describe("the compact mockup", () => {
-  it("counts Unread, Opened, AI Retry and All Alerts in one row; Opened asks for read mail", async () => {
+  it("counts Unread, Opened, AI Retry, Booking failed and All Alerts in one row; Opened asks for read mail", async () => {
     renderPage();
     const tabs = await screen.findByRole("tablist", { name: "Selection Related tabs" });
     expect(within(tabs).getAllByRole("tab").map((t) => t.querySelector(".mcp-tile__label").textContent))
-      .toEqual(["Unread", "Opened", "AI Retry", "All Alerts"]);
+      .toEqual(["Unread", "Opened", "AI Retry", "Booking failed", "All Alerts"]);
     fireEvent.click(within(tabs).getByRole("tab", { name: /Opened/ }));
     await waitFor(() => expect(groupsRequests().at(-1).get("is_read")).toBe("true"));
   });

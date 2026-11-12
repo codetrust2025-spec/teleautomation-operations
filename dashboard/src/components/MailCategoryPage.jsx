@@ -52,6 +52,7 @@ export const CATEGORY_TILES = [
   { id: "unread", label: "Unread", icon: "mail", params: { is_read: "false" } },
   { id: "opened", label: "Opened", icon: "eye", params: { is_read: "true" } },
   { id: "retry", label: "AI Retry", icon: "sparkles", params: { priority: "retry_pending" } },
+  { id: "booking", label: "Booking failed", icon: "info", params: { priority: "booking_failed" } },
   { id: "all", label: "All Alerts", icon: "layers", params: {} },
 ];
 
@@ -571,8 +572,8 @@ export function MailCategoryPage({ category }) {
       {loading && <OverlayLoader label="Loading alerts…" />}
       {!loading && loadError && <div className="mcp-empty" role="alert"><strong>Mail alerts could not be loaded.</strong><span>{loadError}</span><button type="button" onClick={() => load()}>Retry</button></div>}
       {!loading && !loadError && !(perEmail ? data.emails : data.groups).length && <div className="mcp-empty">
-        <strong>{filtered ? "No alerts match these filters." : tile === "unread" ? page.emptyUnread : tile === "retry" ? "No alerts are waiting for AI retry." : page.emptyAll}</strong>
-        <span>{filtered ? "Try another search, or clear the filters." : tile === "retry" ? "Mails the AI could not read yet appear here until a retry succeeds." : page.arriving}</span>
+        <strong>{filtered ? "No alerts match these filters." : tile === "unread" ? page.emptyUnread : tile === "retry" ? "No alerts are waiting for AI retry." : tile === "booking" ? "No automatic booking has failed." : page.emptyAll}</strong>
+        <span>{filtered ? "Try another search, or clear the filters." : tile === "retry" ? "Mails the AI could not read yet appear here until a retry succeeds." : tile === "booking" ? "Mails read correctly whose interview could not be booked, cancelled or moved appear here, with the reason." : page.arriving}</span>
         {filtered && <button type="button" onClick={() => { setSearch(""); setCompanyKey(""); setStatus(""); setOffset(0); }}>Clear filters</button>}
       </div>}
       {perEmail && data.emails.map((item) => <EmailCard key={item.id} item={item} open={openMails.has(item.id)}

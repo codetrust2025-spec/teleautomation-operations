@@ -234,6 +234,65 @@ def candidate_booking_lock(candidate_id: str):
             cur.execute("SELECT pg_advisory_unlock(hashtext(%s))", (f"ai-mail-booking:{candidate_id}",))
 
 
+class BookingClaimTaken(Exception):
+    """An interview key is already held by a booking that still stands."""
+
+    def __init__(self, claim_key: str, booking_id: str):
+        super().__init__(f"{claim_key} is held by booking {booking_id}")
+        self.claim_key = claim_key
+        self.booking_id = booking_id
+
+
+def claim_booking_keys(
+    keys: list[str], *, candidate_id: str, source_message_id: str, booking_stands,
+) -> None:
+    """Claim every key of one interview before its slot is written.
+
+    `interview_booking_claims.claim_key` is the primary key, so two claims of
+    one key cannot both succeed. A key already claimed is honoured only while
+    the booking it names still stands (`booking_stands(booking_id)`); a claim
+    left by a booking that was cancelled, released or never written (a crash
+    between claim and write) is taken over, so an interview that is really
+    gone can be booked again. Call under `candidate_booking_lock`.
+    """
+    if not keys or not use_postgres():
+        return
+    with get_connection() as conn, conn.cursor() as cur:
+        for key in keys:
+            cur.execute(
+                """INSERT INTO interview_booking_claims(claim_key,candidate_id,source_message_id)
+                   VALUES(%s,%s,%s) ON CONFLICT(claim_key) DO NOTHING RETURNING claim_key""",
+                (key, candidate_id, source_message_id),
+            )
+            if cur.fetchone():
+                continue
+            cur.execute(
+                "SELECT booking_id FROM interview_booking_claims WHERE claim_key=%s FOR UPDATE", (key,),
+            )
+            held = str((cur.fetchone() or [None])[0] or "")
+            if held and booking_stands(held):
+                # Raising rolls back every key this call claimed.
+                raise BookingClaimTaken(key, held)
+            cur.execute(
+                """UPDATE interview_booking_claims
+                      SET source_message_id=%s, booking_id=NULL, updated_at=now()
+                    WHERE claim_key=%s""",
+                (source_message_id, key),
+            )
+
+
+def settle_booking_claims(keys: list[str], *, booking_id: str) -> None:
+    """Record the slot an interview's claimed keys now point at."""
+    if not keys or not booking_id or not use_postgres():
+        return
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """UPDATE interview_booking_claims SET booking_id=%s, updated_at=now()
+                WHERE claim_key = ANY(%s)""",
+            (booking_id, list(keys)),
+        )
+
+
 def ensure_schema() -> None:
     # Route installation and startup both call this. Re-executing historical
     # SQL here restored retired review flags and re-queued old messages after
@@ -2994,6 +3053,38 @@ def latest_realtime_event_id() -> str | None:
     return str(row[0]) if row else None
 
 
+#: Priority written on an alert whose interview was read correctly but whose
+#: automatic booking was refused or could not be saved. Before 13 Nov 2026 these
+#: were written as "retry_pending" and counted as AI retries.
+BOOKING_FAILED_PRIORITY = "booking_failed"
+#: Booking statuses that mean the booking step failed, not the AI reading.
+BOOKING_FAILURE_STATUSES = ("Blocked", "Processing Failed")
+
+
+def booking_failure_sql(prefix: str = "") -> str:
+    """Alerts whose failure is the booking's, for old rows and new alike."""
+    p = f"{prefix}." if prefix else ""
+    statuses = ", ".join(f"'{status}'" for status in BOOKING_FAILURE_STATUSES)
+    return f"(COALESCE({p}booking_status,'') IN ({statuses}) OR {p}priority = '{BOOKING_FAILED_PRIORITY}')"
+
+
+def failure_kind_of(row: dict[str, Any]) -> str:
+    """'booking', 'ai' or '' -- what failed for this alert, read from stored facts.
+
+    A booking failure is one the roster refused or storage dropped after the
+    mail was read; an AI failure is a mail the model has not yet read with
+    confidence. Derived on read, so alerts written before the split are labelled
+    the same way without rewriting them.
+    """
+    if (str(row.get("booking_status") or "") in BOOKING_FAILURE_STATUSES
+            or row.get("priority") == BOOKING_FAILED_PRIORITY):
+        return "booking"
+    if (row.get("priority") in {"retry_pending", "review_required"}
+            or (row.get("booking_status") == "AI_RETRY_PENDING" and not str(row.get("booking_id") or "").strip())):
+        return "ai"
+    return ""
+
+
 def notification_filter_sql(
     filters: dict[str, Any] | None = None, prefix: str = "",
 ) -> tuple[str, list[Any], str]:
@@ -3032,7 +3123,13 @@ def notification_filter_sql(
                 where.append(f'({p}candidate_id=%s OR {p}candidate_id=ANY(%s))')
                 params.extend([value, sorted(aliases(str(value), load_links()))])
             elif field == 'priority' and value == 'retry_pending':
-                where.append(f"{p}priority IN ('retry_pending','review_required')")
+                # AI Retry is mail the model has still to read. A booking the
+                # model read correctly but the roster refused is filed under
+                # Booking failed instead, whatever priority it was stored with.
+                where.append(f"{p}priority IN ('retry_pending','review_required')"
+                             f" AND NOT {booking_failure_sql(prefix)}")
+            elif field == 'priority' and value == BOOKING_FAILED_PRIORITY:
+                where.append(booking_failure_sql(prefix))
             else:
                 where.append(f"{p}{field}=%s")
                 params.append(value)
@@ -3873,6 +3970,11 @@ def booking_result_sql(booking_result: str, prefix: str = "") -> tuple[str, list
 def _booking_result_page(rows, total, booking_result, *, total_counts_rows=True):
     """One page of the list, with the total it is shown under."""
     kept = _without_released_bookings(rows, booking_result)
+    for row in kept:
+        if isinstance(row, dict):
+            # What failed for this alert -- the AI reading or the booking --
+            # so the screen never has to guess it from a status string.
+            row['failure_kind'] = failure_kind_of(row)
     if total_counts_rows:
         total = max(0, total - (len(rows) - len(kept)))
     return kept, total
@@ -4329,7 +4431,9 @@ def notification_summary() -> dict[str, Any]:
           count(*) FILTER(WHERE booking_status IN('Blocked','Processing Failed') AND dismissed_at IS NULL) booking_blocked,
           count(*) FILTER(WHERE (priority IN ('review_required','retry_pending') OR booking_status='AI_RETRY_PENDING')
             AND NOT (booking_status IN ('AI_RETRY_PENDING','Booking Removed') AND COALESCE(booking_id,'')<>'')
+            AND NOT """ + booking_failure_sql() + """
             AND dismissed_at IS NULL) ai_retry_pending,
+          count(*) FILTER(WHERE """ + booking_failure_sql() + """ AND dismissed_at IS NULL) booking_failed,
           count(*) FILTER(WHERE classification IN ('offer_received','offer_accepted','job_selection_confirmed') AND dismissed_at IS NULL) job_confirmed_count,
           count(*) FILTER(WHERE classification IN ('interview_confirmed','interview_rescheduled','interview_cancelled') AND dismissed_at IS NULL) interview_booking_count,
           count(*) FILTER(WHERE classification = ANY(%s) AND dismissed_at IS NULL) selection_related,

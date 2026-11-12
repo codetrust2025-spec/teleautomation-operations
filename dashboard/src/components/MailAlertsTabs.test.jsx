@@ -64,14 +64,20 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 // ── Tab definition ────────────────────────────────────────────────────────────
 
 describe("MAIL_TABS definition", () => {
-  it("exports exactly three tabs in the required order", () => {
+  it("exports exactly four tabs in the required order", () => {
     // Selection Related and Interview Related are submenu pages, not tabs.
-    expect(MAIL_TABS.map((t) => t.id)).toEqual(["unread", "retry", "all"]);
+    expect(MAIL_TABS.map((t) => t.id)).toEqual(["unread", "retry", "booking", "all"]);
     expect(MAIL_TABS.map((t) => t.label)).toEqual([
       "Unread Invitations",
       "AI Retry Pending",
+      "Booking Failed",
       "All Alerts",
     ]);
+  });
+
+  it("files booking failures apart from AI retries", () => {
+    expect(MAIL_TABS.find((t) => t.id === "retry").filterValue).toBe("retry_pending");
+    expect(MAIL_TABS.find((t) => t.id === "booking").filterValue).toBe("booking_failed");
   });
 });
 
@@ -80,14 +86,15 @@ describe("MAIL_TABS definition", () => {
 describe("default tab", () => {
   beforeEach(() => install());
 
-  it("renders a tablist with three tabs", async () => {
+  it("renders a tablist with four tabs", async () => {
     renderScreen();
     const nav = await screen.findByRole("tablist", { name: "Mail alerts filter tabs" });
     const tabs = [...nav.querySelectorAll("[role='tab']")];
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(4);
     expect(tabs.map((t) => t.textContent.replace(/\d+\+?/g, "").trim())).toEqual([
       "Unread Invitations",
       "AI Retry Pending",
+      "Booking Failed",
       "All Alerts",
     ]);
   });
@@ -147,7 +154,7 @@ describe("Selection Related and Interview Related pages", () => {
     expect(listRequests.every((p) => p.get("classification_group") === category)).toBe(true);
     const nav = await screen.findByRole("tablist", { name: `${category === "selection" ? "Selection" : "Interview"} Related tabs` });
     expect([...nav.querySelectorAll("[role='tab']")].map((t) => t.textContent.replace(/\d+\+?/g, "").trim()))
-      .toEqual(["Unread", "AI Retry Pending", "All Alerts"]);
+      .toEqual(["Unread", "AI Retry Pending", "Booking Failed", "All Alerts"]);
     // Each tab is counted with its own category request (limit=1), not the shared summary.
     const counted = listRequests.filter((p) => p.get("limit") === "1");
     expect(counted.some((p) => p.get("is_read") === "false")).toBe(true);
