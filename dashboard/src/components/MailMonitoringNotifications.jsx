@@ -27,6 +27,7 @@ export const TRACKED_CLASSIFICATIONS = [
   "interview_shortlisted", "interview_confirmed", "interview_rescheduled",
   "interview_cancelled", "interview_needs_reading",
   "post_interview_shortlisted", "final_round_cleared",
+  "selection_needs_reading",
 ];
 // Selection: selected, offer, joining and the final HR confirmation, and the
 // post-selection checks that follow them. Never a shortlist or a round.
@@ -36,6 +37,8 @@ const JOB_CONFIRMED_CLASSIFICATIONS = [
   "offer_declined", "offer_revoked", "joining_confirmed",
   "joining_date_updated", "onboarding_started", "background_verification",
   "document_verification", "compensation_confirmation",
+  // A Selection mail the reader could not read (server: selection_needs_reading).
+  "selection_needs_reading",
 ];
 // Interview: invitations, scheduling, rescheduling, assessments, rounds and
 // shortlists, including a shortlist after the interviews and a cleared round.

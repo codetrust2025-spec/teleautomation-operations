@@ -11,6 +11,7 @@ from services.gmail_mailbox_provider import (
 )
 from services.recruitment_mail_agent import process_message
 from services.unread_interview_mail import surface_unread_interview_mail
+from services.unread_selection_mail import surface_unread_selection_mail
 
 logger=logging.getLogger('teleautomation.recruitment_mail_worker')
 
@@ -241,6 +242,14 @@ class RecruitmentMailWorker:
                 logger.info('Surfaced %d unread interview mail(s) for review',len(surfaced))
         except Exception:
             logger.exception('Unable to surface unread interview mail')
+        # The same for an offer, a joining arrangement or a background check:
+        # parked with no alert, a VHS offer letter went unseen for two days.
+        try:
+            surfaced=surface_unread_selection_mail()
+            if surfaced:
+                logger.info('Surfaced %d unread selection mail(s) for review',len(surfaced))
+        except Exception:
+            logger.exception('Unable to surface unread selection mail')
     def process_job(self,job):
         mailbox=store.mailbox_by_id(job['mailbox_id']);counts={'fetched':0,'processed':0,'events':0}
         if not mailbox:store.finish_job(job['id'],status='FAILED',error='Mailbox not found');return

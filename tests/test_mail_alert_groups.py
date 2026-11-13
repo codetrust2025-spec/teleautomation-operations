@@ -51,7 +51,10 @@ def test_interview_group_holds_only_interview_classifications():
 
 def test_selection_is_selected_offer_joining_and_final_hr_only():
     from services.recruitment_semantics import SELECTION_ALERT_CLASSIFICATIONS
-    assert SELECTION_RELATED_CLASSIFICATIONS == SELECTION_ALERT_CLASSIFICATIONS
+    # selection_needs_reading is a Selection alert but not a selection outcome:
+    # it states only that a parked mail needs reading, so selection filing
+    # (which asks whether a claimed outcome is proved) never applies to it.
+    assert SELECTION_RELATED_CLASSIFICATIONS == SELECTION_ALERT_CLASSIFICATIONS | {"selection_needs_reading"}
     progress = {"post_interview_shortlisted", "final_round_cleared", "interview_shortlisted"}
     assert not (SELECTION_RELATED_CLASSIFICATIONS & progress)
 

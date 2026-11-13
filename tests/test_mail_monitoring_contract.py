@@ -20,6 +20,9 @@ def test_every_requested_classification_is_stable():
         # Added 5 Nov 2026: a shortlist that follows the interviews (HR
         # discussion, documents, a cleared evaluation), Selection Related.
         'post_interview_shortlisted',
+        # Added 13 Nov 2026: the Selection counterpart of interview_needs_reading,
+        # a parked offer/joining/BGV mail filed for a person to read.
+        'selection_needs_reading',
     }
 
 

@@ -24,6 +24,8 @@ export const SELECTION_CLASSIFICATIONS = [
   'offer_accepted', 'offer_declined', 'offer_revoked', 'joining_confirmed',
   'joining_date_updated', 'onboarding_started', 'background_verification',
   'document_verification', 'compensation_confirmation', 'hr_confirmation',
+  // An offer, joining or BGV mail the reader could not read: Selection news.
+  'selection_needs_reading',
 ]
 
 /** Interview slot movement — booked, moved or dropped. */

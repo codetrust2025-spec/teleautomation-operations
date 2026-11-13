@@ -36,6 +36,9 @@ CANONICAL_CLASSIFICATIONS = {
     # `ai_retry_pending`: that one means another attempt is coming, and for
     # these there is none -- a person has to read it.
     "interview_needs_reading",
+    # The Selection counterpart: a parked mail that plainly states an offer, a
+    # joining arrangement or a background check (`services.unread_selection_mail`).
+    "selection_needs_reading",
     # Generic walk-in recruitment campaign retained in All Alerts as an
     # informative audit record, but excluded from Unread Invitations.
     "recruitment_walkin",
@@ -63,6 +66,10 @@ TRACKED_NOTIFICATION_CLASSIFICATIONS = {
     # Only mail carrying real interview evidence is ever filed under it
     # (`services.unread_interview_mail`), so it is a short queue, not a dump.
     "interview_needs_reading",
+    # A Selection mail the reader could not read (owner, 13 Nov 2026): a VHS
+    # offer letter, its revised date of joining and a BGV request were parked
+    # with no alert anywhere. Selection Related, as the computed residual.
+    "selection_needs_reading",
     # NOTE: "recruitment_walkin" is intentionally absent here.
     # Walk-in audit records are written directly by record_walkin_alert() and
     # appear in All Alerts, but must never appear in Unread Invitations or drive
@@ -171,6 +178,7 @@ _CLASSIFICATION_STATUS = {
     "interview_rescheduled": "Interview Rescheduled",
     "interview_cancelled": "Interview Cancelled",
     "interview_needs_reading": "Needs reading",
+    "selection_needs_reading": "Needs reading",
     "recruitment_walkin": "Walk-in Drive",
     "candidate_rejected": "Rejected",
     "needs_review": "AI Retry Pending",
@@ -4402,6 +4410,39 @@ def record_walkin_alert(
            str(reason_code or message.get("ai_last_error_code") or "GENERIC_WALK_IN_DRIVE")[:1000],
            action[:1000],
            "low"))
+        created = _rows(cur)
+    return created[0] if created else None
+
+
+def record_unread_selection_alert(message: dict[str, Any], *, evidence: str) -> dict[str, Any] | None:
+    """File a parked Selection mail where an operator will see it.
+
+    Like `record_unread_interview_alert`: no event, no stage change, no offer
+    record -- nothing was decided about this mail. `UNIQUE(gmail_message_id,
+    classification)` makes a second attempt a no-op.
+    """
+    provider_id = str(message.get("provider_message_id") or "").strip()
+    if not provider_id:
+        return None
+    name, email = _candidate_snapshot(str(message.get("candidate_id") or ""), {})
+    summary = (f"The reader could not classify this mail, and it states {evidence}. "
+               "Open it and its attachments and act on it.")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
+          gmail_message_id,gmail_thread_id,email_analysis_id,classification,candidate_status,
+          email_subject,sender_name,sender_email,email_received_at,ai_confidence,ai_summary,ai_reason,
+          recommended_action,priority,created_at,updated_at)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+          ON CONFLICT (gmail_message_id, classification) DO NOTHING RETURNING *""",
+          (_id(), str(message.get("candidate_id") or ""), name, email,
+           provider_id, message.get("provider_thread_id"), message.get("analysis_id"),
+           "selection_needs_reading", _CLASSIFICATION_STATUS["selection_needs_reading"],
+           message.get("subject"), message.get("sender_name"), message.get("sender_email"),
+           message.get("sent_at"), 0.0, summary[:1000],
+           str(message.get("ai_last_error_code") or "AI_COULD_NOT_READ_THIS_MAIL")[:1000],
+           "Read the mail and its attachments and act on it.",
+           # High: an offer or a joining date nobody has seen may be today's.
+           "high"))
         created = _rows(cur)
     return created[0] if created else None
 
