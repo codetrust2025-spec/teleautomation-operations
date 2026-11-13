@@ -54,7 +54,34 @@ const AI_ROUTES = [
   [/^\/ai\/(pure-ollama|ocr)-policy\/audit$/, { entries: [{ at: '2026-11-11T09:00:00Z', actor: 'owner', previous: false, new: true }] }],
 ]
 
+
+// Interview Related: invented mails covering short and long subjects, long
+// company names with a role, unread and opened, and the status pills.
+const MAIL_SUBJECTS = [
+  ['Ravi Kumar', 'Northwind Analytics', 'Senior Software Engineer - SDET', 'Next Steps for Your Job Application: Senior Software Engineer -SDET at Northwind Analytics', 'interview_shortlisted', 'Interview Shortlisted', false],
+  ['Ravi Kumar', 'Contoso Systems', 'Automation Test Engineer', 'Contoso | Thank you for your application to start a career that moves you', 'interview_shortlisted', 'Interview Shortlisted', false],
+  ['Ravi Kumar', 'Fabrikam Data Services Limited', 'Systems Integration Specialist', 'Thank you for applying to Fabrikam Data', 'interview_shortlisted', 'Interview Shortlisted', false],
+  ['Priya Nair', 'Litware', '', 'Thanks for your interest in a career with Litware!', 'interview_shortlisted', 'Interview Shortlisted', true],
+  ['Priya Nair', 'Tailspin Consultancy Services Limited', 'Salesforce QA Engineer', 'Recruitment - Profile created successfully and your application for the Salesforce QA Engineer role is now under review by the hiring team', 'interview_shortlisted', 'Interview Shortlisted', false],
+  ['Arjun Mehta', 'Adventure Works Technology Private Limited', 'ServiceNow Developer', 'Invitation from an unknown sender: Interview Discussion With Arjun for ServiceNow Developer @ Thu Nov 12, 2026 5:30pm - 6:00pm (IST) (arjun.mehta@example.com)', 'interview_scheduled', 'Interview Automatically Booked', false],
+  ['Arjun Mehta', 'Adventure Works Technology Private Limited', 'ServiceNow Developer', 'Invitation: Discussion With Arjun for ServiceNow @ Thu Nov 12, 2026 5:30pm - 6:00pm (IST)', 'interview_scheduled', 'Interview Automatically Booked', true],
+  ['Meena Sharma', 'Woodgrove', 'Data Engineer', 'OTP for login - Woodgrove Careers', 'interview_shortlisted', 'Interview Shortlisted', true],
+  ['Meena Sharma', 'Proseware', 'Senior Software Engineer', 'Verify your candidate account', 'interview_shortlisted', 'Interview Shortlisted', true],
+  ['Kiran Rao', 'Wide World Importers', 'Frontend Developer', 'Interview cancelled: Frontend Developer L1', 'interview_cancelled', 'Interview Cancelled', true],
+]
+const MAIL_EMAILS = MAIL_SUBJECTS.map(([name, company, role, subject, classification, status, read], i) => ({
+  id: `m-${i + 1}`, candidate_id: `c-${i}`, candidate_name: name, company_name: company, job_role: role,
+  email_subject: subject, classification, candidate_status: status, latest_status: status, is_read: read,
+  email_received_at: `2026-11-12T${String(16 - i).padStart(2, '0')}:${String(52 - i * 3).padStart(2, '0')}:00Z`,
+}))
+const MAIL_ROUTES = [
+  [/^\/api\/mail-monitoring\/emails$/, { emails: MAIL_EMAILS, total: 210, companies: [] }],
+  [/^\/api\/mail-monitoring\/notifications$/, { notifications: [], total: 17 }],
+  [/^\/api\/mail-monitoring\/summary$/, { summary: { unread: 17 } }],
+]
+
 export const routes = [
+  ...MAIL_ROUTES,
   ...AI_ROUTES,
   [/^\/auth\/status$/, ({ role }) => ({
     enabled: true, authenticated: true, username: role === 'admin' ? 'owner' : 'asha.rao', role,
