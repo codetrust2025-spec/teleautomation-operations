@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { API } from '../config.js'
+import { Button } from '../components/ui/Button.jsx'
+import { Card } from '../components/ui/Card.jsx'
+import { Alert, Badge } from '../components/ui/Feedback.jsx'
 
 /**
  * Closing the working day, and what is still open.
@@ -119,40 +122,30 @@ export function DailyCheckout() {
   const blockers = state.blockers || []
 
   return (
-    <section className="attendance-section attendance-checkout">
-      <div className="attendance-section__head">
-        <div>
-          <h3>Daily check-out</h3>
-          <p>
-            {state.checked_out
-              ? "Today's working day is closed."
-              : `Available from ${state.window_opens_at || '6:30 PM'} IST, once today's work is closed.`}
-          </p>
-        </div>
-        {!state.checked_out && (
-          <button
-            type="button"
-            className="attendance-primary-button"
-            disabled={busy || !state.can_check_out}
-            onClick={checkOut}
-          >
-            {busy ? 'Checking out…' : 'Check out'}
-          </button>
-        )}
-      </div>
-
-      {error && <p className="attendance-error" role="alert">{error}</p>}
+    <Card
+      className="attendance-checkout"
+      title="Daily check-out"
+      description={state.checked_out
+        ? "Today's working day is closed."
+        : `Available from ${state.window_opens_at || '6:30 PM'} IST, once today's work is closed.`}
+      actions={!state.checked_out && (
+        <Button
+          variant="primary"
+          disabled={busy || !state.can_check_out}
+          onClick={checkOut}
+        >
+          {busy ? 'Checking out…' : 'Check out'}
+        </Button>
+      )}
+    >
+      {error && <Alert>{error}</Alert>}
 
       {state.checked_out && (
-        <p className="attendance-checkout__done" role="status">
-          ✓ Checked out at {timeOfDay(state.checked_out_at)}
-        </p>
+        <Alert tone="success">✓ Checked out at {timeOfDay(state.checked_out_at)}</Alert>
       )}
 
       {!state.checked_out && blockers.length === 0 && (
-        <p className="attendance-checkout__ready" role="status">
-          Everything for today is closed. You can check out.
-        </p>
+        <Alert tone="success">Everything for today is closed. You can check out.</Alert>
       )}
 
       {!state.checked_out && blockers.length > 0 && (
@@ -160,8 +153,8 @@ export function DailyCheckout() {
           {blockers.map(blocker => (
             <li key={blocker.kind} className={`attendance-checkout__item is-${blocker.kind.toLowerCase()}`}>
               <p className="attendance-checkout__summary">
-                <span aria-hidden>○</span> {blocker.summary}
-                {blocker.count > 0 && <span className="attendance-count">{blocker.count}</span>}
+                <span>{blocker.summary}</span>
+                {blocker.count > 0 && <Badge tone="warning">{blocker.count}</Badge>}
               </p>
               {REASON_ACTIONS[blocker.kind] && (
                 <small className="attendance-checkout__action">{REASON_ACTIONS[blocker.kind]}</small>
@@ -177,7 +170,7 @@ export function DailyCheckout() {
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   )
 }
 

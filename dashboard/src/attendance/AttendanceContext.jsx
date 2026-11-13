@@ -1,6 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { API } from '../config.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import { Button } from '../components/ui/Button.jsx'
+import { Dialog } from '../components/ui/Dialog.jsx'
+import { Alert, Toast } from '../components/ui/Feedback.jsx'
 import './attendance.css'
 
 const AttendanceContext = createContext(null)
@@ -117,23 +120,22 @@ export function AttendanceProvider({ children }) {
   return (
     <AttendanceContext.Provider value={value}>
       {children}
-      {promptOpen && (
-        <div className="attendance-modal-backdrop" role="presentation">
-          <section className="attendance-modal" role="dialog" aria-modal="true" aria-labelledby="attendance-greeting">
-            <button className="attendance-modal__close" type="button" aria-label="Dismiss attendance reminder" onClick={dismiss}>×</button>
-            <div className="attendance-modal__icon" aria-hidden>☀</div>
-            <h2 id="attendance-greeting">Good morning, {data.profile.display_name} 👋</h2>
-            <p>Please mark your attendance for today.</p>
-            {error && <p className="attendance-error" role="alert">{error}</p>}
-            <button className="attendance-primary-button" type="button" disabled={marking} onClick={mark}>
-              {marking ? 'Marking…' : 'Mark Attendance'}
-            </button>
-            <button className="attendance-later-button" type="button" disabled={marking} onClick={dismiss}>Not now</button>
-            <small>Attendance can only be verified from the approved office network.</small>
-          </section>
-        </div>
-      )}
-      {confirmation && <div className="attendance-toast" role="status">✓ {confirmation}</div>}
+      <Dialog
+        open={promptOpen}
+        title={`Good morning, ${data?.profile?.display_name || ''} 👋`}
+        onClose={dismiss}
+        closeLabel="Dismiss attendance reminder"
+        className="attendance-prompt"
+        actions={<>
+          <Button variant="primary" disabled={marking} onClick={mark}>{marking ? 'Marking…' : 'Mark Attendance'}</Button>
+          <Button variant="ghost" disabled={marking} onClick={dismiss}>Not now</Button>
+        </>}
+        note="Attendance can only be verified from the approved office network."
+      >
+        <p>Please mark your attendance for today.</p>
+        {error && <Alert>{error}</Alert>}
+      </Dialog>
+      {confirmation && <Toast>✓ {confirmation}</Toast>}
     </AttendanceContext.Provider>
   )
 }

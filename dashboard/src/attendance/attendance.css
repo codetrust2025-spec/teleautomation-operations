@@ -1,59 +1,22 @@
-.attendance-modal-backdrop { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 20px; background: rgba(4, 7, 14, .78); backdrop-filter: blur(8px); }
-.attendance-modal { position: relative; width: min(440px, 100%); padding: 34px; border: 1px solid rgba(96, 165, 250, .28); border-radius: 20px; background: #131927; box-shadow: 0 28px 90px rgba(0, 0, 0, .55); text-align: center; }
-.attendance-modal__close { position: absolute; top: 13px; right: 15px; border: 0; background: transparent; color: #94a3b8; font-size: 25px; cursor: pointer; }
-.attendance-modal__icon { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 16px; background: rgba(245, 158, 11, .14); color: #fbbf24; font-size: 28px; }
-.attendance-modal h2 { margin: 0 0 8px; font-size: 24px; color: #f8fafc; }
-.attendance-modal p { margin: 0 0 22px; color: #b7c2d4; }
-.attendance-modal small { display: block; margin-top: 14px; color: #778399; line-height: 1.5; }
-.attendance-primary-button, .attendance-secondary-button, .attendance-later-button { min-height: 40px; padding: 9px 16px; border-radius: 9px; font-weight: 700; cursor: pointer; }
-.attendance-primary-button { border: 1px solid #2563eb; background: #2563eb; color: white; }
-.attendance-secondary-button { border: 1px solid #344157; background: #172033; color: #dbeafe; }
-.attendance-later-button { margin-left: 8px; border: 1px solid transparent; background: transparent; color: #94a3b8; }
-.attendance-primary-button:disabled, .attendance-secondary-button:disabled, .attendance-later-button:disabled { opacity: .55; cursor: wait; }
-.attendance-error { margin: 12px 0 !important; padding: 10px 12px; border: 1px solid rgba(248, 113, 113, .35); border-radius: 8px; background: rgba(127, 29, 29, .2); color: #fecaca !important; font-size: 13px; }
-.attendance-toast { position: fixed; z-index: 10020; right: 24px; bottom: 24px; padding: 13px 18px; border: 1px solid rgba(74, 222, 128, .4); border-radius: 10px; background: #123421; color: #bbf7d0; box-shadow: 0 12px 40px rgba(0, 0, 0, .4); font-weight: 700; }
-.attendance-page { max-width: 1480px; margin: 0 auto; padding: 0 2px 30px; }
-.attendance-page__header, .attendance-section__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-/* No title of its own (the shell header has it): just Refresh, on the right. */
-.attendance-page__header { justify-content: flex-end; margin-bottom: 12px; }
-.attendance-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
-.attendance-stat, .attendance-section { border: 1px solid #263247; border-radius: 14px; background: #111827; }
-.attendance-stat { min-height: 126px; padding: 19px; }
-.attendance-stat > span { display: block; margin-bottom: 12px; color: #8fa0b8; font-size: 12px; }
-.attendance-stat strong { display: block; color: #f8fafc; font-size: 20px; line-height: 1.25; }
-.attendance-stat small { display: block; margin-top: 8px; color: #91a0b6; }
-.attendance-section { margin-top: 14px; padding: 18px; }
-.attendance-section h3 { margin: 0 0 4px; color: #f1f5f9; font-size: 16px; }
-.attendance-section__head p, .attendance-list > p { margin: 0; color: #8290a5; font-size: 12px; }
-.attendance-count { padding: 5px 9px; border-radius: 999px; background: rgba(59, 130, 246, .14); color: #93c5fd; font-size: 11px; }
-.attendance-table-wrap { margin-top: 14px; overflow-x: auto; }
-.attendance-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.attendance-table th { padding: 10px; border-bottom: 1px solid #2b374c; color: #8ba0bd; text-align: left; text-transform: uppercase; font-size: 9px; letter-spacing: .08em; }
-.attendance-table td { padding: 12px 10px; border-bottom: 1px solid #202b3e; color: #d6deeb; }
-.attendance-user-link { padding: 0; border: 0; background: transparent; color: #93c5fd; font: inherit; font-weight: 700; cursor: pointer; }
-.attendance-user-link:hover, .attendance-user-link:focus-visible { color: #dbeafe; text-decoration: underline; }
-.attendance-cell-note { display: block; margin-top: 4px; color: #8290a5; }
-.attendance-holiday-form { display: grid; grid-template-columns: 170px minmax(220px, 1fr) auto; gap: 9px; margin-top: 15px; }
-.attendance-holiday-form input { min-height: 40px; padding: 8px 11px; border: 1px solid #344157; border-radius: 8px; background: #0d1421; color: #e5edf8; }
-.attendance-list { margin-top: 12px; }
-.attendance-list__row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 2px; border-top: 1px solid #202b3e; }
-.attendance-list__row span { min-width: 0; }
-.attendance-list__row strong, .attendance-list__row small { display: block; }
-.attendance-list__row strong { color: #e7edf6; font-size: 13px; }
-.attendance-list__row small { margin-top: 4px; color: #8290a5; }
-.attendance-list__row button { min-height: 36px; padding: 7px 11px; border: 1px solid #3a4659; border-radius: 7px; background: transparent; color: #c5d0df; cursor: pointer; }
-.attendance-list__row--recommendation > div { display: flex; gap: 7px; }
-.attendance-list__row button.attendance-approve { border-color: #2563eb; background: #2563eb; color: #fff; }
-.attendance-findings { margin: 12px 0 0; color: #94a3b8; font-size: 12px; }
-@media (max-width: 760px) { .attendance-summary-grid { grid-template-columns: 1fr; } .attendance-holiday-form { grid-template-columns: 1fr; } .attendance-list__row { align-items: stretch; flex-direction: column; } .attendance-list__row--recommendation > div { width: 100%; } .attendance-list__row--recommendation button { flex: 1; } .attendance-modal { padding: 30px 20px 24px; } }
+/*
+ * Attendance is built from the shared kit (components/ui, styles/ui.css).
+ * What stays here is what only this page has: the daily check-out checklist.
+ *
+ * The page's earlier private styles (attendance-modal, -toast, -stat,
+ * -section, -table, -list, the three button classes and the rest) were
+ * removed when it moved onto the kit, after checking that nothing in
+ * dashboard/src or dashboard/visual still referred to any of them.
+ */
 
 /* Daily check-out: the checklist is the feature, so it reads as a list of
-   things to do rather than as an error state. */
-.attendance-checkout__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.attendance-checkout__item { border: 1px solid var(--line, #e2e8f0); border-radius: 10px; padding: 10px 12px; background: var(--surface-2, #f8fafc); }
-.attendance-checkout__summary { margin: 0; display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.attendance-checkout__action { display: block; margin-top: 2px; opacity: 0.75; }
-.attendance-checkout__items { margin: 6px 0 0; padding-left: 22px; display: grid; gap: 2px; }
-.attendance-checkout__items li { font-size: 0.92em; opacity: 0.85; }
-.attendance-checkout__ready, .attendance-checkout__done { margin: 0; font-weight: 600; color: var(--ok, #15803d); }
-.attendance-checkout__item.is-office_network_required, .attendance-checkout__item.is-attendance_not_marked { border-color: var(--warn, #f59e0b); }
+   things to do rather than as an error state. Each open item is a quiet inset
+   with a warning edge on the side; the count beside it says how many. */
+.attendance-checkout__list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.attendance-checkout__item { padding: var(--space-3); border: 1px solid var(--ui-card-border); border-left: 3px solid var(--tone-warning-border); border-radius: var(--radius-md); background: var(--ui-inset); }
+.attendance-checkout__summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; color: var(--ui-text); font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: var(--lh-ui); }
+.attendance-checkout__action { display: block; margin-top: 2px; color: var(--ui-text-muted); font-size: var(--fs-xs); line-height: var(--lh-ui); }
+.attendance-checkout__items { display: grid; gap: 2px; margin: var(--space-2) 0 0; padding-left: var(--space-5); color: var(--ui-text-muted); font-size: var(--fs-xs); line-height: var(--lh-ui); }
+.attendance-checkout__items li::marker { color: var(--ui-text-subtle); }
+/* The two reasons a person fixes outside the app are marked in amber. */
+.attendance-checkout__item.is-office_network_required,
+.attendance-checkout__item.is-attendance_not_marked { border-left-color: var(--tone-warning); }

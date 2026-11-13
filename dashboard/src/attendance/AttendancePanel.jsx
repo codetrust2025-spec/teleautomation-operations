@@ -3,6 +3,12 @@ import { API } from '../config.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useAttendance } from './AttendanceContext.jsx'
 import { DailyCheckout } from './DailyCheckout.jsx'
+import { Button } from '../components/ui/Button.jsx'
+import { Card, CardGrid, StatTile } from '../components/ui/Card.jsx'
+import { Alert, Badge, EmptyState } from '../components/ui/Feedback.jsx'
+import { Field, FormRow, Input } from '../components/ui/Field.jsx'
+import { List, ListRow } from '../components/ui/List.jsx'
+import { DataTable } from '../components/ui/DataTable.jsx'
 
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
@@ -183,86 +189,140 @@ export function AttendancePanel() {
     return 'Attendance is not yet marked'
   }, [popup])
 
+  const recordColumns = [
+    { key: 'attendance_date', header: 'Working date', primary: true, render: row => formatDate(row.attendance_date) },
+    { key: 'marked_at', header: 'Marked at', render: row => formatDateTime(row.marked_at) },
+    { key: 'status', header: 'Status', render: row => <Badge tone={row.status === 'VERIFIED' ? 'success' : 'neutral'}>{row.status}</Badge> },
+    { key: 'office', header: 'Office network', render: row => (row.office_network_verified ? 'Verified' : 'Not verified') },
+  ]
+
   return (
-    <div className="attendance-page">
+    <div className="ui-page attendance-page">
       {/* The shell header names the page; this row holds only its controls. */}
-      <header className="attendance-page__header">
-        <button type="button" className="attendance-secondary-button" onClick={refreshPage} disabled={attendance.loading}>Refresh</button>
-      </header>
-      {attendance.error && <p className="attendance-error" role="alert">{attendance.error}</p>}
-      {!isAdmin && <section className="attendance-summary-grid">
-        <article className="attendance-stat"><span>Today</span><strong>{todayStatus}</strong><small>{attendance.data?.profile?.display_name || auth.displayName}</small></article>
-        <article className="attendance-stat"><span>Attendance Success</span><strong>{ratioLabel}</strong><small>{eligibility ? `${eligibility.attended_working_days} / ${eligibility.required_working_days} Working Days` : '—'}</small></article>
-        <article className="attendance-stat"><span>Attendance eligibility tier</span><strong>{eligibility ? money.format(eligibility.eligibility_amount) : '—'}</strong><small>Salary changes require payroll-admin approval</small></article>
-      </section>}
+      <div className="ui-toolbar">
+        <Button onClick={refreshPage} disabled={attendance.loading}>Refresh</Button>
+      </div>
+      {attendance.error && <Alert>{attendance.error}</Alert>}
+      {!isAdmin && <CardGrid columns={3}>
+        <StatTile label="Today" value={todayStatus} hint={attendance.data?.profile?.display_name || auth.displayName} />
+        <StatTile label="Attendance Success" value={ratioLabel} hint={eligibility ? `${eligibility.attended_working_days} / ${eligibility.required_working_days} Working Days` : '—'} />
+        <StatTile label="Attendance eligibility tier" value={eligibility ? money.format(eligibility.eligibility_amount) : '—'} hint="Salary changes require payroll-admin approval" />
+      </CardGrid>}
 
       {!isAdmin && <DailyCheckout />}
 
-      {!isAdmin && <section className="attendance-section">
-        <div className="attendance-section__head"><div><h3>Your verified attendance</h3><p>{eligibility ? `${formatDate(eligibility.period_start)} – ${formatDate(eligibility.period_end)}` : 'Current evaluation period'}</p></div></div>
-        <div className="attendance-table-wrap"><table className="attendance-table"><thead><tr><th>Working date</th><th>Marked at</th><th>Status</th><th>Office network</th></tr></thead><tbody>
-          {(attendance.data?.records || []).length === 0 && <tr><td colSpan={4}>No verified attendance in this period.</td></tr>}
-          {(attendance.data?.records || []).map(row => <tr key={row.attendance_date}><td>{formatDate(row.attendance_date)}</td><td>{formatDateTime(row.marked_at)}</td><td>{row.status}</td><td>{row.office_network_verified ? 'Verified' : 'Not verified'}</td></tr>)}
-        </tbody></table></div>
-      </section>}
+      {!isAdmin && <Card
+        title="Your verified attendance"
+        description={eligibility ? `${formatDate(eligibility.period_start)} – ${formatDate(eligibility.period_end)}` : 'Current evaluation period'}
+      >
+        <DataTable columns={recordColumns} rows={attendance.data?.records || []} rowKey={row => row.attendance_date} empty="No verified attendance in this period." />
+      </Card>}
 
       {isAdmin && <>
-        <section className="attendance-section">
-          <div className="attendance-section__head"><div><h3>Attendance processing control</h3><p>Shutdown pauses new attendance and eligibility processing without changing historical records. Global shutdown overrides individual reactivation.</p></div></div>
-          <div className="attendance-list">
-            <div className="attendance-list__row"><span><strong>Global shutdown</strong><small>{shutdowns.global?.active ? 'Shutdown — all handlers are paused' : 'Active — all handlers may process attendance'}</small></span><button type="button" disabled={busy} onClick={() => transitionShutdown('GLOBAL', null, shutdowns.global?.active ? 'REACTIVATE' : 'SHUTDOWN')}>{shutdowns.global?.active ? 'Reactivate global' : 'Shutdown all handlers'}</button></div>
-          </div>
-          <div className="attendance-table-wrap"><table className="attendance-table"><thead><tr><th>Handler</th><th>Processing status</th><th>Control</th></tr></thead><tbody>
-            {overview.map(row => { const state = shutdowns.handlers?.[row.account_id] || {}; const label = state.active ? (state.scope === 'GLOBAL' ? 'Shutdown by global control' : 'Shutdown') : 'Active'; return <tr key={`shutdown:${row.account_id}`}><td>{row.display_name}<small className="attendance-cell-note">{row.username}</small></td><td>{label}</td><td><button type="button" disabled={busy || state.scope === 'GLOBAL'} onClick={() => transitionShutdown('HANDLER', row.account_id, state.handler_active ? 'REACTIVATE' : 'SHUTDOWN')}>{state.handler_active ? 'Reactivate' : 'Shutdown'}</button></td></tr> })}
-          </tbody></table></div>
-          {shutdowns.audit_events?.length > 0 && <p className="attendance-findings">Audit trail: {shutdowns.audit_events.length} recorded shutdown transitions. Latest: {shutdowns.audit_events[0].action} {shutdowns.audit_events[0].scope.toLowerCase()}.</p>}
-        </section>
-        <section className="attendance-section">
-          <div className="attendance-section__head"><div><h3>All Users Attendance</h3><p>{overviewPeriod ? `${formatDate(overviewPeriod.start)} – ${formatDate(overviewPeriod.end)}` : 'Current evaluation period'} · Handler accounts only</p></div><span className="attendance-count">{overview.length} handlers</span></div>
-          {adminError && <p className="attendance-error" role="alert">{adminError}</p>}
-          <div className="attendance-table-wrap"><table className="attendance-table"><thead><tr><th>Name</th><th>Today status</th><th>Marked time</th><th>Working days</th><th>Attendance %</th><th>Office verified</th><th>Eligibility</th></tr></thead><tbody>
-            {overview.length === 0 && <tr><td colSpan={7}>No active handler accounts found.</td></tr>}
-            {overview.map(row => <tr key={row.account_id}>
-              <td><button type="button" className="attendance-user-link" onClick={() => openHistory(row)}>{row.display_name}</button><small className="attendance-cell-note">{row.username}</small></td>
-              <td>{overviewStatus(row)}</td>
-              <td>{row.marked_at ? formatDateTime(row.marked_at) : '—'}</td>
-              <td>{row.attended_working_days} / {row.required_working_days}</td>
-              <td>{ratio(row.attendance_ratio)}</td>
-              <td>{row.office_network_verified == null ? '—' : row.office_network_verified ? 'Verified' : 'Not verified'}</td>
-              <td>{row.eligibility_amount == null ? 'Paused' : money.format(row.eligibility_amount)}</td>
-            </tr>)}
-          </tbody></table></div>
-        </section>
+        <Card
+          title="Attendance processing control"
+          description="Shutdown pauses new attendance and eligibility processing without changing historical records. Global shutdown overrides individual reactivation."
+          footer={shutdowns.audit_events?.length > 0 ? `Audit trail: ${shutdowns.audit_events.length} recorded shutdown transitions. Latest: ${shutdowns.audit_events[0].action} ${shutdowns.audit_events[0].scope.toLowerCase()}.` : null}
+        >
+          <List>
+            <ListRow
+              title="Global shutdown"
+              meta={shutdowns.global?.active ? 'Shutdown — all handlers are paused' : 'Active — all handlers may process attendance'}
+              actions={<Button variant={shutdowns.global?.active ? 'secondary' : 'danger'} disabled={busy} onClick={() => transitionShutdown('GLOBAL', null, shutdowns.global?.active ? 'REACTIVATE' : 'SHUTDOWN')}>{shutdowns.global?.active ? 'Reactivate global' : 'Shutdown all handlers'}</Button>}
+            />
+          </List>
+          <DataTable
+            rows={overview}
+            rowKey={row => `shutdown:${row.account_id}`}
+            empty="No active handler accounts found."
+            columns={[
+              { key: 'handler', header: 'Handler', primary: true, render: row => <>{row.display_name}<small className="ui-table__note">{row.username}</small></> },
+              { key: 'status', header: 'Processing status', render: row => { const state = shutdowns.handlers?.[row.account_id] || {}; const label = state.active ? (state.scope === 'GLOBAL' ? 'Shutdown by global control' : 'Shutdown') : 'Active'; return <Badge tone={state.active ? 'danger' : 'success'}>{label}</Badge> } },
+              { key: 'control', header: 'Control', render: row => { const state = shutdowns.handlers?.[row.account_id] || {}; return <Button size="sm" disabled={busy || state.scope === 'GLOBAL'} onClick={() => transitionShutdown('HANDLER', row.account_id, state.handler_active ? 'REACTIVATE' : 'SHUTDOWN')}>{state.handler_active ? 'Reactivate' : 'Shutdown'}</Button> } },
+            ]}
+          />
+        </Card>
 
-        {selectedHistory && <section className="attendance-section">
-          <div className="attendance-section__head"><div><h3>{selectedHistory.profile.display_name} attendance history</h3><p>{selectedHistory.eligibility ? `${formatDate(selectedHistory.eligibility.period_start)} – ${formatDate(selectedHistory.eligibility.period_end)}` : 'Attendance history'}</p></div><button type="button" className="attendance-secondary-button" onClick={() => setSelectedHistory(null)}>Close</button></div>
-          <div className="attendance-table-wrap"><table className="attendance-table"><thead><tr><th>Working date</th><th>Marked at</th><th>Status</th><th>Office network</th></tr></thead><tbody>
-            {historyLoading && <tr><td colSpan={4}>Loading attendance history…</td></tr>}
-            {!historyLoading && selectedHistory.records.length === 0 && <tr><td colSpan={4}>No verified attendance records.</td></tr>}
-            {!historyLoading && selectedHistory.records.map(row => <tr key={row.attendance_date}><td>{formatDate(row.attendance_date)}</td><td>{formatDateTime(row.marked_at)}</td><td>{row.status}</td><td>{row.office_network_verified ? 'Verified' : 'Not verified'}</td></tr>)}
-          </tbody></table></div>
-        </section>}
+        <Card
+          title="All Users Attendance"
+          description={`${overviewPeriod ? `${formatDate(overviewPeriod.start)} – ${formatDate(overviewPeriod.end)}` : 'Current evaluation period'} · Handler accounts only`}
+          actions={<Badge tone="info">{overview.length} handlers</Badge>}
+        >
+          {adminError && <Alert>{adminError}</Alert>}
+          <DataTable
+            rows={overview}
+            rowKey={row => row.account_id}
+            empty="No active handler accounts found."
+            columns={[
+              { key: 'name', header: 'Name', primary: true, render: row => <><Button variant="link" onClick={() => openHistory(row)}>{row.display_name}</Button><small className="ui-table__note">{row.username}</small></> },
+              { key: 'today', header: 'Today status', render: row => <Badge tone={row.today_status === 'VERIFIED' ? 'success' : row.today_status === 'NOT_MARKED' || !row.today_status ? 'warning' : 'neutral'}>{overviewStatus(row)}</Badge> },
+              { key: 'marked', header: 'Marked time', render: row => (row.marked_at ? formatDateTime(row.marked_at) : '—') },
+              { key: 'days', header: 'Working days', numeric: true, render: row => `${row.attended_working_days} / ${row.required_working_days}` },
+              { key: 'ratio', header: 'Attendance %', numeric: true, render: row => ratio(row.attendance_ratio) },
+              { key: 'office', header: 'Office verified', render: row => (row.office_network_verified == null ? '—' : row.office_network_verified ? 'Verified' : 'Not verified') },
+              { key: 'eligibility', header: 'Eligibility', numeric: true, render: row => (row.eligibility_amount == null ? 'Paused' : money.format(row.eligibility_amount)) },
+            ]}
+          />
+        </Card>
 
-        <section className="attendance-section">
-          <div className="attendance-section__head"><div><h3>Public holidays</h3><p>Configured dates are excluded from attendance and eligibility calculations.</p></div></div>
-          <form className="attendance-holiday-form" onSubmit={addHoliday}>
-            <input aria-label="Holiday date" type="date" value={holidayDate} onChange={event => setHolidayDate(event.target.value)} required />
-            <input aria-label="Holiday name" value={holidayName} onChange={event => setHolidayName(event.target.value)} placeholder="Holiday name" maxLength={160} required />
-            <button className="attendance-primary-button" type="submit" disabled={busy}>Add holiday</button>
+        {selectedHistory && <Card
+          title={`${selectedHistory.profile.display_name} attendance history`}
+          description={selectedHistory.eligibility ? `${formatDate(selectedHistory.eligibility.period_start)} – ${formatDate(selectedHistory.eligibility.period_end)}` : 'Attendance history'}
+          actions={<Button variant="ghost" onClick={() => setSelectedHistory(null)}>Close</Button>}
+        >
+          <DataTable columns={recordColumns} rows={selectedHistory.records} rowKey={row => row.attendance_date} loading={historyLoading} loadingText="Loading attendance history…" empty="No verified attendance records." />
+        </Card>}
+
+        <Card title="Public holidays" description="Configured dates are excluded from attendance and eligibility calculations.">
+          <form onSubmit={addHoliday}>
+            <FormRow columns="minmax(150px, 180px) minmax(200px, 1fr) auto">
+              <Field label="Holiday date" hideLabel><Input type="date" value={holidayDate} onChange={event => setHolidayDate(event.target.value)} required /></Field>
+              <Field label="Holiday name" hideLabel><Input value={holidayName} onChange={event => setHolidayName(event.target.value)} placeholder="Holiday name" maxLength={160} required /></Field>
+              <Button variant="primary" type="submit" disabled={busy}>Add holiday</Button>
+            </FormRow>
           </form>
-          <div className="attendance-list">{holidays.filter(row => row.active).map(row => <div className="attendance-list__row" key={row.holiday_date}><span><strong>{formatDate(row.holiday_date)}</strong><small>{row.name}</small></span><button type="button" disabled={busy} onClick={() => removeHoliday(row.holiday_date)}>Remove</button></div>)}{holidays.filter(row => row.active).length === 0 && <p>No public holidays configured for this month.</p>}</div>
-        </section>
+          <List className="attendance-holiday-list">
+            {holidays.filter(row => row.active).map(row => <ListRow key={row.holiday_date} title={formatDate(row.holiday_date)} meta={row.name} actions={<Button size="sm" variant="ghost" disabled={busy} onClick={() => removeHoliday(row.holiday_date)}>Remove</Button>} />)}
+            {holidays.filter(row => row.active).length === 0 && <EmptyState>No public holidays configured for this month.</EmptyState>}
+          </List>
+        </Card>
 
-        <section className="attendance-section">
-          <div className="attendance-section__head"><div><h3>Salary recommendations</h3><p>Eligibility never changes salary until an authorized admin approves it.</p></div><span className="attendance-count">{recommendations.length} pending</span></div>
-          <div className="attendance-list">{recommendations.map(row => <div className="attendance-list__row attendance-list__row--recommendation" key={row.id}><span><strong>{row.display_name}: {money.format(row.previous_eligibility_amount)} → {money.format(row.recommended_eligibility_amount)}</strong><small>{row.attended_working_days} / {row.required_working_days} working days · {row.attendance_ratio == null ? 'No ratio' : `${Number(row.attendance_ratio).toFixed(2)}%`}</small></span><div><button type="button" disabled={busy} onClick={() => review(row.id, 'REJECT')}>Reject</button><button className="attendance-approve" type="button" disabled={busy} onClick={() => review(row.id, 'APPROVE')}>Approve & apply</button></div></div>)}{recommendations.length === 0 && <p>No salary changes are awaiting approval.</p>}</div>
-        </section>
+        <Card
+          title="Salary recommendations"
+          description="Eligibility never changes salary until an authorized admin approves it."
+          actions={<Badge tone={recommendations.length ? 'warning' : 'neutral'}>{recommendations.length} pending</Badge>}
+        >
+          <List>
+            {recommendations.map(row => <ListRow
+              key={row.id}
+              title={`${row.display_name}: ${money.format(row.previous_eligibility_amount)} → ${money.format(row.recommended_eligibility_amount)}`}
+              meta={`${row.attended_working_days} / ${row.required_working_days} working days · ${row.attendance_ratio == null ? 'No ratio' : `${Number(row.attendance_ratio).toFixed(2)}%`}`}
+              actions={<><Button variant="danger" disabled={busy} onClick={() => review(row.id, 'REJECT')}>Reject</Button><Button variant="primary" disabled={busy} onClick={() => review(row.id, 'APPROVE')}>Approve & apply</Button></>}
+            />)}
+            {recommendations.length === 0 && <EmptyState>No salary changes are awaiting approval.</EmptyState>}
+          </List>
+        </Card>
 
-        <section className="attendance-section">
-          <div className="attendance-section__head"><div><h3>Operations users</h3><p>Credential-safe account inventory and attendance identity mapping.</p></div></div>
-          <div className="attendance-table-wrap"><table className="attendance-table"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Password</th><th>Last login</th><th>Account source</th></tr></thead><tbody>{users.map(row => <tr key={`${row.account_id}:${row.account_source}`}><td>{row.name}</td><td>{row.username}</td><td>{row.role}</td><td>{row.active ? 'Active' : 'Inactive'}</td><td>{row.password_configured ? 'Configured' : 'Not configured'}</td><td>{formatDateTime(row.last_login)}</td><td>{row.account_source}</td></tr>)}</tbody></table></div>
-          {findings && <p className="attendance-findings">Duplicates: {findings.duplicate_identity_groups.length} · Inactive: {findings.inactive_usernames.length} · Orphaned: {findings.orphaned_usernames.length} · Multiple auth sources: {findings.multiple_auth_source_usernames.length}</p>}
-        </section>
+        <Card
+          title="Operations users"
+          description="Credential-safe account inventory and attendance identity mapping."
+          footer={findings ? `Duplicates: ${findings.duplicate_identity_groups.length} · Inactive: ${findings.inactive_usernames.length} · Orphaned: ${findings.orphaned_usernames.length} · Multiple auth sources: ${findings.multiple_auth_source_usernames.length}` : null}
+        >
+          <DataTable
+            rows={users}
+            rowKey={row => `${row.account_id}:${row.account_source}`}
+            empty="No operations users found."
+            columns={[
+              { key: 'name', header: 'Name', primary: true },
+              { key: 'username', header: 'Username' },
+              { key: 'role', header: 'Role' },
+              { key: 'active', header: 'Status', render: row => <Badge tone={row.active ? 'success' : 'neutral'}>{row.active ? 'Active' : 'Inactive'}</Badge> },
+              { key: 'password', header: 'Password', render: row => (row.password_configured ? 'Configured' : 'Not configured') },
+              { key: 'last_login', header: 'Last login', render: row => formatDateTime(row.last_login) },
+              { key: 'account_source', header: 'Account source' },
+            ]}
+          />
+        </Card>
       </>}
     </div>
   )
