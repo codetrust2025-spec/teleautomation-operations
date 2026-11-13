@@ -66,6 +66,11 @@ MAX_BODY_CHARS = 12000
 CALENDAR_SOURCES = frozenset({"ICALENDAR_VERIFIED"})
 
 _LABEL = re.compile(r"\b(SCHEDULED|CANCELED|CANCELLED|OTHER)\b")
+_REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*(?:\[\d+\])?\s*:\s*)+", re.I)
+#: Where a reading may draw the proof for a booking: the mail itself. Older
+#: messages of the thread (THREAD_CONTEXT) and the subject a reply inherits
+#: are history -- they show what was arranged before, not what this mail says.
+CURRENT_SOURCES = frozenset({"EMAIL_BODY", "ATTACHMENT"})
 
 
 def model() -> str:
@@ -151,6 +156,45 @@ def _status(result: dict[str, Any]) -> str:
     return str(result.get("primary_status") or result.get("status") or "").upper()
 
 
+def is_reply_subject(subject: Any) -> bool:
+    """RE:/FW:/Fwd: -- a subject carried over from an earlier message of the thread."""
+    return bool(_REPLY_SUBJECT.match(str(subject or "")))
+
+
+def split_evidence(result: dict[str, Any], subject: Any = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(current, historical) evidence of a reading.
+
+    Current: quoted from this mail's own body or attachments, or from its
+    subject when the subject is its own. Historical: quoted from earlier
+    messages of the thread, or from a reply's inherited subject. Historical
+    evidence is kept and labelled -- it records what was arranged before --
+    but it can never be the reason to book, cancel or move a slot.
+    """
+    current: list[dict[str, Any]] = []
+    historical: list[dict[str, Any]] = []
+    for item in result.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source") or "").upper()
+        if source in CURRENT_SOURCES or (source == "EMAIL_SUBJECT" and not is_reply_subject(subject)):
+            current.append(item)
+        else:
+            historical.append(item)
+    return current, historical
+
+
+def _mark_history(result: dict[str, Any], record: dict[str, Any], subject: Any) -> bool:
+    """Label historical evidence; True when the reading has proof in this mail."""
+    current, historical = split_evidence(result, subject)
+    for item in historical:
+        item["historical"] = True
+    if historical:
+        record["historical_evidence"] = [
+            {"source": item.get("source"), "text": str(item.get("text") or "")[:300]} for item in historical
+        ]
+    return bool(current)
+
+
 def verified_reschedule(result: dict[str, Any]) -> bool:
     """A reading that moves an existing interview to a new slot the reader proved.
 
@@ -174,7 +218,7 @@ def verified_reschedule(result: dict[str, Any]) -> bool:
     )
 
 
-def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str:
+def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any], *, subject: Any = None) -> str:
     """Make the analysis say what Prompt 12 said. Returns what happened.
 
     - OTHER: an interview reading is dropped (no interview alert, no booking).
@@ -190,6 +234,11 @@ def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str
     existing interview to a new slot (`verified_reschedule`) keeps the reading
     and its booking move.
 
+    Threads: a booking, release or move needs proof in this mail. A reading
+    whose only evidence is history -- earlier messages of the thread or a
+    reply's inherited subject -- is never bookable, and never keeps the
+    reschedule exception; that evidence is kept, labelled historical.
+
     Returns "dropped", "unchanged", "agreed", "unconfirmed" or "reschedule_kept".
     """
     record = dict(verdict_record)
@@ -200,8 +249,9 @@ def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str
     status = _status(result)
     classification = str(result.get("classification") or "").lower()
 
+    has_current_proof = _mark_history(result, record, subject)
     if verdict == "OTHER":
-        if verified_reschedule(result):
+        if verified_reschedule(result) and has_current_proof:
             # The one exception (owner, 13 Nov 2026): a mail that moves an
             # existing interview to a new, verified slot keeps moving the
             # booking even when Prompt 12 calls it OTHER. Replayed, Prompt 12
@@ -219,7 +269,9 @@ def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str
             return "dropped"
         return "unchanged"
 
-    agreed = status in VERDICT_STATUSES[verdict]
+    agreed = status in VERDICT_STATUSES[verdict] and has_current_proof
+    if status in VERDICT_STATUSES[verdict] and not has_current_proof:
+        record["only_historical_evidence"] = True
     target = status if agreed else ("INTERVIEW_CONFIRMED" if verdict == "SCHEDULED" else "INTERVIEW_CANCELLED")
     result.update(
         status=target, primary_status=target, classification=_CLASSIFICATION_FOR[target],

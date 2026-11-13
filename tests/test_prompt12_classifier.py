@@ -102,7 +102,8 @@ def test_other_leaves_selection_and_offer_workflows_alone():
 
 def test_scheduled_with_an_agreeing_reader_keeps_its_details_and_booking():
     result = {"status": "INTERVIEW_RESCHEDULED", "primary_status": "INTERVIEW_RESCHEDULED",
-              "ai_validation_status": "VALIDATED", "interview": {"date": "2026-11-20", "time": "15:00"}}
+              "ai_validation_status": "VALIDATED", "interview": {"date": "2026-11-20", "time": "15:00"},
+              "evidence": [{"source": "EMAIL_BODY", "text": "Your interview is moved to 20 Nov at 3 PM."}]}
     assert p12.apply_verdict(result, _verdict("SCHEDULED")) == "agreed"
     assert result["classification"] == "interview_rescheduled"
     assert result["ai_validation_status"] == "VALIDATED"
@@ -119,7 +120,8 @@ def test_scheduled_against_another_reading_alerts_but_books_nothing():
 
 
 def test_canceled_is_a_cancellation_and_releases_only_when_the_reader_agrees():
-    agreeing = {"status": "INTERVIEW_CANCELLED", "primary_status": "INTERVIEW_CANCELLED", "ai_validation_status": "VALIDATED"}
+    agreeing = {"status": "INTERVIEW_CANCELLED", "primary_status": "INTERVIEW_CANCELLED", "ai_validation_status": "VALIDATED",
+                "evidence": [{"source": "EMAIL_BODY", "text": "Your interview has been cancelled."}]}
     assert p12.apply_verdict(agreeing, _verdict("CANCELED")) == "agreed"
     assert agreeing["ai_validation_status"] == "VALIDATED"
     other = {"status": "SELECTED", "primary_status": "SELECTED"}
@@ -148,6 +150,7 @@ def _reschedule(status, **interview):
     return {"status": status, "primary_status": status, "ai_validation_status": "VALIDATED",
             "backend_transition_validated": True, "should_create_review_record": True,
             "is_selection_or_offer_related": True,
+            "evidence": [{"source": "EMAIL_BODY", "text": "your interview ... has been re-scheduled"}],
             "interview": {"date": "2026-09-09", "time": "03:30 PM", **interview}}
 
 

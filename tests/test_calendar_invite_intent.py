@@ -202,7 +202,7 @@ class TestTheGateActuallyRunsInProcessMessage:
                             lambda mailbox, decoded, score: ({"id": "stored-message"}, True))
         monkeypatch.setattr(agent.store, "is_duplicate_content", lambda *a: False)
         monkeypatch.setattr(agent.store, "is_duplicate_offer_attachment", lambda *a: False)
-        monkeypatch.setattr(agent.store, "is_duplicate_thread_status", lambda *a: False)
+        monkeypatch.setattr(agent.store, "is_duplicate_thread_status", lambda *a, **k: False)
         monkeypatch.setattr(agent.store, "save_attachment", lambda *a: None)
         monkeypatch.setattr(
             agent.store, "mark_message_status",

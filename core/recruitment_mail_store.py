@@ -1785,7 +1785,7 @@ def is_duplicate_offer_attachment(candidate_id:str,message_id:str)->bool:
         return cur.fetchone() is not None
 
 
-def is_duplicate_thread_status(candidate_id:str,message_id:str,status:str)->bool:
+def is_duplicate_thread_status(candidate_id:str,message_id:str,status:str,*,interview:dict[str,Any]|None=None)->bool:
     """Suppress repeated reminders with the same status in the same Gmail thread.
 
     A reminder repeats an event that still stands. A fresh invitation sent after
@@ -1798,7 +1798,16 @@ def is_duplicate_thread_status(candidate_id:str,message_id:str,status:str)->bool
     query that reads the thread alone. Reading the thread alone is what dropped a
     re-invitation sent five minutes after a cancellation: the candidate kept a
     cancelled slot, gained no new one, and the interview went ahead unbooked.
+
+    A repeat is also only a repeat of the same slot. TCS, 30 Oct 2026: a new
+    invitation (30 Oct, 12 PM) arrived in the thread of a September interview
+    with the same subject and status, was dropped as DUPLICATE_THREAD_STATUS,
+    and the interview was never alerted or booked. When this reading names a
+    date, an earlier event in the thread only suppresses it if it names the
+    same date (and the same time, when both name one).
     """
+    slot_date = storable_date((interview or {}).get("date"))
+    slot_time = storable_time((interview or {}).get("time"))
     with get_connection() as conn,conn.cursor() as cur:
         cur.execute("""SELECT 1 FROM mailbox_messages current_message
           JOIN mailbox_messages previous_message ON previous_message.provider_thread_id=current_message.provider_thread_id
@@ -1806,12 +1815,15 @@ def is_duplicate_thread_status(candidate_id:str,message_id:str,status:str)->bool
           JOIN ai_recruitment_events e ON e.mailbox_message_id=previous_message.id
           WHERE current_message.id=%s AND current_message.provider_thread_id IS NOT NULL
             AND e.candidate_id=%s AND e.primary_status=%s
+            AND (%s::date IS NULL OR e.interview_date IS NOT DISTINCT FROM %s::date)
+            AND (%s::time IS NULL OR e.interview_time IS NULL OR e.interview_time=%s::time)
             AND e.review_status NOT IN('FALSE_POSITIVE','DUPLICATE')
             AND NOT EXISTS(SELECT 1 FROM interview_auto_booking_audit booked
               JOIN interview_auto_booking_audit cancelled ON cancelled.booking_id=booked.booking_id
                 AND cancelled.booking_status='Cancelled' AND cancelled.created_at>booked.created_at
               WHERE booked.gmail_message_id=previous_message.provider_message_id
-                AND booked.booking_id IS NOT NULL) LIMIT 1""",(message_id,candidate_id,status))
+                AND booked.booking_id IS NOT NULL) LIMIT 1""",
+            (message_id,candidate_id,status,slot_date,slot_date,slot_time,slot_time))
         return cur.fetchone() is not None
 
 

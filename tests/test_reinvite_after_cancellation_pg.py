@@ -150,3 +150,42 @@ def test_an_offer_thread_without_any_booking_is_unaffected(thread_db):
     mail(thread_db, "offer-reminder", "gmail-offer-reminder")
 
     assert store.is_duplicate_thread_status(CANDIDATE, "offer-reminder", "OFFER_LETTER_RECEIVED") is True
+
+
+def dated_event(connect, message_id: str, interview_date: str, interview_time: str | None) -> None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("""INSERT INTO ai_recruitment_events(id,candidate_id,mailbox_message_id,primary_status,confidence,
+          structured_result,review_status,interview_date,interview_time)
+          VALUES(%s,%s,%s,%s,0.9,'{}'::jsonb,'AUTOMATED',%s,%s)""",
+          ("event-" + message_id, CANDIDATE, message_id, CONFIRMED, interview_date, interview_time))
+
+
+def test_a_new_invitation_for_another_slot_in_the_same_thread_is_not_a_duplicate(thread_db):
+    # TCS, 30 Oct 2026: a September interview's thread carried a new invitation
+    # for 30 Oct 12 PM, which was dropped as DUPLICATE_THREAD_STATUS.
+    mail(thread_db, "september", "gmail-september")
+    dated_event(thread_db, "september", "2026-09-14", "15:00")
+    mail(thread_db, "october", "gmail-october")
+    assert store.is_duplicate_thread_status(
+        CANDIDATE, "october", CONFIRMED, interview={"date": "2026-10-30", "time": "12:00"}) is False
+
+
+def test_a_reminder_for_the_same_slot_is_still_a_duplicate(thread_db):
+    mail(thread_db, "invite", "gmail-invite")
+    dated_event(thread_db, "invite", "2026-10-30", "12:00")
+    mail(thread_db, "reminder", "gmail-reminder")
+    assert store.is_duplicate_thread_status(
+        CANDIDATE, "reminder", CONFIRMED, interview={"date": "2026-10-30", "time": "12:00"}) is True
+    # A reminder that names the date but not the time is the same slot too.
+    assert store.is_duplicate_thread_status(
+        CANDIDATE, "reminder", CONFIRMED, interview={"date": "2026-10-30"}) is True
+    # A reading with no schedule falls back to the status-only rule.
+    assert store.is_duplicate_thread_status(CANDIDATE, "reminder", CONFIRMED, interview={}) is True
+
+
+def test_same_day_new_time_is_a_new_slot(thread_db):
+    mail(thread_db, "first", "gmail-first")
+    dated_event(thread_db, "first", "2026-10-30", "12:00")
+    mail(thread_db, "second", "gmail-second")
+    assert store.is_duplicate_thread_status(
+        CANDIDATE, "second", CONFIRMED, interview={"date": "2026-10-30", "time": "16:30"}) is False

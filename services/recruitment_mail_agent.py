@@ -3397,7 +3397,9 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
     # below still have the last word: they are a protection about who sent
     # the mail, not a reading of what it says.
     if prompt12_record is not None:
-        prompt12_outcome = prompt12_classifier.apply_verdict(result, prompt12_record)
+        prompt12_outcome = prompt12_classifier.apply_verdict(
+            result, prompt12_record, subject=decoded.get("subject"),
+        )
         logger.info("Prompt 12 verdict=%s outcome=%s subject=%r", prompt12_record["verdict"],
                     prompt12_outcome, str(decoded.get("subject") or "")[:120])
     if (result.get("backend_validation_reason") == EVIDENCE_NOT_ENTAILED
@@ -3497,7 +3499,10 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
                     result, historical_classification,
                 )
             )
-    if store.is_duplicate_thread_status(mailbox["candidate_id"], row["id"], result["primary_status"]):
+    if store.is_duplicate_thread_status(
+        mailbox["candidate_id"], row["id"], result["primary_status"],
+        interview=result.get("interview") or {},
+    ):
         store.mark_message_status(row["id"], "DUPLICATE_OFFER_EVENT", reason="DUPLICATE_THREAD_STATUS")
         return None
     event = (store.create_or_reprocess_event(mailbox["candidate_id"],row["id"],result,model=model,duration_ms=duration,reason="HISTORICAL_RULE_RESCAN") if reprocess else store.create_event(mailbox["candidate_id"], row["id"], result, model=model, duration_ms=duration))

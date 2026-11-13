@@ -120,7 +120,7 @@ def test_real_pipeline_respects_mode_and_persists_only_proven_interview(monkeypa
     monkeypatch.setattr(agent, '_publish', lambda *a, **kw: None)
     monkeypatch.setattr(agent.store, 'insert_message', lambda *a: ({'id': 'mail-row'}, True))
     for name in ('is_duplicate_content', 'is_duplicate_offer_attachment', 'is_duplicate_thread_status'):
-        monkeypatch.setattr(agent.store, name, lambda *a: False)
+        monkeypatch.setattr(agent.store, name, lambda *a, **k: False)
     monkeypatch.setattr(agent.store, 'mark_message_status', lambda mid, status, **kw: states.append(status))
     monkeypatch.setattr(agent.store, 'record_analysis', lambda *a, **kw: {})
     monkeypatch.setattr(agent.store, 'create_event', lambda cid, mid, value, **kw: dict(

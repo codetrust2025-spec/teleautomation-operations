@@ -79,7 +79,7 @@ def test_exact_shape_reaches_real_automatic_persistence_path(monkeypatch, html_o
     monkeypatch.setattr(agent.store, 'insert_message', lambda *a: ({'id': 'mail-row'}, True))
     monkeypatch.setattr(agent.store, 'is_duplicate_content', lambda *a: False)
     monkeypatch.setattr(agent.store, 'is_duplicate_offer_attachment', lambda *a: False)
-    monkeypatch.setattr(agent.store, 'is_duplicate_thread_status', lambda *a: False)
+    monkeypatch.setattr(agent.store, 'is_duplicate_thread_status', lambda *a, **k: False)
     monkeypatch.setattr(agent.store, 'mark_message_status', lambda *a, **kw: None)
     monkeypatch.setattr(agent.store, 'record_analysis', lambda *a, **kw: {})
     monkeypatch.setattr(agent.store, 'create_event', lambda cid, mid, value, **kw: {

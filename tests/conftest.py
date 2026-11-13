@@ -39,11 +39,11 @@ def _prompt12_answers_like_the_readers(request, monkeypatch):
                 "prompt_version": prompt12_classifier.PROMPT_VERSION,
                 "prompt_sha256": prompt12_classifier.PROMPT12_SHA256, "duration_ms": 0}
 
-    def apply_verdict(result, record):
+    def apply_verdict(result, record, **kwargs):
         if record.get("verdict") == _AGREE:
             status = str(result.get("primary_status") or result.get("status") or "").upper()
             record = {**record, "verdict": _FROM_STATUS.get(status, "OTHER")}
-        return real_apply(result, record)
+        return real_apply(result, record, **kwargs)
 
     monkeypatch.setattr(prompt12_classifier, "classify", classify)
     monkeypatch.setattr(prompt12_classifier, "apply_verdict", apply_verdict)
