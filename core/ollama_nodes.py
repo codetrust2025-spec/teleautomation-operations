@@ -183,24 +183,48 @@ def model_node_preference() -> dict[str, str]:
     and nothing more: if the pinned node cannot serve, selection carries on down
     the normal order.
     """
-    preference: dict[str, str] = {}
+    return {model: nodes[0] for model, nodes in model_node_orders().items()}
+
+
+def _as_node_list(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item or "").strip()]
+    return [str(value).strip()] if str(value or "").strip() else []
+
+
+def model_node_orders() -> dict[str, list[str]]:
+    """Each model's preferred nodes, best first (`model_node_preference` is the first).
+
+    A preference is one node -- the vision model on the RTX 4060 -- or an
+    ordered list. A list is capacity-aware (`candidate_order`): a node earlier
+    in it is taken first only while the model is resident there or fits beside
+    what is resident; otherwise the next one is, and the skipped node stays a
+    fallback right behind it. Saved runtime state wins over the environment,
+    model by model.
+    """
+    preference: dict[str, list[str]] = {}
     raw = (os.getenv("OLLAMA_MODEL_NODE_PREFERENCE") or "").strip()
     if raw:
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
-                preference.update({str(k): str(v) for k, v in parsed.items()})
+                preference.update({str(k): _as_node_list(v) for k, v in parsed.items()})
         except ValueError:
             pass
     saved = _read_state().get("model_nodes")
     if isinstance(saved, dict):
-        preference.update({str(k): str(v) for k, v in saved.items()})
+        preference.update({str(k): _as_node_list(v) for k, v in saved.items()})
     valid = _valid_node_ids()
-    return {model: node for model, node in preference.items() if node in valid}
+    cleaned = {model: [node for node in nodes if node in valid] for model, nodes in preference.items()}
+    return {model: nodes for model, nodes in cleaned.items() if nodes}
 
 
-def set_model_node(model: str, node_id: str | None, *, force: bool = False) -> None:
-    """Pin a model to a node, or pass node_id=None to unpin it."""
+def set_model_node(model: str, node_id: str | list[str] | None, *, force: bool = False) -> None:
+    """Pin a model to a node or an ordered list of nodes; None unpins it.
+
+    With a list, the first node is checked as a single pin always was; the
+    rest are fallbacks the router walks to by capacity and health.
+    """
     wanted = str(model or "").strip()
     if not wanted:
         raise ValueError("A model name is required")
@@ -208,16 +232,17 @@ def set_model_node(model: str, node_id: str | None, *, force: bool = False) -> N
     if node_id is None:
         saved.pop(wanted, None)
     else:
-        selected = str(node_id).strip()
-        if selected not in _valid_node_ids():
+        nodes = _as_node_list(node_id)
+        if not nodes or len(set(nodes)) != len(nodes) or any(item not in _valid_node_ids() for item in nodes):
             raise ValueError("Unknown Ollama node")
+        selected = nodes[0]
         if not force:
             status = node_health(selected, model=wanted, timeout=10)
             if not status["endpoint_reachable"]:
                 raise RuntimeError(f"{selected} is not reachable")
             if not status["model_available"]:
                 raise ValueError(f"{selected} does not have {wanted} installed")
-        saved[wanted] = selected
+        saved[wanted] = nodes if len(nodes) > 1 else selected
     _write_state({"model_nodes": saved})
 
 
@@ -715,6 +740,78 @@ def decision_session():
         _decision.node_id = previous_node
 
 
+#: GPU memory a node may fill (GB). The RTX 4060 is an 8 GB laptop card; the
+#: margin is the display and the CUDA context. A node with no budget is never
+#: capacity-checked. OLLAMA_NODE_VRAM_BUDGET_GB (JSON) overrides.
+_DEFAULT_VRAM_BUDGET_GB = {"rtx4060": 7.5}
+#: Resident size (GB), measured on the RTX 4060 at an 8k context on 13 Nov
+#: 2026 -- qwen2.5:7b 4.99, qwen3-vl:8b-instruct 5.56 -- plus a margin for a
+#: larger context. Together they need ~10.6 GB, so the 8 GB card holds one at a
+#: time: loading vision there made Ollama unload the text model. Overridable
+#: with OLLAMA_MODEL_VRAM_GB (JSON).
+_DEFAULT_MODEL_VRAM_GB = {"qwen2.5:7b": 5.2, "qwen3-vl:8b-instruct": 6.0}
+_RESIDENT_TTL_SECONDS = 5.0
+_resident_cache: dict[str, tuple[float, list[dict[str, Any]] | None]] = {}
+
+
+def _json_env(name: str) -> dict[str, float]:
+    try:
+        parsed = json.loads(os.getenv(name) or "{}")
+        return {str(k): float(v) for k, v in parsed.items()} if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def vram_budget_gb(node_id: str) -> float | None:
+    return {**_DEFAULT_VRAM_BUDGET_GB, **_json_env("OLLAMA_NODE_VRAM_BUDGET_GB")}.get(node_id)
+
+
+def model_vram_gb(model: str) -> float | None:
+    sizes = {**_DEFAULT_MODEL_VRAM_GB, **_json_env("OLLAMA_MODEL_VRAM_GB")}
+    name = str(model or "")
+    return sizes.get(name.removesuffix(":latest"), sizes.get(name))
+
+
+def resident_models(node_id: str, *, timeout: float = 2) -> list[dict[str, Any]] | None:
+    """What the node holds in GPU memory now (Ollama /api/ps); None when unknown."""
+    now = time.monotonic()
+    cached = _resident_cache.get(node_id)
+    if cached and now - cached[0] < _RESIDENT_TTL_SECONDS:
+        return cached[1]
+    try:
+        models: list[dict[str, Any]] | None = list(
+            (_request(node_id, "/api/ps", timeout=timeout) or {}).get("models") or []
+        )
+    except Exception:  # unreachable or not answering: capacity unknown
+        models = None
+    _resident_cache[node_id] = (now, models)
+    return models
+
+
+def fits_in_vram(node_id: str, model: str) -> bool:
+    """Whether `model` can run on `node_id` without evicting or overfilling it.
+
+    True when the node has no budget, the model is already resident, or it
+    fits beside what is resident. Unknown residency is not a yes: the node is
+    then not preferred, though it stays in the order as a fallback.
+    """
+    budget = vram_budget_gb(node_id)
+    if budget is None:
+        return True
+    resident = resident_models(node_id)
+    if resident is None:
+        return False
+    wanted = str(model or "").removesuffix(":latest")
+    names = [str(item.get("name") or item.get("model") or "").removesuffix(":latest") for item in resident]
+    if wanted in names:
+        return True
+    others = sum(float(item.get("size_vram") or item.get("size") or 0) for item in resident) / 1e9
+    needed = model_vram_gb(model)
+    if needed is None:
+        return not resident
+    return others + needed <= budget
+
+
 def candidate_order(model: str | None = None) -> list[str]:
     """Routing order: a node pinned to this model, then the primary, then rest.
 
@@ -731,17 +828,28 @@ def candidate_order(model: str | None = None) -> list[str]:
         return [pinned]
     ordered = [item["id"] for item in configured_nodes()]
     head: list[str] = []
-    pinned = model_node_preference().get(str(model or "")) if model else None
-    if not pinned and model and "model_nodes" not in _read_state():
+    preferred = model_node_orders().get(str(model or ""), []) if model else []
+    if not preferred and model and "model_nodes" not in _read_state():
         # RTX 4060 (8 GB VRAM) is dedicated to GPU vision extraction.
         # Text requests route to Jagadeesh to avoid alternating model unloads/reloads in VRAM.
         m = str(model).lower()
         if "vl" in m or "vision" in m:
-            pinned = "rtx4060"
+            preferred = ["rtx4060"]
         elif "7b" in m or "qwen2.5" in m:
-            pinned = "jagadeesh"
-    if pinned and pinned in ordered:
-        head.append(pinned)
+            preferred = ["jagadeesh"]
+    # An ordered preference is capacity-aware: a node is taken first only while
+    # the model is resident on it or fits beside what is resident, so text never
+    # evicts the vision model from the 8 GB card nor overfills it. A skipped
+    # node is still a fallback right behind the nodes that were taken.
+    deferred: list[str] = []
+    for node_id in preferred:
+        if node_id not in ordered or node_id in head or node_id in deferred:
+            continue
+        if len(preferred) > 1 and not fits_in_vram(node_id, str(model)):
+            deferred.append(node_id)
+            continue
+        head.append(node_id)
+    head.extend(deferred)
     primary = primary_node_id()
     if primary not in head:
         head.append(primary)
