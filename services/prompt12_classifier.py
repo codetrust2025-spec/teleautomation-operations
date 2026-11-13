@@ -151,6 +151,29 @@ def _status(result: dict[str, Any]) -> str:
     return str(result.get("primary_status") or result.get("status") or "").upper()
 
 
+def verified_reschedule(result: dict[str, Any]) -> bool:
+    """A reading that moves an existing interview to a new slot the reader proved.
+
+    The details reader must say RESCHEDULED -- or CONFIRMED with the original
+    slot recorded, which is how it describes a moved interview -- and must have
+    proved the new date and time (`ai_validation_status` VALIDATED, the
+    backend transition check passed). A mail that merely mentions a time, or
+    whose new slot was not proved, is not one.
+    """
+    status = _status(result)
+    interview = result.get("interview") or {}
+    moved = status == "INTERVIEW_RESCHEDULED" or (
+        status == "INTERVIEW_CONFIRMED"
+        and bool(interview.get("original_date") or interview.get("original_time"))
+    )
+    return bool(
+        moved
+        and interview.get("date") and interview.get("time")
+        and str(result.get("ai_validation_status") or "").upper() == "VALIDATED"
+        and result.get("backend_transition_validated") is True
+    )
+
+
 def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str:
     """Make the analysis say what Prompt 12 said. Returns what happened.
 
@@ -163,7 +186,11 @@ def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str
       does not, the alert still appears but is marked not bookable, so no slot
       is booked or released on a reading nobody confirmed: a person acts.
 
-    Returns "dropped", "unchanged", "agreed" or "unconfirmed".
+    The one exception: an OTHER that the details reader proved is a move of an
+    existing interview to a new slot (`verified_reschedule`) keeps the reading
+    and its booking move.
+
+    Returns "dropped", "unchanged", "agreed", "unconfirmed" or "reschedule_kept".
     """
     record = dict(verdict_record)
     verdict = record.get("verdict")
@@ -174,6 +201,16 @@ def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str
     classification = str(result.get("classification") or "").lower()
 
     if verdict == "OTHER":
+        if verified_reschedule(result):
+            # The one exception (owner, 13 Nov 2026): a mail that moves an
+            # existing interview to a new, verified slot keeps moving the
+            # booking even when Prompt 12 calls it OTHER. Replayed, Prompt 12
+            # called both reschedule notices of Sep 2026 OTHER; left alone the
+            # roster would have kept the old time.
+            record["reschedule_exception"] = True
+            result["prompt12"] = record
+            result["classification"] = _CLASSIFICATION_FOR[status]
+            return "reschedule_kept"
         if status in INTERVIEW_STATUSES or classification in INTERVIEW_CLASSIFICATIONS:
             result.update(
                 is_selection_or_offer_related=False, should_create_review_record=False,
@@ -207,5 +244,8 @@ def verdict_allows(classification: str, structured: dict[str, Any] | None) -> bo
     structured = structured or {}
     if str(structured.get("classification_source") or "").upper() in CALENDAR_SOURCES:
         return classification in VERDICT_CLASSIFICATIONS["SCHEDULED"] | VERDICT_CLASSIFICATIONS["CANCELED"]
-    verdict = (structured.get("prompt12") or {}).get("verdict")
+    prompt12 = structured.get("prompt12") or {}
+    if prompt12.get("reschedule_exception"):
+        return classification in VERDICT_CLASSIFICATIONS["SCHEDULED"]
+    verdict = prompt12.get("verdict")
     return classification in VERDICT_CLASSIFICATIONS.get(verdict, frozenset())

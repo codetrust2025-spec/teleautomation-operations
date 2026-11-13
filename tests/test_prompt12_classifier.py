@@ -142,3 +142,35 @@ def test_an_unproven_selection_is_never_refiled_as_an_interview():
     assert selection_alert_filing("job_selection_confirmed", otp) == "not_relevant"
     progress = ["Next steps", "You have cleared the L1 round and are shortlisted for the next interview."]
     assert selection_alert_filing("job_selection_confirmed", progress) == "not_relevant"
+
+
+def _reschedule(status, **interview):
+    return {"status": status, "primary_status": status, "ai_validation_status": "VALIDATED",
+            "backend_transition_validated": True, "should_create_review_record": True,
+            "is_selection_or_offer_related": True,
+            "interview": {"date": "2026-09-09", "time": "03:30 PM", **interview}}
+
+
+def test_a_proven_reschedule_keeps_moving_the_booking_when_prompt12_says_other():
+    # "Rescheduling interview for Application Security Engineer", Sep 2026:
+    # read as CONFIRMED with the original slot, new slot proved; Prompt 12: OTHER.
+    moved = _reschedule("INTERVIEW_CONFIRMED", original_date="2026-08-28")
+    assert p12.apply_verdict(moved, _verdict("OTHER")) == "reschedule_kept"
+    assert moved["classification"] == "interview_confirmed" and moved["should_create_review_record"] is True
+    assert p12.verdict_allows("interview_confirmed", moved)
+    # "Update: Your Interview has been Rescheduled" (2COMS): read as RESCHEDULED.
+    rescheduled = _reschedule("INTERVIEW_RESCHEDULED")
+    assert p12.apply_verdict(rescheduled, _verdict("OTHER")) == "reschedule_kept"
+    assert p12.verdict_allows("interview_rescheduled", rescheduled)
+    assert not p12.verdict_allows("interview_shortlisted", rescheduled)
+
+
+@pytest.mark.parametrize("change", [
+    {"ai_validation_status": "EVIDENCE_NOT_ENTAILED"},      # new slot not proved
+    {"backend_transition_validated": False},
+    {"interview": {"date": "2026-09-09", "time": None, "original_date": "2026-08-28"}},
+    {"interview": {"date": "2026-09-09", "time": "03:30 PM"}},  # CONFIRMED with no original slot
+])
+def test_anything_short_of_a_proven_move_is_still_dropped(change):
+    result = {**_reschedule("INTERVIEW_CONFIRMED", original_date="2026-08-28"), **change}
+    assert p12.apply_verdict(result, _verdict("OTHER")) == "dropped"
