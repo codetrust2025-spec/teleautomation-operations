@@ -190,7 +190,7 @@ describe('AI Controls: two tabs', () => {
     await open()
     fireEvent.click(tab('Monitoring'))
     expect(screen.getByText('qwen2.5:7b@jagadeesh')).toBeInTheDocument()
-    expect(screen.getByText('AUTO_VALIDATED')).toHaveClass('ai-controls-badge', 'is-good')
+    expect(screen.getByText('AUTO_VALIDATED')).toHaveClass('ai-controls-badge', 'ui-badge--success')
     expect(screen.getByText(/Live activity unavailable; not evidence/)).toBeInTheDocument()
     act(() => mocks.status('Live'))
     await waitFor(() => expect(request).toHaveBeenCalledWith('/api/ai-recruitment/ollama/activity'))

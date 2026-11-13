@@ -4,6 +4,7 @@
  *   npm i --no-save playwright-core     # once; drives the installed Edge/Chrome
  *   npx vite --port 3100                # serves visual/index.html
  *   node visual/capture.mjs --out ../.visual/before --pages "Attendance:admin,Attendance:handler"
+ *   node visual/capture.mjs --out ../.visual/before --pages "AI Controls:admin:Monitoring"
  *
  * Writes <out>/<page>-<role>-<width>.png (full page) and <out>/report.json
  * with console errors and any API route the fixtures do not answer yet.
@@ -18,15 +19,15 @@ const out = args.out || 'visual-out'
 const base = args.base || 'http://127.0.0.1:3100/visual/index.html'
 const widths = (args.widths || '390,768,1024,1440').split(',').map(Number)
 const pages = (args.pages || 'Attendance:admin').split(',').map(spec => {
-  const [view, role = 'admin'] = spec.split(':')
-  return { view, role }
+  const [view, role = 'admin', tab = ''] = spec.split(':')
+  return { view, role, tab }
 })
 const HEIGHT = { 390: 844, 768: 1024, 1024: 768, 1440: 900 }
 
 mkdirSync(out, { recursive: true })
 const browser = await chromium.launch({ channel: args.channel || 'msedge' })
 const report = []
-for (const { view, role } of pages) {
+for (const { view, role, tab } of pages) {
   for (const width of widths) {
     const context = await browser.newContext({
       viewport: { width, height: HEIGHT[width] || 900 },
@@ -48,6 +49,11 @@ for (const { view, role } of pages) {
     // A phone opens with the drawer closed, as a person sees it.
     await page.evaluate(() => document.querySelector('.business-nav-backdrop')?.click())
     await page.waitForTimeout(200)
+    // "Label:role:Tab" opens one of the page's own tabs (a button with that text).
+    if (tab) {
+      await page.getByRole('button', { name: tab, exact: true }).first().click()
+      await page.waitForTimeout(400)
+    }
     // From 900px up the shell is one screen tall and the page scrolls inside
     // .desktop-body, so a full-page shot would stop at the fold. Growing the
     // window to the content's height shows all of it with the real layout.
@@ -59,11 +65,12 @@ for (const { view, role } of pages) {
       await page.setViewportSize({ width, height: (HEIGHT[width] || 900) + inner })
       await page.waitForTimeout(300)
     }
-    const name = `${view.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${role}-${width}.png`
+    const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    const name = `${slug(view)}${tab ? `-${slug(tab)}` : ''}-${role}-${width}.png`
     await page.screenshot({ path: join(out, name), fullPage: true })
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     const unmocked = await page.evaluate(() => [...new Set(window.__unmockedRoutes || [])])
-    report.push({ view, role, width, file: name, horizontalOverflowPx: overflow, errors, unmocked })
+    report.push({ view, tab, role, width, file: name, horizontalOverflowPx: overflow, errors, unmocked })
     await context.close()
   }
 }

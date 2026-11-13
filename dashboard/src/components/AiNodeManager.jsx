@@ -1,4 +1,6 @@
 import React from "react";
+import { Button } from "./ui/Button.jsx";
+import { Badge } from "./ui/Feedback.jsx";
 
 export default function AiNodeManager({
   nodes,
@@ -52,7 +54,7 @@ export default function AiNodeManager({
                   <i aria-hidden="true" />
                   <strong>{node.label}</strong>
                   {node.primary && (
-                    <span className="sot-ai-node-primary">PRIMARY</span>
+                    <Badge tone="info" className="sot-ai-node-primary">PRIMARY</Badge>
                   )}
                 </span>
                 <span
@@ -80,10 +82,13 @@ export default function AiNodeManager({
                     ? "—"
                     : `${node.response_time_ms} ms`}
                 </span>
-                <span className="sot-ai-node-actions">
+                {/* ai-node-actions, not sot-ai-node-actions: the shared rule for
+                  * that class styles every button inside it and outranks the
+                  * kit's button. */}
+                <span className="ai-node-actions">
                   {!node.primary && (
-                    <button
-                      type="button"
+                    <Button
+                      size="sm"
                       disabled={busy}
                       onClick={() => onMakePrimary(node)}
                       title={
@@ -93,17 +98,16 @@ export default function AiNodeManager({
                       }
                     >
                       {node.ready ? "Set primary" : "Set primary anyway"}
-                    </button>
+                    </Button>
                   )}
-                  <button
-                    type="button"
-                    className="is-warning"
+                  <Button
+                    size="sm"
                     disabled={busy || !node.endpoint_reachable}
                     onClick={() => onUnload(node)}
                     title={`Unload AI models on ${node.label}`}
                   >
                     Unload
-                  </button>
+                  </Button>
                 </span>
               </article>
             );

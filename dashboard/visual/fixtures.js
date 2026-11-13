@@ -20,7 +20,42 @@ const ELIGIBILITY = {
   period_start: '2026-11-01', period_end: '2026-11-30',
 }
 
+
+// AI Controls: three invented nodes, one slow and one unreachable, so every
+// tone (good, warning, bad, neutral) shows up in the screenshots.
+const AI_INVENTORY = [
+  { id: 'node-a', label: 'Node A (GPU)', available: true, models: [{ name: 'qwen2.5:7b', size_bytes: 4.7e9 }, { name: 'llama3.1:8b', size_bytes: 4.9e9 }, { name: 'qwen3-vl:8b-instruct', size_bytes: 6.14e9 }, { name: 'nomic-embed-text', size_bytes: 2.7e8 }] },
+  { id: 'node-b', label: 'Node B', available: true, models: [{ name: 'qwen2.5:7b', size_bytes: 4.7e9 }, { name: 'validator:9b', size_bytes: 5.4e9 }] },
+  { id: 'node-c', label: 'Node C (spare)', available: false, models: [{ name: 'qwen2.5:7b', size_bytes: 4.7e9 }] },
+]
+const AI_NODES = AI_INVENTORY.map((n, i) => ({
+  ...n, endpoint_reachable: i < 2, ready: i === 0, status: i < 2 ? 'online' : 'offline', primary: i === 0,
+  response_time_ms: [182, 1240, null][i], loaded_models: i === 0 ? ['qwen2.5:7b'] : [],
+  required_models: { 'qwen2.5:7b': true, 'validator:9b': i === 1 }, ollama_version: '0.5.7',
+  breaker: { consecutive_failures: [0, 2, 9][i], in_cooldown: i === 2, cooldown_remaining_s: i === 2 ? 45 : 0 },
+  gpu: i === 0 ? { size_bytes: 4.76e9, size_vram_bytes: 4.76e9 } : undefined,
+}))
+const AI_ROUTES = [
+  [/^\/api\/ai-recruitment\/mail-model$/, { selection: { model: 'qwen2.5:7b', revision: 3, last_used: { model: 'qwen2.5:7b', node_label: 'Node A (GPU)' } }, nodes: AI_INVENTORY }],
+  [/^\/api\/ai-recruitment\/ollama\/nodes$/, { primary_node: 'node-a', nodes: AI_NODES, activity: { boot: 'v', version: 1, nodes: {} } }],
+  [/^\/api\/ai-recruitment\/ollama\/status$/, { models: { primary: 'qwen2.5:7b', validator: 'validator:9b', vision: 'qwen3-vl:8b-instruct', fallback: 'llama3.1:8b' }, ollama: { status: 'degraded', configured_model: 'qwen2.5:7b', successful_requests: 1284, failed_requests: 17, last_checked_at: '2026-11-12T04:58:00Z', last_successful_request_at: '2026-11-12T04:57:12Z', error_code: 'NODE_UNREACHABLE', error_message: 'Node C (spare) did not answer within 5 s.' } }],
+  [/^\/api\/ai-recruitment\/ollama\/activity$/, { activity: { boot: 'v', version: 2, nodes: {} } }],
+  [/^\/api\/ai-recruitment\/metrics$/, { metrics: { queue_depth: 3, ai_retry_pending_total: 0, ai_processing_failure_total: 12, mailbox_sync_success_total: 80199, mailbox_sync_failure_total: 0, websocket_connection_count: 2, ai_processing_duration_ms_avg: 5476.3 } }],
+  [/^\/api\/ai-recruitment\/config$/, { enabled: true, mailbox_sync_enabled: true, interview_auto_booking_enabled: true, offer_verification_enabled: false, oauth_configured: true, gmail_pubsub_configured: true }],
+  [/^\/api\/candidate-mailboxes\/health$/, { mailboxes: [{ connection_status: 'ERROR' }, { connection_status: 'CONNECTED' }, { connection_status: 'CONNECTED' }] }],
+  [/^\/api\/ai-recruitment\/review$/, { events: [
+    { id: 'e1', created_at: '2026-11-12T04:50:00Z', ai_model: 'qwen2.5:7b@node-a', validation_status: 'AUTO_VALIDATED', processing_duration_ms: 4210 },
+    { id: 'e2', created_at: '2026-11-12T04:41:00Z', ai_model: 'qwen2.5:7b@node-b', validation_status: 'NEEDS_REVIEW', processing_duration_ms: 9870 },
+    { id: 'e3', created_at: '2026-11-12T04:30:00Z', ai_model: 'qwen2.5:7b@node-a', validation_status: 'AUTO_VALIDATED', processing_duration_ms: 3990 },
+    { id: 'e4', created_at: '2026-11-12T04:12:00Z', ai_model: null, validation_status: null, processing_duration_ms: null },
+  ] }],
+  [/^\/ai\/pure-ollama-policy$/, { enabled: true }],
+  [/^\/ai\/ocr-policy$/, { enabled: false }],
+  [/^\/ai\/(pure-ollama|ocr)-policy\/audit$/, { entries: [{ at: '2026-11-11T09:00:00Z', actor: 'owner', previous: false, new: true }] }],
+]
+
 export const routes = [
+  ...AI_ROUTES,
   [/^\/auth\/status$/, ({ role }) => ({
     enabled: true, authenticated: true, username: role === 'admin' ? 'owner' : 'asha.rao', role,
     display_name: role === 'admin' ? 'Owner' : 'Asha Rao', account_id: role === 'admin' ? 'a-1' : 'h-1',

@@ -117,6 +117,18 @@
   .ui-table--cards .ui-table__empty td::before { content: none; }
 }
 
+/* ── Tabs and disclosure ────────────────────────────────────────────────── */
+.ui-tabs { display: flex; gap: var(--space-1); overflow-x: auto; border-bottom: 1px solid var(--ui-card-border); scrollbar-width: none; }
+.ui-tabs__tab { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-lg); margin-bottom: -1px; padding: 0 var(--space-4); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ui-text-muted); font: var(--fw-semibold) var(--fs-sm)/1 var(--font-ui); white-space: nowrap; cursor: pointer; }
+.ui-tabs__tab:hover { color: var(--ui-text); background: var(--ui-hover); }
+.ui-tabs__tab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.ui-tabs__tab[aria-pressed="true"] { border-bottom-color: var(--accent); color: var(--ui-text-strong); }
+.ui-disclosure { border-top: 1px solid var(--ui-row-border); padding-top: var(--space-2); color: var(--ui-text-muted); font-size: var(--fs-xs); line-height: var(--lh-prose); }
+.ui-disclosure__summary { width: fit-content; padding: var(--space-1) 0; color: var(--ui-text); font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer; }
+.ui-disclosure__summary:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.ui-disclosure__body { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.ui-disclosure__body p { margin: 0; }
+
 /* ── Dialog and toast ───────────────────────────────────────────────────── */
 .ui-dialog-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; padding: var(--space-5); background: var(--ui-scrim); }
 .ui-dialog { position: relative; width: min(440px, 100%); max-height: calc(100dvh - 40px); overflow: auto; padding: var(--space-6); border: 1px solid var(--ui-card-border); border-radius: var(--radius-lg); background: var(--ui-card); box-shadow: var(--shadow-lg); color: var(--ui-text); font-family: var(--font-ui); }

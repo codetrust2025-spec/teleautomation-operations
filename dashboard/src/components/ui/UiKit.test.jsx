@@ -10,6 +10,7 @@ import { Button } from './Button.jsx'
 import { Card, CardGrid, StatTile } from './Card.jsx'
 import { Alert, Badge, EmptyState, Toast } from './Feedback.jsx'
 import { Field, FormRow, Input } from './Field.jsx'
+import { Disclosure, Tabs } from './Tabs.jsx'
 import { List, ListRow } from './List.jsx'
 import { DataTable } from './DataTable.jsx'
 import { Dialog } from './Dialog.jsx'
@@ -197,10 +198,33 @@ describe('styles/ui.css and styles/tokens.css', () => {
     expect([...widths].sort()).toEqual(['599', '600', '899'])
   })
 
-  it('keeps the dark theme: the accent is used for primary actions, focus and links only', () => {
+  it('keeps the dark theme: the accent is used for primary actions, focus, links and the current tab only', () => {
     const accentRules = [...withoutComments(UI_CSS).matchAll(/([^{}]+)\{[^}]*var\(--accent(?:-strong|-stronger|-text)?\)[^}]*\}/g)].map((m) => m[1].trim())
     for (const selector of accentRules) {
-      expect(selector).toMatch(/ui-btn--primary|ui-btn--link|ui-input:focus-visible/)
+      expect(selector).toMatch(/ui-btn--primary|ui-btn--link|ui-input:focus-visible|ui-tabs__tab\[aria-pressed="true"\]/)
     }
+  })
+})
+
+describe('Tabs and Disclosure', () => {
+  it('marks the current tab pressed and reports the one chosen', () => {
+    const onChange = vi.fn()
+    render(<Tabs label="Sections" tabs={[{ id: 'a', label: 'First', icon: 'code' }, { id: 'b', label: 'Second' }]} value="a" onChange={onChange} />)
+    const nav = screen.getByRole('navigation', { name: 'Sections' })
+    const [first, second] = nav.querySelectorAll('button')
+    expect(first).toHaveAttribute('aria-pressed', 'true')
+    expect(first).toHaveClass('ui-tabs__tab')
+    expect(second).toHaveAttribute('aria-pressed', 'false')
+    expect(second.textContent).toBe('Second')
+    fireEvent.click(second)
+    expect(onChange).toHaveBeenCalledWith('b')
+  })
+
+  it('keeps detail behind a summary, open only when asked', () => {
+    const { container } = render(<><Disclosure summary="More">Hidden detail</Disclosure><Disclosure summary="Open one" open>Shown</Disclosure></>)
+    const [closed, open] = container.querySelectorAll('details.ui-disclosure')
+    expect(closed.open).toBe(false)
+    expect(open.open).toBe(true)
+    expect(screen.getByText('More').tagName).toBe('SUMMARY')
   })
 })

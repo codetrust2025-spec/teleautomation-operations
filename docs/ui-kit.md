@@ -1,7 +1,7 @@
 # Operations UI kit
 
 Every Operations page is moving onto one set of tokens and components so the
-product looks and behaves as one. Attendance is the first page on it.
+product looks and behaves as one. Attendance and AI Controls are on it.
 
 ## Where things are
 
@@ -21,19 +21,22 @@ product looks and behaves as one. Attendance is the first page on it.
 - `List` + `ListRow` (title, meta, actions).
 - `DataTable` — scrolls inside its card on tablets; on phones each row becomes a card of "label: value" lines. Mark one column `primary` to title the row's card.
 - `Dialog` — focus moves in, Tab stays inside, Escape closes, focus returns.
+- `Tabs` — sections of one page; the current tab carries the accent underline. The page renders the panels, so it can keep both mounted.
+- `Disclosure` — detail behind a quiet summary line (`details`/`summary`).
 
 ## Rules for a page on the kit
 
-- Colours from tokens only. Blue is for the primary action, links, focus and the current item; everything else is a neutral surface.
+- Colours from tokens only. Blue is for the primary action, links, focus and the current item (the selected tab, the selected row); everything else is a neutral surface.
 - Font sizes from `--fs-*` (smallest 11px), spacing from `--space-*`, radii from `--radius-*`.
 - Breakpoints: phone < 600px, tablet 600–899px, desktop ≥ 900px (the shell's drawer switch).
 - Keep a page's wording and behaviour; a migration changes presentation only.
 - Remove a page's old private CSS only after checking nothing in `dashboard/src` or `dashboard/visual` still refers to it.
+- A page drops shared page scopes it only borrowed (AI Controls no longer carries `.sot-mailboxes-page`), so another page's rules cannot restyle kit components on it.
 
 ## Moving a page
 
 1. Add fixtures for the page's API calls to `visual/fixtures.js` (invented people, fixed dates).
-2. Capture before, on `main`: `npx vite --port 3100`, then `node visual/capture.mjs --out ../.visual/before --pages "<Sidebar label>:admin"` (`npm i --no-save playwright-core` once; it drives the installed Edge).
+2. Capture before, on `main`: `npx vite --port 3100`, then `node visual/capture.mjs --out ../.visual/before --pages "<Sidebar label>:admin"` (`npm i --no-save playwright-core` once; it drives the installed Edge). `"<Sidebar label>:admin:<Tab>"` opens one of the page's own tabs first.
 3. Move the page onto the kit and run its tests.
 4. Capture after, then `node visual/compare.mjs --before ../.visual/before --after ../.visual/after --out ../.visual/compare.html`.
 5. Check 390, 768, 1024 and 1440px, both roles where the page differs by role, and that no other page changed.

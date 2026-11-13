@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Button } from "./ui/Button.jsx";
 
 export default function AiMailModelSelector({ request, refreshToken, onSaved, catalogData }) {
   const [localData, setData] = useState(null);
@@ -59,7 +60,7 @@ export default function AiMailModelSelector({ request, refreshToken, onSaved, ca
   return <section className="sot-mail-model-selector" aria-label="AI Mail model selection" aria-busy={busy}>
     <div className="sot-mail-model-row">
       <label htmlFor="ai-mail-model">AI Model</label>
-      <select id="ai-mail-model" aria-label="AI Mail model" title={model || "Select an installed model"}
+      <select id="ai-mail-model" className="ui-input" aria-label="AI Mail model" title={model || "Select an installed model"}
         value={model} disabled={busy || !data} onChange={(event) => {
         setModel(event.target.value); setTested(""); setNotice("");
       }}>
@@ -78,12 +79,12 @@ export default function AiMailModelSelector({ request, refreshToken, onSaved, ca
         title="Installed model size on disk; decimal gigabytes">
         {sizes.length ? sizes.join("/") : "—"} GB
       </output>
-      <button className="sot-mail-model-test" aria-label="Test model & failover"
+      <Button size="sm" className="sot-mail-model-test" aria-label="Test model & failover"
         title="Test structured mail JSON and failover without saving"
-        disabled={busy || !data || !selectedInstalled} onClick={() => run("test")}>Test</button>
-      <button className="sot-mail-model-save" aria-label="Save AI Mail model"
+        disabled={busy || !data || !selectedInstalled} onClick={() => run("test")}>Test</Button>
+      <Button size="sm" variant="primary" className="sot-mail-model-save" aria-label="Save AI Mail model"
         title="Revalidate and save the AI Mail model"
-        disabled={busy || !data || tested !== model} onClick={() => run("save")}>Save</button>
+        disabled={busy || !data || tested !== model} onClick={() => run("save")}>Save</Button>
     </div>
     <p className="sot-mail-model-current">Current: <strong>{data?.selection?.model || "Loading…"}</strong>
       <span> · {last ? `Last run: ${last.model} on ${last.node_label || last.node_id}` : "Node not recorded yet"}</span>

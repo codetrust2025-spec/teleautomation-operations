@@ -14,3 +14,18 @@ describe('AI Controls stylesheet cascade', () => {
     expect(panel).not.toMatch(/import\s+['"].*AiControlsDashboard\.css/)
   })
 })
+
+describe('AI Controls on the shared kit', () => {
+  const css = readFileSync(join(root, 'components/AiControlsDashboard.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  it('takes every colour and font size from tokens', () => {
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+    expect(css).not.toMatch(/rgba?\(|hsla?\(/i)
+    expect(css).not.toMatch(/font-size:\s*[\d.]+(px|rem|em)/)
+  })
+  it('no longer pulls in the Mail Alerts page scope', () => {
+    const panel = readFileSync(join(root, 'components/AiControlsDashboard.jsx'), 'utf8')
+    expect(panel).not.toMatch(/sot-mailboxes-page|sot-page/)
+    expect(panel).toContain('ui-page')
+  })
+})
+
