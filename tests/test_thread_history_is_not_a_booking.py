@@ -77,3 +77,52 @@ def test_reply_subjects_are_recognised():
         assert p12.is_reply_subject(subject), subject
     for subject in ("Interview Scheduled", "Regarding your interview", "Fwd x"):
         assert not p12.is_reply_subject(subject), subject
+
+
+ACCENTURE_SHAPE = ("Thank you, I have completed the assignment. "
+                   "On Tue, 10 Nov 2026 at 15:42, Recruiter wrote: > Dear Candidate, > Your interview is scheduled "
+                   "on 12 Nov 2026 at 3 PM. Please complete the assignment before it.")
+
+
+def test_a_mid_line_reply_header_ends_the_latest_message():
+    latest, quoted = p12.split_latest(ACCENTURE_SHAPE)
+    assert latest == "Thank you, I have completed the assignment."
+    assert quoted.startswith("On Tue, 10 Nov 2026") and "3 PM" in quoted
+    assert "3 PM" not in p12.user_message("Re: Interview/Assignment Update", ACCENTURE_SHAPE)
+    for header in ("From: Recruiter <r@example.net> Sent: Tuesday, 10 Nov 2026 10:00",
+                   "-----Original Message-----", "________________________________ From: Recruiter"):
+        assert p12.split_latest("Noted, thank you very much. " + header + " old text")[0] == "Noted, thank you very much."
+
+
+def test_a_bare_forward_is_its_forwarded_message():
+    forward = "FYI. -----Original Message----- Your interview is scheduled on 12 Nov at 3 PM."
+    assert p12.split_latest(forward, "FW: Interview") == (forward, "")
+    assert p12.split_latest(forward, "Fwd: Interview") == (forward, "")
+
+
+def test_a_short_reply_is_still_a_reply():
+    # "Re: JD of STARWEAVER": the whole latest message is "Acknowledged."
+    reply = "Acknowledged. On Thu, 20 Aug 2026 at 6:21 PM, Recruiter wrote: > Interview on 21 Aug at 11 AM."
+    latest, quoted = p12.split_latest(reply, "Re: JD of the role")
+    assert latest == "Acknowledged." and "11 AM" in quoted
+    assert "11 AM" not in p12.user_message("Re: JD of the role", reply)
+
+
+def test_a_mail_without_history_reaches_prompt12_unchanged():
+    body = "Your L1 interview is scheduled for 19 Sep at 5 PM"
+    assert p12.split_latest(body) == (body, "")
+    assert p12.user_message("L1", body) == "SUBJECT: L1\n\nBODY:\n" + body
+
+
+def test_body_evidence_that_sits_only_in_the_quoted_part_is_history():
+    result = _reading("INTERVIEW_CONFIRMED",
+                      {"source": "EMAIL_BODY", "text": "Your interview is scheduled on 12 Nov 2026 at 3 PM."})
+    outcome = p12.apply_verdict(result, {"verdict": "SCHEDULED"}, subject="Re: Interview/Assignment Update",
+                                body=ACCENTURE_SHAPE)
+    assert outcome == "unconfirmed" and result["evidence"][0]["historical"] is True
+    assert result["ai_validation_status"] == p12.NOT_BOOKABLE
+
+
+def test_a_gmail_forward_keeps_the_forwarded_message():
+    forward = "Please see below. ---------- Forwarded message --------- Your interview is scheduled on 12 Nov at 3 PM."
+    assert p12.split_latest(forward) == (forward, "")

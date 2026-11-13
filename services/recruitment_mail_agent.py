@@ -3398,7 +3398,7 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
     # the mail, not a reading of what it says.
     if prompt12_record is not None:
         prompt12_outcome = prompt12_classifier.apply_verdict(
-            result, prompt12_record, subject=decoded.get("subject"),
+            result, prompt12_record, subject=decoded.get("subject"), body=decoded.get("body"),
         )
         logger.info("Prompt 12 verdict=%s outcome=%s subject=%r", prompt12_record["verdict"],
                     prompt12_outcome, str(decoded.get("subject") or "")[:120])

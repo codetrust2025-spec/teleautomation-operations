@@ -71,6 +71,34 @@ _REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*(?:\[\d+\])?\s*:\s*)+
 #: messages of the thread (THREAD_CONTEXT) and the subject a reply inherits
 #: are history -- they show what was arranged before, not what this mail says.
 CURRENT_SOURCES = frozenset({"EMAIL_BODY", "ATTACHMENT"})
+#: The first reply or forward header anywhere in the cleaned body. The cleaner
+#: only cuts at a header that starts a line; Gmail and Outlook replies often
+#: carry it mid-line ("... Thanks. On Tue, 14 Jul 2026 at 15:42, X wrote: > ..."),
+#: which left quoted history in 24 of 1,660 inbound mails (13 Nov 2026).
+_REPLY_HEADER = re.compile(
+    r"\bOn (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,? .{4,120}?\bwrote:"
+    r"|\bFrom:\s*[^\n]{3,160}?\s+Sent:"
+    r"|-{2,}\s*Original Message\s*-{2,}"
+    r"|_{10,}\s*From:",
+    re.I,
+)
+#: A forward whose own note is shorter than this is a bare forward: the
+#: forwarded message is what the sender is passing on, so it is the message to
+#: classify. A short reply ("Acknowledged.") is still a reply.
+_MIN_LATEST_CHARS = 15
+_FORWARD_SUBJECT = re.compile(r"^\s*(?:(?:re|aw)\s*:\s*)*(?:fw|fwd|wg)\s*:", re.I)
+
+
+def split_latest(body: Any, subject: Any = None) -> tuple[str, str]:
+    """(latest message, quoted history) of a cleaned body."""
+    text = str(body or "")
+    match = _REPLY_HEADER.search(text)
+    if not match:
+        return text, ""
+    latest = text[:match.start()].rstrip()
+    if len(latest) < _MIN_LATEST_CHARS and _FORWARD_SUBJECT.match(str(subject or "")):
+        return text, ""
+    return latest, text[match.start():]
 
 
 def model() -> str:
@@ -79,7 +107,9 @@ def model() -> str:
 
 
 def user_message(subject: Any, body: Any) -> str:
-    return f"SUBJECT: {subject or ''}\n\nBODY:\n{str(body or '')[:MAX_BODY_CHARS]}"
+    """The tested message shape, with only the latest message of a thread in BODY."""
+    latest, _quoted = split_latest(body, subject)
+    return f"SUBJECT: {subject or ''}\n\nBODY:\n{latest[:MAX_BODY_CHARS]}"
 
 
 def parse(raw: str) -> str | None:
@@ -161,7 +191,8 @@ def is_reply_subject(subject: Any) -> bool:
     return bool(_REPLY_SUBJECT.match(str(subject or "")))
 
 
-def split_evidence(result: dict[str, Any], subject: Any = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def split_evidence(result: dict[str, Any], subject: Any = None,
+                   body: Any = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """(current, historical) evidence of a reading.
 
     Current: quoted from this mail's own body or attachments, or from its
@@ -172,20 +203,26 @@ def split_evidence(result: dict[str, Any], subject: Any = None) -> tuple[list[di
     """
     current: list[dict[str, Any]] = []
     historical: list[dict[str, Any]] = []
+    latest, quoted = split_latest(body, subject) if body is not None else ("", "")
     for item in result.get("evidence") or []:
         if not isinstance(item, dict):
             continue
         source = str(item.get("source") or "").upper()
-        if source in CURRENT_SOURCES or (source == "EMAIL_SUBJECT" and not is_reply_subject(subject)):
+        text = str(item.get("text") or "")
+        # Body evidence that sits only in the quoted part is history too.
+        quoted_only = source == "EMAIL_BODY" and quoted and text and text in quoted and text not in latest
+        if quoted_only:
+            historical.append(item)
+        elif source in CURRENT_SOURCES or (source == "EMAIL_SUBJECT" and not is_reply_subject(subject)):
             current.append(item)
         else:
             historical.append(item)
     return current, historical
 
 
-def _mark_history(result: dict[str, Any], record: dict[str, Any], subject: Any) -> bool:
+def _mark_history(result: dict[str, Any], record: dict[str, Any], subject: Any, body: Any = None) -> bool:
     """Label historical evidence; True when the reading has proof in this mail."""
-    current, historical = split_evidence(result, subject)
+    current, historical = split_evidence(result, subject, body)
     for item in historical:
         item["historical"] = True
     if historical:
@@ -218,7 +255,8 @@ def verified_reschedule(result: dict[str, Any]) -> bool:
     )
 
 
-def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any], *, subject: Any = None) -> str:
+def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any], *,
+                  subject: Any = None, body: Any = None) -> str:
     """Make the analysis say what Prompt 12 said. Returns what happened.
 
     - OTHER: an interview reading is dropped (no interview alert, no booking).
@@ -249,7 +287,7 @@ def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any], *, sub
     status = _status(result)
     classification = str(result.get("classification") or "").lower()
 
-    has_current_proof = _mark_history(result, record, subject)
+    has_current_proof = _mark_history(result, record, subject, body)
     if verdict == "OTHER":
         if verified_reschedule(result) and has_current_proof:
             # The one exception (owner, 13 Nov 2026): a mail that moves an
