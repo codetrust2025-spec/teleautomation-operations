@@ -28,7 +28,9 @@ def _group_key(row: dict[str, Any]) -> str:
 
 
 def mismatch_report() -> dict[str, Any]:
-    rows = candidate_store._load().get("candidates") or []
+    from features import test_record_exclusions
+
+    rows = test_record_exclusions.without_test_records(candidate_store._load().get("candidates") or [])
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         groups.setdefault(_group_key(row), []).append(row)

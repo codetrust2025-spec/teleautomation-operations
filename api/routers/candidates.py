@@ -41,6 +41,7 @@ async def candidates_list(
         candidate_store.list_candidates,
         stage=stage, task=task, search=search, month=month,
         pending_only=pending_only, reference=reference, service_type=service_type,
+        include_test_records=False,
     )
     if ai_filter and os.getenv("AI_INTERVIEW_OFFER_TRACKING_ENABLED", "false").lower() == "true":
         from core.recruitment_mail_store import candidate_filter_ids

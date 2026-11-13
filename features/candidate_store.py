@@ -64,6 +64,7 @@ from features.candidate_attachments import (
 )
 from features import payment_allocation
 from features import payment_receipts
+from features import test_record_exclusions
 
 _FILE = os.path.join(DATA_DIR, "candidates.json")
 # Each candidate gets its own folder under here so we never accidentally
@@ -2722,7 +2723,8 @@ def list_candidates(*, stage: str | None = None, task: str | None = None,
                     search: str | None = None, month: str | None = None,
                     pending_only: bool = False,
                     reference: str | None = None,
-                    service_type: str | None = None) -> list[dict]:
+                    service_type: str | None = None,
+                    include_test_records: bool = True) -> list[dict]:
     """Return candidates sorted by most-recent first.
     Optional filters: by stage, by task, by free-text search across
     name / technology / reference / phone / notes / follow_up, by month
@@ -2734,6 +2736,10 @@ def list_candidates(*, stage: str | None = None, task: str | None = None,
     data = _load()
     raw_rows = data.get("candidates") or []
     rows = [_annotate_evidenced_elsewhere(_with_computed(r), raw_rows) for r in raw_rows]
+    if not include_test_records:
+        # Screens and money figures leave out rows marked as test data;
+        # matching and lookups (the default) still see every row.
+        rows = test_record_exclusions.without_test_records(rows)
     # Apply month filter BEFORE collapse so we don't accidentally pick
     # a June slot when filtering for July (collapse picks newest by updated_at).
     if month and month != "all":
@@ -3187,7 +3193,8 @@ def pending_works(*, month: str | None = None, reference: str | None = None) -> 
     dashboard alerts). Pass ``YYYY-MM`` only when a month-scoped view is needed.
     """
     month_filter = month if month and month != "all" else None
-    rows = list_candidates(stage="in_progress", month=month_filter, reference=reference)
+    rows = list_candidates(stage="in_progress", month=month_filter, reference=reference,
+                           include_test_records=False)
     rows = _drop_inactive_referrer_rows(rows, month_filter)
     return _pending_works_core(rows)
 
@@ -3222,7 +3229,8 @@ def active_roster(
     """Active (in_progress) candidates grouped by technology for roster views."""
     rows = [
         r for r in _drop_inactive_referrer_rows(
-            list_candidates(stage="in_progress", month=month, reference=reference),
+            list_candidates(stage="in_progress", month=month, reference=reference,
+                            include_test_records=False),
             month if month and month != "all" else None,
         )
         if not _is_roster_placeholder(r)
@@ -8155,6 +8163,7 @@ def stats(
         unscoped_all_rows = [
             _with_computed(r) for r in (store_data.get("candidates") or [])
         ]
+    unscoped_all_rows = test_record_exclusions.without_test_records(unscoped_all_rows)
     all_rows = list(unscoped_all_rows)
     if scope_key:
         all_rows = [
@@ -8168,7 +8177,8 @@ def stats(
     if month and month != "all":
         # Use list_candidates (the exact same function the breakdown modal calls)
         # to ensure the stat card revenue matches the breakdown total exactly.
-        rows = list_candidates(month=month, reference=reference, service_type=service_type)
+        rows = list_candidates(month=month, reference=reference, service_type=service_type,
+                               include_test_records=False)
     else:
         rows = _stats_rows_deduped(all_rows)
 
@@ -8193,6 +8203,7 @@ def stats(
                 month=month,
                 reference=None,
                 service_type=service_type,
+                include_test_records=False,
             )
         else:
             admin_source_rows = _stats_rows_deduped(unscoped_all_rows)
@@ -8773,7 +8784,7 @@ def stats(
         # by /candidates.  Raw stats rows can retain an old referrer on a
         # duplicate profile, which makes a badge disagree with the table.
         "handler_references": _handler_reference_options(
-            list_candidates(month="all"),
+            list_candidates(month="all", include_test_records=False),
             month=None,
             scope_key=scope_key,
         ),
@@ -8802,7 +8813,9 @@ def bootstrap_data(
         scope_key = _reference_key(str(reference).strip())
 
     store_data = _load()
-    all_rows = [_with_computed(r) for r in (store_data.get("candidates") or [])]
+    all_rows = test_record_exclusions.without_test_records(
+        _with_computed(r) for r in (store_data.get("candidates") or [])
+    )
     scoped_rows = all_rows
     if scope_key:
         scoped_rows = [
