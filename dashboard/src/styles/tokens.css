@@ -71,6 +71,15 @@
   --tone-neutral-soft: rgba(148, 163, 184, 0.12);
   --tone-neutral-border: rgba(148, 163, 184, 0.28);
 
+  /* Interview outcomes need seven colours that stay apart; the tones above
+     cover four of them (pending warning, attended success, not attended
+     danger, cancelled neutral). These three are the rest: technical issue,
+     rescheduled and re-service. Daily Ops takes the same set when it moves
+     onto the kit. */
+  --hue-orange: #fb923c;
+  --hue-violet: #a78bfa;
+  --hue-yellow: #eab308;
+
   /* Surfaces of the shell itself (businessShell.css) and of the kit. The
      page and card colours are the ones the shell already paints. */
   --ui-page: #0f1117;

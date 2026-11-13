@@ -80,9 +80,83 @@ const MAIL_ROUTES = [
   [/^\/api\/mail-monitoring\/summary$/, { summary: { unread: 17 } }],
 ]
 
+// Bookings Analytics (and the Daily Ops counters): interview rows answered the
+// way /candidates/interviews/global and /monitor answer -- range, technology
+// and level, then the candidate -- so every figure comes through the "API".
+const BA_STATUS = ['attended', 'not_attended', 'technical_issue', 'cancelled', 'rescheduled', 'released_for_reschedule', 're_service']
+const BA_PEOPLE = [
+  ['Asha Rao', 9, 'React JS'], ['Ravi Kumar', 8, 'ServiceNow'], ['Meera Iyer', 7, 'React JS'],
+  ['Kiran Shah', 6, 'Power BI'], ['Divya Menon', 5, 'Python'], ['Arjun Nair', 5, 'ServiceNow'],
+  ['Lata Pillai', 4, 'Java Full Stack'], ['Gopal Reddy', 4, 'Salesforce'], ['Hema Joshi', 3, 'React JS'],
+  ['Imran Khan', 3, 'Azure DevOps'], ['Jaya Das', 2, 'Power BI'], ['Kavya Bhat', 2, 'Python'], ['Zubin Mistry', 1, 'ETL'],
+]
+const BA_LEVELS = ['L1', 'L1', 'L2', 'Screening', '', 'Final', 'HR']
+const BA_OUTCOMES = ['attended', 'attended', 'attended', 'cancelled', '', 'rescheduled', 'not_attended', 'technical_issue', 'attended', 're_service']
+const BA_ROWS = (() => {
+  const rows = []
+  let n = 0
+  for (const [name, count, technology] of BA_PEOPLE) {
+    for (let i = 0; i < count; i += 1) {
+      n += 1
+      rows.push({
+        id: `b${n}`, name, technology, technology_resolved: technology,
+        stage: name === 'Meera Iyer' ? 'completed' : 'in_progress', service_type: 'profile_service', candidate_selected: name === 'Meera Iyer',
+        interview_round: BA_LEVELS[n % BA_LEVELS.length],
+        interview_attendance_status: BA_OUTCOMES[n % BA_OUTCOMES.length], interview_attendance_status_resolved: BA_OUTCOMES[n % BA_OUTCOMES.length],
+        interview_attendee: n % 2 ? 'Bhavana' : 'Nikhila', interview_company: ['Altimetrik', 'Infocepts', 'Mphasis', 'Zensar', 'Hexaware'][n % 5],
+        date: `2026-${String((n % 6) + 5).padStart(2, '0')}-${String((n % 27) + 1).padStart(2, '0')}`, time: '15:00', time_end: '16:00',
+      })
+    }
+  }
+  return rows
+})()
+function baSelect(url) {
+  const p = url.searchParams
+  let rows = BA_ROWS.filter(row => (!p.get('from') || row.date >= p.get('from')) && (!p.get('to') || row.date <= p.get('to')))
+  if (p.get('technology')) rows = rows.filter(row => row.technology === p.get('technology'))
+  if (p.get('round')) rows = rows.filter(row => (row.interview_round || 'Unspecified') === p.get('round'))
+  const optionRows = rows
+  if (p.get('candidate')) rows = rows.filter(row => row.name === p.get('candidate'))
+  return { rows, optionRows }
+}
+const baBuckets = map => [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count }))
+function baSummary({ url }) {
+  const { rows, optionRows } = baSelect(url)
+  const selected = new Set(BA_ROWS.filter(row => row.candidate_selected).map(row => row.name))
+  const tally = (key, map) => map.set(key, (map.get(key) || 0) + 1)
+  const counts = new Map(); const levels = new Map(); const techs = new Map(); const people = new Map(); const byCandidate = new Map()
+  for (const row of optionRows) {
+    const entry = byCandidate.get(row.name) || { name: row.name, scheduled: 0, pending: 0, ...Object.fromEntries(BA_STATUS.map(k => [k, 0])) }
+    entry.scheduled += 1
+    entry[row.interview_attendance_status || 'pending'] += 1
+    byCandidate.set(row.name, entry)
+  }
+  for (const row of rows) {
+    tally(row.interview_attendance_status || 'pending', counts)
+    tally(row.interview_round || 'Unspecified', levels)
+    tally(row.technology, techs)
+    tally(row.name, people)
+  }
+  return {
+    status: 'ok',
+    booking_overview: { total: rows.length, by_candidate: baBuckets(people).map(e => ({ ...e, selected: selected.has(e.name) })), by_level: baBuckets(levels), by_technology: baBuckets(techs) },
+    interviews: {
+      count: rows.length, pending_count: counts.get('pending') || 0,
+      ...Object.fromEntries(BA_STATUS.map(k => [`${k}_count`, counts.get(k) || 0])),
+      by_candidate: [...byCandidate.values()].map(e => ({ ...e, selected: selected.has(e.name) })).sort((a, b) => b.scheduled - a.scheduled || a.name.localeCompare(b.name)),
+    },
+    available_months: [],
+  }
+}
+const BA_ROUTES = [
+  [/^\/candidates\/interviews\/global$/, baSummary],
+  [/^\/candidates\/interviews\/monitor$/, ({ url }) => { const { rows } = baSelect(url); return { status: 'ok', interviews: rows, count: rows.length } }],
+]
+
 export const routes = [
   ...MAIL_ROUTES,
   ...AI_ROUTES,
+  ...BA_ROUTES,
   [/^\/auth\/status$/, ({ role }) => ({
     enabled: true, authenticated: true, username: role === 'admin' ? 'owner' : 'asha.rao', role,
     display_name: role === 'admin' ? 'Owner' : 'Asha Rao', account_id: role === 'admin' ? 'a-1' : 'h-1',

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { API } from '../config.js'
 import { Icon } from '../components/ui/Icon.jsx'
+import { Button } from '../components/ui/Button.jsx'
+import { Alert, Badge } from '../components/ui/Feedback.jsx'
 import { DarkSelect } from '../dailyOps/DarkSelect.jsx'
 import { INTERVIEW_STATUSES } from '../dailyOps/interviewStatuses.js'
 import { formatDayLabel } from '../dailyOps/InterviewRoster.jsx'
@@ -140,7 +142,7 @@ function DateRangeControl({ presetId, range, onPreset, onCustom }) {
           <form className="ba-range__custom" onSubmit={event => { event.preventDefault(); if (customValid) { onCustom({ from, to }); setOpen(false) } }}>
             <label><span>From</span><input type="date" value={from} max={to || undefined} onChange={event => setFrom(event.target.value)} aria-label="From date" /></label>
             <label><span>To</span><input type="date" value={to} min={from || undefined} onChange={event => setTo(event.target.value)} aria-label="To date" /></label>
-            <button type="submit" className="ba-button ba-button--primary" disabled={!customValid}>Apply</button>
+            <Button type="submit" variant="primary" disabled={!customValid}>Apply</Button>
           </form>
         </div>
       )}
@@ -331,9 +333,9 @@ function CandidateTable({ rows, limit, selected, onPick, onInterviews, label, em
                   <span className="ba-share"><span>{formatPercent(row.percent)}</span><i aria-hidden="true"><b style={{ width: `${(row.count / max) * 100}%`, background: rankColor(row.rank) }} /></i></span>
                 </td>
                 <td className="ba-table__act">
-                  <button type="button" className="ba-icon-button" onClick={() => onInterviews(row.name)} aria-label={`${row.name}: view ${row.count} interview${row.count === 1 ? '' : 's'}`} title="View interviews">
+                  <Button variant="ghost" size="sm" className="ba-icon-button" onClick={() => onInterviews(row.name)} aria-label={`${row.name}: view ${row.count} interview${row.count === 1 ? '' : 's'}`} title="View interviews">
                     <Icon name="list" size={15} />
-                  </button>
+                  </Button>
                 </td>
               </tr>
             )
@@ -349,7 +351,7 @@ function SearchBox({ value, onChange, placeholder, label, title }) {
   return (
     <label className="ba-search">
       <Icon name="search" size={14} />
-      <input type="search" value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} aria-label={label} title={title} />
+      <input type="search" className="ui-input" value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} aria-label={label} title={title} />
     </label>
   )
 }
@@ -373,7 +375,7 @@ function View({ title, subtitle, onClose, children, wide = false }) {
       <section ref={panelRef} tabIndex={-1} className={`ba-view__panel${wide ? ' ba-view__panel--wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header className="ba-view__head">
           <div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>
-          <button type="button" className="ba-icon-button" onClick={onClose} aria-label="Close"><Icon name="x" size={17} /></button>
+          <Button variant="ghost" size="sm" className="ba-icon-button" onClick={onClose} aria-label="Close"><Icon name="x" size={17} /></Button>
         </header>
         <div className="ba-view__body">{children}</div>
       </section>
@@ -467,7 +469,7 @@ function InterviewsView({ range, filters, initialStatus, period, onClose }) {
           </button>
         ))}
       </div>
-      {state.error && <div className="ba-error" role="alert"><span>{state.error}</span><button type="button" className="ba-link" onClick={() => setReload(n => n + 1)}>Try again</button></div>}
+      {state.error && <Alert className="ba-error"><span>{state.error}</span><Button variant="link" onClick={() => setReload(n => n + 1)}>Try again</Button></Alert>}
       <div className="ba-table-wrap ba-table-wrap--interviews">
         <table className="ba-table ba-table--interviews" aria-label="Interviews">
           <thead>
@@ -612,29 +614,29 @@ export function BookingsAnalyticsPanel() {
         <FilterSelect icon="code" label="Technology" value={filters.technology} options={technologyOptions} onChange={value => setFilter('technology', value)} />
         <FilterSelect icon="filter" label="Interview level" value={filters.round} options={levelOptions} onChange={value => setFilter('round', value)} />
         {activeFilters > 0 && (
-          <button type="button" className="ba-button ba-button--ghost" onClick={() => setFilters(EMPTY_FILTERS)}>
-            <Icon name="x" size={14} />Clear filters<span className="ba-count">{activeFilters}</span>
-          </button>
+          <Button variant="ghost" className="ba-clear" onClick={() => setFilters(EMPTY_FILTERS)}>
+            <Icon name="x" size={14} />Clear filters<Badge tone="info">{activeFilters}</Badge>
+          </Button>
         )}
         <div className="ba-toolbar__end">
           <span className="ba-updated" aria-live="polite">{status.refreshing ? 'Updating…' : status.updatedAt ? `Updated ${status.updatedAt}` : ''}</span>
-          <button type="button" className="ba-button" onClick={() => openInterviews()} disabled={!total}>
-            <Icon name="list" size={15} />Interviews<span className="ba-count">{loading ? '…' : total}</span>
-          </button>
-          <button type="button" className="ba-button ba-button--icon-text" onClick={() => load({ silent: Boolean(summary) })} disabled={status.loading || status.refreshing} aria-label="Refresh" title={status.updatedAt ? `Refresh (updated ${status.updatedAt})` : 'Refresh'}>
+          <Button onClick={() => openInterviews()} disabled={!total}>
+            <Icon name="list" size={15} />Interviews<Badge>{loading ? '…' : total}</Badge>
+          </Button>
+          <Button className="ba-button--icon-text" onClick={() => load({ silent: Boolean(summary) })} disabled={status.loading || status.refreshing} aria-label="Refresh" title={status.updatedAt ? `Refresh (updated ${status.updatedAt})` : 'Refresh'}>
             <Icon name="refresh" size={15} /><span>Refresh</span>
-          </button>
-          <button type="button" className="ba-button ba-button--icon-text" onClick={exportReport} disabled={!summary || status.loading} aria-label="Export report" title="Export the report (CSV)">
+          </Button>
+          <Button className="ba-button--icon-text" onClick={exportReport} disabled={!summary || status.loading} aria-label="Export report" title="Export the report (CSV)">
             <Icon name="download" size={15} /><span>Export</span>
-          </button>
+          </Button>
         </div>
       </div>
 
       {status.error && (
-        <div className="ba-error" role="alert">
+        <Alert className="ba-error">
           <span>{status.error}</span>
-          <button type="button" className="ba-link" onClick={() => load()}>Try again</button>
-        </div>
+          <Button variant="link" onClick={() => load()}>Try again</Button>
+        </Alert>
       )}
 
       <div className="ba-kpis" aria-label="Booking counters" role="group">
@@ -670,9 +672,9 @@ export function BookingsAnalyticsPanel() {
       </div>
 
       <div className="ba-grid">
-        <section className="ba-card ba-card--donut" aria-labelledby="ba-donut-title">
+        <section className="ui-card ba-card ba-card--donut" aria-labelledby="ba-donut-title">
           <header className="ba-card__head">
-            <h2 id="ba-donut-title">Bookings by candidate</h2>
+            <h2 id="ba-donut-title" className="ui-card__title">Bookings by candidate</h2>
             <span className="ba-muted">{candidates.length} candidates</span>
           </header>
           <div className="ba-donut-layout">
@@ -696,9 +698,9 @@ export function BookingsAnalyticsPanel() {
           </div>
         </section>
 
-        <section className="ba-card ba-card--top" aria-labelledby="ba-top-title">
+        <section className="ui-card ba-card ba-card--top" aria-labelledby="ba-top-title">
           <header className="ba-card__head">
-            <h2 id="ba-top-title">Top {TOP_LIMIT} candidates</h2>
+            <h2 id="ba-top-title" className="ui-card__title">Top {TOP_LIMIT} candidates</h2>
             <SearchBox value={search} onChange={setSearch} placeholder="Search candidates" label="Search candidates" />
           </header>
           <CandidateTable
@@ -714,26 +716,26 @@ export function BookingsAnalyticsPanel() {
             <span className="ba-muted">
               {search ? `${Math.min(TOP_LIMIT, topRows.length)} of ${topRows.length} matching` : `Showing ${Math.min(TOP_LIMIT, candidates.length)} of ${candidates.length} candidates`}
             </span>
-            <button type="button" className="ba-link" onClick={() => setView({ kind: 'candidates' })} disabled={!candidates.length}>View all candidates<Icon name="arrow-right" size={14} /></button>
+            <Button variant="link" onClick={() => setView({ kind: 'candidates' })} disabled={!candidates.length}>View all candidates<Icon name="arrow-right" size={14} /></Button>
           </footer>
         </section>
 
         <div className="ba-stack">
-          <section className="ba-card ba-card--levels" aria-labelledby="ba-levels-title">
+          <section className="ui-card ba-card ba-card--levels" aria-labelledby="ba-levels-title">
             <header className="ba-card__head">
-              <h2 id="ba-levels-title">Interview levels</h2>
-              {filters.round && <button type="button" className="ba-link" onClick={() => setFilter('round', '')}>All levels</button>}
+              <h2 id="ba-levels-title" className="ui-card__title">Interview levels</h2>
+              {filters.round && <Button variant="link" onClick={() => setFilter('round', '')}>All levels</Button>}
             </header>
             <BarList items={levels} active={filters.round} onPick={item => toggle('round', item.name)} colorFor={() => '#6366f1'} label="Interview levels" />
             {!levels.length && !loading && <p className="ba-empty">No bookings in this period.</p>}
           </section>
 
-          <section className="ba-card ba-card--tech" aria-labelledby="ba-tech-title">
+          <section className="ui-card ba-card ba-card--tech" aria-labelledby="ba-tech-title">
             <header className="ba-card__head">
-              <h2 id="ba-tech-title">Tech stack</h2>
-              <button type="button" className="ba-link" onClick={() => setView({ kind: 'technologies' })} disabled={!technologies.length}>
+              <h2 id="ba-tech-title" className="ui-card__title">Tech stack</h2>
+              <Button variant="link" onClick={() => setView({ kind: 'technologies' })} disabled={!technologies.length}>
                 View all{technologies.length ? ` ${technologies.length}` : ''}<Icon name="arrow-right" size={14} />
-              </button>
+              </Button>
             </header>
             <BarList items={topTechnologies} active={filters.technology} onPick={item => toggle('technology', item.name)} colorFor={() => '#14b8a6'} label="Technologies" />
             {!technologies.length && !loading && <p className="ba-empty">No bookings in this period.</p>}

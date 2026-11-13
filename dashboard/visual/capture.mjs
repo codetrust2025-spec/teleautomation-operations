@@ -49,9 +49,14 @@ for (const { view, role, tab } of pages) {
     // A phone opens with the drawer closed, as a person sees it.
     await page.evaluate(() => document.querySelector('.business-nav-backdrop')?.click())
     await page.waitForTimeout(200)
-    // "Label:role:Tab" opens one of the page's own tabs (a button with that text).
+    // "Label:role:Tab" opens one of the page's own tabs (a button with that
+    // text); "~Text" matches a button whose name starts with it, such as a
+    // button that carries a count ("Interviews 61").
     if (tab) {
-      await page.getByRole('button', { name: tab, exact: true }).first().click()
+      const loose = tab.startsWith('~')
+      const escaped = tab.slice(1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const name = loose ? new RegExp(`^${escaped}`) : tab
+      await page.getByRole('button', { name, exact: !loose }).first().click()
       await page.waitForTimeout(400)
     }
     // From 900px up the shell is one screen tall and the page scrolls inside
@@ -66,7 +71,7 @@ for (const { view, role, tab } of pages) {
       await page.waitForTimeout(300)
     }
     const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    const name = `${slug(view)}${tab ? `-${slug(tab)}` : ''}-${role}-${width}.png`
+    const name = `${slug(view)}${tab ? `-${slug(tab.replace(/^~/, ''))}` : ''}-${role}-${width}.png`
     await page.screenshot({ path: join(out, name), fullPage: true })
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     const unmocked = await page.evaluate(() => [...new Set(window.__unmockedRoutes || [])])
