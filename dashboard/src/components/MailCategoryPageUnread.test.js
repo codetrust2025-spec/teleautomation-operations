@@ -48,3 +48,34 @@ describe('Mail Alerts: Unread vs Opened', () => {
     expect(section).toMatch(/\.mcp\s*\{[^}]*--mcp-unread-bg[^}]*--mcp-read-bg/)
   })
 })
+
+describe('Interview Related: a subtle unread cue (owner, 13 Nov 2026)', () => {
+  const interview = section.slice(section.indexOf('/* Interview Related only'))
+  const alpha = (text, name) => Number((text.match(new RegExp(`${name}:\\s*rgba\\([^)]*,\\s*([\\d.]+)\\)`)) || [])[1])
+
+  it('uses a very faint wash and a hairline border, only on the Interview page', () => {
+    expect(interview).toMatch(/\.mcp--interview\s*\{/)
+    expect(alpha(interview, '--mcp-unread-bg')).toBeLessThanOrEqual(0.08)
+    expect(alpha(interview, '--mcp-unread-border')).toBeLessThanOrEqual(0.35)
+    expect(interview).toMatch(/\.mcp--interview \.mcp-email--unread \{ box-shadow: inset 2px 0 0 var\(--mcp-unread-edge\); \}/)
+  })
+
+  it('softens the Unread badge to an outlined tint with no glow', () => {
+    const badge = interview.slice(interview.indexOf('.mcp--interview .mcp-email .mcp-state--unread'))
+    expect(badge).toMatch(/background:\s*rgba\(59, 130, 246, 0\.14\)/)
+    expect(badge).toMatch(/box-shadow:\s*none/)
+  })
+
+  it('keeps unread and opened apart: bold vs normal text, edge vs none', () => {
+    expect(section).toMatch(/\.mcp-email--unread \.mcp-email__name,[^{]*\{[^}]*font-weight:\s*700/)
+    expect(section).toMatch(/\.mcp-email--read \.mcp-email__subject\s*\{[^}]*font-weight:\s*400/)
+  })
+
+  it('leaves Selection Related as it was', () => {
+    for (const line of interview.replace(/\/\*[\s\S]*?\*\//g, '').match(/^[^\s{}][^{]*\{/gm)) {
+      expect(line).toMatch(/^\.mcp--interview/)
+    }
+    expect(rule('.mcp-state--unread')).toMatch(/background:\s*#2563eb/)
+    expect(section).toMatch(/\.mcp\s*\{[^}]*--mcp-unread-bg:\s*rgba\(30, 64, 175, 0\.30\)/)
+  })
+})

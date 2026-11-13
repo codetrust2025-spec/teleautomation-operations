@@ -643,3 +643,24 @@
   font-weight: 500;
 }
 .mcp-pill--new { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25); font-weight: 700; }
+
+/* Interview Related only (owner, 13 Nov 2026): unread is told apart by a
+   quiet cue, not a bright one. A very faint blue wash, a thin blue edge and a
+   hairline border; a soft outlined Unread badge. Bold text still marks unread
+   and normal text opened, so the two stay clear without lighting up the page.
+   Scoped to .mcp--interview, so Selection Related keeps its own styling. */
+.mcp--interview {
+  --mcp-unread-bg: rgba(59, 130, 246, 0.07);
+  --mcp-unread-border: rgba(96, 165, 250, 0.32);
+  --mcp-unread-edge: rgba(96, 165, 250, 0.85);
+}
+.mcp--interview .mcp-email--unread { box-shadow: inset 2px 0 0 var(--mcp-unread-edge); }
+.mcp--interview .mcp-email--unread .mcp-email__row:hover { background: rgba(59, 130, 246, 0.06); }
+.mcp--interview .mcp-email--unread .mcp-email__subject { color: #e8eefc; }
+.mcp--interview .mcp-email .mcp-state--unread {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
+  font-weight: 600;
+  box-shadow: none;
+}
