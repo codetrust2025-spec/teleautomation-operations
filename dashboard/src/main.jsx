@@ -12,6 +12,9 @@ import './dailyOps.css'
 import './recruitmentMail.css'
 import './components/AiControlsDashboard.css'
 import './components/ui/CommonModal.css'
+// The shared kit loads last so its tokens and ui-* rules are the final word.
+import './styles/tokens.css'
+import './styles/ui.css'
 
 const submitSlot = window.location.pathname.replace(/\/+$/, '') === '/submit-slot'
 

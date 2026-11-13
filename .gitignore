@@ -15,3 +15,4 @@ local-preview.*.log
 
 # scripts/layout_harness.py output (local tool)
 .layout-harness/
+/.visual/
