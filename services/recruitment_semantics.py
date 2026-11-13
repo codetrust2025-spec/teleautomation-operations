@@ -412,13 +412,14 @@ def selection_alert_filing(
     """Which Mail Alerts classification a Selection alert is filed under, from its mail.
 
     A Selection alert stays Selection when its mail states a selection outcome.
-    It moves to Interview when the mail states interview progress or a
-    shortlist and no selection outcome, and a bare "Selected" or "HR
-    confirmation" claim with no proof moves too unless the candidate
-    already has a selection outcome with that company (`selection_context`):
-    Workday tasks after an offer say only "Review Documents". Everything else
-    keeps the classification it was given. Only the alert's filing changes;
-    the analysis, the event and the candidate's lifecycle are untouched.
+    When the mail states interview progress or a shortlist and no selection
+    outcome, or makes a bare "Selected" or "HR confirmation" claim with no
+    proof (unless the candidate already has a selection outcome with that
+    company, `selection_context`: Workday tasks after an offer say only
+    "Review Documents"), it is filed `not_relevant` and makes no alert. It is
+    never refiled as an interview: that is Prompt 12's verdict alone. Only the
+    alert's filing changes; the analysis, the event and the lifecycle are
+    untouched.
     """
     if classification not in SELECTION_ALERT_CLASSIFICATIONS:
         return classification
@@ -427,7 +428,11 @@ def selection_alert_filing(
     progress = states_interview_progress(texts)
     if not progress and not (classification in _CLAIMS_NEEDING_PROOF and not selection_context):
         return classification
-    return "post_interview_shortlisted" if states_post_interview_progress(texts) else "interview_shortlisted"
+    # Not a selection, and no longer refiled as an interview (owner, 13 Nov
+    # 2026): whether a mail is an interview is Prompt 12's verdict alone. This
+    # refiling is how a TCS login OTP the model called "Selected" became an
+    # Interview Shortlisted alert. An unproven selection claim makes no alert.
+    return "not_relevant"
 
 
 def evidence_entails_transition(status: str, text: str) -> bool:

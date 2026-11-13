@@ -2802,70 +2802,10 @@ def _prompt_json(value: Any) -> str:
     )
 
 
-_SHORTLIST_CANDIDATE_STATUSES = {
-    "interview shortlisted", "shortlisted", "candidate shortlisted",
-    "profile shortlisted",
-}
-# Wording that states the shortlist outcome. A label alone is not enough: the
-# mail itself has to say it, so a generic document request can never be
-# promoted no matter what the model puts in candidate_status.
-_SHORTLIST_EVIDENCE_PHRASES = (
-    "provisionally shortlisted", "profile is shortlisted",
-    "profile has been shortlisted", "profile is provisionally shortlisted",
-    "you have been shortlisted", "you are shortlisted",
-    "we have shortlisted your", "shortlisted for the role",
-    "shortlisted for the position", "candidature has been shortlisted",
-    "candidature has been provisionally shortlisted",
-    "shortlisted for further discussion", "shortlisted for hr discussion",
-)
-# Only these are promotable. A confirmed/cancelled interview, an offer or a
-# rejection already carries a stronger outcome and must never be overwritten.
-_SHORTLIST_PROMOTABLE_STATUSES = {"MANUAL_REVIEW_REQUIRED", "INTERVIEW_UPDATE"}
-
-
-def normalise_shortlist_status(value: dict[str, Any], message: dict[str, Any] | None = None) -> bool:
-    """Map a model result that plainly describes a shortlist onto the canonical status.
-
-    The model reads these mails correctly — it returned candidate_status
-    "Interview Shortlisted", is_selection_or_offer_related true and a reason
-    naming the provisional shortlist — but parked the result at
-    MANUAL_REVIEW_REQUIRED/INTERVIEW_UPDATE because no interview slot was
-    offered. Shortlisting is the outcome; the document list is the next action.
-
-    Runs after the schema guard, on the validated result, so the guard still
-    sees exactly what the model produced. Returns whether it promoted anything.
-    """
-    status = str(value.get("status") or "").upper()
-    if status not in _SHORTLIST_PROMOTABLE_STATUSES:
-        return False
-    if not value.get("is_selection_or_offer_related"):
-        return False
-
-    label = str(value.get("candidate_status") or "").strip().lower()
-    # Evidence must come from the mail itself, never from the model's own prose:
-    # a summary that says "shortlisted" about a bare document request would
-    # otherwise promote it on the strength of the model's wording alone.
-    haystack = " ".join(str(part or "").lower() for part in (
-        (message or {}).get("subject"), (message or {}).get("body"),
-    ))
-    stated = evidence_entails_transition("INTERVIEW_SHORTLISTED", haystack)
-    entailing_evidence = any(
-        evidence_entails_transition("INTERVIEW_SHORTLISTED", str(item.get("text") or ""))
-        for item in value.get("evidence") or []
-    )
-    # Both the model's own label and the wording in the mail must agree, so a
-    # merely ambiguous recruitment update stays in manual review.
-    if label not in _SHORTLIST_CANDIDATE_STATUSES or not stated or not entailing_evidence:
-        return False
-
-    value["status"] = "INTERVIEW_SHORTLISTED"
-    value["is_selection_or_offer_related"] = True
-    value["should_create_review_record"] = True
-    value["requires_manual_review"] = False
-    value["backend_transition_validated"] = True
-    value["backend_validation_reason"] = "EXPLICIT_INTERVIEW_SHORTLIST_ENTAILED"
-    value["shortlist_normalised_from"] = status
-    return True
+# The shortlist promotion that used to sit here (normalise_shortlist_status:
+# INTERVIEW_UPDATE / MANUAL_REVIEW_REQUIRED -> INTERVIEW_SHORTLISTED) was removed
+# on 13 Nov 2026. A shortlist is OTHER under Prompt 12, which alone decides
+# whether a mail is an interview (services/prompt12_classifier.py).
 
 
 def analyze(
@@ -3122,8 +3062,6 @@ def _analyze_on_one_node(message: dict[str, Any], attachment_texts: list[dict[st
         except ValueError as exc:
             raise AIGatewayError(f"Ollama response failed schema validation: {exc}", code="OLLAMA_SCHEMA_VALIDATION_FAILED") from exc
         logger.info("Ollama recruitment response schema validated")
-        if not pure_ollama_enabled():
-            normalise_shortlist_status(result, message)
         result["primary_status"] = result["status"]
         result["classification_source"] = "OLLAMA"
         # Interview and assessment auto-booking require VALIDATED. A reading
@@ -3412,6 +3350,19 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
                 except Exception:
                     logger.debug("Unable to persist hidden retry analysis", exc_info=True)
                 return None
+    # Prompt 12 decides whether this mail is an interview (owner, 13 Nov 2026):
+    # SCHEDULED, CANCELED or OTHER, on the subject and body, nothing else. It
+    # runs on every mail that reached this point -- calendar invites included --
+    # and no reading below may turn an OTHER into an interview. No clear answer
+    # is not guessed at: the mail goes back on the automatic retry queue.
+    from services import prompt12_classifier
+    try:
+        prompt12_record = prompt12_classifier.classify(decoded.get("subject"), decoded.get("body"))
+    except AIGatewayError as exc:
+        prompt12_code = getattr(exc, "code", None) or "OLLAMA_INTERNAL_ERROR"
+        logger.warning("Prompt 12 gave no verdict code=%s; queued for retry", prompt12_code)
+        store.mark_message_status(row["id"], "AI_RETRY_PENDING", reason=prompt12_code, error_code=prompt12_code)
+        return None
     if critical_attachment_failure and (not result.get("is_selection_or_offer_related") or not result.get("should_create_review_record")):
         result = _failure_review_result(decoded, RuntimeError("Critical employment attachment extraction failed"))
         result["reason"] = "A potentially important employment attachment could not be extracted"
@@ -3452,6 +3403,13 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
         result["is_selection_or_offer_related"] = False
         result["should_create_review_record"] = False
         result["ignore_reason"] = "JOB_BOARD_NOTIFICATION"
+    # The verdict is applied last, after every other reader and rule, so that
+    # it is the one that stands: an interview reading Prompt 12 called OTHER
+    # is dropped here, and a SCHEDULED/CANCELED mail is that interview event
+    # whatever was concluded above (bookable only when the readers agree).
+    prompt12_outcome = prompt12_classifier.apply_verdict(result, prompt12_record)
+    logger.info("Prompt 12 verdict=%s outcome=%s subject=%r", prompt12_record["verdict"],
+                prompt12_outcome, str(decoded.get("subject") or "")[:120])
     def _queued_for_another_attempt() -> bool:
         """Park an undecided result for automatic retry. Never a person's queue.
 

@@ -322,8 +322,15 @@ def chat(
     num_predict: int | None = None,
     think: bool | str | None = None,
     format: str | dict[str, Any] | None = None,
+    seed: int | None = None,
+    num_ctx: int | None = None,
 ) -> AIResult:
-    """Call Ollama through the single bounded production gateway."""
+    """Call Ollama through the single bounded production gateway.
+
+    `seed` and `num_ctx` pin a request to the exact sampling settings a prompt
+    was tested with (Prompt 12: seed 12, 8192 tokens); left out, a request uses
+    the gateway's defaults as before.
+    """
     # The request is reported as it moves -- waiting, on a node, released,
     # moved to another -- so whatever names the node serving it (the booking
     # page, the AI nodes panel) reads this function's own decisions.
@@ -334,7 +341,7 @@ def chat(
             messages=messages, model=model, timeout=timeout, temperature=temperature,
             images=images, max_retries=max_retries, schema=schema, workload=workload,
             deadline_monotonic=deadline_monotonic, num_predict=num_predict, think=think,
-            format=format,
+            format=format, seed=seed, num_ctx=num_ctx,
         )
     finally:
         activity.end()
@@ -355,6 +362,8 @@ def _chat(
     num_predict: int | None,
     think: bool | str | None,
     format: str | dict[str, Any] | None = None,
+    seed: int | None = None,
+    num_ctx: int | None = None,
 ) -> AIResult:
     chosen = (model or configured_models()["text"]).strip()
     if not chosen:
@@ -389,7 +398,9 @@ def _chat(
     # rejects an image request that overflows its context with HTTP 400, so
     # every invite read failed as OLLAMA_BAD_REQUEST (19 Oct). OLLAMA_NUM_CTX
     # can raise it; it is never set below MIN_NUM_CTX.
-    request_payload["options"]["num_ctx"] = resolved_num_ctx()
+    request_payload["options"]["num_ctx"] = int(num_ctx) if num_ctx else resolved_num_ctx()
+    if seed is not None:
+        request_payload["options"]["seed"] = int(seed)
     if schema is not None:
         request_payload["format"] = schema
     elif format is not None:

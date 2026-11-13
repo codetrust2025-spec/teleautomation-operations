@@ -2014,8 +2014,8 @@ def create_event(candidate_id: str, message_id: str, result: dict[str,Any], *, m
           structured_result,summary,requires_manual_review,review_status,visible_in_offer_review,original_primary_status,ignore_reason,ignored_at,
           ai_model,prompt_name,prompt_version,schema_version,processing_duration_ms,calendar_uid,calendar_sequence,created_at,updated_at)
           VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,
-            CASE WHEN %s THEN NULL ELSE now() END,%s,'recruitment_email_status_extraction_v3','v3','selection_offer_event_v1',%s,%s,%s,now(),now()) RETURNING *""",
-          (event_id,candidate_id,message_id,status,result['confidence'],company.get('name'),company.get('domain'),job.get('title'),recruiter.get('name'),recruiter.get('email'),storable_date(interview.get('date')),storable_time(interview.get('time')),interview.get('mode'),storable_number(offer.get('offered_ctc')),offer.get('currency'),storable_date(offer.get('joining_date')),storable_date(offer.get('offer_date')),storable_date(offer.get('offer_expiry_date')),json.dumps(result),result.get('summary'),bool(result.get('requires_manual_review')) if visible else False,review_status,visible,original_status if not visible else None,ignore_reason,visible,model,duration_ms,(str(result.get('calendar_uid')) if result.get('calendar_uid') else None),result.get('calendar_sequence')))
+            CASE WHEN %s THEN NULL ELSE now() END,%s,%s,%s,'selection_offer_event_v1',%s,%s,%s,now(),now()) RETURNING *""",
+          (event_id,candidate_id,message_id,status,result['confidence'],company.get('name'),company.get('domain'),job.get('title'),recruiter.get('name'),recruiter.get('email'),storable_date(interview.get('date')),storable_time(interview.get('time')),interview.get('mode'),storable_number(offer.get('offered_ctc')),offer.get('currency'),storable_date(offer.get('joining_date')),storable_date(offer.get('offer_date')),storable_date(offer.get('offer_expiry_date')),json.dumps(result),result.get('summary'),bool(result.get('requires_manual_review')) if visible else False,review_status,visible,original_status if not visible else None,ignore_reason,visible,model,*_prompt_provenance(result),duration_ms,(str(result.get('calendar_uid')) if result.get('calendar_uid') else None),result.get('calendar_sequence')))
         event=_rows(cur)[0]
         canonical_id=canonical_candidate_id(candidate_id)
         cur.execute("""UPDATE ai_recruitment_events SET canonical_candidate_id=%s,validation_status=%s,
@@ -2407,6 +2407,20 @@ def review_offer(case_id:str, action:str, reviewer:str, notes:str='')->dict[str,
     return rows[0] if rows else {}
 
 
+def _prompt_provenance(result: dict[str, Any]) -> tuple[str, str]:
+    """(prompt_name, prompt_version) of what actually decided this result.
+
+    Until 13 Nov 2026 every event was stamped recruitment_email_status_
+    extraction_v3 / v3 whatever ran, so no stored row could say which prompt
+    produced its label. A result carrying a Prompt 12 verdict names Prompt 12
+    (pinned by the hash of its text) beside the details reader.
+    """
+    prompt12 = result.get("prompt12") or {}
+    if prompt12.get("prompt_version"):
+        return ("prompt12+recruitment_email_status_extraction_v4", str(prompt12["prompt_version"]))
+    return ("recruitment_email_status_extraction_v3", "v3")
+
+
 def canonical_classification(result: dict[str, Any] | None = None, status: str | None = None) -> str:
     result = result or {}
     explicit = str(result.get("classification") or "").strip().lower()
@@ -2685,7 +2699,14 @@ def should_route_to_mail_alert(
     # offers on wording); it still decides booking and stage changes.
     # Trusted RFC calendar sources keep their existing independent path.
     source_name = str(structured.get("classification_source") or "").upper()
-    if source_name == "OLLAMA":
+    # An interview is Prompt 12's call (owner, 13 Nov 2026): its verdict, not
+    # the relevance gate, decides whether an interview alert may exist.
+    from services.prompt12_classifier import INTERVIEW_CLASSIFICATIONS, verdict_allows
+    prompt12 = structured.get("prompt12") or {}
+    if classification in INTERVIEW_CLASSIFICATIONS and prompt12:
+        if not verdict_allows(classification, structured):
+            return False
+    elif source_name == "OLLAMA":
         relevance = structured.get("recruitment_relevance_result") or {}
         if str(relevance.get("decision") or "").upper() != "ESTABLISHED":
             return False
@@ -2700,7 +2721,10 @@ def should_route_to_mail_alert(
         try:
             scheduled_date = date.fromisoformat(raw_date)
         except ValueError:
-            return False
+            # Prompt 12 found a booked interview but no reader could pin its
+            # date: the alert is the only way a person learns of it (it is
+            # not bookable, so nothing is booked on a guess).
+            return prompt12.get("verdict") == "SCHEDULED"
         if scheduled_date < (today or date.today()):
             return False
 
@@ -2793,6 +2817,9 @@ def create_monitoring_notification(
         if filed != classification:
             classification = filed
             candidate_status = _CLASSIFICATION_STATUS[filed]
+            if not notification_is_tracked(classification):
+                # An unproven selection claim: no alert anywhere.
+                return {}
         source_row = {
             "provider_message_id": provider_id,
             "provider_thread_id": thread_id,
@@ -2810,6 +2837,17 @@ def create_monitoring_notification(
             # database refuses the row anyway; saying so here keeps the
             # caller's "not routed" path instead of a missing-row surprise.
             return {}
+        from services.prompt12_classifier import verdict_allows
+        if (classification in INTERVIEW_RELATED_CLASSIFICATIONS - {"interview_needs_reading"}
+                and not verdict_allows(classification, structured)):
+            # Only Prompt 12 creates interview alerts (owner, 13 Nov 2026): a new
+            # one needs this mail's own SCHEDULED/CANCELED verdict. An alert
+            # that already exists is still updated; none is created from an old
+            # event, a recovery pass or another reader's interview label.
+            cur.execute("SELECT 1 FROM mail_monitoring_notifications WHERE gmail_message_id=%s"
+                        " AND classification=%s LIMIT 1", (provider_id, classification))
+            if cur.fetchone() is None:
+                return {}
 
         name, email = _candidate_snapshot(str(event["candidate_id"]), structured)
         # Keep source provenance on the event, but use the same stable person
