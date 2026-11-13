@@ -10,15 +10,15 @@ from services import prompt12_classifier as p12
 from services.gmail_mailbox_provider import select_message_body
 from services.recruitment_mail_agent import clean_email
 
-TCS_PLAIN = ("Dear Gangadhar,\r\n1. Full Name (according to PAN card) :\r\n"
+TCS_PLAIN = ("Dear Ravi,\r\n1. Full Name (according to PAN card) :\r\n"
              "2. Latest Company’s relieving letter :\r\nshare me asap.\r\n")
 TCS_HTML = (
-    "<div>Dear Gangadhar,</div><div>Full Name (according to PAN card) : Latest Company’s relieving letter :</div>"
-    "<div>share me asap.</div><div><b>From:</b> Gangadhar Nagarale &lt;gangadhar@example.com&gt;<br>"
+    "<div>Dear Ravi,</div><div>Full Name (according to PAN card) : Latest Company’s relieving letter :</div>"
+    "<div>share me asap.</div><div><b>From:</b> Ravi Kumar &lt;candidate@example.com&gt;<br>"
     "<b>Sent:</b> Friday, October 30, 2026 10:04 AM<br><b>Subject:</b> Re: Virtual Technical Interview Scheduled_TCS</div>"
     "<div>I will be available at the scheduled time.</div>"
-    "<div>On Fri, 30 Oct 2026, 10:03 am prathima, &lt;recruiter@example.net&gt; wrote:</div>"
-    "<blockquote>Dear Gangadhar, As discussed, your Virtual Interview is scheduled at 12 PM on 30 th Oct 2026 (Friday). "
+    "<div>On Fri, 30 Oct 2026, 10:03 am the recruiter, &lt;recruiter@example.net&gt; wrote:</div>"
+    "<blockquote>Dear Ravi, As discussed, your Virtual Interview is scheduled at 12 PM on 30 th Oct 2026 (Friday). "
     "Interview Scheduled 30 th Oct 2026 (Friday) at 12 PM. Microsoft Teams meeting</blockquote>"
 )
 SUBJECT = "RE: Virtual Technical Interview Scheduled_TCS"
