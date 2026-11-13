@@ -53,6 +53,17 @@ OUTCOMES = ("SCHEDULED", "CANCELED", "OTHER")
 MODEL_DEFAULT = "qwen2.5:7b"
 SEED = 12
 NUM_CTX = 8192
+#: The body is cut here so the prompt always stays inside the 8192-token
+#: context. Replayed over 972 production mails (13 Nov 2026), every mail it
+#: could not answer was a 15,000+ character job-alert digest: the overflow
+#: pushed the instructions out and the model summarised the jobs instead.
+#: Shorter mails -- all but a handful -- reach the model exactly as tested.
+MAX_BODY_CHARS = 12000
+#: Verified calendar invites keep booking as before (owner, 13 Nov 2026): their
+#: date and time are in the invite, which Prompt 12 never sees, and a screening
+#: call or HR discussion is a meeting operators book. Prompt 12 decides
+#: everything else.
+CALENDAR_SOURCES = frozenset({"ICALENDAR_VERIFIED"})
 
 _LABEL = re.compile(r"\b(SCHEDULED|CANCELED|CANCELLED|OTHER)\b")
 
@@ -63,7 +74,7 @@ def model() -> str:
 
 
 def user_message(subject: Any, body: Any) -> str:
-    return f"SUBJECT: {subject or ''}\n\nBODY:\n{body or ''}"
+    return f"SUBJECT: {subject or ''}\n\nBODY:\n{str(body or '')[:MAX_BODY_CHARS]}"
 
 
 def parse(raw: str) -> str | None:
@@ -74,11 +85,12 @@ def parse(raw: str) -> str | None:
 
 def classify(subject: Any, body: Any, *, timeout: float | None = None,
              deadline_monotonic: float | None = None) -> dict[str, Any]:
-    """Run Prompt 12 on one mail. Raises AIGatewayError when there is no clear answer.
+    """Run Prompt 12 on one mail. Raises AIGatewayError only when the model is unreachable.
 
-    An answer that is not exactly one of the three labels is not guessed at:
-    it raises PROMPT12_UNPARSED, which the caller treats like any other
-    unreadable result (the mail is retried, never filed on a guess).
+    An answer that is not exactly one of the three labels is filed OTHER, with
+    `unparsed` set and the raw answer kept: at temperature 0 and a fixed seed
+    a retry repeats the same text, and a mail nobody could read as an
+    interview must never become one.
     """
     started = time.monotonic()
     response = chat(
@@ -89,13 +101,9 @@ def classify(subject: Any, body: Any, *, timeout: float | None = None,
         workload="interview_prompt12", max_retries=1,
     )
     verdict = parse(response.content)
-    if verdict is None:
-        raise AIGatewayError(
-            f"Prompt 12 gave no single label: {str(response.content or '')[:80]!r}",
-            code="PROMPT12_UNPARSED",
-        )
     return {
-        "verdict": verdict,
+        "verdict": verdict or "OTHER",
+        "unparsed": verdict is None,
         "raw": str(response.content or "").strip()[:200],
         "model": response.model,
         "node": getattr(response, "node_id", "") or "",
@@ -196,5 +204,8 @@ def apply_verdict(result: dict[str, Any], verdict_record: dict[str, Any]) -> str
 
 def verdict_allows(classification: str, structured: dict[str, Any] | None) -> bool:
     """Whether a new Interview Related alert of this classification may be created."""
-    verdict = ((structured or {}).get("prompt12") or {}).get("verdict")
+    structured = structured or {}
+    if str(structured.get("classification_source") or "").upper() in CALENDAR_SOURCES:
+        return classification in VERDICT_CLASSIFICATIONS["SCHEDULED"] | VERDICT_CLASSIFICATIONS["CANCELED"]
+    verdict = (structured.get("prompt12") or {}).get("verdict")
     return classification in VERDICT_CLASSIFICATIONS.get(verdict, frozenset())

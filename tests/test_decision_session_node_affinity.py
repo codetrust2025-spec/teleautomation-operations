@@ -156,7 +156,16 @@ class TestNothingElseChanged:
 
     def test_no_seed_was_introduced(self):
         """Measured: a seed did not stabilise anything. On rtx4060 seed=42 gave
-        two answers in three runs where no seed gave one in three."""
-        from core import ai_gateway
+        two answers in three runs where no seed gave one in three.
 
-        assert '"seed"' not in inspect.getsource(ai_gateway)
+        The gateway sends one only when a caller passes it, and the only caller
+        that does is Prompt 12, which the owner tested with seed 12 and runs as
+        tested (13 Nov 2026). The recruitment readers still send none."""
+        from core import ai_gateway
+        from services import prompt12_classifier, recruitment_mail_agent
+
+        gateway = inspect.getsource(ai_gateway)
+        assert gateway.count('["seed"]') == 1
+        assert 'if seed is not None:\n        request_payload["options"]["seed"]' in gateway
+        assert "seed=" not in inspect.getsource(recruitment_mail_agent)
+        assert "seed=SEED" in inspect.getsource(prompt12_classifier)

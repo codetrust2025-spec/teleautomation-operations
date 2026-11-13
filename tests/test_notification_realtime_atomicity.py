@@ -87,6 +87,8 @@ def inputs():
         "confidence": 0.99, "structured_result": {
             "company": {"name": "Company"}, "job": {"title": "Engineer"},
             "classification_source": "CALENDAR_INVITE",
+            # A new interview alert needs this mail's own Prompt 12 verdict.
+            "prompt12": {"verdict": "SCHEDULED"},
         },
     }
     analysis = {"id": "analysis-1", "classification": "interview_confirmed", "candidate_status": "Interview Confirmed"}

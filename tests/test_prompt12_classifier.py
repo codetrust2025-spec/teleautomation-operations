@@ -45,11 +45,36 @@ def test_only_one_clear_label_counts(raw, label):
     assert p12.parse(raw) == label
 
 
-def test_no_clear_label_is_retried_never_guessed(monkeypatch):
-    monkeypatch.setattr(p12, "chat", lambda **_: AIResult(content="It depends", model="qwen2.5:7b", duration_ms=1))
-    with pytest.raises(AIGatewayError) as raised:
+def test_no_clear_label_is_other_never_an_interview(monkeypatch):
+    # The 29 job-alert digests of the 13 Nov replay answered with summaries.
+    monkeypatch.setattr(p12, "chat", lambda **_: AIResult(content="Here's a summary of the job postings", model="qwen2.5:7b", duration_ms=1))
+    record = p12.classify("19 more jobs", "digest")
+    assert record["verdict"] == "OTHER" and record["unparsed"] is True
+    assert record["raw"].startswith("Here's a summary")
+
+
+def test_an_unreachable_model_is_retried(monkeypatch):
+    def down(**_):
+        raise AIGatewayError("tunnel down", code="REVERSE_SSH_TUNNEL_UNAVAILABLE")
+    monkeypatch.setattr(p12, "chat", down)
+    with pytest.raises(AIGatewayError):
         p12.classify("s", "b")
-    assert raised.value.code == "PROMPT12_UNPARSED"
+
+
+def test_a_long_body_is_cut_so_the_prompt_stays_in_context():
+    message = p12.user_message("Jobs", "x" * 50_000)
+    assert message == "SUBJECT: Jobs\n\nBODY:\n" + "x" * p12.MAX_BODY_CHARS
+    short = "Your L1 interview is scheduled for 19 Sep at 5 PM"
+    assert p12.user_message("L1", short).endswith(short)
+
+
+def test_verified_calendar_invites_keep_their_own_path():
+    calendar = {"classification_source": "ICALENDAR_VERIFIED"}
+    assert p12.verdict_allows("interview_confirmed", calendar)
+    assert p12.verdict_allows("interview_cancelled", calendar)
+    assert not p12.verdict_allows("interview_shortlisted", calendar)
+    # A structured-email reading is not a calendar invite: Prompt 12 decides it.
+    assert not p12.verdict_allows("interview_confirmed", {"classification_source": "STRUCTURED_EMAIL_VERIFIED"})
 
 
 def _verdict(label):

@@ -3355,14 +3355,19 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
     # runs on every mail that reached this point -- calendar invites included --
     # and no reading below may turn an OTHER into an interview. No clear answer
     # is not guessed at: the mail goes back on the automatic retry queue.
+    # The one exception is a verified calendar invite (owner, 13 Nov 2026): its
+    # schedule is in the invite, which Prompt 12 never sees, so it keeps the
+    # calendar path it has always had.
     from services import prompt12_classifier
-    try:
-        prompt12_record = prompt12_classifier.classify(decoded.get("subject"), decoded.get("body"))
-    except AIGatewayError as exc:
-        prompt12_code = getattr(exc, "code", None) or "OLLAMA_INTERNAL_ERROR"
-        logger.warning("Prompt 12 gave no verdict code=%s; queued for retry", prompt12_code)
-        store.mark_message_status(row["id"], "AI_RETRY_PENDING", reason=prompt12_code, error_code=prompt12_code)
-        return None
+    prompt12_record = None
+    if str(result.get("classification_source") or "").upper() not in prompt12_classifier.CALENDAR_SOURCES:
+        try:
+            prompt12_record = prompt12_classifier.classify(decoded.get("subject"), decoded.get("body"))
+        except AIGatewayError as exc:
+            prompt12_code = getattr(exc, "code", None) or "OLLAMA_INTERNAL_ERROR"
+            logger.warning("Prompt 12 unavailable code=%s; queued for retry", prompt12_code)
+            store.mark_message_status(row["id"], "AI_RETRY_PENDING", reason=prompt12_code, error_code=prompt12_code)
+            return None
     if critical_attachment_failure and (not result.get("is_selection_or_offer_related") or not result.get("should_create_review_record")):
         result = _failure_review_result(decoded, RuntimeError("Critical employment attachment extraction failed"))
         result["reason"] = "A potentially important employment attachment could not be extracted"
@@ -3385,6 +3390,16 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
                 interview_event="NONE",
                 business_domain="NONE",
             )
+    # The verdict is applied after every reader and before the sender rules:
+    # an interview reading Prompt 12 called OTHER is dropped here, and a
+    # SCHEDULED/CANCELED mail is that interview event whatever the readers
+    # concluded (bookable only when they agree). The job-board sender rules
+    # below still have the last word: they are a protection about who sent
+    # the mail, not a reading of what it says.
+    if prompt12_record is not None:
+        prompt12_outcome = prompt12_classifier.apply_verdict(result, prompt12_record)
+        logger.info("Prompt 12 verdict=%s outcome=%s subject=%r", prompt12_record["verdict"],
+                    prompt12_outcome, str(decoded.get("subject") or "")[:120])
     if (result.get("backend_validation_reason") == EVIDENCE_NOT_ENTAILED
             and job_board_notification(decoded.get("sender_email", ""))):
         # Owner decision, 6 Nov 2026: unproven readings alert, except from job
@@ -3403,13 +3418,6 @@ def process_message(mailbox: dict[str, Any], decoded: dict[str, Any], attachment
         result["is_selection_or_offer_related"] = False
         result["should_create_review_record"] = False
         result["ignore_reason"] = "JOB_BOARD_NOTIFICATION"
-    # The verdict is applied last, after every other reader and rule, so that
-    # it is the one that stands: an interview reading Prompt 12 called OTHER
-    # is dropped here, and a SCHEDULED/CANCELED mail is that interview event
-    # whatever was concluded above (bookable only when the readers agree).
-    prompt12_outcome = prompt12_classifier.apply_verdict(result, prompt12_record)
-    logger.info("Prompt 12 verdict=%s outcome=%s subject=%r", prompt12_record["verdict"],
-                prompt12_outcome, str(decoded.get("subject") or "")[:120])
     def _queued_for_another_attempt() -> bool:
         """Park an undecided result for automatic retry. Never a person's queue.
 

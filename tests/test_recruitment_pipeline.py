@@ -105,8 +105,9 @@ def test_job_recommendations_are_ignored_and_interviews_are_tracked(monkeypatch)
     monkeypatch.setattr("services.recruitment_notifications.notify_detection", lambda event: notified.append(event))
     mailbox={"id":"mailbox-1","candidate_id":"candidate-1"}
     assert agent.process_message(mailbox,message("Job recommendations for you | foundit","Apply now to matching jobs."),[]) is None
-    assert agent.process_message(mailbox,message("Technical interview confirmed","Your interview is scheduled tomorrow."),[])["classification"] == "interview_update"
-    assert len(analyzed) == len(created) == len(notified) == 1
+    # No exact time: Prompt 12 rule 2 makes it OTHER, so no interview alert.
+    assert agent.process_message(mailbox,message("Technical interview confirmed","Your interview is scheduled tomorrow."),[]) is None
+    assert len(analyzed) == 1 and created == [] and notified == []
 
 
 @pytest.mark.parametrize(("subject", "body", "reason"), [

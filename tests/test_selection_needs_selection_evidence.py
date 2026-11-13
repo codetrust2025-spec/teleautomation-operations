@@ -59,17 +59,20 @@ def test_a_stated_selection_outcome_stays_selection(classification, subject, bod
     assert classification in store.SELECTION_RELATED_CLASSIFICATIONS
 
 
-@pytest.mark.parametrize("classification,subject,body,filed", MOVES_TO_INTERVIEW, ids=[c[1][:30] for c in MOVES_TO_INTERVIEW])
-def test_interview_progress_or_an_unproven_claim_is_filed_under_interview(classification, subject, body, filed):
+@pytest.mark.parametrize("classification,subject,body,_was_filed", MOVES_TO_INTERVIEW, ids=[c[1][:30] for c in MOVES_TO_INTERVIEW])
+def test_interview_progress_or_an_unproven_claim_makes_no_alert(classification, subject, body, _was_filed):
+    # Until 13 Nov 2026 these were refiled under Interview (`_was_filed`). Whether
+    # a mail is an interview is now Prompt 12's verdict alone, so a selection
+    # claim the mail does not prove is filed not_relevant: no alert anywhere.
     assert not states_confirmed_selection([subject, body])
-    assert selection_alert_filing(classification, [subject, body]) == filed
-    assert filed in store.INTERVIEW_RELATED_CLASSIFICATIONS
+    assert selection_alert_filing(classification, [subject, body]) == "not_relevant"
+    assert not store.notification_is_tracked("not_relevant")
 
 
 def test_a_post_offer_workday_task_stays_selection_with_that_companys_offer():
     texts = ["A Task Awaits You: Review Documents - Reference Check for Job Application", "Review Documents in Workday."]
     assert selection_alert_filing("job_selection_confirmed", texts, selection_context=True) == "job_selection_confirmed"
-    assert selection_alert_filing("job_selection_confirmed", texts) == "interview_shortlisted"
+    assert selection_alert_filing("job_selection_confirmed", texts) == "not_relevant"
 
 
 def test_an_unproven_post_offer_label_is_not_moved_without_interview_evidence():
@@ -99,7 +102,7 @@ def test_the_alert_write_path_files_by_the_mails_own_text():
     cursor = _Cursor("You've successfully progressed through the [Evaluation 1] for 162746.", context=True)
     event = {"candidate_id": "c1", "company_name": "Acme"}
     filed = store._selection_alert_filing(cursor, event, {}, "job_selection_confirmed", "m1", "Evaluation 1 Selection")
-    assert filed == "post_interview_shortlisted"
+    assert filed == "not_relevant"
     assert store._CLASSIFICATION_STATUS[filed]
 
 

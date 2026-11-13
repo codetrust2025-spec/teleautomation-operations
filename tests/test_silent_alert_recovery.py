@@ -108,8 +108,10 @@ def _event():
         "id": "event-1",
         "candidate_id": "cand-1",
         "mailbox_message_id": "message-1",
-        "classification": "interview_shortlisted",
-        "structured_result": {},
+        "classification": "interview_confirmed",
+        # Recovery may only write an interview alert this mail's own Prompt 12
+        # verdict allows; a shortlist alert is never newly created any more.
+        "structured_result": {"prompt12": {"verdict": "SCHEDULED"}},
         "confidence": 1.0,
     }
 
@@ -117,8 +119,8 @@ def _event():
 def _analysis():
     return {
         "id": "analysis-1",
-        "classification": "interview_shortlisted",
-        "candidate_status": "Interview Shortlisted",
+        "classification": "interview_confirmed",
+        "candidate_status": "Interview Confirmed",
         "confidence": 1.0,
     }
 
@@ -153,7 +155,7 @@ class TestLiveClassificationStillAnnounces:
         store.create_monitoring_notification(_event(), _analysis())
         _, payload = recorder["realtime"][0]
         assert payload["notification_id"] == "notification-1"
-        assert payload["classification"] == "interview_shortlisted"
+        assert payload["classification"] == "interview_confirmed"
 
 
 class TestTheRecoveryOnlyReplaysRouting:
