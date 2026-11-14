@@ -153,7 +153,8 @@ def test_result_survives_an_unrelated_candidate_edit(store):
 # ── The route carries both fields ───────────────────────────────────────────
 
 def test_the_attendance_route_passes_feedback_and_result_through(store, monkeypatch):
-    add(store, "c1")
+    # No specified round, no status update (14 Nov): the row carries one.
+    add(store, "c1", interview_round="L1")
     # The route reads the viewer/actor and row access from the request; stub
     # those so the test drives the real handler with a plain body.
     monkeypatch.setattr(route, "_ops_by", lambda request: "Tester")
@@ -164,9 +165,7 @@ def test_the_attendance_route_passes_feedback_and_result_through(store, monkeypa
     payload = asyncio.run(route.candidates_interview_attendance(
         cid="c1", request=None,
         body={"status": "attended", "feedback": "Excellent", "result": "Selected",
-              "remark": "cleared the round", "attendee": "Bhavana",
-              # A status is never saved without a round (14 Nov).
-              "interview_round": "L1"},
+              "remark": "cleared the round", "attendee": "Bhavana"},
     ))
 
     assert payload["status"] == "ok"

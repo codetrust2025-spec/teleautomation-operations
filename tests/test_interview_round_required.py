@@ -1,18 +1,21 @@
-"""A status is never saved on an interview without a round (14 Nov).
+"""No specified round, no status update (owner, 14 Nov).
 
-Rows reached Daily Ops reading "Round not specified" and an admin could still
-mark them Attended, Not attended, Rescheduled or Cancelled, so the outcome was
-stored against an interview nobody could name. Through the real routes and the
-real store:
+Rows reached Daily Ops reading "Round not specified" and could still be marked
+Attended, Not attended, Rescheduled or Cancelled, so the outcome was stored
+against an interview nobody could name. The owner's rule: block every status
+update while the round is missing, say so, and do not ask for a round during
+the update -- it is corrected separately, through the interview edit, by an
+admin. Through the real API routes and the real store:
 
-    - recording any status on a row with no round is refused unless the
-      request names the round; with it, both save and the round is audited;
-    - the round is never guessed: an unknown label is refused, not stored;
-    - a round already set is changed only by an admin, through the round
-      endpoint, the slot edit or the status update alike;
-    - changing the round leaves status, feedback, attendee, notes and the
-      slot exactly as they were, and every change records who and when;
-    - Pending (no status) and rows that already carry a round save as before.
+    - every status write on a roundless row is refused with the owner's
+      message, and nothing on the row changes -- a round sent along with it
+      is not accepted either (no prompt-and-save path, no bypass);
+    - a round the server does not recognise counts as missing, and is never
+      guessed or stored;
+    - rows that carry a round record statuses exactly as before;
+    - the round is set or corrected only through the slot edit, only by an
+      admin, and every change records who and when; status, feedback,
+      attendee, notes and history stay as they were.
 
 Names and numbers are invented.
 """
@@ -26,6 +29,9 @@ import pytest
 from api.routers import candidates as route
 from core import dashboard_access
 from features import candidate_store as cs
+
+MESSAGE = "Interview round is missing. Update the round before changing the status."
+STATUSES = ["attended", "not_attended", "rescheduled", "cancelled", "technical_issue", ""]
 
 
 def booking(cid, **over):
@@ -68,109 +74,112 @@ def mark(cid, **body):
     return asyncio.run(route.candidates_interview_attendance(cid, None, body))
 
 
-def set_round(cid, value):
-    return asyncio.run(route.candidates_interview_round(cid, None, {"interview_round": value}))
-
-
 def edit_slot(cid, **body):
+    body = {"date": "2026-11-10", "time": "12:30", "time_end": "13:00", "technology": "React JS", **body}
     return asyncio.run(route.candidates_interviews_slots_update(cid, None, body))
 
 
-@pytest.mark.parametrize("status", ["attended", "not_attended", "rescheduled", "cancelled"])
-def test_a_status_without_a_round_is_refused_and_nothing_changes(role, status):
-    seed([booking("c1")])
+@pytest.mark.parametrize("status", STATUSES)
+@pytest.mark.parametrize("who", ["admin", "handler"])
+def test_every_status_update_on_a_roundless_row_is_refused(role, status, who):
+    role.update(role=who, username=f"{who}1")
+    seed([booking("c1", interview_attendance_status="attended", interview_feedback="good",
+                  interview_attendance_remark="went well")])
     before = stored("c1")
     out = mark("c1", status=status, remark="note", attendee="Bhavana", feedback="good")
-    assert out["status"] == "error"
-    assert out["code"] == "round_required"
+    assert out == {"status": "error", "code": "round_missing", "message": MESSAGE}
     assert stored("c1") == before
 
 
 @pytest.mark.parametrize("status", ["attended", "not_attended", "rescheduled", "cancelled"])
-def test_a_status_with_the_round_saves_both_and_audits_the_round(role, status):
+def test_a_round_sent_with_the_status_is_not_a_way_round_it(role, status):
     seed([booking("c1")])
+    before = stored("c1")
     out = mark("c1", status=status, remark="note", attendee="Bhavana", feedback="good", interview_round="L2")
-    assert out["status"] == "ok"
-    row = stored("c1")
-    assert row["interview_attendance_status"] == status
-    assert row["interview_round"] == "L2"
-    [entry] = row["interview_round_history"]
-    assert entry["from"] == "" and entry["to"] == "L2" and entry["by"] == "admin1" and entry["at"]
+    assert out["code"] == "round_missing"
+    assert stored("c1") == before
 
 
-def test_a_handler_may_fill_a_missing_round_while_recording_a_status(role):
-    role.update(role="handler", username="handler1")
-    seed([booking("c1")])
-    assert mark("c1", status="not_attended", remark="no show", attendee="Bhavana", interview_round="HR")["status"] == "ok"
-    assert stored("c1")["interview_round"] == "HR"
-    assert stored("c1")["interview_round_history"][-1]["by"] == "handler1"
-
-
-def test_the_round_is_never_guessed(role):
-    seed([booking("c1")])
-    out = mark("c1", status="attended", remark="note", attendee="Bhavana", feedback="good", interview_round="Technical round")
-    assert out["status"] == "error"
-    assert stored("c1")["interview_round"] == ""
-    assert set_round("c1", "")["status"] == "error"
-    assert set_round("c1", "Round 7")["status"] == "error"
+def test_an_unrecognised_round_counts_as_missing_and_is_never_guessed(role):
+    seed([booking("c1", interview_round="Technical round")])
+    assert mark("c1", status="attended", remark="x", attendee="Bhavana", feedback="good")["code"] == "round_missing"
+    assert edit_slot("c1", interview_round="Round 7")["status"] == "error"
+    assert stored("c1")["interview_round"] == "Technical round"
     assert "interview_round_history" not in stored("c1")
 
 
-def test_pending_and_rows_with_a_round_save_as_before(role):
-    seed([booking("c1"), booking("c2", interview_round="L1")])
-    assert mark("c1", status="")["status"] == "ok"
-    assert mark("c2", status="attended", remark="went well", attendee="Bhavana", feedback="good")["status"] == "ok"
-    assert stored("c2")["interview_round"] == "L1"
-    assert "interview_round_history" not in stored("c2")
+@pytest.mark.parametrize("status", ["attended", "not_attended", "rescheduled", "cancelled"])
+def test_rows_with_a_round_record_statuses_as_before(role, status):
+    seed([booking("c1", interview_round="L1")])
+    out = mark("c1", status=status, remark="note", attendee="Bhavana", feedback="good")
+    assert out["status"] == "ok"
+    row = stored("c1")
+    assert row["interview_attendance_status"] == status
+    assert row["interview_round"] == "L1"
+    assert "interview_round_history" not in row
 
 
-def test_correcting_a_round_keeps_status_feedback_and_booking(role):
+def test_an_admin_sets_the_round_in_the_edit_then_the_status_saves(role):
+    seed([booking("c1")])
+    assert mark("c1", status="attended", remark="x", attendee="Bhavana", feedback="good")["code"] == "round_missing"
+    out = edit_slot("c1", interview_round="L2")
+    assert out["status"] == "ok" and out["candidate"]["interview_round"] == "L2"
+    [entry] = stored("c1")["interview_round_history"]
+    assert entry["from"] == "" and entry["to"] == "L2" and entry["by"] == "admin1"
+    assert entry["source"] == "slot-edit" and entry["at"]
+    assert mark("c1", status="attended", remark="x", attendee="Bhavana", feedback="good")["status"] == "ok"
+
+
+@pytest.mark.parametrize("current", ["", "L1"])
+def test_only_an_admin_sets_or_corrects_a_round(role, current):
+    seed([booking("c1", interview_round=current)])
+    role.update(role="handler", username="handler1")
+    out = edit_slot("c1", interview_round="L2")
+    assert out == {"status": "error", "message": "Only an admin can set or change the interview round."}
+    assert stored("c1")["interview_round"] == current
+    # A handler's slot edit that re-sends the round the row holds still saves.
+    if current:
+        assert edit_slot("c1", interview_round=current, time="13:00", time_end="13:30")["status"] == "ok"
+        assert stored("c1")["time"] == "13:00"
+
+
+def test_correcting_a_round_keeps_status_feedback_and_history(role):
     seed([booking("c1", interview_round="L1", interview_attendance_status="attended",
                   interview_feedback="good", interview_attendance_remark="went well",
-                  interview_attended_by="admin1", interview_result="next_round")])
+                  interview_attended_by="admin1", interview_result="next_round",
+                  sitting_history=[{"date": "2026-11-01", "status": "rescheduled"}])])
     before = stored("c1")
-    out = set_round("c1", "L2")
-    assert out["status"] == "ok"
+    assert edit_slot("c1", interview_round="L2")["status"] == "ok"
     after = stored("c1")
+    for key in ("interview_attendance_status", "interview_feedback", "interview_attendance_remark",
+                "interview_attended_by", "interview_result", "interview_attendee", "sitting_history",
+                "date", "time", "time_end", "technology", "slot_confirmed"):
+        assert after.get(key) == before.get(key), key
     assert after["interview_round"] == "L2"
-    changed = {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
-    assert changed - {"updated_at", "_store_updated_at"} == {"interview_round", "interview_round_history"}
-    assert after["interview_round_history"] == [
-        {**after["interview_round_history"][0], "from": "L1", "to": "L2", "by": "admin1", "source": "dashboard"}
-    ]
+    assert after["interview_round_history"][-1]["from"] == "L1"
+    assert after["interview_round_history"][-1]["to"] == "L2"
 
 
-def test_only_an_admin_corrects_a_round_already_set(role):
-    seed([booking("c1", interview_round="L1", interview_attendance_status="attended", interview_feedback="good")])
-    role.update(role="handler", username="handler1")
-    assert set_round("c1", "L2")["status"] == "error"
-    assert edit_slot("c1", date="2026-11-10", time="12:30", time_end="13:00", technology="React JS", interview_round="L2")["status"] == "error"
-    assert mark("c1", status="attended", remark="x", attendee="Bhavana", feedback="good", interview_round="L2")["status"] == "error"
-    assert stored("c1")["interview_round"] == "L1"
-    # Re-sending the same round is not a correction.
-    assert set_round("c1", "L1")["status"] == "ok"
-    role.update(role="admin", username="admin1")
-    assert set_round("c1", "Final")["status"] == "ok"
-    assert stored("c1")["interview_round"] == "Final"
-
-
-def test_a_handler_may_set_a_missing_round_on_its_own(role):
-    role.update(role="handler", username="handler1")
-    seed([booking("c1", interview_attendance_status="attended", interview_feedback="good")])
-    assert set_round("c1", "L3")["status"] == "ok"
-    row = stored("c1")
-    assert row["interview_round"] == "L3"
-    assert row["interview_attendance_status"] == "attended" and row["interview_feedback"] == "good"
-
-
-def test_the_slot_edit_audits_a_round_change(role):
-    seed([booking("c1", interview_round="L1")])
-    out = edit_slot("c1", date="2026-11-10", time="12:30", time_end="13:00", technology="React JS", interview_round="HR")
-    assert out["status"] == "ok"
-    row = stored("c1")
-    assert row["interview_round"] == "HR"
-    assert row["interview_round_history"][-1] | {"at": ""} == {"from": "L1", "to": "HR", "by": "admin1", "at": "", "source": "slot-edit"}
-    # A slot edit that does not send a round leaves it alone.
-    assert edit_slot("c1", date="2026-11-10", time="12:30", time_end="13:00", technology="React JS")["status"] == "ok"
+def test_a_slot_edit_without_a_round_leaves_it_alone(role):
+    seed([booking("c1", interview_round="HR")])
+    assert asyncio.run(route.candidates_interviews_slots_update(
+        "c1", None, {"date": "2026-11-11", "time": "12:30", "time_end": "13:00", "technology": "React JS"},
+    ))["status"] == "ok"
     assert stored("c1")["interview_round"] == "HR"
-    assert len(stored("c1")["interview_round_history"]) == 1
+    assert "interview_round_history" not in stored("c1")
+
+
+def test_the_route_is_registered_on_the_app(role):
+    """The API requests themselves -- through the app, not only the handler."""
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(route.router)
+    seed([booking("c1"), booking("c2", interview_round="L1")])
+    client = TestClient(app)
+    refused = client.post("/candidates/c1/interview-attendance", json={"status": "cancelled", "remark": "x", "interview_round": "L1"})
+    assert refused.json() == {"status": "error", "code": "round_missing", "message": MESSAGE}
+    assert not stored("c1").get("interview_attendance_status")
+    saved = client.post("/candidates/c2/interview-attendance", json={"status": "cancelled", "remark": "x"})
+    assert saved.json()["status"] == "ok"

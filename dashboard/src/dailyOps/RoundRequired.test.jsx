@@ -1,14 +1,21 @@
 /**
- * A status never saves on an interview with no round (14 Nov).
+ * No specified round, no status update (owner, 14 Nov).
  *
  * Rows read "Round not specified" and could still be marked Attended, Not
- * attended, Rescheduled or Cancelled. What this holds Edit interview slot to:
- *   1. On a row with no round, choosing a status marks the round Required and
- *      Save stays disabled until one is picked; nothing is sent before that.
- *   2. Picking it saves the round (its own audited request) before the status,
- *      and the table shows it straight away.
- *   3. A round already set is locked for a non-admin and open to an admin.
- *   4. The round's change history is listed in the dialog.
+ * attended, Rescheduled or Cancelled. The owner's rule, held here on the real
+ * Daily Ops panel at a desktop width and at a phone width:
+ *   1. On a row with no round, Edit interview slot blocks the status: the
+ *      Attendance control is disabled, the owner's message is shown, Notes
+ *      (which save through the same route) are disabled too, and nothing is
+ *      sent to the attendance route.
+ *   2. It does not ask for a round as part of the status change: there is no
+ *      "Required" round and no hint to pick one.
+ *   3. The round is corrected separately, in the same edit, by an admin only:
+ *      it saves with the slot, the table shows it at once, and only then can
+ *      the status change.
+ *   4. Rows that carry a round change status exactly as before.
+ *   5. The round's change history is listed in the dialog.
+ * The API side of the same rule is tests/test_interview_round_required.py.
  */
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -24,6 +31,7 @@ import { DailyOpsPanel } from './DailyOpsPanel.jsx'
 import { captureLayout } from '../test/captureLayout.js'
 import { editDialog, openRowEdit, pick, rowOf, saveButton, setAttendance, setNote } from './rowEditTestHelpers.js'
 
+const MESSAGE = 'Interview round is missing. Update the round before changing the status.'
 const NOW = '2026-09-28T06:00:00Z'
 let calls
 let sent
@@ -51,13 +59,10 @@ function mockFetch(rows) {
     if (init?.method === 'PATCH' || init?.method === 'POST') {
       const body = JSON.parse(init.body)
       sent.push({ path: url.pathname, method: init.method, body })
-      if (url.pathname.endsWith('/interview-round')) {
-        const id = decodeURIComponent(url.pathname.split('/').at(-2))
+      if (url.pathname.includes('/interviews/slots/')) {
+        const id = decodeURIComponent(url.pathname.split('/').at(-1))
         dailyRows = dailyRows.map(r => r.id === id ? { ...r, interview_round: body.interview_round } : r)
-        return jsonResponse({
-          status: 'ok',
-          candidate: { interview_round: body.interview_round, interview_round_history: [{ from: '', to: body.interview_round, by: 'admin1', at: '2026-09-28T06:00:00Z' }] },
-        })
+        return jsonResponse({ status: 'ok', candidate: dailyRows.find(r => r.id === id) })
       }
       return jsonResponse({ status: 'ok' })
     }
@@ -90,6 +95,22 @@ async function renderPanel(firstName) {
 }
 
 const roundSelect = () => within(editDialog()).getByLabelText('Interview round')
+const attendanceSelect = () => within(editDialog()).getByLabelText('Attendance')
+const attendanceCalls = () => sent.filter(call => call.path.endsWith('/interview-attendance'))
+
+function setWidth(width) {
+  window.innerWidth = width
+  window.matchMedia = query => {
+    const max = /max-width:\s*(\d+)px/.exec(query)
+    const min = /min-width:\s*(\d+)px/.exec(query)
+    const matches = (!max || width <= Number(max[1])) && (!min || width >= Number(min[1]))
+    return { matches, media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }
+  }
+  window.dispatchEvent(new Event('resize'))
+}
+
+const ORIGINAL_MATCH_MEDIA = window.matchMedia
+const ORIGINAL_WIDTH = window.innerWidth
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -101,86 +122,97 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  window.matchMedia = ORIGINAL_MATCH_MEDIA
+  window.innerWidth = ORIGINAL_WIDTH
 })
 
-describe('Interview round on a status update', () => {
-  it.each(['attended', 'not_attended', 'rescheduled', 'cancelled'])(
-    'requires the round before %s saves, then saves round first and shows it in the table',
-    async status => {
-      mockFetch([row('Gangadhar Testname')])
-      await renderPanel('Gangadhar Testname')
-      expect(within(rowOf('Gangadhar Testname')).getByText('Round not specified')).toBeInTheDocument()
-      openRowEdit('Gangadhar Testname')
-      setAttendance(status)
-      if (status === 'attended') pick('Interview feedback', 'Good')
-      setNote('Recorded')
-      expect(within(editDialog()).getByText('Select the round before saving this status.')).toBeInTheDocument()
-      expect(saveButton()).toBeDisabled()
-      expect(sent).toEqual([])
-      if (status === 'attended') captureLayout('round-required-modal')
+describe.each([['desktop', 1440], ['mobile', 440]])('No round, no status update (%s)', (label, width) => {
+  beforeEach(() => setWidth(width))
 
-      fireEvent.change(roundSelect(), { target: { value: 'L2' } })
-      expect(saveButton()).not.toBeDisabled()
-      await act(async () => { fireEvent.click(saveButton()) })
+  it.each(['admin', 'handler'])('blocks the status on a roundless row for a %s, without asking for a round', async who => {
+    auth.role = who
+    mockFetch([row('Zara Testname', { interview_attendance_status: 'attended', interview_attendance_remark: 'went well' })])
+    await renderPanel('Zara Testname')
+    expect(within(rowOf('Zara Testname')).getByText('Round not specified')).toBeInTheDocument()
+    openRowEdit('Zara Testname')
 
-      await waitFor(() => expect(sent.length).toBe(2))
-      expect(sent[0].path).toMatch(/\/candidates\/Gangadhar%20Testname\/interview-round$/)
-      expect(sent[0]).toMatchObject({ method: 'PATCH', body: { interview_round: 'L2' } })
-      expect(sent[1].path).toMatch(/\/interview-attendance$/)
-      expect(sent[1].body.status).toBe(status)
-      // The slot itself was not touched.
-      expect(sent.some(call => call.path.includes('/interviews/slots/'))).toBe(false)
-      await waitFor(() => expect(within(rowOf('Gangadhar Testname')).queryByText('Round not specified')).toBeNull())
-      expect(rowOf('Gangadhar Testname').querySelector('td[data-label="Round"]').textContent).toBe('L2')
-      if (status === 'attended') captureLayout('round-required-table')
-    },
-  )
-
-  it('lets a row without a status stay roundless (Pending is not a status update)', async () => {
-    mockFetch([row('Asha Testname')])
-    await renderPanel('Asha Testname')
-    openRowEdit('Asha Testname')
-    expect(within(editDialog()).queryByText('Select the round before saving this status.')).toBeNull()
+    expect(attendanceSelect()).toBeDisabled()
+    expect(within(editDialog()).getByRole('alert')).toHaveTextContent(MESSAGE)
+    expect(within(editDialog()).getByRole('textbox', { name: 'Notes' })).toBeDisabled()
+    // Not a prompt: nothing calls the round required or asks to pick one now.
+    expect(within(editDialog()).queryByText('Required')).toBeNull()
     expect(roundSelect()).not.toBeRequired()
+    if (label === 'mobile' && who === 'admin') captureLayout('round-missing-modal-mobile')
+    if (label === 'desktop' && who === 'admin') captureLayout('round-missing-modal-desktop')
+
+    // Forcing the control does not get a status through either.
+    fireEvent.change(attendanceSelect(), { target: { value: 'cancelled' } })
+    expect(saveButton()).toBeDisabled()
+    await act(async () => { fireEvent.submit(editDialog()) })
+    expect(within(editDialog()).getAllByText(MESSAGE).length).toBeGreaterThan(0)
+    expect(attendanceCalls()).toEqual([])
   })
 
-  it('locks a round already set for a non-admin, and opens it to an admin', async () => {
+  it('lets an admin set the round in the edit; the table shows it and the status then saves', async () => {
+    mockFetch([row('Zara Testname')])
+    await renderPanel('Zara Testname')
+    openRowEdit('Zara Testname')
+    fireEvent.change(roundSelect(), { target: { value: 'L2' } })
+    await act(async () => { fireEvent.click(saveButton()) })
+    await waitFor(() => expect(sent.length).toBe(1))
+    expect(sent[0].path).toMatch(/\/interviews\/slots\/Zara%20Testname$/)
+    expect(sent[0].body.interview_round).toBe('L2')
+    expect(attendanceCalls()).toEqual([])
+    await waitFor(() => expect(rowOf('Zara Testname').querySelector('td[data-label="Round"]').textContent).toBe('L2'))
+
+    openRowEdit('Zara Testname')
+    expect(attendanceSelect()).not.toBeDisabled()
+    setAttendance('not_attended')
+    setNote('No show')
+    await act(async () => { fireEvent.click(saveButton()) })
+    await waitFor(() => expect(attendanceCalls().length).toBe(1))
+    expect(attendanceCalls()[0].body.status).toBe('not_attended')
+  })
+
+  it.each(['attended', 'not_attended', 'rescheduled', 'cancelled'])('saves %s on a row with a round as before', async status => {
+    mockFetch([row('Kiran Testname', { interview_round: 'L1' })])
+    await renderPanel('Kiran Testname')
+    openRowEdit('Kiran Testname')
+    expect(within(editDialog()).queryByRole('alert')).toBeNull()
+    setAttendance(status)
+    if (status === 'attended') pick('Interview feedback', 'Good')
+    setNote('Recorded')
+    await act(async () => { fireEvent.click(saveButton()) })
+    await waitFor(() => expect(attendanceCalls().length).toBe(1))
+    expect(attendanceCalls()[0].body.status).toBe(status)
+    expect(sent.some(call => call.path.includes('/interviews/slots/'))).toBe(false)
+  })
+
+  it('locks the round for a non-admin', async () => {
     auth.role = 'handler'
     mockFetch([row('Kiran Testname', { interview_round: 'L1' })])
     await renderPanel('Kiran Testname')
     openRowEdit('Kiran Testname')
     expect(roundSelect()).toBeDisabled()
-    expect(within(editDialog()).getByText('Only an admin can change a round that is already set.')).toBeInTheDocument()
-    cleanup()
-
-    auth.role = 'admin'
-    mockFetch([row('Kiran Testname', { interview_round: 'L1', interview_attendance_status: 'attended', interview_feedback: 'good', interview_attendance_remark: 'went well' })])
-    await renderPanel('Kiran Testname')
-    openRowEdit('Kiran Testname')
-    expect(roundSelect()).not.toBeDisabled()
-    fireEvent.change(roundSelect(), { target: { value: 'HR' } })
-    await act(async () => { fireEvent.click(saveButton()) })
-    await waitFor(() => expect(sent.length).toBe(1))
-    expect(sent[0].path).toMatch(/\/interview-round$/)
-    expect(sent[0].body).toEqual({ interview_round: 'HR' })
+    expect(within(editDialog()).getByText('Only an admin can set or change the interview round.')).toBeInTheDocument()
   })
+})
 
-  it('offers L3 and lists who changed the round and when', async () => {
-    mockFetch([row('Ravi Testname', {
-      interview_round: 'L2',
-      interview_round_history: [
-        { from: '', to: 'L1', by: 'handler1', at: '2026-09-27T05:00:00Z' },
-        { from: 'L1', to: 'L2', by: 'admin1', at: '2026-09-28T05:00:00Z' },
-      ],
-    })])
-    await renderPanel('Ravi Testname')
-    openRowEdit('Ravi Testname')
-    expect([...roundSelect().options].map(o => o.value)).toEqual(['', 'L1', 'L2', 'L3', 'HR', 'Final', 'Screening'])
-    captureLayout('round-history-modal')
-    const items = within(within(editDialog()).getByRole('list', { name: 'Round history' })).getAllByRole('listitem')
-    expect(items.map(item => item.textContent)).toEqual([
-      expect.stringMatching(/^L1 → L2 admin1 · /),
-      expect.stringMatching(/^Not specified → L1 handler1 · /),
-    ])
-  })
+it('offers L3 and lists who changed the round and when', async () => {
+  mockFetch([row('Ravi Testname', {
+    interview_round: 'L2',
+    interview_round_history: [
+      { from: '', to: 'L1', by: 'handler1', at: '2026-09-27T05:00:00Z' },
+      { from: 'L1', to: 'L2', by: 'admin1', at: '2026-09-28T05:00:00Z' },
+    ],
+  })])
+  await renderPanel('Ravi Testname')
+  openRowEdit('Ravi Testname')
+  expect([...roundSelect().options].map(o => o.value)).toEqual(['', 'L1', 'L2', 'L3', 'HR', 'Final', 'Screening'])
+  captureLayout('round-history-modal')
+  const items = within(within(editDialog()).getByRole('list', { name: 'Round history' })).getAllByRole('listitem')
+  expect(items.map(item => item.textContent)).toEqual([
+    expect.stringMatching(/^L1 → L2 admin1 · /),
+    expect.stringMatching(/^Not specified → L1 handler1 · /),
+  ])
 })

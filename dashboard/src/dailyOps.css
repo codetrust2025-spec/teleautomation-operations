@@ -2423,6 +2423,15 @@ tr.row-edit :is(button,a){cursor:pointer}
   }
 }
 
+/* Interview round: a row with no round says so in amber; the Edit modal
+   blocks its status with the owner's message and lists every round change. */
+.ops-round-missing{color:#d97706;font-weight:600}
+.ops-slot-round-select--missing{border-color:#d97706}
+.ops-slot-round-hint{color:#d97706}
+.ops-slot-round-history ul{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto}
+.ops-slot-round-history li{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.ops-slot-round-history li span{color:var(--text-dim,#94a3b8)}
+
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
    the phone breakpoint: the desktop layout above 767px is untouched.
@@ -2762,13 +2771,3 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-company__name { white-space: normal; overflow-wrap: anywhere; }
   .ops-roster-controls__actions .ops-roster-refresh svg { width: 18px; height: 18px; }
 }
-
-
-/* Interview round: a row with no round says so in amber; the Edit modal asks
-   for it before a status saves and lists every change to it. */
-.ops-round-missing{color:#d97706;font-weight:600}
-.ops-slot-round-select--missing{border-color:#d97706}
-.ops-slot-round-hint{color:#d97706}
-.ops-slot-round-history ul{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto}
-.ops-slot-round-history li{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
-.ops-slot-round-history li span{color:var(--text-dim,#94a3b8)}

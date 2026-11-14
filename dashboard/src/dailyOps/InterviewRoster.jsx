@@ -18,8 +18,10 @@ import { rowCompanyName as companyOf } from './companyName.js'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
-// The rounds the server accepts (VALID_INTERVIEW_ROUNDS). A status is never
-// saved on an interview without one, and the round is never guessed.
+// The rounds the server accepts (VALID_INTERVIEW_ROUNDS). No specified round,
+// no status update: the round is corrected first, separately, by an admin in
+// this edit -- never prompted for during a status change, never guessed.
+export const ROUND_MISSING_MESSAGE = 'Interview round is missing. Update the round before changing the status.'
 export const INTERVIEW_ROUNDS = ['L1', 'L2', 'L3', 'HR', 'Final', 'Screening']
 
 /** The stored round when it is one the server recognises, else ''. */
@@ -199,8 +201,7 @@ function SlotEditModal({ row, busy, onClose, onSave, onRemove, canCorrectRound =
   // attended), how it went (Attended), and a note -- and saves in the same Save.
   const storedStatus = canonicalStatus(resolvedStatus(row))
   const [slotStatus, setSlotStatus] = useState(storedStatus)
-  const storedRound = knownRound(row)
-  const [round, setRound] = useState(storedRound)
+  const [round, setRound] = useState(() => knownRound(row))
   const [technology, setTechnology] = useState((row.technology || '').trim())
   const [error, setError] = useState('')
   // The remark is part of the attendance record, which only exists once an
@@ -211,9 +212,13 @@ function SlotEditModal({ row, busy, onClose, onSave, onRemove, canCorrectRound =
   const changeNeedsAttendee = statusChanged && SITTING_OUTCOMES.includes(slotStatus)
   const changeNeedsFeedback = statusChanged && slotStatus === 'attended'
   const changeNeedsNote = statusChanged && slotStatus !== ''
-  const canEditNote = statusChanged
+  const storedRound = knownRound(row)
+  // A note saves through the attendance route, so a row with no round takes
+  // neither a status nor a note until its round is set.
+  const roundMissing = !storedRound
+  const canEditNote = !roundMissing && (statusChanged
     ? slotStatus !== ''
-    : [...SITTING_OUTCOMES, 'cancelled'].includes(slotNoteStatus)
+    : [...SITTING_OUTCOMES, 'cancelled'].includes(slotNoteStatus))
   // A technical issue is only useful with what went wrong, so the note says so.
   const describesTechnicalIssue = slotStatus === 'technical_issue'
   const notePlaceholder = describesTechnicalIssue ? 'What went wrong, e.g. UltraViewer failed, mic not working, internet dropped' : ''
@@ -223,18 +228,13 @@ function SlotEditModal({ row, busy, onClose, onSave, onRemove, canCorrectRound =
   // The slot's own fields are saved -- and checked -- only when one of them
   // changed. Recording an outcome or a note on an older row then never asks for
   // an end time it never had, and never rewrites the slot it did not touch.
+  // Only an admin sets or corrects the round; the server holds the same rule
+  // and records every change.
+  const roundLocked = !canCorrectRound
   const slotChanged = date !== (row.date || '') || time !== (row.time || '') || timeEnd !== (row.time_end || '')
-    || technology !== (row.technology || '').trim()
-  // The round saves on its own audited path. Filling a missing one is open to
-  // anyone recording a status; changing one already set is an admin's call.
-  const roundChanged = !!round && round !== storedRound
-  const roundLocked = !!storedRound && !canCorrectRound
-  // Any save that records a status (a new outcome, or a note re-saving the
-  // current one) needs the round when the row has none.
-  const savesStatus = statusChanged ? slotStatus !== '' : (noteChanged && !!storedStatus)
-  const roundRequired = !storedRound && savesStatus
-  const roundValid = !roundRequired || !!round
-  const slotFieldsRequired = slotChanged || (!statusChanged && !noteChanged && !roundChanged)
+    || round !== storedRound || technology !== (row.technology || '').trim()
+  const statusBlocked = roundMissing && statusChanged
+  const slotFieldsRequired = slotChanged || (!statusChanged && !noteChanged)
   const roundHistory = Array.isArray(row.interview_round_history) ? row.interview_round_history.filter(Boolean) : []
   // Everything a change of outcome needs before it can be saved. Save reads the
   // same predicate it enforces, so a disabled button and a rejected submit can
@@ -242,20 +242,19 @@ function SlotEditModal({ row, busy, onClose, onSave, onRemove, canCorrectRound =
   const feedbackValid = !changeNeedsFeedback || !!feedback
   const noteValid = !changeNeedsNote || !!remarkNote.trim()
   const attendeeValid = !changeNeedsAttendee || !!attendee
-  const canSubmit = attendeeValid && feedbackValid && noteValid && roundValid
+  const canSubmit = attendeeValid && feedbackValid && noteValid && !statusBlocked
   async function submit(event) {
     event.preventDefault()
     setError('')
     try {
       if (slotFieldsRequired && !technology) { setError('Please select the interview technology.'); return }
-      if (!roundValid) { setError('Select the interview round before saving the status.'); return }
+      if (statusBlocked) { setError(ROUND_MISSING_MESSAGE); return }
       if (changeNeedsAttendee && !attendee) { setError('Select who attended the interview.'); return }
       if (changeNeedsFeedback && !feedback) { setError('Select how the interview went (Interview feedback).'); return }
       if (changeNeedsNote && !remarkNote.trim()) { setError('Please add a note about the interview.'); return }
       await onSave({
-        date, time, time_end: timeEnd, technology,
+        date, time, time_end: timeEnd, interview_round: round, technology,
         slotChanged,
-        roundChange: roundChanged ? round : '',
         // The remark edit rides alongside the slot fields but saves through
         // the attendance endpoint; only sent when it is editable and changed.
         noteRemark: remarkNote,
@@ -272,7 +271,7 @@ function SlotEditModal({ row, busy, onClose, onSave, onRemove, canCorrectRound =
       <form className="cand-modal ops-slot-modal" onSubmit={submit}>
         <header className="cand-modal-header"><div><h3 className="cand-modal-title">Edit interview slot</h3><p className="cand-modal-sub">{row.name}</p></div><button type="button" className="cand-modal-close" onClick={onClose} aria-label="Close">×</button></header>
         <div className="cand-modal-body">
-          <><label className="cand-field"><span className="cand-field-label">Date</span><input className="cand-input" type="date" value={date} onChange={event => setDate(event.target.value)} required={slotFieldsRequired} /></label><label className="cand-field"><span className="cand-field-label">Start time</span><input className="cand-input" type="time" value={time} onChange={event => setTime(event.target.value)} required={slotFieldsRequired} /></label><label className="cand-field"><span className="cand-field-label">End time</span><input className="cand-input" type="time" value={timeEnd} onChange={event => setTimeEnd(event.target.value)} required={slotFieldsRequired} /></label><label className="cand-field ops-slot-round-field"><span className="cand-field-label">Interview round{roundRequired && <> <span className="cand-field-required-tag">Required</span></>}</span><select className={`cand-input${roundRequired && !round ? ' ops-slot-round-select--missing' : ''}`} value={round} onChange={event => setRound(event.target.value)} aria-label="Interview round" disabled={roundLocked} required={roundRequired}><option value="">{storedRound ? 'Select round' : 'Round not specified'}</option>{INTERVIEW_ROUNDS.map(name => <option key={name} value={name}>{name}</option>)}</select>{roundRequired && !round && <small className="cand-field-hint ops-slot-round-hint">Select the round before saving this status.</small>}{roundLocked && <small className="cand-field-hint">Only an admin can change a round that is already set.</small>}</label><label className="cand-field cand-field--span2"><span className="cand-field-label">Technology *</span><select className="cand-input" value={technology} onChange={event => setTechnology(event.target.value)} required={slotFieldsRequired}><option value="">Select technology</option>{technology && !TECHNOLOGIES.includes(technology) && <option value={technology}>{technology}</option>}{TECHNOLOGIES.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Attendance</span><select className="cand-input ops-slot-status-select" value={slotStatus} onChange={event => setSlotStatus(event.target.value)} aria-label="Attendance">{STATUS_OPTIONS.map(opt => <option key={opt.value || 'pending'} value={opt.value}>{opt.label}</option>)}</select>{statusChanged && <small className="cand-field-hint">{slotStatus ? `Saving marks this interview "${statusLabel(slotStatus)}".` : 'Saving returns this interview to Pending.'}</small>}</label>{changeNeedsAttendee && <div className="cand-field cand-field--span2"><span className="cand-field-label">Attendee (who attended the interview?)</span><DarkSelect ariaLabel="Attendee (who attended the interview?)" value={attendee} options={ATTENDEES.map(name => ({ value: name, label: name }))} onChange={setAttendee} placeholder="Select attendee" required /></div>}{changeNeedsFeedback ? <div className="cand-field cand-field--span2"><span className="cand-field-label">Interview feedback <span className="cand-field-required-tag">Required</span></span><DarkSelect ariaLabel="Interview feedback" value={feedback} options={feedbackOptionsFor(feedback)} onChange={setFeedback} placeholder="Select feedback" required /></div> : (slotNoteFeedback && !statusChanged && <div className="cand-field cand-field--span2"><span className="cand-field-label">Interview feedback</span><span className={`ops-feedback-pill ops-feedback-pill--${slotNoteFeedback.tone}`} data-feedback={slotNoteFeedback.value} title={`Interview feedback: ${slotNoteFeedback.label}`}>{slotNoteFeedback.label}</span></div>)}<label className="cand-field cand-field--span2"><span className="cand-field-label">Notes{changeNeedsNote && <> <span className="cand-field-required-tag">Required</span></>}</span><input className="cand-input ops-slot-notes-input" value={remarkNote} onChange={event => setRemarkNote(event.target.value)} disabled={!canEditNote} aria-label="Notes" placeholder={canEditNote ? notePlaceholder : 'Available once attendance is recorded'} onFocus={event => { const el = event.target; const end = el.value.length; try { el.setSelectionRange(end, end) } catch { /* non-text inputs */ } }} />{!canEditNote && <small className="cand-field-hint">Notes can be edited once the interview has an attendance outcome.</small>}{canEditNote && describesTechnicalIssue && <small className="cand-field-hint">Describe the issue: UltraViewer, microphone, internet connection or anything else technical.</small>}</label></>
+          <><label className="cand-field"><span className="cand-field-label">Date</span><input className="cand-input" type="date" value={date} onChange={event => setDate(event.target.value)} required={slotFieldsRequired} /></label><label className="cand-field"><span className="cand-field-label">Start time</span><input className="cand-input" type="time" value={time} onChange={event => setTime(event.target.value)} required={slotFieldsRequired} /></label><label className="cand-field"><span className="cand-field-label">End time</span><input className="cand-input" type="time" value={timeEnd} onChange={event => setTimeEnd(event.target.value)} required={slotFieldsRequired} /></label><label className="cand-field ops-slot-round-field"><span className="cand-field-label">Interview round</span><select className={`cand-input${roundMissing ? ' ops-slot-round-select--missing' : ''}`} value={round} onChange={event => setRound(event.target.value)} aria-label="Interview round" disabled={roundLocked}><option value="">{storedRound ? 'Select round' : 'Round not specified'}</option>{INTERVIEW_ROUNDS.map(name => <option key={name} value={name}>{name}</option>)}</select>{roundLocked && <small className="cand-field-hint">Only an admin can set or change the interview round.</small>}</label><label className="cand-field cand-field--span2"><span className="cand-field-label">Technology *</span><select className="cand-input" value={technology} onChange={event => setTechnology(event.target.value)} required={slotFieldsRequired}><option value="">Select technology</option>{technology && !TECHNOLOGIES.includes(technology) && <option value={technology}>{technology}</option>}{TECHNOLOGIES.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label className="cand-field cand-field--span2"><span className="cand-field-label">Attendance</span><select className="cand-input ops-slot-status-select" value={slotStatus} onChange={event => setSlotStatus(event.target.value)} aria-label="Attendance" disabled={roundMissing} aria-describedby={roundMissing ? 'ops-slot-round-missing' : undefined}>{STATUS_OPTIONS.map(opt => <option key={opt.value || 'pending'} value={opt.value}>{opt.label}</option>)}</select>{roundMissing && <small id="ops-slot-round-missing" className="cand-field-hint ops-slot-round-hint" role="alert">{ROUND_MISSING_MESSAGE}</small>}{statusChanged && !roundMissing && <small className="cand-field-hint">{slotStatus ? `Saving marks this interview "${statusLabel(slotStatus)}".` : 'Saving returns this interview to Pending.'}</small>}</label>{changeNeedsAttendee && <div className="cand-field cand-field--span2"><span className="cand-field-label">Attendee (who attended the interview?)</span><DarkSelect ariaLabel="Attendee (who attended the interview?)" value={attendee} options={ATTENDEES.map(name => ({ value: name, label: name }))} onChange={setAttendee} placeholder="Select attendee" required /></div>}{changeNeedsFeedback ? <div className="cand-field cand-field--span2"><span className="cand-field-label">Interview feedback <span className="cand-field-required-tag">Required</span></span><DarkSelect ariaLabel="Interview feedback" value={feedback} options={feedbackOptionsFor(feedback)} onChange={setFeedback} placeholder="Select feedback" required /></div> : (slotNoteFeedback && !statusChanged && <div className="cand-field cand-field--span2"><span className="cand-field-label">Interview feedback</span><span className={`ops-feedback-pill ops-feedback-pill--${slotNoteFeedback.tone}`} data-feedback={slotNoteFeedback.value} title={`Interview feedback: ${slotNoteFeedback.label}`}>{slotNoteFeedback.label}</span></div>)}<label className="cand-field cand-field--span2"><span className="cand-field-label">Notes{changeNeedsNote && <> <span className="cand-field-required-tag">Required</span></>}</span><input className="cand-input ops-slot-notes-input" value={remarkNote} onChange={event => setRemarkNote(event.target.value)} disabled={!canEditNote} aria-label="Notes" placeholder={canEditNote ? notePlaceholder : 'Available once attendance is recorded'} onFocus={event => { const el = event.target; const end = el.value.length; try { el.setSelectionRange(end, end) } catch { /* non-text inputs */ } }} />{!canEditNote && !roundMissing && <small className="cand-field-hint">Notes can be edited once the interview has an attendance outcome.</small>}{canEditNote && describesTechnicalIssue && <small className="cand-field-hint">Describe the issue: UltraViewer, microphone, internet connection or anything else technical.</small>}</label></>
           {roundHistory.length > 0 && <div className="cand-field cand-field--span2 ops-slot-round-history"><span className="cand-field-label">Round history</span><ul aria-label="Round history">{roundHistory.slice().reverse().map((entry, index) => <li key={`${entry.at || ''}-${index}`}><strong>{entry.from || 'Not specified'} → {entry.to}</strong> <span>{[entry.by, formatRoundChangeAt(entry.at)].filter(Boolean).join(' · ')}</span></li>)}</ul></div>}
           {error && <p className="admin-error cand-field--span2">{error}</p>}
         </div>
@@ -576,24 +575,18 @@ export function InterviewRoster({
   // endpoint. A note alone re-sends the current status so only the remark
   // changes — feedback and attendee are left untouched (not sent).
   async function saveSlotAndNote(row, values) {
-    const { noteRemark, noteChanged, statusChange, slotChanged, roundChange, ...slotValues } = values
+    const { noteRemark, noteChanged, statusChange, slotChanged, ...slotValues } = values
     setBusyId(row.id)
     try {
-      if (roundChange) {
-        // The round first: the server refuses a status on a row without one.
-        const rres = await fetch(`${API}/candidates/${row.id}/interview-round`, {
-          method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ interview_round: roundChange }),
-        })
-        const rdata = await rres.json()
-        if (!rres.ok || rdata.status !== 'ok') throw new Error(rdata.message || 'Round update failed')
-        applySavedRound(row.id, rdata.candidate, roundChange)
-      }
+      // No specified round, no status update -- the server refuses it too.
+      if ((statusChange || noteChanged) && !knownRound(row)) throw new Error(ROUND_MISSING_MESSAGE)
       if (slotChanged) {
         const res = await fetch(`${API}/candidates/interviews/slots/${row.id}`, {
           method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slotValues),
         })
         const data = await res.json()
         if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Update failed')
+        if (slotValues.interview_round) applySavedRound(row.id, data.candidate, slotValues.interview_round)
       }
       if (statusChange) {
         // The same request the row's attendance dropdown used to send: the

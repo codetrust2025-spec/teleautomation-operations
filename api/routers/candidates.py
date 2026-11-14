@@ -427,6 +427,9 @@ async def candidates_interviews_slots_update(cid: str, request: Request, body: d
     return {"status": "ok", "candidate": row}
 
 
+ROUND_MISSING_MESSAGE = "Interview round is missing. Update the round before changing the status."
+
+
 def _is_admin_request(request: Request) -> bool:
     from core.dashboard_access import operator_profile
 
@@ -436,15 +439,15 @@ def _is_admin_request(request: Request) -> bool:
 def _round_requested(candidate_store, row: dict, raw) -> bool:
     """A round was sent and it differs from what the row holds."""
     label = candidate_store.normalise_interview_round(raw)
-    return bool(label) and label != (row.get("interview_round") or "").strip()
+    return bool(label) and label != candidate_store.normalise_interview_round(row.get("interview_round"))
 
 
 def _round_change_refusal(request: Request, candidate_store, row: dict, raw) -> dict | None:
     """Why this round may not be written, or None.
 
-    Filling a missing round is part of recording a status, so anyone who may
-    record one may fill it. Changing a round already set is a correction, and
-    only an admin makes those.
+    The round is set or corrected only through the interview edit, and only
+    by an admin -- filling a missing one included. Re-sending the round the
+    row already holds is not a change.
     """
     if not str(raw or "").strip():
         return None
@@ -452,34 +455,11 @@ def _round_change_refusal(request: Request, candidate_store, row: dict, raw) -> 
     if not label:
         return {"status": "error", "message": f"Unknown interview round: {str(raw).strip()[:40]}"}
     current = candidate_store.normalise_interview_round(row.get("interview_round"))
-    if current and current != label and not _is_admin_request(request):
-        return {"status": "error", "message": "Only an admin can change an interview round that is already set."}
+    if current != label and not _is_admin_request(request):
+        return {"status": "error", "message": "Only an admin can set or change the interview round."}
     return None
 
 
-@router.patch("/candidates/{cid}/interview-round")
-async def candidates_interview_round(cid: str, request: Request, body: dict):
-    """Set or correct the interview round; status, feedback and booking stay as they are."""
-    from core.dashboard_access import assert_candidate_row_access
-    from features import candidate_store
-
-    existing = candidate_store.get_candidate(cid)
-    if not existing:
-        return {"status": "error", "message": "Candidate not found"}
-    assert_candidate_row_access(request, existing)
-    raw = (body or {}).get("interview_round") or ""
-    if not str(raw).strip():
-        return {"status": "error", "message": "Select the interview round."}
-    refusal = _round_change_refusal(request, candidate_store, existing, raw)
-    if refusal:
-        return refusal
-    try:
-        row = candidate_store.set_interview_round(cid, interview_round=raw, by=_ops_by(request))
-    except ValueError as exc:
-        return {"status": "error", "message": str(exc)}
-    if not row:
-        return {"status": "error", "message": "Candidate not found"}
-    return {"status": "ok", "candidate": row}
 @router.delete("/candidates/interviews/slots/{cid}")
 async def candidates_interviews_slots_delete(cid: str, request: Request):
     from core.dashboard_access import assert_candidate_row_access
@@ -555,22 +535,14 @@ async def candidates_interview_attendance(cid: str, request: Request, body: dict
             "status": "error",
             "message": "Only an administrator can grant Re-Service.",
         }
-    # No status is recorded on an interview whose round nobody knows: the
-    # round comes with the request, or is already on the row. It is never
-    # guessed. A round already set is changed only by an admin.
-    round_raw = b.get("interview_round")
-    round_refusal = _round_change_refusal(request, candidate_store, existing, round_raw)
-    if round_refusal:
-        return round_refusal
-    if (
-        requested_status
-        and not candidate_store.interview_round_is_set(existing)
-        and not candidate_store.normalise_interview_round(round_raw)
-    ):
+    # No specified round, no status update (owner, 14 Nov). The round is
+    # corrected separately, through the interview edit; this route never sets
+    # it and never guesses it, whatever the body carries.
+    if not candidate_store.interview_round_is_set(existing):
         return {
             "status": "error",
-            "code": "round_required",
-            "message": "Select the interview round before saving the status.",
+            "code": "round_missing",
+            "message": ROUND_MISSING_MESSAGE,
         }
     try:
         row = candidate_store.set_interview_attendance(
@@ -584,10 +556,6 @@ async def candidates_interview_attendance(cid: str, request: Request, body: dict
             by=_ops_by(request),
             allow_future=allow_future,
         )
-        if row and _round_requested(candidate_store, existing, round_raw):
-            row = candidate_store.set_interview_round(
-                cid, interview_round=round_raw, by=_ops_by(request), source="status-update",
-            ) or row
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
     if not row:
