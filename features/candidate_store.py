@@ -5199,6 +5199,60 @@ def set_interview_attendee(
     return None
 
 
+#: Every round change keeps this many entries on the row, newest last.
+INTERVIEW_ROUND_HISTORY_LIMIT = 50
+
+
+def interview_round_is_set(row: dict | None) -> bool:
+    """True when the row carries a recognised round (what the roster shows)."""
+    return bool(normalise_interview_round((row or {}).get("interview_round")))
+
+
+def set_interview_round(
+    cid: str,
+    *,
+    interview_round: str,
+    by: str = "",
+    source: str = "dashboard",
+) -> dict | None:
+    """Set or correct an interview's round and record who changed it, when.
+
+    Only the round and its history change: status, feedback, attendee, notes
+    and the slot itself are left exactly as they were. A round is never
+    guessed -- an empty or unrecognised value is refused, not stored.
+    """
+    label = normalise_interview_round(interview_round)
+    if not label:
+        raise ValueError(
+            "Select the interview round (" + ", ".join(sorted(VALID_INTERVIEW_ROUNDS)) + ")."
+        )
+    data = _load()
+    rows = data.get("candidates") or []
+    for i, r in enumerate(rows):
+        if r.get("id") != cid:
+            continue
+        previous = normalise_interview_round(r.get("interview_round"))
+        if previous == label and _clean_str(r.get("interview_round")) == label:
+            return _with_computed(r)
+        r = dict(r)
+        history = [h for h in (r.get("interview_round_history") or []) if isinstance(h, dict)]
+        history.append({
+            "from": _clean_str(r.get("interview_round")),
+            "to": label,
+            "by": (by or "").strip()[:120],
+            "at": _now_iso(),
+            "source": _clean_str(source)[:40] or "dashboard",
+        })
+        r["interview_round"] = label
+        r["interview_round_history"] = history[-INTERVIEW_ROUND_HISTORY_LIMIT:]
+        r["updated_at"] = _now_iso()
+        rows[i] = r
+        data["candidates"] = rows
+        _save(data)
+        return _with_computed(r)
+    return None
+
+
 def roster_csv_rows(rows: list[dict]) -> str:
     """Excel-friendly CSV: #, Name, Technology — quoted fields, sorted by tech then name."""
     import csv
