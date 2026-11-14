@@ -164,7 +164,9 @@ def test_the_attendance_route_passes_feedback_and_result_through(store, monkeypa
     payload = asyncio.run(route.candidates_interview_attendance(
         cid="c1", request=None,
         body={"status": "attended", "feedback": "Excellent", "result": "Selected",
-              "remark": "cleared the round", "attendee": "Bhavana"},
+              "remark": "cleared the round", "attendee": "Bhavana",
+              # A status is never saved without a round (14 Nov).
+              "interview_round": "L1"},
     ))
 
     assert payload["status"] == "ok"
