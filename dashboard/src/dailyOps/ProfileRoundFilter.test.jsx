@@ -293,6 +293,82 @@ describe('on Daily Ops', () => {
   })
 })
 
+describe('the profile list on Daily Ops', () => {
+  // The real server's by_technology counts the selection, so it shrinks to
+  // the ticked profiles; technology_options is the period's whole list. The
+  // page read by_technology, and on 15 Nov a second profile could not be
+  // ticked once one was (23 profiles became 1).
+  function narrowingServer() {
+    calls = []
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      const url = new URL(String(input), 'http://localhost')
+      calls.push(url)
+      const rows = serverRows(url)
+      if (url.pathname.endsWith('/interviews/global')) {
+        const techs = [...new Set(rows.map(r => r.technology))]
+        return jsonResponse({
+          status: 'ok',
+          interviews: {
+            by_candidate: ROWS.map(r => ({ name: r.name, scheduled: 1 })),
+            by_technology: techs.map(name => ({ name })),
+            technology_options: ['Angular', 'Java', 'Python'],
+          },
+          booking_overview: { total: rows.length, by_candidate: [], by_level: [], by_technology: [] },
+        })
+      }
+      if (/\/interviews\/(daily|monitor)$/.test(url.pathname)) {
+        return jsonResponse({ status: 'ok', interviews: rows, count: rows.length, awaiting_interviews: [] })
+      }
+      return jsonResponse({ status: 'ok' })
+    }))
+  }
+
+  const listed = () => within(screen.getByRole('group', { name: 'Profiles' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label'))
+
+  it('keeps every profile offered while profiles and rounds are ticked, in every mode', async () => {
+    narrowingServer()
+    await renderPanel()
+    openMenu()
+    fireEvent.click(screen.getByRole('radio', { name: 'Profile-wise' }))
+    tick('Profiles', 'Python')
+    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('technology')).toEqual(['Python']))
+    await act(async () => { await Promise.resolve() })
+    expect(listed()).toEqual(['Angular', 'Java', 'Python'])
+
+    // A second profile can be ticked: Python or Java.
+    tick('Profiles', 'Java')
+    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('technology')).toEqual(['Python', 'Java']))
+    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Bala Kumar', 'Chitra Rao', 'Dev Prasad']))
+    expect(listed()).toEqual(['Angular', 'Java', 'Python'])
+
+    // Both: a round narrows the table, never the list.
+    fireEvent.click(screen.getByRole('radio', { name: 'Both' }))
+    tick('Interview rounds', 'L1')
+    await waitFor(() => expect(shown()).toEqual(['Dev Prasad']))
+    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('round')).toEqual(['L1']))
+    expect(listed()).toEqual(['Angular', 'Java', 'Python'])
+    tick('Profiles', 'Angular')
+    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('technology')).toEqual(['Python', 'Java', 'Angular']))
+  })
+
+  it('updates the status counters with the table on every click', async () => {
+    narrowingServer()
+    await renderPanel()
+    const scheduled = () => screen.getByRole('button', { name: /^Scheduled/ }).textContent.replace(/\D+/g, '')
+    await waitFor(() => expect(scheduled()).toBe('5'))
+    openMenu()
+    fireEvent.click(screen.getByRole('radio', { name: 'Round-wise' }))
+    tick('Interview rounds', 'HR')
+    await waitFor(() => expect(scheduled()).toBe('2'))
+    tick('Interview rounds', 'L2')
+    await waitFor(() => expect(scheduled()).toBe('4'))
+    fireEvent.click(screen.getByRole('radio', { name: 'Profile-wise' }))
+    await waitFor(() => expect(scheduled()).toBe('5'))
+    tick('Profiles', 'Java')
+    await waitFor(() => expect(scheduled()).toBe('2'))
+  })
+})
+
 describe('on Daily Ops (shared selections)', () => {
   it('re-reads the table and the counters on every tick, in any combination', async () => {
     await renderPanel()

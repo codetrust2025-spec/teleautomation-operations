@@ -139,3 +139,57 @@ def test_the_routes_read_repeated_query_parameters(store, monkeypatch):
         f"/candidates/interviews/global?from={SPAN[0]}&to={SPAN[1]}&candidate=Asha+Varma&candidate=Esha+Pillai"
     ).json()
     assert summary["booking_overview"]["total"] == 2
+
+
+# ── Profile + Round: the Profile list must not shrink to what is ticked ──────
+# 15 Nov, real data: the list was read off rows already narrowed by the profile
+# and round selections, so ticking React JS left React JS as the only profile
+# (23 became 1) and a second one could never be ticked; ticking L1 hid profiles
+# too. technology_options is read before those two selections.
+
+def options(summary):
+    return summary["interviews"]["technology_options"]
+
+
+def test_ticking_profiles_keeps_every_profile_on_the_list(store):
+    seed(store)
+    everything = options(store.interview_global_summary(*SPAN))
+    assert everything == ["Angular", "Java", "Python"]
+    assert options(store.interview_global_summary(*SPAN, filter_technology=["Java"])) == everything
+    assert options(store.interview_global_summary(*SPAN, filter_technology=["Java", "Python"])) == everything
+
+
+def test_ticking_rounds_keeps_every_profile_on_the_list(store):
+    seed(store)
+    everything = options(store.interview_global_summary(*SPAN))
+    # HR is Asha (Python) alone, yet Java and Angular stay offered.
+    assert options(store.interview_global_summary(*SPAN, filter_round=["HR"])) == everything
+    assert options(store.interview_global_summary(*SPAN, filter_round=["HR"], filter_technology=["Python"])) == everything
+
+
+def test_the_other_filters_still_narrow_the_profile_list(store):
+    seed(store)
+    # Tool attends only Esha (Angular): the list describes the attendee chosen.
+    assert options(store.interview_global_summary(*SPAN, filter_attendee=["Tool"])) == ["Angular"]
+    assert options(store.interview_global_summary(*SPAN, filter_candidate=["Bala Kumar"])) == ["Java"]
+
+
+def test_the_counts_still_describe_the_selection(store):
+    seed(store)
+    summary = store.interview_global_summary(*SPAN, filter_technology=["Java"], filter_round=["L2", "L3"])
+    assert summary["booking_overview"]["total"] == 2
+    assert {t["name"] for t in summary["interviews"]["by_technology"]} == {"Java"}
+    assert summary["interviews"]["count"] == 2
+
+
+def test_every_listed_profile_selects_the_rows_counted_under_it(store):
+    # A Tool candidate with no technology is listed (and counted) under the
+    # Data Analyst profile; ticking that profile must find the row. Matching
+    # the raw stored value ("" -> Unspecified) found nothing.
+    seed(store, ROWS + [{"name": "Keerthana Demo", "interview_round": "L1", "interview_attendee": "Tool", "technology": ""}])
+    summary = store.interview_global_summary(*SPAN)
+    assert store.TOOL_PROFILE_CANDIDATE_TECHNOLOGY in options(summary)
+    for profile in options(summary):
+        counted = next(t["scheduled"] for t in summary["interviews"]["by_technology"] if t["name"] == profile)
+        picked = store.interview_monitor(*SPAN, filter_technology=[profile])
+        assert len(picked["interviews"]) == counted, profile

@@ -216,7 +216,12 @@ export function DailyOpsPanel({
   // These two lists are the whole range's vocabulary, not the day's tally, so
   // they stay on the range summary. Only the counters moved.
   const rangeInterviews = globalStats?.interviews || {}
-  const technologyOptions = (rangeInterviews.by_technology || []).map(item => item.name).sort()
+  // The period's profiles before any profile or round is ticked
+  // (technology_options); by_technology counts the selection, so reading the
+  // list from it shrank the list to whatever was already ticked.
+  const technologyOptions = Array.isArray(rangeInterviews.technology_options)
+    ? rangeInterviews.technology_options
+    : (rangeInterviews.by_technology || []).map(item => item.name).sort()
   const candidateOptions = rangeInterviews.by_candidate || []
   // Reset's badge counts fields in use, not values: Level HR + L2 is one thing to put back.
   const activeFilterCount = [attendeeFilter, roundFilter, technologyFilter, candidateFilter]

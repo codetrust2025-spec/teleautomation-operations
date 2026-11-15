@@ -4522,13 +4522,17 @@ def _filter_interview_rows(
             if normalise_interview_round(r.get("interview_round")) in round_keys
         ]
 
-    # Technology filter — normalize and compare case-insensitively
+    # Technology filter -- compared case-insensitively on the same label the
+    # Profile list shows (row_candidate_technology), so every profile offered
+    # there selects exactly the rows counted under it. Comparing the raw stored
+    # value missed rows whose label is derived (a Tool candidate with no
+    # technology is listed under TOOL_PROFILE_CANDIDATE_TECHNOLOGY).
     tech_values = filter_values(filter_technology)
     if tech_values:
         tech_keys = {canonical_technology(value).lower() for value in tech_values}
         rows = [
             r for r in rows
-            if canonical_technology(r.get("technology") or "").lower() in tech_keys
+            if row_candidate_technology(r).lower() in tech_keys
         ]
 
     rows.sort(key=_slot_chronological_sort_key)
@@ -4880,8 +4884,6 @@ def interview_global_summary(
         filter_attendee=filter_attendee,
         filter_search=filter_search,
         filter_channel=filter_channel,
-        filter_round=filter_round,
-        filter_technology=filter_technology,
     )
     if unresolved_only:
         rows = _filter_upcoming_only_rows(rows)
@@ -4892,6 +4894,20 @@ def interview_global_summary(
         # dropped it, and the "Bookings by candidate" pie said 6 above a table
         # of 5 (12 Oct).
         rows, _past_their_time = _split_pending_interviews_by_slot_phase(rows)
+    # The Profile + Round control lists the period's profiles from these rows,
+    # read before the profile and round selections narrow them. Built from the
+    # narrowed rows, ticking React JS left React JS as the only profile on the
+    # list (15 Nov, real data: 23 profiles became 1), so a second profile
+    # could never be ticked, and ticking a round hid profiles too.
+    profile_option_rows = rows
+    if filter_values(filter_candidate):
+        profile_option_rows = _filter_interview_rows(profile_option_rows, filter_candidate=filter_candidate)
+    technology_options = sorted(
+        {row_candidate_technology(row) or "Unspecified" for row in profile_option_rows},
+        key=lambda name: name.lower(),
+    )
+    if filter_values(filter_round) or filter_values(filter_technology):
+        rows = _filter_interview_rows(rows, filter_round=filter_round, filter_technology=filter_technology)
     # The Candidate dropdown is built from by_candidate, so that list is taken
     # before the candidate selection narrows the rows: choosing one person
     # must not remove everyone else from the list it was chosen from. Every
@@ -5071,6 +5087,9 @@ def interview_global_summary(
                 for entry in _bucket_rows(by_candidate)
             ],
             "by_technology": _bucket_rows(by_technology),
+            # Every profile in the period under the other filters, whatever
+            # profile or round is ticked: the Profile + Round control's list.
+            "technology_options": technology_options,
         },
         "tasks": {
             **task_totals,
