@@ -2844,8 +2844,10 @@ tr.row-edit :is(button,a){cursor:pointer}
 .ops-feedback-filter-option .ops-levels-option__box { width: 17px; height: 17px; }
 .ops-feedback-filter-option--checked .ops-levels-option__box { border-color: #3b82f6; background: #2563eb; }
 /* The shared pill sets align-self:flex-start (for the slot dialog); in a row
-   that left each badge 0px from the top and 24px from the bottom on phones. */
-.ops-feedback-filter-menu .ops-feedback-filter-pill { align-self: center; margin: 0; height: 22px; line-height: 20px; padding: 0 10px; font-size: 11.5px; }
+   that left each badge 0px from the top and 24px from the bottom on phones.
+   Scoped to the list, not the Status menu: on a phone the same list sits in
+   the Profile + Round sheet (16 Nov), where the menu-scoped rule missed it. */
+.ops-feedback-filter-list .ops-feedback-filter-pill { align-self: center; margin: 0; height: 22px; line-height: 20px; padding: 0 10px; font-size: 11.5px; }
 .ops-feedback-filter-count {
   margin-left: auto;
   color: #94a3b8;

@@ -124,7 +124,8 @@ describe('the Status control', () => {
   it('centres each badge in its row (the shared pill aligns to the top)', () => {
     // Live 15 Nov: each badge sat 0px from the top of its row, 24px from the bottom.
     expect(CSS).toMatch(/\.ops-feedback-pill\{[^}]*align-self:flex-start/)
-    const rule = /\.ops-feedback-filter-menu \.ops-feedback-filter-pill \{([^}]*)\}/.exec(CSS)?.[1]
+    // Scoped to the list, so it also holds inside the Profile + Round sheet on a phone (16 Nov).
+    const rule = /\.ops-feedback-filter-list \.ops-feedback-filter-pill \{([^}]*)\}/.exec(CSS)?.[1]
     expect(rule).toMatch(/align-self:\s*center/)
   })
 
