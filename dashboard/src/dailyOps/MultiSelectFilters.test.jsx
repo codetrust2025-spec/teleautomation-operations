@@ -144,7 +144,7 @@ describe('several levels at once', () => {
     await renderPanel()
     tickProfileRound('Interview rounds', 'Final')
     tickProfileRound('Interview rounds', 'Screening')
-    await waitFor(() => expect(screen.getByText(/level Screening or Final/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/round Screening or Final/)).toBeInTheDocument())
   })
 })
 

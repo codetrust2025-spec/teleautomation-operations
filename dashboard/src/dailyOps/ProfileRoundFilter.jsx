@@ -2,8 +2,17 @@ import React, { useEffect, useId, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon.jsx'
 import { toFilterList } from './DailyOpsFilterMenu.jsx'
 
-/** Every round the backend accepts (VALID_INTERVIEW_ROUNDS), in interview order. */
+/** The six standard rounds (STANDARD_INTERVIEW_ROUNDS), in interview order. */
 export const INTERVIEW_LEVELS = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
+
+/** The server's token for every other booking (owner, 15 Nov): no round
+ *  recorded, Assessment, or any label that is not one of the six. */
+export const ROUND_OTHER = 'other'
+export const ROUND_FILTER_OPTIONS = [...INTERVIEW_LEVELS, ROUND_OTHER]
+/** What a round filter value is called on screen. */
+export function roundFilterLabel(value) {
+  return value === ROUND_OTHER ? 'Others' : value
+}
 
 /**
  * The two booking types, as the server's `channel` parameter names them:
@@ -28,7 +37,8 @@ export function channelFor(types) {
  * - Profile-wise and Round-wise are independent checkboxes for the booking
  *   type. Both ticked shows both types; one ticked shows that type alone. At
  *   least one stays ticked: the last one cannot be unticked.
- * - Interview Round: Screening, L1, L2, L3, HR and Final, several at once
+ * - Interview Round: Screening, L1, L2, L3, HR and Final, then Others (round
+ *   not specified, Assessment, any other round), several at once
  *   (any of them). "All Rounds" unticks them all.
  * - Booking type and rounds must both match. Every click applies at once.
  * - "Clear All" ticks both types again and unticks every round.
@@ -36,7 +46,7 @@ export function channelFor(types) {
 export function ProfileRoundFilter({
   bookingTypes = ALL_BOOKING_TYPES,
   rounds = [],
-  roundOptions = INTERVIEW_LEVELS,
+  roundOptions = ROUND_FILTER_OPTIONS,
   onChange,
 }) {
   const [open, setOpen] = useState(false)
@@ -101,7 +111,7 @@ export function ProfileRoundFilter({
 
   const typeLabel = typeNarrowed ? BOOKING_TYPES.find(t => t.id === types[0]).label : 'Profile-wise and Round-wise'
   const describe = count
-    ? [`Bookings: ${typeLabel}`, chosenRounds.length && `Rounds: ${chosenRounds.join(', ')}`].filter(Boolean).join('\n')
+    ? [`Bookings: ${typeLabel}`, chosenRounds.length && `Rounds: ${chosenRounds.map(roundFilterLabel).join(', ')}`].filter(Boolean).join('\n')
     : 'Filter by booking type and interview round'
 
   const box = checked => (
@@ -190,11 +200,16 @@ export function ProfileRoundFilter({
             <div className="ops-levels-menu__list" role="group" aria-label="Interview rounds">
               {roundOptions.map(r => {
                 const checked = roundSet.has(r)
+                const label = roundFilterLabel(r)
                 return (
-                  <label key={r} className={`ops-levels-option${checked ? ' ops-levels-option--checked' : ''}`}>
-                    <input type="checkbox" checked={checked} onChange={() => toggleRound(r)} aria-label={r} />
+                  <label
+                    key={r}
+                    className={`ops-levels-option${checked ? ' ops-levels-option--checked' : ''}`}
+                    title={r === ROUND_OTHER ? 'Round not specified, Assessment, and any round other than Screening, L1, L2, L3, HR or Final' : undefined}
+                  >
+                    <input type="checkbox" checked={checked} onChange={() => toggleRound(r)} aria-label={label} />
                     {box(checked)}
-                    <span>{r}</span>
+                    <span>{label}</span>
                   </label>
                 )
               })}

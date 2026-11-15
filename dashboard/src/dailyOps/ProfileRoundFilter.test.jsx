@@ -105,13 +105,13 @@ afterEach(() => {
 })
 
 describe('the Profile + Round control', () => {
-  it('matches the mockup: two booking-type boxes, six rounds, no technology list, no Apply', () => {
+  it('matches the mockup: two booking-type boxes, six rounds then Others, no technology list, no Apply', () => {
     render(<ProfileRoundFilter />)
     openMenu()
     expect(within(screen.getByRole('group', { name: 'Booking type' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
       .toEqual(['Profile-wise', 'Round-wise'])
     expect(within(screen.getByRole('group', { name: 'Interview rounds' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
-      .toEqual(['Screening', 'L1', 'L2', 'L3', 'HR', 'Final'])
+      .toEqual(['Screening', 'L1', 'L2', 'L3', 'HR', 'Final', 'Others'])
     expect(screen.queryByRole('group', { name: 'Profiles' })).toBeNull()
     expect(screen.queryByRole('radio')).toBeNull()
     expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
@@ -177,6 +177,42 @@ describe('the Profile + Round control', () => {
     openMenu()
     fireEvent.mouseDown(screen.getByTestId('out'))
     expect(screen.queryByRole('group', { name: 'Booking type' })).toBeNull()
+  })
+})
+
+describe('Others (owner, 15 Nov)', () => {
+  it('says what it covers: no round, Assessment, anything off the six', () => {
+    render(<ProfileRoundFilter />)
+    openMenu()
+    const others = box('Interview rounds', 'Others').closest('label')
+    expect(others.getAttribute('title')).toMatch(/Round not specified, Assessment, and any round other than Screening, L1, L2, L3, HR or Final/)
+  })
+
+  it('emits the server token, alone or with rounds, in menu order', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<ProfileRoundFilter rounds={[]} onChange={onChange} />)
+    openMenu()
+    tick('Interview rounds', 'Others')
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ALL_BOOKING_TYPES, round: ['other'] })
+    rerender(<ProfileRoundFilter rounds={['other']} onChange={onChange} />)
+    tick('Interview rounds', 'L2')
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ALL_BOOKING_TYPES, round: ['L2', 'other'] })
+    rerender(<ProfileRoundFilter rounds={['L2', 'other']} onChange={onChange} />)
+    expect(ticked('Interview rounds')).toEqual(['L2', 'Others'])
+    expect(screen.getByRole('button', { name: 'Profile and round (2 selected)' }).getAttribute('title')).toContain('Rounds: L2, Others')
+  })
+
+  it('goes to the server at once on Daily Ops, and names itself on an empty table', async () => {
+    await renderPanel()
+    openMenu()
+    tick('Interview rounds', 'Others')
+    await waitFor(() => expect(lastRoster().getAll('round')).toEqual(['other']))
+    await waitFor(() => expect(lastGlobal().getAll('round')).toEqual(['other']))
+    // The stand-in server knows only the six, so nothing comes back.
+    await waitFor(() => expect(screen.getByText(/round Others/)).toBeInTheDocument())
+    tick('Interview rounds', 'HR')
+    await waitFor(() => expect(lastRoster().getAll('round')).toEqual(['HR', 'other']))
+    await waitFor(() => expect(shown()).toEqual(['Asha Varma']))
   })
 })
 

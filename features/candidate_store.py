@@ -242,9 +242,20 @@ PROFILE_SERVICE_SLOT_MIN_PAYMENT = 10_000
 VALID_SERVICE_TYPES = {"profile_service", "round_wise"}
 VALID_INTERVIEW_SCOPES = {"external", "internal"}
 VALID_PURPOSES = {"interview_support", "work_support", "experience_docs", "other"}
-VALID_INTERVIEW_ROUNDS = frozenset({
+#: The six rounds Daily Ops lists by name.
+STANDARD_INTERVIEW_ROUNDS = frozenset({
     "L1", "L2", "L3", "HR", "Final", "Screening",
 })
+#: Every round label a booking may store. Assessment (15 Nov) is kept rather
+#: than saved as blank; Daily Ops files it, with any other label off the
+#: standard six, under "Others". Free text is still not a round: an unknown
+#: label normalises to "" (see normalise_interview_round).
+VALID_INTERVIEW_ROUNDS = STANDARD_INTERVIEW_ROUNDS | frozenset({"Assessment"})
+#: Daily Ops round-filter token beside the six round names (owner, 15 Nov):
+#: "Others" is every booking whose round is not one of the standard six -- no
+#: round recorded, Assessment, or any other label.
+ROUND_FILTER_OTHER = "other"
+_ROUND_FILTER_ALIASES = {"other": ROUND_FILTER_OTHER, "others": ROUND_FILTER_OTHER}
 #: The sitting is off and the hour is free, but no replacement has been booked
 #: yet: "Awaiting new slot" in Daily Ops.
 RELEASED_FOR_RESCHEDULE_STATUS = "released_for_reschedule"
@@ -4459,6 +4470,13 @@ def filter_values(value: Any) -> list[str]:
     return seen
 
 
+def _row_matches_round_filter(row: dict, round_keys: set[str]) -> bool:
+    label = normalise_interview_round(row.get("interview_round"))
+    if label and label in round_keys:
+        return True
+    return ROUND_FILTER_OTHER in round_keys and label not in STANDARD_INTERVIEW_ROUNDS
+
+
 def _filter_interview_rows(
     rows: list[dict],
     *,
@@ -4514,13 +4532,15 @@ def _filter_interview_rows(
 
     # Round filter — normalize both the filter values and each row's round.
     # A value that names no known round matches nothing rather than everything.
+    # "Others" selects every row whose round is not one of the standard six:
+    # none recorded, Assessment, or any other label.
     round_values = filter_values(filter_round)
     if round_values:
-        round_keys = {normalise_interview_round(value) or value for value in round_values}
-        rows = [
-            r for r in rows
-            if normalise_interview_round(r.get("interview_round")) in round_keys
-        ]
+        round_keys = set()
+        for value in round_values:
+            alias = _ROUND_FILTER_ALIASES.get(value.strip().lower())
+            round_keys.add(alias or normalise_interview_round(value) or value)
+        rows = [r for r in rows if _row_matches_round_filter(r, round_keys)]
 
     # Technology filter -- compared case-insensitively on the same label the
     # Profile list shows (row_candidate_technology), so every profile offered

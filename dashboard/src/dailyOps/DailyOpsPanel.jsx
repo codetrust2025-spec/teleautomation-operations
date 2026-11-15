@@ -7,14 +7,15 @@ import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } 
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
 import { appendFilterValues, sameValues } from './filterParams.js'
-import { ALL_BOOKING_TYPES, INTERVIEW_LEVELS, ProfileRoundFilter, channelFor } from './ProfileRoundFilter.jsx'
+import { ALL_BOOKING_TYPES, ROUND_FILTER_OPTIONS, ProfileRoundFilter, channelFor } from './ProfileRoundFilter.jsx'
 import { FeedbackStatusFilter } from './FeedbackStatusFilter.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
-// Every level the backend accepts (VALID_INTERVIEW_ROUNDS), in interview order.
-const ROUNDS = INTERVIEW_LEVELS
+// The six standard rounds in interview order, then Others (round not
+// specified, Assessment, any other round).
+const ROUNDS = ROUND_FILTER_OPTIONS
 
 function KpiCard({ label, value, tone = 'default', loading = false, active = false, onClick, title }) {
   return (
