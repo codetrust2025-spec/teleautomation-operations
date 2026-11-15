@@ -93,6 +93,8 @@ async function renderPanel() {
 }
 
 beforeEach(() => {
+  // The chosen mode is remembered per browser; every test starts from Both.
+  try { window.localStorage.clear() } catch { /* none */ }
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(new Date(`${TODAY}T06:00:00Z`))
   mockFetch()
@@ -136,7 +138,7 @@ describe('the Profile + Round control', () => {
     render(<ProfileRoundFilter profiles={['Java', 'Python']} rounds={['HR']} profileOptions={['Java', 'Python']} onChange={onChange} />)
     const trigger = screen.getByRole('button', { name: 'Profile and round (3 selected)' })
     expect(trigger).toHaveTextContent('Profile + Round(3)')
-    expect(trigger.getAttribute('title')).toBe('Profiles: Java, Python\nRounds: HR')
+    expect(trigger.getAttribute('title')).toBe('Mode: Both\nProfiles: Java, Python\nRounds: HR')
     openMenu()
     fireEvent.click(screen.getByRole('button', { name: 'Clear profile and round' }))
     expect(onChange).toHaveBeenLastCalledWith({ technology: [], round: [] })
@@ -163,7 +165,135 @@ describe('the Profile + Round control', () => {
   })
 })
 
+describe('Profile-wise, Round-wise and Both', () => {
+  const lists = () => ['Profiles', 'Interview rounds'].filter(name => screen.queryByRole('group', { name }))
+  const mode = () => screen.getAllByRole('radio').find(r => r.getAttribute('aria-checked') === 'true').textContent
+  const pick = label => fireEvent.click(screen.getByRole('radio', { name: label }))
+
+  beforeEach(() => { try { window.localStorage.clear() } catch { /* none */ } })
+
+  it('offers the three modes, starting on Both with both lists', () => {
+    render(<ProfileRoundFilter profileOptions={['Java', 'Python']} />)
+    openMenu()
+    expect(screen.getAllByRole('radio').map(r => r.textContent)).toEqual(['Profile-wise', 'Round-wise', 'Both'])
+    expect(mode()).toBe('Both')
+    expect(lists()).toEqual(['Profiles', 'Interview rounds'])
+  })
+
+  it('shows only the relevant checkboxes for each mode', () => {
+    render(<ProfileRoundFilter profileOptions={['Java', 'Python']} />)
+    openMenu()
+    pick('Profile-wise')
+    expect(lists()).toEqual(['Profiles'])
+    pick('Round-wise')
+    expect(lists()).toEqual(['Interview rounds'])
+    pick('Both')
+    expect(lists()).toEqual(['Profiles', 'Interview rounds'])
+  })
+
+  it('keeps multi-select inside a mode', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<ProfileRoundFilter profileOptions={['Java', 'Python']} onChange={onChange} />)
+    openMenu()
+    pick('Profile-wise')
+    tick('Profiles', 'Java')
+    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Java'], round: [] })
+    rerender(<ProfileRoundFilter profiles={['Java']} profileOptions={['Java', 'Python']} onChange={onChange} />)
+    tick('Profiles', 'Python')
+    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Java', 'Python'], round: [] })
+  })
+
+  it('applies a mode change at once: the hidden list stops filtering', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <ProfileRoundFilter profiles={['Java']} rounds={['HR', 'Final']} profileOptions={['Java', 'Python']} onChange={onChange} />,
+    )
+    openMenu()
+    pick('Profile-wise')
+    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Java'], round: [] })
+    rerender(<ProfileRoundFilter profiles={['Java']} profileOptions={['Java', 'Python']} onChange={onChange} />)
+    expect(mode()).toBe('Profile-wise')
+    pick('Round-wise')
+    expect(onChange).toHaveBeenLastCalledWith({ technology: [], round: [] })
+  })
+
+  it('switching to Both clears nothing', () => {
+    const onChange = vi.fn()
+    render(<ProfileRoundFilter profiles={['Java']} profileOptions={['Java']} onChange={onChange} />)
+    openMenu()
+    pick('Profile-wise')
+    pick('Both')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('shows Both when the hidden list is ticked elsewhere, so no filter is hidden', () => {
+    const { rerender } = render(<ProfileRoundFilter profileOptions={['Java']} />)
+    openMenu()
+    pick('Profile-wise')
+    // Levels ticks a round while this menu is on Profile-wise.
+    rerender(<ProfileRoundFilter rounds={['L2']} profileOptions={['Java']} />)
+    expect(mode()).toBe('Both')
+    expect(lists()).toEqual(['Profiles', 'Interview rounds'])
+    // Cleared there: back to the chosen mode.
+    rerender(<ProfileRoundFilter rounds={[]} profileOptions={['Java']} />)
+    expect(mode()).toBe('Profile-wise')
+  })
+
+  it('remembers the chosen mode in this browser', () => {
+    const { unmount } = render(<ProfileRoundFilter profileOptions={['Java']} />)
+    openMenu()
+    pick('Round-wise')
+    unmount()
+    render(<ProfileRoundFilter profileOptions={['Java']} />)
+    openMenu()
+    expect(mode()).toBe('Round-wise')
+    expect(screen.getByRole('button', { name: /^Profile and round/ }).getAttribute('title')).toBe('Filter by profile and interview round')
+  })
+
+  it('names the mode in the tooltip once something is ticked', () => {
+    render(<ProfileRoundFilter rounds={['HR']} />)
+    openMenu()
+    pick('Round-wise')
+    expect(screen.getByRole('button', { name: /^Profile and round/ }).getAttribute('title')).toBe('Mode: Round-wise\nRounds: HR')
+  })
+})
+
 describe('on Daily Ops', () => {
+  beforeEach(() => { try { window.localStorage.clear() } catch { /* none */ } })
+
+  it('applies each mode click and each tick to the table at once', async () => {
+    await renderPanel()
+    openMenu()
+    fireEvent.click(screen.getByRole('radio', { name: 'Both' }))
+    tick('Profiles', 'Python')
+    tick('Interview rounds', 'L2')
+    await waitFor(() => expect(shown()).toEqual(['Chitra Rao']))
+
+    // Profile-wise: the round filter goes at once, Python rows of any round.
+    fireEvent.click(screen.getByRole('radio', { name: 'Profile-wise' }))
+    await waitFor(() => {
+      const last = rosterCalls().at(-1).searchParams
+      expect(last.getAll('technology')).toEqual(['Python'])
+      expect(last.getAll('round')).toEqual([])
+    })
+    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Chitra Rao']))
+    tick('Profiles', 'Angular')
+    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Chitra Rao', 'Esha Pillai']))
+
+    // Round-wise: the profile filter goes at once; tick HR and L1.
+    fireEvent.click(screen.getByRole('radio', { name: 'Round-wise' }))
+    tick('Interview rounds', 'HR')
+    tick('Interview rounds', 'L1')
+    await waitFor(() => {
+      const last = rosterCalls().at(-1).searchParams
+      expect(last.getAll('technology')).toEqual([])
+      expect(last.getAll('round')).toEqual(['L1', 'HR'])
+    })
+    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Dev Prasad', 'Esha Pillai']))
+  })
+})
+
+describe('on Daily Ops (shared selections)', () => {
   it('re-reads the table and the counters on every tick, in any combination', async () => {
     await renderPanel()
     openMenu()

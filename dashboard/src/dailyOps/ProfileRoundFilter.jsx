@@ -3,6 +3,31 @@ import { Icon } from '../components/ui/Icon.jsx'
 import { toFilterList } from './DailyOpsFilterMenu.jsx'
 import { INTERVIEW_LEVELS } from './InterviewLevelsFilter.jsx'
 
+/** The three ways the menu filters, in the order the switch shows them. */
+export const PROFILE_ROUND_MODES = [
+  { id: 'profile', label: 'Profile-wise' },
+  { id: 'round', label: 'Round-wise' },
+  { id: 'both', label: 'Both' },
+]
+export const PROFILE_ROUND_MODE_KEY = 'ta.dailyOps.profileRoundMode.v1'
+
+function readMode() {
+  try {
+    const stored = window.localStorage.getItem(PROFILE_ROUND_MODE_KEY)
+    return PROFILE_ROUND_MODES.some(m => m.id === stored) ? stored : 'both'
+  } catch {
+    return 'both'
+  }
+}
+
+function saveMode(mode) {
+  try {
+    window.localStorage.setItem(PROFILE_ROUND_MODE_KEY, mode)
+  } catch {
+    // A private window or blocked storage: the mode lasts for this page only.
+  }
+}
+
 /**
  * Profile + Round: a filter of its own beside Levels (Nov 2026).
  *
@@ -34,6 +59,25 @@ export function ProfileRoundFilter({
   const profileSet = new Set(chosenProfiles)
   const roundSet = new Set(chosenRounds)
   const count = chosenProfiles.length + chosenRounds.length
+
+  // Profile-wise shows only profiles, Round-wise only rounds, Both shows both.
+  // A list that is hidden never filters: choosing a one-list mode clears the
+  // other list at once, and if Levels or the Filters panel ticks the hidden
+  // list later, the menu shows Both rather than hide an active filter.
+  const [mode, setMode] = useState(readMode)
+  const effectiveMode =
+    (mode === 'profile' && chosenRounds.length) || (mode === 'round' && chosenProfiles.length)
+      ? 'both'
+      : mode
+  const showProfiles = effectiveMode !== 'round'
+  const showRounds = effectiveMode !== 'profile'
+
+  function chooseMode(next) {
+    setMode(next)
+    saveMode(next)
+    if (next === 'profile' && chosenRounds.length) emit({ round: [] })
+    if (next === 'round' && chosenProfiles.length) emit({ technology: [] })
+  }
 
   // A ticked profile stays listed even when the period no longer has it.
   const allProfiles = useMemo(() => {
@@ -90,10 +134,17 @@ export function ProfileRoundFilter({
     })
   }
 
+  const modeLabel = PROFILE_ROUND_MODES.find(m => m.id === effectiveMode).label
   const describe = [
+    count > 0 && `Mode: ${modeLabel}`,
     chosenProfiles.length && `Profiles: ${chosenProfiles.join(', ')}`,
     chosenRounds.length && `Rounds: ${chosenRounds.join(', ')}`,
   ].filter(Boolean).join('\n')
+  const hint = {
+    profile: 'Applies as you tick. Ticked profiles match any of them; rounds are not filtered.',
+    round: 'Applies as you tick. Ticked rounds match any of them; profiles are not filtered.',
+    both: 'Applies as you tick. Ticks in one list match any of them; profiles and rounds must both match.',
+  }[effectiveMode]
 
   const option = (value, checked, onToggle) => (
     <label key={value} title={value} className={`ops-levels-option${checked ? ' ops-levels-option--checked' : ''}`}>
@@ -144,6 +195,22 @@ export function ProfileRoundFilter({
               </button>
             </div>
 
+            <div className="ops-profile-round-modes" role="radiogroup" aria-label="Filter by">
+              {PROFILE_ROUND_MODES.map(m => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={effectiveMode === m.id}
+                  className={`ops-profile-round-modes__btn${effectiveMode === m.id ? ' ops-profile-round-modes__btn--on' : ''}`}
+                  onClick={() => chooseMode(m.id)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {showProfiles && (
             <div className="ops-profile-round-menu__section">
               <div className="ops-profile-round-menu__label">
                 <span>Profiles</span>
@@ -172,7 +239,9 @@ export function ProfileRoundFilter({
                 {shownProfiles.map(p => option(p, profileSet.has(p), () => toggleProfile(p)))}
               </div>
             </div>
+            )}
 
+            {showRounds && (
             <div className="ops-profile-round-menu__section">
               <div className="ops-profile-round-menu__label">
                 <span>Interview rounds</span>
@@ -184,10 +253,9 @@ export function ProfileRoundFilter({
                 {roundOptions.map(r => option(r, roundSet.has(r), () => toggleRound(r)))}
               </div>
             </div>
+            )}
 
-            <p className="ops-levels-menu__hint">
-              Applies as you tick. Ticks in one list match any of them; profiles and rounds must both match.
-            </p>
+            <p className="ops-levels-menu__hint">{hint}</p>
           </div>
         </>
       )}

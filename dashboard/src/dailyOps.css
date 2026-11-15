@@ -2798,7 +2798,13 @@ tr.row-edit :is(button,a){cursor:pointer}
 /* ── Profile + Round (Nov 2026) ───────────────────────────────────────────
    Beside Levels, built from the same pieces: profiles (a scrolling list,
    searchable when long) above the six interview rounds. */
-.ops-profile-round-menu { width: 300px; }
+.ops-profile-round-menu {
+  width: 300px;
+  /* Short windows: the menu scrolls inside itself rather than past the fold. */
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .ops-profile-round-menu__section + .ops-profile-round-menu__section { margin-top: 12px; }
 .ops-profile-round-menu__label {
   display: flex;
@@ -2860,6 +2866,34 @@ tr.row-edit :is(button,a){cursor:pointer}
   white-space: nowrap;
 }
 .ops-profile-round-menu__empty { margin: 0; padding: 4px 2px; font-size: 12px; color: #64748b; }
+/* Profile-wise | Round-wise | Both: one segmented switch, the chosen mode solid blue. */
+.ops-profile-round-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  margin-bottom: 12px;
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #090e17;
+}
+.ops-profile-round-modes__btn {
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ops-profile-round-modes__btn:hover { color: #ffffff; background: rgba(30, 41, 59, 0.8); }
+.ops-profile-round-modes__btn--on,
+.ops-profile-round-modes__btn--on:hover { background: #2563eb; color: #ffffff; }
+.ops-profile-round-modes__btn:focus-visible { outline: 2px solid #60a5fa; outline-offset: 1px; }
 
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
@@ -3130,6 +3164,7 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-levels-option { min-height: 42px; font-size: 13.5px; }
   .ops-profile-round-menu { width: 100%; max-height: 88vh; max-height: 88dvh; overflow-y: auto; }
   .ops-profile-round-menu__profiles { max-height: 30vh; }
+  .ops-profile-round-modes__btn { min-height: 38px; font-size: 13px; }
   .ops-roster-controls__filters .ops-roster-controls__actions {
     order: 1; flex: 0 0 auto; width: auto; margin-left: 0; gap: 6px;
   }
