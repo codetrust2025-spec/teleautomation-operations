@@ -57,6 +57,7 @@ describe('DataRoomAccountsTab service account modal', () => {
       'Username / email',
       'Password',
       'Notes (optional)',
+      'I verified this account owner agreed to Daybreak connecting to Naukri',
     ])
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
