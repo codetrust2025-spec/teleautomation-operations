@@ -27,8 +27,8 @@ export function applyFilters() {
   fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
 }
 
-/** Tick (or untick) a value in the Profile + Round control -- 'Profiles' or
- *  'Interview rounds' -- opening its menu first if needed. Applies at once. */
+/** Tick (or untick) a value in the Profile + Round control -- 'Booking type'
+ *  or 'Interview rounds' -- opening its menu first if needed. Applies at once. */
 export function tickProfileRound(list, value) {
   if (!screen.queryByRole('group', { name: list })) {
     fireEvent.click(screen.getByRole('button', { name: /^Profile and round/ }))

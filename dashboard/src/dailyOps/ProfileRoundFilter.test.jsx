@@ -1,14 +1,13 @@
 /**
- * Profile + Round: the one Daily Ops filter for profiles and rounds (Nov 2026).
+ * Profile + Round (owner's mockup, 15 Nov).
  *
- * - Two checkbox lists in one menu: profiles (from the period) and the six
- *   interview rounds, ticked in any combination.
- * - Every tick applies at once (no Apply): the table and the counters re-read
- *   with `technology=...&round=...`. Ticks inside a list match any of them;
- *   the two lists must both match.
- * - It edits the same selections as the Filters panel's Profile / Technology
- *   field and the Levels control, so all three always agree, and the other
- *   filters are left as they were.
+ * - Profile-wise and Round-wise are independent checkboxes for the booking
+ *   type (profile service / round-wise service). Both ticked: every booking.
+ *   One ticked: that type only, sent as `channel`. The last one stays ticked.
+ * - Interview Round: Screening, L1, L2, L3, HR, Final, several at once.
+ * - No technology list any more.
+ * - Every click applies at once to the table and the counters; booking type
+ *   and rounds must both match. Clear All and the page Reset put both back.
  */
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -22,8 +21,8 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
-import { ProfileRoundFilter } from './ProfileRoundFilter.jsx'
-import { applyFilters, checkedFilterValues, openFilters, toggleFilterValue } from './filterMenuTestHelpers.js'
+import { ALL_BOOKING_TYPES, ProfileRoundFilter, channelFor } from './ProfileRoundFilter.jsx'
+import { applyFilters, openFilters, toggleFilterValue } from './filterMenuTestHelpers.js'
 
 const TODAY = '2026-10-06'
 let calls
@@ -33,24 +32,24 @@ function jsonResponse(body) {
 }
 
 const ROWS = [
-  ['Asha Varma', 'HR', 'Python', 'Bhavana'], ['Bala Kumar', 'L2', 'Java', 'Nikhila'],
-  ['Chitra Rao', 'L2', 'Python', 'Bhavana'], ['Dev Prasad', 'L1', 'Java', 'Tool'],
-  ['Esha Pillai', 'HR', 'Angular', 'Tool'],
-].map(([name, round, technology, attendee], i) => ({
-  id: `r${i}`, name, phone: `90000003${String(i).padStart(2, '0')}`, date: TODAY, time: `${10 + i}:00`,
-  time_end: `${10 + i}:30`, technology, interview_round: round, interview_attendee: attendee,
-  interview_attendance_status: '',
+  ['Asha Varma', 'HR', 'profile_service', 'Bhavana'], ['Bala Kumar', 'L2', 'round_wise', 'Nikhila'],
+  ['Chitra Rao', 'L2', 'profile_service', 'Bhavana'], ['Dev Prasad', 'L1', 'round_wise', 'Tool'],
+  ['Esha Pillai', 'L1', 'profile_service', 'Tool'],
+].map(([name, round, service_type, attendee], i) => ({
+  id: `r${i}`, name, phone: `90000004${String(i).padStart(2, '0')}`, date: TODAY, time: `${10 + i}:00`,
+  time_end: `${10 + i}:30`, technology: 'Java', interview_round: round, service_type,
+  interview_attendee: attendee, interview_attendance_status: '',
 }))
 
-/** Stands in for the server: OR within a parameter, AND across them. */
+/** Stands in for the server: channel picks a booking type, rounds OR, fields AND. */
 function serverRows(url) {
-  const pick = (key, field) => {
-    const wanted = url.searchParams.getAll(key)
-    return row => wanted.length === 0 || wanted.includes(row[field])
-  }
-  return ROWS.filter(pick('round', 'interview_round'))
-    .filter(pick('technology', 'technology'))
-    .filter(pick('attendee', 'interview_attendee'))
+  const channel = url.searchParams.get('channel')
+  const rounds = url.searchParams.getAll('round')
+  const attendees = url.searchParams.getAll('attendee')
+  return ROWS
+    .filter(r => !channel || (channel === 'round_wise' ? r.service_type === 'round_wise' : r.service_type !== 'round_wise'))
+    .filter(r => !rounds.length || rounds.includes(r.interview_round))
+    .filter(r => !attendees.length || attendees.includes(r.interview_attendee))
 }
 
 function mockFetch() {
@@ -58,18 +57,15 @@ function mockFetch() {
   vi.stubGlobal('fetch', vi.fn(async (input) => {
     const url = new URL(String(input), 'http://localhost')
     calls.push(url)
+    const rows = serverRows(url)
     if (url.pathname.endsWith('/interviews/global')) {
       return jsonResponse({
         status: 'ok',
-        interviews: {
-          by_candidate: ROWS.map(r => ({ name: r.name, scheduled: 1 })),
-          by_technology: [{ name: 'Python' }, { name: 'Java' }, { name: 'Angular' }],
-        },
-        booking_overview: { total: ROWS.length, by_candidate: [], by_level: [], by_technology: [] },
+        interviews: { by_candidate: ROWS.map(r => ({ name: r.name, scheduled: 1 })), by_technology: [{ name: 'Java' }] },
+        booking_overview: { total: rows.length, by_candidate: [], by_level: [], by_technology: [] },
       })
     }
     if (/\/interviews\/(daily|monitor)$/.test(url.pathname)) {
-      const rows = serverRows(url)
       return jsonResponse({ status: 'ok', interviews: rows, count: rows.length, awaiting_interviews: [] })
     }
     return jsonResponse({ status: 'ok' })
@@ -81,9 +77,13 @@ const globalCalls = () => calls.filter(u => u.pathname.endsWith('/interviews/glo
 const shown = () => [...document.querySelectorAll('.ops-interview-table tbody tr')]
   .map(tr => ROWS.find(r => tr.textContent.includes(r.name))?.name).filter(Boolean)
 const openMenu = () => fireEvent.click(screen.getByRole('button', { name: /^Profile and round/ }))
-const tick = (list, value) => fireEvent.click(within(screen.getByRole('group', { name: list })).getByRole('checkbox', { name: value }))
-const ticked = list => within(screen.getByRole('group', { name: list })).getAllByRole('checkbox')
+const box = (group, value) => within(screen.getByRole('group', { name: group })).getByRole('checkbox', { name: value })
+const tick = (group, value) => fireEvent.click(box(group, value))
+const ticked = group => within(screen.getByRole('group', { name: group })).getAllByRole('checkbox')
   .filter(b => b.checked).map(b => b.getAttribute('aria-label'))
+const scheduled = () => screen.getByRole('button', { name: /^Scheduled/ }).textContent.replace(/\D+/g, '')
+const lastRoster = () => rosterCalls().at(-1).searchParams
+const lastGlobal = () => globalCalls().at(-1).searchParams
 
 async function renderPanel() {
   const view = render(<DailyOpsPanel />)
@@ -93,8 +93,6 @@ async function renderPanel() {
 }
 
 beforeEach(() => {
-  // The chosen mode is remembered per browser; every test starts from Both.
-  try { window.localStorage.clear() } catch { /* none */ }
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(new Date(`${TODAY}T06:00:00Z`))
   mockFetch()
@@ -107,311 +105,131 @@ afterEach(() => {
 })
 
 describe('the Profile + Round control', () => {
-  it('lists the profiles and the six rounds, with no Apply button', () => {
-    render(<ProfileRoundFilter profileOptions={['Java', 'Python']} />)
+  it('matches the mockup: two booking-type boxes, six rounds, no technology list, no Apply', () => {
+    render(<ProfileRoundFilter />)
     openMenu()
-    expect(within(screen.getByRole('group', { name: 'Profiles' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
-      .toEqual(['Java', 'Python'])
+    expect(within(screen.getByRole('group', { name: 'Booking type' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
+      .toEqual(['Profile-wise', 'Round-wise'])
     expect(within(screen.getByRole('group', { name: 'Interview rounds' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
       .toEqual(['Screening', 'L1', 'L2', 'L3', 'HR', 'Final'])
+    expect(screen.queryByRole('group', { name: 'Profiles' })).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
     expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Clear all profile and round filters' })).toHaveTextContent('Clear All')
+    expect(screen.getByRole('button', { name: 'All rounds' })).toHaveTextContent('All Rounds')
+    expect(screen.getByText('Select at least one filter (Profile-wise or Round-wise).')).toBeInTheDocument()
+    // Both booking types start ticked: nothing is narrowed.
+    expect(ticked('Booking type')).toEqual(['Profile-wise', 'Round-wise'])
+    expect(screen.getByRole('button', { name: 'Profile and round' })).toBeInTheDocument()
   })
 
-  it('reports every tick at once with both lists, rounds in interview order', () => {
+  it('ticks the booking types independently, but the last one stays ticked', () => {
     const onChange = vi.fn()
-    const { rerender } = render(<ProfileRoundFilter profileOptions={['Java', 'Python']} onChange={onChange} />)
+    const { rerender } = render(<ProfileRoundFilter onChange={onChange} />)
     openMenu()
-    tick('Profiles', 'Python')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Python'], round: [] })
-    rerender(<ProfileRoundFilter profiles={['Python']} profileOptions={['Java', 'Python']} onChange={onChange} />)
-    tick('Interview rounds', 'HR')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Python'], round: ['HR'] })
-    rerender(<ProfileRoundFilter profiles={['Python']} rounds={['HR']} profileOptions={['Java', 'Python']} onChange={onChange} />)
+    tick('Booking type', 'Round-wise')
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ['profile'], round: [] })
+    rerender(<ProfileRoundFilter bookingTypes={['profile']} onChange={onChange} />)
+    onChange.mockClear()
+    tick('Booking type', 'Profile-wise')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(box('Booking type', 'Profile-wise')).toHaveAttribute('aria-disabled', 'true')
+    tick('Booking type', 'Round-wise')
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ['profile', 'round_wise'], round: [] })
+  })
+
+  it('takes several rounds, in interview order, and All Rounds unticks them', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<ProfileRoundFilter onChange={onChange} />)
+    openMenu()
     tick('Interview rounds', 'L2')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Python'], round: ['L2', 'HR'] })
-    tick('Profiles', 'Python')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: [], round: ['HR'] })
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ALL_BOOKING_TYPES, round: ['L2'] })
+    rerender(<ProfileRoundFilter rounds={['L2']} onChange={onChange} />)
+    tick('Interview rounds', 'L1')
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ALL_BOOKING_TYPES, round: ['L1', 'L2'] })
+    rerender(<ProfileRoundFilter rounds={['L1', 'L2']} bookingTypes={['round_wise']} onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button', { name: 'All rounds' }))
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ['round_wise'], round: [] })
   })
 
-  it('counts both lists on the button, names them in the tooltip, and Clear empties both', () => {
+  it('counts and names what narrows on the button, and Clear All puts both types back', () => {
     const onChange = vi.fn()
-    render(<ProfileRoundFilter profiles={['Java', 'Python']} rounds={['HR']} profileOptions={['Java', 'Python']} onChange={onChange} />)
+    render(<ProfileRoundFilter bookingTypes={['profile']} rounds={['L1', 'L2']} onChange={onChange} />)
     const trigger = screen.getByRole('button', { name: 'Profile and round (3 selected)' })
-    expect(trigger).toHaveTextContent('Profile + Round(3)')
-    expect(trigger.getAttribute('title')).toBe('Mode: Both\nProfiles: Java, Python\nRounds: HR')
+    expect(trigger.getAttribute('title')).toBe('Bookings: Profile-wise\nRounds: L1, L2')
     openMenu()
-    fireEvent.click(screen.getByRole('button', { name: 'Clear profile and round' }))
-    expect(onChange).toHaveBeenLastCalledWith({ technology: [], round: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all profile and round filters' }))
+    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ['profile', 'round_wise'], round: [] })
   })
 
-  it('searches a long profile list and keeps a ticked profile the period no longer has', () => {
-    const many = ['Angular', 'Data Engineering', 'DevOps', 'Java', 'Python', 'React JS', '.NET']
-    render(<ProfileRoundFilter profiles={['Old Stack']} profileOptions={many} />)
-    openMenu()
-    expect(ticked('Profiles')).toEqual(['Old Stack'])
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search profiles' }), { target: { value: 'dev' } })
-    expect(within(screen.getByRole('group', { name: 'Profiles' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
-      .toEqual(['DevOps'])
+  it('sends one booking type as the channel, and none for both', () => {
+    expect(channelFor(['profile'])).toBe('profile')
+    expect(channelFor(['round_wise'])).toBe('round_wise')
+    expect(channelFor(['profile', 'round_wise'])).toBe('')
+    expect(channelFor([])).toBe('')
   })
 
   it('closes on Escape and on a click outside', () => {
     render(<div><span data-testid="out">x</span><ProfileRoundFilter /></div>)
     openMenu()
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('group', { name: 'Profiles' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Booking type' })).toBeNull()
     openMenu()
     fireEvent.mouseDown(screen.getByTestId('out'))
-    expect(screen.queryByRole('group', { name: 'Profiles' })).toBeNull()
-  })
-})
-
-describe('Profile-wise, Round-wise and Both', () => {
-  const lists = () => ['Profiles', 'Interview rounds'].filter(name => screen.queryByRole('group', { name }))
-  const mode = () => screen.getAllByRole('radio').find(r => r.getAttribute('aria-checked') === 'true').textContent
-  const pick = label => fireEvent.click(screen.getByRole('radio', { name: label }))
-
-  beforeEach(() => { try { window.localStorage.clear() } catch { /* none */ } })
-
-  it('offers the three modes, starting on Both with both lists', () => {
-    render(<ProfileRoundFilter profileOptions={['Java', 'Python']} />)
-    openMenu()
-    expect(screen.getAllByRole('radio').map(r => r.textContent)).toEqual(['Profile-wise', 'Round-wise', 'Both'])
-    expect(mode()).toBe('Both')
-    expect(lists()).toEqual(['Profiles', 'Interview rounds'])
-  })
-
-  it('shows only the relevant checkboxes for each mode', () => {
-    render(<ProfileRoundFilter profileOptions={['Java', 'Python']} />)
-    openMenu()
-    pick('Profile-wise')
-    expect(lists()).toEqual(['Profiles'])
-    pick('Round-wise')
-    expect(lists()).toEqual(['Interview rounds'])
-    pick('Both')
-    expect(lists()).toEqual(['Profiles', 'Interview rounds'])
-  })
-
-  it('keeps multi-select inside a mode', () => {
-    const onChange = vi.fn()
-    const { rerender } = render(<ProfileRoundFilter profileOptions={['Java', 'Python']} onChange={onChange} />)
-    openMenu()
-    pick('Profile-wise')
-    tick('Profiles', 'Java')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Java'], round: [] })
-    rerender(<ProfileRoundFilter profiles={['Java']} profileOptions={['Java', 'Python']} onChange={onChange} />)
-    tick('Profiles', 'Python')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Java', 'Python'], round: [] })
-  })
-
-  it('applies a mode change at once: the hidden list stops filtering', () => {
-    const onChange = vi.fn()
-    const { rerender } = render(
-      <ProfileRoundFilter profiles={['Java']} rounds={['HR', 'Final']} profileOptions={['Java', 'Python']} onChange={onChange} />,
-    )
-    openMenu()
-    pick('Profile-wise')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: ['Java'], round: [] })
-    rerender(<ProfileRoundFilter profiles={['Java']} profileOptions={['Java', 'Python']} onChange={onChange} />)
-    expect(mode()).toBe('Profile-wise')
-    pick('Round-wise')
-    expect(onChange).toHaveBeenLastCalledWith({ technology: [], round: [] })
-  })
-
-  it('switching to Both clears nothing', () => {
-    const onChange = vi.fn()
-    render(<ProfileRoundFilter profiles={['Java']} profileOptions={['Java']} onChange={onChange} />)
-    openMenu()
-    pick('Profile-wise')
-    pick('Both')
-    expect(onChange).not.toHaveBeenCalled()
-  })
-
-  it('shows Both when the hidden list is ticked elsewhere, so no filter is hidden', () => {
-    const { rerender } = render(<ProfileRoundFilter profileOptions={['Java']} />)
-    openMenu()
-    pick('Profile-wise')
-    // A round arrives from outside (a remembered mode that no longer fits).
-    rerender(<ProfileRoundFilter rounds={['L2']} profileOptions={['Java']} />)
-    expect(mode()).toBe('Both')
-    expect(lists()).toEqual(['Profiles', 'Interview rounds'])
-    // Cleared there: back to the chosen mode.
-    rerender(<ProfileRoundFilter rounds={[]} profileOptions={['Java']} />)
-    expect(mode()).toBe('Profile-wise')
-  })
-
-  it('remembers the chosen mode in this browser', () => {
-    const { unmount } = render(<ProfileRoundFilter profileOptions={['Java']} />)
-    openMenu()
-    pick('Round-wise')
-    unmount()
-    render(<ProfileRoundFilter profileOptions={['Java']} />)
-    openMenu()
-    expect(mode()).toBe('Round-wise')
-    expect(screen.getByRole('button', { name: /^Profile and round/ }).getAttribute('title')).toBe('Filter by profile and interview round')
-  })
-
-  it('names the mode in the tooltip once something is ticked', () => {
-    render(<ProfileRoundFilter rounds={['HR']} />)
-    openMenu()
-    pick('Round-wise')
-    expect(screen.getByRole('button', { name: /^Profile and round/ }).getAttribute('title')).toBe('Mode: Round-wise\nRounds: HR')
+    expect(screen.queryByRole('group', { name: 'Booking type' })).toBeNull()
   })
 })
 
 describe('on Daily Ops', () => {
-  beforeEach(() => { try { window.localStorage.clear() } catch { /* none */ } })
-
-  it('applies each mode click and each tick to the table at once', async () => {
+  it('applies every click to the table and the counters at once', async () => {
     await renderPanel()
+    await waitFor(() => expect(scheduled()).toBe('5'))
     openMenu()
-    fireEvent.click(screen.getByRole('radio', { name: 'Both' }))
-    tick('Profiles', 'Python')
-    tick('Interview rounds', 'L2')
-    await waitFor(() => expect(shown()).toEqual(['Chitra Rao']))
 
-    // Profile-wise: the round filter goes at once, Python rows of any round.
-    fireEvent.click(screen.getByRole('radio', { name: 'Profile-wise' }))
-    await waitFor(() => {
-      const last = rosterCalls().at(-1).searchParams
-      expect(last.getAll('technology')).toEqual(['Python'])
-      expect(last.getAll('round')).toEqual([])
-    })
-    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Chitra Rao']))
-    tick('Profiles', 'Angular')
+    // Profile-wise only.
+    tick('Booking type', 'Round-wise')
+    await waitFor(() => expect(lastRoster().get('channel')).toBe('profile'))
+    await waitFor(() => expect(lastGlobal().get('channel')).toBe('profile'))
     await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Chitra Rao', 'Esha Pillai']))
+    await waitFor(() => expect(scheduled()).toBe('3'))
 
-    // Round-wise: the profile filter goes at once; tick HR and L1.
-    fireEvent.click(screen.getByRole('radio', { name: 'Round-wise' }))
-    tick('Interview rounds', 'HR')
+    // + rounds L1 or L2: profile bookings in L1/L2.
     tick('Interview rounds', 'L1')
-    await waitFor(() => {
-      const last = rosterCalls().at(-1).searchParams
-      expect(last.getAll('technology')).toEqual([])
-      expect(last.getAll('round')).toEqual(['L1', 'HR'])
-    })
-    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Dev Prasad', 'Esha Pillai']))
-  })
-})
-
-describe('the profile list on Daily Ops', () => {
-  // The real server's by_technology counts the selection, so it shrinks to
-  // the ticked profiles; technology_options is the period's whole list. The
-  // page read by_technology, and on 15 Nov a second profile could not be
-  // ticked once one was (23 profiles became 1).
-  function narrowingServer() {
-    calls = []
-    vi.stubGlobal('fetch', vi.fn(async (input) => {
-      const url = new URL(String(input), 'http://localhost')
-      calls.push(url)
-      const rows = serverRows(url)
-      if (url.pathname.endsWith('/interviews/global')) {
-        const techs = [...new Set(rows.map(r => r.technology))]
-        return jsonResponse({
-          status: 'ok',
-          interviews: {
-            by_candidate: ROWS.map(r => ({ name: r.name, scheduled: 1 })),
-            by_technology: techs.map(name => ({ name })),
-            technology_options: ['Angular', 'Java', 'Python'],
-          },
-          booking_overview: { total: rows.length, by_candidate: [], by_level: [], by_technology: [] },
-        })
-      }
-      if (/\/interviews\/(daily|monitor)$/.test(url.pathname)) {
-        return jsonResponse({ status: 'ok', interviews: rows, count: rows.length, awaiting_interviews: [] })
-      }
-      return jsonResponse({ status: 'ok' })
-    }))
-  }
-
-  const listed = () => within(screen.getByRole('group', { name: 'Profiles' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label'))
-
-  it('keeps every profile offered while profiles and rounds are ticked, in every mode', async () => {
-    narrowingServer()
-    await renderPanel()
-    openMenu()
-    fireEvent.click(screen.getByRole('radio', { name: 'Profile-wise' }))
-    tick('Profiles', 'Python')
-    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('technology')).toEqual(['Python']))
-    await act(async () => { await Promise.resolve() })
-    expect(listed()).toEqual(['Angular', 'Java', 'Python'])
-
-    // A second profile can be ticked: Python or Java.
-    tick('Profiles', 'Java')
-    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('technology')).toEqual(['Python', 'Java']))
-    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Bala Kumar', 'Chitra Rao', 'Dev Prasad']))
-    expect(listed()).toEqual(['Angular', 'Java', 'Python'])
-
-    // Both: a round narrows the table, never the list.
-    fireEvent.click(screen.getByRole('radio', { name: 'Both' }))
-    tick('Interview rounds', 'L1')
-    await waitFor(() => expect(shown()).toEqual(['Dev Prasad']))
-    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('round')).toEqual(['L1']))
-    expect(listed()).toEqual(['Angular', 'Java', 'Python'])
-    tick('Profiles', 'Angular')
-    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('technology')).toEqual(['Python', 'Java', 'Angular']))
-  })
-
-  it('updates the status counters with the table on every click', async () => {
-    narrowingServer()
-    await renderPanel()
-    const scheduled = () => screen.getByRole('button', { name: /^Scheduled/ }).textContent.replace(/\D+/g, '')
-    await waitFor(() => expect(scheduled()).toBe('5'))
-    openMenu()
-    fireEvent.click(screen.getByRole('radio', { name: 'Round-wise' }))
-    tick('Interview rounds', 'HR')
-    await waitFor(() => expect(scheduled()).toBe('2'))
     tick('Interview rounds', 'L2')
+    await waitFor(() => expect(lastRoster().getAll('round')).toEqual(['L1', 'L2']))
+    await waitFor(() => expect(shown()).toEqual(['Chitra Rao', 'Esha Pillai']))
+    await waitFor(() => expect(scheduled()).toBe('2'))
+
+    // Round-wise only (tick it, then untick Profile-wise).
+    tick('Booking type', 'Round-wise')
+    await waitFor(() => expect(lastRoster().get('channel')).toBeNull())
     await waitFor(() => expect(scheduled()).toBe('4'))
-    fireEvent.click(screen.getByRole('radio', { name: 'Profile-wise' }))
-    await waitFor(() => expect(scheduled()).toBe('5'))
-    tick('Profiles', 'Java')
+    tick('Booking type', 'Profile-wise')
+    await waitFor(() => expect(lastRoster().get('channel')).toBe('round_wise'))
+    await waitFor(() => expect(shown()).toEqual(['Bala Kumar', 'Dev Prasad']))
     await waitFor(() => expect(scheduled()).toBe('2'))
-  })
-})
 
-describe('on Daily Ops (shared selections)', () => {
-  it('re-reads the table and the counters on every tick, in any combination', async () => {
+    // Clear All: everything again.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all profile and round filters' }))
+    await waitFor(() => {
+      expect(lastRoster().get('channel')).toBeNull()
+      expect(lastRoster().getAll('round')).toEqual([])
+    })
+    await waitFor(() => expect(scheduled()).toBe('5'))
+  })
+
+  it('never sends a technology filter', async () => {
     await renderPanel()
     openMenu()
-
-    tick('Profiles', 'Python')
-    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('technology')).toEqual(['Python']))
-    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Chitra Rao']))
-
-    tick('Interview rounds', 'L2')
-    await waitFor(() => {
-      const last = rosterCalls().at(-1).searchParams
-      expect(last.getAll('technology')).toEqual(['Python'])
-      expect(last.getAll('round')).toEqual(['L2'])
-    })
-    await waitFor(() => expect(shown()).toEqual(['Chitra Rao']))
-
-    tick('Profiles', 'Java')
     tick('Interview rounds', 'HR')
-    await waitFor(() => {
-      const last = globalCalls().at(-1).searchParams
-      expect(last.getAll('technology')).toEqual(['Python', 'Java'])
-      expect(last.getAll('round')).toEqual(['L2', 'HR'])
-    })
-    // (Python or Java) and (L2 or HR): Esha is HR but Angular, Dev is Java but L1.
-    await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Bala Kumar', 'Chitra Rao']))
+    await waitFor(() => expect(lastRoster().getAll('round')).toEqual(['HR']))
+    expect(calls.every(u => !u.searchParams.has('technology'))).toBe(true)
   })
 
-  it('is the only profile and round filter: no Levels button, no Level or Profile in Filters', async () => {
-    await renderPanel()
-    expect(screen.queryByRole('button', { name: /^Interview levels/ })).toBeNull()
-    expect(document.querySelectorAll('.ops-profile-round-filter')).toHaveLength(1)
-    openFilters()
-    expect(screen.queryByRole('group', { name: 'Candidate interview level filter' })).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Technology filter' })).toBeNull()
-    expect(screen.getByRole('group', { name: 'Candidate filter' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Attendee filter' })).toBeInTheDocument()
-  })
-
-  it('keeps its ticks through an Apply or Reset inside the Filters panel', async () => {
+  it('combines with the Filters panel, and keeps its ticks through a panel Apply or Reset', async () => {
     await renderPanel()
     openMenu()
-    tick('Profiles', 'Java')
+    tick('Booking type', 'Round-wise')
     tick('Interview rounds', 'L1')
     fireEvent.keyDown(document, { key: 'Escape' })
 
@@ -419,33 +237,34 @@ describe('on Daily Ops (shared selections)', () => {
     toggleFilterValue('Attendee filter', 'Tool')
     applyFilters()
     await waitFor(() => {
-      const last = rosterCalls().at(-1).searchParams
+      const last = lastRoster()
       expect(last.getAll('attendee')).toEqual(['Tool'])
-      expect(last.getAll('technology')).toEqual(['Java'])
+      expect(last.get('channel')).toBe('profile')
       expect(last.getAll('round')).toEqual(['L1'])
     })
+    await waitFor(() => expect(shown()).toEqual(['Esha Pillai']))
+
     openFilters()
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
-    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('attendee')).toEqual([]))
-    expect(rosterCalls().at(-1).searchParams.getAll('technology')).toEqual(['Java'])
+    await waitFor(() => expect(lastRoster().getAll('attendee')).toEqual([]))
+    expect(lastRoster().get('channel')).toBe('profile')
     expect(screen.getByRole('button', { name: 'Profile and round (2 selected)' })).toBeInTheDocument()
   })
 
-  it('leaves the other filters as they were', async () => {
+  it('is put back by the page Reset, which counts it', async () => {
     await renderPanel()
-    openFilters()
-    toggleFilterValue('Attendee filter', 'Bhavana')
-    applyFilters()
-    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('attendee')).toEqual(['Bhavana']))
-
     openMenu()
-    tick('Interview rounds', 'HR')
+    tick('Booking type', 'Profile-wise')
+    tick('Interview rounds', 'Final')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reset all filters (2 set)' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^Reset all filters/ }))
     await waitFor(() => {
-      const last = rosterCalls().at(-1).searchParams
-      expect(last.getAll('round')).toEqual(['HR'])
-      expect(last.getAll('attendee')).toEqual(['Bhavana'])
+      expect(lastRoster().get('channel')).toBeNull()
+      expect(lastRoster().getAll('round')).toEqual([])
     })
-    await waitFor(() => expect(shown()).toEqual(['Asha Varma']))
+    openMenu()
+    expect(ticked('Booking type')).toEqual(['Profile-wise', 'Round-wise'])
   })
 
   it('sits right after the date, before Filters, and Today stays beside Filters', async () => {

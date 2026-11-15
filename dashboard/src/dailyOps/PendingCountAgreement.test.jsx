@@ -97,7 +97,8 @@ describe('the top counter reads the roster', () => {
   it('leaves the range-wide dropdown options on the range summary', () => {
     // Those lists are the whole range's vocabulary, not the day's tally.
     expect(panel).toContain('const rangeInterviews = globalStats?.interviews || {}')
-    expect(panel).toContain('(rangeInterviews.by_technology || [])')
+    // (The technology list went with the Profile + Round redesign, 15 Nov;
+    // the candidate list is the one left.)
     expect(panel).toContain('rangeInterviews.by_candidate')
   })
 })

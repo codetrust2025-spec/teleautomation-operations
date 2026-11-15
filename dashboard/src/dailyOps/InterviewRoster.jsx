@@ -622,6 +622,8 @@ export function InterviewRoster({
   // the calendar and a date the roster is actually showing look the same.
   const activeFilterLabels = [
     effectiveAttendee.length > 0 && `attendee ${describeFilterValues(effectiveAttendee)}`,
+    effectiveChannel === 'round_wise' && 'round-wise bookings',
+    (effectiveChannel === 'profile' || effectiveChannel === 'profile_service') && 'profile-wise bookings',
     effectiveRound.length > 0 && `level ${describeFilterValues(effectiveRound)}`,
     effectiveTechnology.length > 0 && `profile ${describeFilterValues(effectiveTechnology)}`,
     effectiveCandidate.length > 0 && `candidate ${describeFilterValues(effectiveCandidate)}`,

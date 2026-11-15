@@ -258,21 +258,21 @@ describe('Reset', () => {
     toggleFilterValue('Attendee filter', 'Bhavana')
     fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     tickProfileRound('Interview rounds', 'L1')
-    tickProfileRound('Profiles', 'Python')
+    tickProfileRound('Booking type', 'Round-wise')
     closeMenus()
     fireEvent.click(screen.getByRole('button', { name: /^Attended/ }))
-    await waitFor(() => expect(globalCalls().at(-1).searchParams.get('technology')).toBe('Python'))
+    await waitFor(() => expect(globalCalls().at(-1).searchParams.get('channel')).toBe('profile'))
 
     fireEvent.click(screen.getByRole('button', { name: /^Reset all filters/ }))
 
     await waitFor(() => {
       const last = globalCalls().at(-1).searchParams
-      for (const key of ['search', 'candidate', 'attendee', 'round', 'technology']) expect(last.get(key), key).toBeNull()
+      for (const key of ['search', 'candidate', 'attendee', 'round', 'channel']) expect(last.get(key), key).toBeNull()
       expect(last.get('upcoming_only')).toBe('true')
     })
     await waitFor(() => {
       const last = rosterCalls().at(-1).searchParams
-      for (const key of ['search', 'candidate', 'attendee', 'round', 'technology']) expect(last.get(key), key).toBeNull()
+      for (const key of ['search', 'candidate', 'attendee', 'round', 'channel']) expect(last.get(key), key).toBeNull()
       expect(last.get('upcoming_only')).toBe('true')
     })
     expect(screen.getByRole('button', { name: 'Filter interviews by date' })).toHaveTextContent('Upcoming')
@@ -283,7 +283,7 @@ describe('Reset', () => {
     }
     closeMenus()
     fireEvent.click(screen.getByRole('button', { name: 'Profile and round' }))
-    expect(tickedProfileRound('Profiles')).toEqual([])
+    expect(tickedProfileRound('Booking type')).toEqual(['Profile-wise', 'Round-wise'])
     expect(tickedProfileRound('Interview rounds')).toEqual([])
     expect(screen.getByRole('button', { name: /^Scheduled/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Reset all filters' })).toBeInTheDocument()

@@ -7,7 +7,7 @@ import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } 
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
 import { appendFilterValues, sameValues } from './filterParams.js'
-import { INTERVIEW_LEVELS, ProfileRoundFilter } from './ProfileRoundFilter.jsx'
+import { ALL_BOOKING_TYPES, INTERVIEW_LEVELS, ProfileRoundFilter, channelFor } from './ProfileRoundFilter.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
@@ -104,7 +104,10 @@ export function DailyOpsPanel({
   // alternatives (Level HR or L2), different fields must all match.
   const [attendeeFilter, setAttendeeFilter] = useState([])
   const [roundFilter, setRoundFilter] = useState([])
-  const [technologyFilter, setTechnologyFilter] = useState([])
+  // Booking type (Profile + Round's Profile-wise / Round-wise): both ticked
+  // means the whole roster, one ticked sends it as `channel`.
+  const [bookingTypeFilter, setBookingTypeFilter] = useState(ALL_BOOKING_TYPES)
+  const bookingChannel = channelFor(bookingTypeFilter)
   const [candidateSearch, setCandidateSearch] = useState('')
   const [candidateFilter, setCandidateFilter] = useState([])
   const [statusFilter, setStatusFilter] = useState('')
@@ -175,7 +178,7 @@ export function DailyOpsPanel({
       const params = new URLSearchParams({ from: range.from, to: range.to })
       appendFilterValues(params, 'attendee', attendeeFilter)
       appendFilterValues(params, 'round', roundFilter)
-      appendFilterValues(params, 'technology', technologyFilter)
+      if (bookingChannel) params.set('channel', bookingChannel)
       // The dropdown is a selection and the search box is a search: sent as
       // one `search`, "Ram Charan M S" also matched "Rama Krishna" on "ram".
       appendFilterValues(params, 'candidate', candidateFilter)
@@ -195,7 +198,7 @@ export function DailyOpsPanel({
     } finally {
       setLoading(false)
     }
-  }, [selectedDate, selectedPreset, attendeeFilter, roundFilter, technologyFilter, candidateSearch, candidateFilter, upcomingOnly, summaryReload])
+  }, [selectedDate, selectedPreset, attendeeFilter, roundFilter, bookingChannel, candidateSearch, candidateFilter, upcomingOnly, summaryReload])
 
   // Refresh has to move the counters, and they come from the roster's rows,
   // so it reloads the roster as well as the range summary. Declared after
@@ -216,21 +219,15 @@ export function DailyOpsPanel({
   // These two lists are the whole range's vocabulary, not the day's tally, so
   // they stay on the range summary. Only the counters moved.
   const rangeInterviews = globalStats?.interviews || {}
-  // The period's profiles before any profile or round is ticked
-  // (technology_options); by_technology counts the selection, so reading the
-  // list from it shrank the list to whatever was already ticked.
-  const technologyOptions = Array.isArray(rangeInterviews.technology_options)
-    ? rangeInterviews.technology_options
-    : (rangeInterviews.by_technology || []).map(item => item.name).sort()
   const candidateOptions = rangeInterviews.by_candidate || []
   // Reset's badge counts fields in use, not values: Level HR + L2 is one thing to put back.
-  const activeFilterCount = [attendeeFilter, roundFilter, technologyFilter, candidateFilter]
-    .filter(list => list.length > 0).length + (candidateSearch.trim() ? 1 : 0)
+  const activeFilterCount = [attendeeFilter, roundFilter, candidateFilter]
+    .filter(list => list.length > 0).length + (candidateSearch.trim() ? 1 : 0) + (bookingChannel ? 1 : 0)
 
   function clearFilters() {
     setAttendeeFilter([])
     setRoundFilter([])
-    setTechnologyFilter([])
+    setBookingTypeFilter(ALL_BOOKING_TYPES)
     setCandidateSearch('')
     setCandidateFilter([])
   }
@@ -315,17 +312,15 @@ export function DailyOpsPanel({
             />
           </div>
 
-          {/* Profile + Round: the one place profiles and interview rounds are
-              filtered (Profile-wise, Round-wise or Both), applied on every
-              tick. The separate Levels button and the Filters panel's Level
-              and Profile fields were duplicates of it and are gone. */}
+          {/* Profile + Round (owner's mockup, 15 Nov): booking type --
+              Profile-wise and/or Round-wise, at least one -- and any interview
+              rounds, applied on every click. Technology is no longer offered. */}
           <ProfileRoundFilter
-            profiles={technologyFilter}
+            bookingTypes={bookingTypeFilter}
             rounds={roundFilter}
-            profileOptions={technologyOptions}
             roundOptions={ROUNDS}
-            onChange={({ technology, round }) => {
-              setTechnologyFilter(prev => (sameValues(prev, technology) ? prev : technology))
+            onChange={({ bookingTypes, round }) => {
+              setBookingTypeFilter(prev => (sameValues(prev, bookingTypes) ? prev : bookingTypes))
               setRoundFilter(prev => (sameValues(prev, round) ? prev : round))
             }}
           />
@@ -404,7 +399,7 @@ export function DailyOpsPanel({
           }
           dashboardAttendeeFilter={attendeeFilter}
           dashboardRoundFilter={roundFilter}
-          dashboardTechnologyFilter={technologyFilter}
+          dashboardCandidateTypeFilter={bookingChannel}
           dashboardCandidate={candidateFilter}
           dashboardCandidateSearch={candidateSearch}
           dashboardStatusFilter={statusFilter}

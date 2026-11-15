@@ -185,7 +185,8 @@ describe('Reset', () => {
     await renderPanel()
     tickProfileRound('Interview rounds', 'HR')
     tickProfileRound('Interview rounds', 'L2')
-    tickProfileRound('Profiles', 'Java')
+    // Round-wise unticked: profile bookings only (sent as channel=profile).
+    tickProfileRound('Booking type', 'Round-wise')
     closeMenus()
     // Two fields, three values: Reset puts back two things.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reset all filters (2 set)' })).toBeInTheDocument())
@@ -194,10 +195,10 @@ describe('Reset', () => {
     await waitFor(() => {
       const last = rosterCalls().at(-1).searchParams
       expect(last.getAll('round')).toEqual([])
-      expect(last.getAll('technology')).toEqual([])
+      expect(last.get('channel')).toBeNull()
     })
     fireEvent.click(screen.getByRole('button', { name: 'Profile and round' }))
-    expect(tickedProfileRound('Profiles')).toEqual([])
+    expect(tickedProfileRound('Booking type')).toEqual(['Profile-wise', 'Round-wise'])
     expect(tickedProfileRound('Interview rounds')).toEqual([])
   })
 })

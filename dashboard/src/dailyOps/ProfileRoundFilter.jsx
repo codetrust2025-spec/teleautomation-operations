@@ -1,94 +1,56 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon.jsx'
 import { toFilterList } from './DailyOpsFilterMenu.jsx'
 
 /** Every round the backend accepts (VALID_INTERVIEW_ROUNDS), in interview order. */
 export const INTERVIEW_LEVELS = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
 
-/** The three ways the menu filters, in the order the switch shows them. */
-export const PROFILE_ROUND_MODES = [
+/**
+ * The two booking types, as the server's `channel` parameter names them:
+ * profile service (most bookings) and round-wise service. Both ticked is the
+ * whole roster.
+ */
+export const BOOKING_TYPES = [
   { id: 'profile', label: 'Profile-wise' },
-  { id: 'round', label: 'Round-wise' },
-  { id: 'both', label: 'Both' },
+  { id: 'round_wise', label: 'Round-wise' },
 ]
-export const PROFILE_ROUND_MODE_KEY = 'ta.dailyOps.profileRoundMode.v1'
+export const ALL_BOOKING_TYPES = BOOKING_TYPES.map(t => t.id)
 
-function readMode() {
-  try {
-    const stored = window.localStorage.getItem(PROFILE_ROUND_MODE_KEY)
-    return PROFILE_ROUND_MODES.some(m => m.id === stored) ? stored : 'both'
-  } catch {
-    return 'both'
-  }
-}
-
-function saveMode(mode) {
-  try {
-    window.localStorage.setItem(PROFILE_ROUND_MODE_KEY, mode)
-  } catch {
-    // A private window or blocked storage: the mode lasts for this page only.
-  }
+/** The `channel` to send for a set of ticked booking types: one type, or none for both. */
+export function channelFor(types) {
+  const list = toFilterList(types).filter(t => ALL_BOOKING_TYPES.includes(t))
+  return list.length === 1 ? list[0] : ''
 }
 
 /**
- * Profile + Round: the one Daily Ops filter for profiles and rounds (Nov 2026).
+ * Profile + Round (redesigned 15 Nov to the owner's mockup).
  *
- * Two checkbox lists in one menu -- profiles (technologies) and interview
- * rounds -- ticked in any combination. Each tick applies at once; there is no
- * Apply button. Inside a list the ticks are alternatives (Java or Python);
- * the two lists must both match (Java or Python, AND L2 or HR), like every
- * other Daily Ops filter.
- *
- * The page holds the two selections (technologyFilter, roundFilter); this is
- * the only control that edits them, apart from the page Reset. The separate
- * Levels button and the Filters panel's Level and Profile fields were
- * duplicates and were removed (15 Nov).
+ * - Profile-wise and Round-wise are independent checkboxes for the booking
+ *   type. Both ticked shows both types; one ticked shows that type alone. At
+ *   least one stays ticked: the last one cannot be unticked.
+ * - Interview Round: Screening, L1, L2, L3, HR and Final, several at once
+ *   (any of them). "All Rounds" unticks them all.
+ * - Booking type and rounds must both match. Every click applies at once.
+ * - "Clear All" ticks both types again and unticks every round.
  */
 export function ProfileRoundFilter({
-  profiles = [],
+  bookingTypes = ALL_BOOKING_TYPES,
   rounds = [],
-  profileOptions = [],
   roundOptions = INTERVIEW_LEVELS,
   onChange,
 }) {
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
   const wrapRef = useRef(null)
   const triggerRef = useRef(null)
   const menuId = useId()
 
-  const chosenProfiles = toFilterList(profiles)
+  const chosenTypes = ALL_BOOKING_TYPES.filter(t => toFilterList(bookingTypes).includes(t))
+  const types = chosenTypes.length ? chosenTypes : ALL_BOOKING_TYPES
+  const typeSet = new Set(types)
   const chosenRounds = toFilterList(rounds)
-  const profileSet = new Set(chosenProfiles)
   const roundSet = new Set(chosenRounds)
-  const count = chosenProfiles.length + chosenRounds.length
-
-  // Profile-wise shows only profiles, Round-wise only rounds, Both shows both.
-  // A list that is hidden never filters: choosing a one-list mode clears the
-  // other list at once, and should the hidden list ever hold values anyway
-  // (a remembered mode that no longer fits), the menu shows Both.
-  const [mode, setMode] = useState(readMode)
-  const effectiveMode =
-    (mode === 'profile' && chosenRounds.length) || (mode === 'round' && chosenProfiles.length)
-      ? 'both'
-      : mode
-  const showProfiles = effectiveMode !== 'round'
-  const showRounds = effectiveMode !== 'profile'
-
-  function chooseMode(next) {
-    setMode(next)
-    saveMode(next)
-    if (next === 'profile' && chosenRounds.length) emit({ round: [] })
-    if (next === 'round' && chosenProfiles.length) emit({ technology: [] })
-  }
-
-  // A ticked profile stays listed even when the period no longer has it.
-  const allProfiles = useMemo(() => {
-    const known = new Set(profileOptions)
-    return [...chosenProfiles.filter(p => !known.has(p)), ...profileOptions]
-  }, [profileOptions.join('\u0001'), chosenProfiles.join('\u0001')])
-  const needle = query.trim().toLowerCase()
-  const shownProfiles = needle ? allProfiles.filter(p => p.toLowerCase().includes(needle)) : allProfiles
+  const typeNarrowed = types.length === 1
+  const count = chosenRounds.length + (typeNarrowed ? 1 : 0)
 
   useEffect(() => {
     if (!open) return undefined
@@ -113,19 +75,19 @@ export function ProfileRoundFilter({
 
   useEffect(() => {
     if (open) wrapRef.current?.querySelector('.ops-profile-round-menu input')?.focus()
-    else setQuery('')
   }, [open])
 
   function emit(next) {
-    onChange?.({ technology: chosenProfiles, round: chosenRounds, ...next })
+    onChange?.({ bookingTypes: types, round: chosenRounds, ...next })
   }
 
-  function toggleProfile(profile) {
-    emit({
-      technology: profileSet.has(profile)
-        ? chosenProfiles.filter(p => p !== profile)
-        : [...chosenProfiles, profile],
-    })
+  function toggleType(type) {
+    if (typeSet.has(type)) {
+      if (types.length === 1) return // at least one stays ticked
+      emit({ bookingTypes: types.filter(t => t !== type) })
+    } else {
+      emit({ bookingTypes: ALL_BOOKING_TYPES.filter(t => t === type || typeSet.has(t)) })
+    }
   }
 
   function toggleRound(round) {
@@ -137,26 +99,15 @@ export function ProfileRoundFilter({
     })
   }
 
-  const modeLabel = PROFILE_ROUND_MODES.find(m => m.id === effectiveMode).label
-  const describe = [
-    count > 0 && `Mode: ${modeLabel}`,
-    chosenProfiles.length && `Profiles: ${chosenProfiles.join(', ')}`,
-    chosenRounds.length && `Rounds: ${chosenRounds.join(', ')}`,
-  ].filter(Boolean).join('\n')
-  const hint = {
-    profile: 'Applies as you tick. Ticked profiles match any of them; rounds are not filtered.',
-    round: 'Applies as you tick. Ticked rounds match any of them; profiles are not filtered.',
-    both: 'Applies as you tick. Ticks in one list match any of them; profiles and rounds must both match.',
-  }[effectiveMode]
+  const typeLabel = typeNarrowed ? BOOKING_TYPES.find(t => t.id === types[0]).label : 'Profile-wise and Round-wise'
+  const describe = count
+    ? [`Bookings: ${typeLabel}`, chosenRounds.length && `Rounds: ${chosenRounds.join(', ')}`].filter(Boolean).join('\n')
+    : 'Filter by booking type and interview round'
 
-  const option = (value, checked, onToggle) => (
-    <label key={value} title={value} className={`ops-levels-option${checked ? ' ops-levels-option--checked' : ''}`}>
-      <input type="checkbox" checked={checked} onChange={onToggle} aria-label={value} />
-      <span className="ops-levels-option__box" aria-hidden="true">
-        {checked && <Icon name="check" size={11} strokeWidth={3} />}
-      </span>
-      <span className="ops-profile-round-option__label">{value}</span>
-    </label>
+  const box = checked => (
+    <span className="ops-levels-option__box" aria-hidden="true">
+      {checked && <Icon name="check" size={11} strokeWidth={3} />}
+    </span>
   )
 
   return (
@@ -170,7 +121,7 @@ export function ProfileRoundFilter({
         aria-expanded={open}
         aria-controls={menuId}
         aria-label={count ? `Profile and round (${count} selected)` : 'Profile and round'}
-        title={describe || 'Filter by profile and interview round'}
+        title={describe}
       >
         <Icon name="users" size={14} strokeWidth={2.1} />
         <span className="ops-levels-trigger__label">Profile + Round</span>
@@ -190,75 +141,66 @@ export function ProfileRoundFilter({
               <button
                 type="button"
                 className="ops-levels-menu__clear"
-                onClick={() => onChange?.({ technology: [], round: [] })}
+                onClick={() => onChange?.({ bookingTypes: ALL_BOOKING_TYPES, round: [] })}
                 disabled={!count}
-                aria-label="Clear profile and round"
+                aria-label="Clear all profile and round filters"
               >
-                Clear
+                Clear All
               </button>
             </div>
 
-            <div className="ops-profile-round-modes" role="radiogroup" aria-label="Filter by">
-              {PROFILE_ROUND_MODES.map(m => (
-                <button
-                  key={m.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={effectiveMode === m.id}
-                  className={`ops-profile-round-modes__btn${effectiveMode === m.id ? ' ops-profile-round-modes__btn--on' : ''}`}
-                  onClick={() => chooseMode(m.id)}
-                >
-                  {m.label}
-                </button>
-              ))}
+            <div className="ops-profile-round-types" role="group" aria-label="Booking type">
+              {BOOKING_TYPES.map(t => {
+                const checked = typeSet.has(t.id)
+                const last = checked && types.length === 1
+                return (
+                  <label
+                    key={t.id}
+                    className={`ops-profile-round-type${checked ? ' ops-profile-round-type--checked' : ''}`}
+                    title={last ? 'At least one of Profile-wise or Round-wise stays selected' : undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleType(t.id)}
+                      aria-label={t.label}
+                      aria-disabled={last || undefined}
+                    />
+                    {box(checked)}
+                    <span>{t.label}</span>
+                  </label>
+                )
+              })}
             </div>
 
-            {showProfiles && (
-            <div className="ops-profile-round-menu__section">
-              <div className="ops-profile-round-menu__label">
-                <span>Profiles</span>
-                <span className="ops-profile-round-menu__state">
-                  {chosenProfiles.length ? `${chosenProfiles.length} selected` : 'All profiles'}
-                </span>
-              </div>
-              {allProfiles.length > 6 && (
-                <label className="ops-profile-round-menu__search">
-                  <span aria-hidden="true"><Icon name="search" size={13} /></span>
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                    placeholder="Search profiles..."
-                    aria-label="Search profiles"
-                  />
-                </label>
-              )}
-              <div className="ops-profile-round-menu__profiles" role="group" aria-label="Profiles">
-                {shownProfiles.length === 0 && (
-                  <p className="ops-profile-round-menu__empty">
-                    {allProfiles.length ? 'No match' : 'No profiles in this period'}
-                  </p>
-                )}
-                {shownProfiles.map(p => option(p, profileSet.has(p), () => toggleProfile(p)))}
-              </div>
-            </div>
-            )}
+            <div className="ops-profile-round-menu__divider" aria-hidden="true" />
 
-            {showRounds && (
-            <div className="ops-profile-round-menu__section">
-              <div className="ops-profile-round-menu__label">
-                <span>Interview rounds</span>
-                <span className="ops-profile-round-menu__state">
-                  {chosenRounds.length ? `${chosenRounds.length} selected` : 'All rounds'}
-                </span>
-              </div>
-              <div className="ops-levels-menu__list" role="group" aria-label="Interview rounds">
-                {roundOptions.map(r => option(r, roundSet.has(r), () => toggleRound(r)))}
-              </div>
+            <div className="ops-profile-round-menu__label">
+              <span>Interview Round</span>
+              <button
+                type="button"
+                className="ops-levels-menu__clear"
+                onClick={() => emit({ round: [] })}
+                disabled={!chosenRounds.length}
+                aria-label="All rounds"
+              >
+                All Rounds
+              </button>
             </div>
-            )}
+            <div className="ops-levels-menu__list" role="group" aria-label="Interview rounds">
+              {roundOptions.map(r => {
+                const checked = roundSet.has(r)
+                return (
+                  <label key={r} className={`ops-levels-option${checked ? ' ops-levels-option--checked' : ''}`}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleRound(r)} aria-label={r} />
+                    {box(checked)}
+                    <span>{r}</span>
+                  </label>
+                )
+              })}
+            </div>
 
-            <p className="ops-levels-menu__hint">{hint}</p>
+            <p className="ops-levels-menu__hint">Select at least one filter (Profile-wise or Round-wise).</p>
           </div>
         </>
       )}
