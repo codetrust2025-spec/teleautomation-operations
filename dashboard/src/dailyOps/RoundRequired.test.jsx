@@ -208,7 +208,7 @@ it('offers L3 and lists who changed the round and when', async () => {
   })])
   await renderPanel('Ravi Testname')
   openRowEdit('Ravi Testname')
-  expect([...roundSelect().options].map(o => o.value)).toEqual(['', 'L1', 'L2', 'L3', 'HR', 'Final', 'Screening'])
+  expect([...roundSelect().options].map(o => o.value)).toEqual(['', 'L1', 'L2', 'L3', 'HR', 'Final', 'Screening', 'Assessment'])
   captureLayout('round-history-modal')
   const items = within(within(editDialog()).getByRole('list', { name: 'Round history' })).getAllByRole('listitem')
   expect(items.map(item => item.textContent)).toEqual([
