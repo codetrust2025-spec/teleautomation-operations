@@ -2614,10 +2614,19 @@ tr.row-edit :is(button,a){cursor:pointer}
 }
 /* 1101-1240px: one row, little spare width. A long summary took it from the
    search box; the tooltip still names every choice. */
-@media (min-width: 1101px) and (max-width: 1240px) {
-  /* With Levels beside it there is no room for the summary at all (the
-     search shrank to 63px); the count and the tooltip still say it. */
+/* With Levels and Profile + Round beside it, the Filters summary fits only on
+   a wide screen: below 1500px it took the search box down to 111px and split
+   Today from Filters at 1024 and 768px. The count and the tooltip stay. */
+@media (max-width: 1499px) {
   .ops-filter-trigger__summary { display: none; }
+}
+/* One row above 1100px: the search box keeps a readable width, and when the
+   row is full Reset and Refresh wrap under it instead (they come last, so the
+   Filters + Today pair stays together). It went down to 40px at 1280. */
+@media (min-width: 1101px) {
+  .ops-roster-controls .ops-roster-search { min-width: 170px; }
+}
+@media (min-width: 1101px) and (max-width: 1240px) {
   .ops-filter-trigger__chevron,
   .ops-levels-trigger__chevron { display: none; }
 }
@@ -2785,6 +2794,72 @@ tr.row-edit :is(button,a){cursor:pointer}
 }
 .ops-levels-option--checked .ops-levels-option__box { border-color: #3b82f6; background: #2563eb; }
 .ops-levels-menu__hint { margin: 10px 0 0; font-size: 11px; color: #64748b; }
+
+/* ── Profile + Round (Nov 2026) ───────────────────────────────────────────
+   Beside Levels, built from the same pieces: profiles (a scrolling list,
+   searchable when long) above the six interview rounds. */
+.ops-profile-round-menu { width: 300px; }
+.ops-profile-round-menu__section + .ops-profile-round-menu__section { margin-top: 12px; }
+.ops-profile-round-menu__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+.ops-profile-round-menu__state { font-size: 11px; font-weight: 500; color: #94a3b8; }
+.ops-profile-round-menu__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.ops-profile-round-menu__search > span {
+  position: absolute;
+  left: 10px;
+  display: inline-flex;
+  color: #64748b;
+  pointer-events: none;
+}
+/* Specificity (0,3,1) and later than the global small-screen input rule, so
+   the icon keeps its room below 900px. */
+.ops-profile-round-menu .ops-profile-round-menu__search input[type='search'] {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 32px;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: #090e17;
+  color: #e2e8f0;
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.ops-profile-round-menu .ops-profile-round-menu__search input[type='search']:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+.ops-profile-round-menu__profiles {
+  display: grid;
+  /* minmax(0, 1fr): a long name ("Data Engineering") ellipsises instead of
+     widening its column past the menu edge. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 168px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+.ops-profile-round-option__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops-profile-round-menu__empty { margin: 0; padding: 4px 2px; font-size: 12px; color: #64748b; }
 
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
@@ -3053,6 +3128,8 @@ tr.row-edit :is(button,a){cursor:pointer}
   }
   .ops-levels-menu__list { grid-template-columns: 1fr 1fr 1fr; }
   .ops-levels-option { min-height: 42px; font-size: 13.5px; }
+  .ops-profile-round-menu { width: 100%; max-height: 88vh; max-height: 88dvh; overflow-y: auto; }
+  .ops-profile-round-menu__profiles { max-height: 30vh; }
   .ops-roster-controls__filters .ops-roster-controls__actions {
     order: 1; flex: 0 0 auto; width: auto; margin-left: 0; gap: 6px;
   }

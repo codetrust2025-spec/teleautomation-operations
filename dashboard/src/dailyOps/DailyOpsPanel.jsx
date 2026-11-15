@@ -8,6 +8,7 @@ import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
 import { appendFilterValues, sameValues } from './filterParams.js'
 import { INTERVIEW_LEVELS, InterviewLevelsFilter } from './InterviewLevelsFilter.jsx'
+import { ProfileRoundFilter } from './ProfileRoundFilter.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
@@ -285,7 +286,7 @@ export function DailyOpsPanel({
         </div>
       </div>
 
-      {/* ── Controls row: Search → Calendar → Levels → Filters → Today → Reset → Refresh ── */}
+      {/* ── Controls row: Search → Calendar → Levels → Profile + Round → Filters → Today → Reset → Refresh ── */}
       <div className="ops-roster-controls" aria-label="Roster controls">
         <div className="ops-roster-controls__filters">
           <label className="ops-roster-search">
@@ -317,6 +318,20 @@ export function DailyOpsPanel({
             value={roundFilter}
             levels={ROUNDS}
             onChange={next => setRoundFilter(prev => (sameValues(prev, next) ? prev : next))}
+          />
+
+          {/* Profile + Round: profiles and rounds in any combination, applied
+              on every tick. It edits the same two selections as the Filters
+              panel (Profile / Technology) and Levels, so they always agree. */}
+          <ProfileRoundFilter
+            profiles={technologyFilter}
+            rounds={roundFilter}
+            profileOptions={technologyOptions}
+            roundOptions={ROUNDS}
+            onChange={({ technology, round }) => {
+              setTechnologyFilter(prev => (sameValues(prev, technology) ? prev : technology))
+              setRoundFilter(prev => (sameValues(prev, round) ? prev : round))
+            }}
           />
 
           <DailyOpsFilterMenu
