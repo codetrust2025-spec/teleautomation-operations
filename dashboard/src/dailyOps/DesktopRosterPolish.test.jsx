@@ -142,10 +142,11 @@ describe('company', () => {
 })
 
 describe('columns', () => {
-  it('has no Actions column: Notes is the last heading', async () => {
+  it('has no Actions column: Status is the last heading', async () => {
     await renderPanel()
     const heads = [...document.querySelectorAll('.ops-interview-table thead th')].map(th => th.textContent)
-    expect(heads.at(-1)).toBe('Notes')
+    expect(heads.at(-1)).toBe('Status')
+    expect(heads).not.toContain('Notes')
     expect(heads).not.toContain('Actions')
   })
 
@@ -153,7 +154,7 @@ describe('columns', () => {
     await renderPanel()
     const cols = [...document.querySelectorAll('.ops-interview-table colgroup col')].map(c => c.className.replace('ops-col ops-col--', ''))
     const heads = [...document.querySelectorAll('.ops-interview-table thead th')].map(th => th.textContent)
-    expect(cols).toEqual(['date', 'time', 'candidate', 'company', 'tech', 'round', 'attendee', 'attendance', 'screenshot', 'notes'])
+    expect(cols).toEqual(['date', 'time', 'candidate', 'company', 'tech', 'round', 'attendee', 'attendance', 'screenshot', 'status'])
     expect(cols).toHaveLength(heads.length)
   })
 
@@ -168,15 +169,15 @@ describe('columns', () => {
     expect(document.querySelector('col.ops-col--attendee')).toBeNull()
   })
 
-  it('sizes them so Notes no longer matches Candidate and the fixed-size cells fit', () => {
+  it('sizes them so Status no longer matches Candidate and the fixed-size cells fit', () => {
     const width = col => new RegExp(`col\\.ops-col--${col}\\{width:([^}]+)\\}`).exec(CSS)?.[1]
     const pct = col => Number.parseFloat(width(col))
-    expect(pct('notes')).toBeLessThan(pct('candidate'))
+    expect(pct('status')).toBeLessThan(pct('candidate'))
     expect(pct('round')).toBeLessThan(pct('time'))
     // The thumbnail is 72px plus padding: a fixed size. There is no Actions column.
     expect(width('screenshot')).toBe('88px')
     expect(width('actions')).toBeUndefined()
-    for (const col of ['date', 'time', 'candidate', 'company', 'tech', 'round', 'attendee', 'attendance', 'notes']) {
+    for (const col of ['date', 'time', 'candidate', 'company', 'tech', 'round', 'attendee', 'attendance', 'status']) {
       expect(width(col), `${col} has no width`).toMatch(/%$/)
     }
   })

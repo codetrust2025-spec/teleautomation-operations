@@ -138,7 +138,7 @@ describe('the Screenshot column', () => {
   })
 })
 
-describe('Notes and Actions', () => {
+describe('Status and Actions', () => {
   it('keeps the Actions cell a table cell, so it stays part of its row', () => {
     const cell = rule('.ops-dash-table--v3 td.ops-dash-attend-cell')
     expect(cell).toMatch(/display:\s*table-cell/)
@@ -146,12 +146,12 @@ describe('Notes and Actions', () => {
     expect(cell).toMatch(/text-align:\s*left/)
   })
 
-  it('keeps Notes narrower than Candidate', () => {
+  it('keeps Status (was Notes) narrower than Candidate', () => {
     // No row menu to sit beside since 12 Oct; Notes took some of the width
     // Attendance gave up when its dropdown became a pill.
     const width = col => new RegExp(`col\\.ops-col--${col}\\{width:([^}]+)\\}`).exec(CSS)?.[1]
-    expect(width('notes')).toBe('11%')
-    expect(Number.parseFloat(width('notes'))).toBeLessThan(Number.parseFloat(width('candidate')))
+    expect(width('status')).toBe('11%')
+    expect(Number.parseFloat(width('status'))).toBeLessThan(Number.parseFloat(width('candidate')))
   })
 
   it('applies none of this to phones, which lay rows out as cards', () => {

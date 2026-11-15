@@ -161,6 +161,13 @@ const PATHS = {
     </>
   ),
   'chevron-down': <path d="m6 9 6 6 6-6" />,
+  // Daily Ops Status badge: the note behind it.
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </>
+  ),
   // Mail Alerts row actions: open an alert, dismiss it.
   eye: (
     <>

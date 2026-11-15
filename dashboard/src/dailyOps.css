@@ -57,8 +57,18 @@
 .ops-interview-row--technical:after{content:"TECH ISSUE";position:absolute;right:6%;top:50%;transform:translateY(-50%) rotate(-10deg);font-size:clamp(12px,1.4vw,18px);font-weight:800;letter-spacing:.08em;color:#f9731629;pointer-events:none;-webkit-user-select:none;user-select:none;z-index:0}
 .ops-interview-row--technical td{position:relative;z-index:1}
 .ops-interview-attendance-cell{min-width:280px}
-.ops-interview-notes-cell{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ops-interview-notes-text{display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+/* Status (was Notes, 15 Nov): the feedback badge alone; its note opens in a
+   card on hover, focus or tap (FeedbackStatusBadge). */
+.ops-interview-status-cell{white-space:nowrap}
+.ops-status-empty{color:#64748b}
+button.ops-status-badge{font-family:inherit;cursor:pointer;margin:0;transition:box-shadow .15s ease,filter .15s ease}
+button.ops-status-badge:hover,button.ops-status-badge:focus-visible,.ops-status-badge--open{filter:brightness(1.12);box-shadow:0 0 0 3px rgba(16,185,129,.18)}
+button.ops-status-badge:focus-visible{outline:2px solid rgba(96,165,250,.7);outline-offset:1px}
+.ops-feedback-pill--note{border-color:rgba(96,165,250,.35);background:rgba(59,130,246,.12);color:#93c5fd}
+.ops-status-note{position:fixed;z-index:1200;display:flex;align-items:flex-start;gap:8px;max-width:min(300px,calc(100vw - 16px));padding:9px 12px;border-radius:10px;border:1px solid rgba(148,163,184,.28);background:#0f172a;color:#e2e8f0;font-size:12.5px;line-height:1.4;box-shadow:0 12px 32px rgba(2,6,23,.55);white-space:normal;overflow-wrap:anywhere;pointer-events:auto}
+.ops-status-note svg{flex:0 0 auto;margin-top:2px;color:#94a3b8}
+.ops-status-note:before{content:"";position:absolute;top:-6px;left:calc(var(--ops-status-note-arrow,14px) - 5px);width:10px;height:10px;background:#0f172a;border-left:1px solid rgba(148,163,184,.28);border-top:1px solid rgba(148,163,184,.28);transform:rotate(45deg)}
+.ops-status-note--above:before{top:auto;bottom:-6px;transform:rotate(225deg)}
 @media (max-width:900px){
 .ops-dash-toolbar{flex-direction:column;align-items:stretch}
 .ops-dash-toolbar__filters{width:100%}
@@ -1908,7 +1918,7 @@ tr.row-edit :is(button,a){cursor:pointer}
 .ops-dash-table--v3 col.ops-col--attendee{width:7%}
 .ops-dash-table--v3 col.ops-col--attendance{width:9%}
 .ops-dash-table--v3 col.ops-col--screenshot{width:88px}
-.ops-dash-table--v3 col.ops-col--notes{width:11%}
+.ops-dash-table--v3 col.ops-col--status{width:11%}
 /* Attendance on the row is read-only (12 Oct): it is changed in the row's Edit
    dialog, alongside the note it needs. One tone per status, as the row colour. */
 .ops-attendance-status{display:inline-flex;align-items:center;min-height:24px;padding:2px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.55);color:#e2e8f0;font-size:11.5px;font-weight:600;line-height:1.2;white-space:nowrap}
@@ -1930,7 +1940,7 @@ tr.row-edit :is(button,a){cursor:pointer}
     display: table-cell; width: auto; text-align: left; vertical-align: middle;
     padding-left: 2px; padding-right: 4px;
   }
-  .ops-dash-table--v3 td.ops-interview-notes-cell { padding-right: 4px; }
+  .ops-dash-table--v3 td.ops-interview-status-cell { padding-right: 4px; }
   /* A heading is one line: "ROUND" broke into "ROUN / D" at 1440px. */
   .ops-dash-table--v3 thead th { white-space: nowrap; }
   /* One screenshot box for every row: a thumbnail, a file that will not
@@ -2926,14 +2936,6 @@ tr.row-edit :is(button,a){cursor:pointer}
     overflow-wrap: anywhere;
   }
 
-  .ops-interview-notes-text {
-    /* 150px of a 440px screen, ellipsised, hid most of every remark. */
-    max-width: none;
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-  }
-
   /* A card has the height to wrap a name; a table column has not. Measured at
      440px, "Keerthi Nannapaneni" wanted 129px of a 122px cell and lost its
      last letters -- to an ellipsis inherited from the desktop table. */
@@ -2996,20 +2998,18 @@ tr.row-edit :is(button,a){cursor:pointer}
     height: 40px;
   }
 
-  .ops-interview-notes-cell {
-    align-items: baseline;
+  .ops-interview-status-cell {
+    align-items: center;
     gap: 6px;
-    flex-wrap: wrap;
-    line-height: 1.35;
   }
 
-  .ops-interview-notes-cell .ops-feedback-pill {
+  /* A finger-sized target; the pill keeps its look. */
+  .ops-interview-status-cell button.ops-status-badge {
     flex: 0 0 auto;
-  }
-
-  .ops-interview-notes-text {
-    flex: 1 1 140px;
-    font-size: 12.5px;
+    height: 28px;
+    line-height: 26px;
+    padding: 0 12px;
+    font-size: 12px;
   }
 
   /* The menu keeps its 44px target; the row around it does not need to be
@@ -3163,18 +3163,18 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Attendee"] { grid-column: span 2; overflow-wrap: anywhere; }
   /* These values name themselves -- a date, a time range, a person and their
      number, an attendance choice, a thumbnail, a menu -- so their captions go.
-     Technology, round, attendee and notes keep theirs. */
+     Technology, round, attendee and status keep theirs. */
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Date"]::before,
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Time"]::before,
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Candidate"]::before,
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Status"]::before,
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Attendance"]::before,
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Screenshot"]::before,
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Actions"]::before { display: none; }
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Notes"] { order: 1; flex-direction: column; max-width: none; width: auto; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Status"] { order: 1; flex-direction: row; align-items: center; max-width: none; width: auto; }
   /* Nothing recorded yet takes no space: the cell holds only a dash then. */
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Notes"]:not(:has(.ops-feedback-pill, .ops-interview-notes-text)) { display: none; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Status"]:not(:has(.ops-status-badge)) { display: none; }
   /* The last row: status on the shared columns, screenshot and menu fixed. */
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Status"] { order: 2; grid-column: span 4; justify-content: center; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Attendance"] { order: 2; grid-column: span 4; justify-content: center; }
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Screenshot"] {
     order: 2; grid-column: span 1; padding: 4px; justify-content: center; align-items: center;
   }
@@ -3185,8 +3185,7 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Candidate"] {
     flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 6px;
   }
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Status"] .ops-attendance-select { min-height: 40px; }
-  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-notes-cell .ops-interview-notes-text { flex: 0 1 auto; }
+  .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Attendance"] .ops-attendance-select { min-height: 40px; }
 
   /* 4. chips */
   .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source,

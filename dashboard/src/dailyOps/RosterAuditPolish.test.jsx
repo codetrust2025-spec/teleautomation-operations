@@ -141,9 +141,9 @@ describe('the stylesheet', () => {
     expect(CSS.match(/min-width: 940px/g)).toHaveLength(1)
   })
 
-  it('gives Attendance, which holds only a pill, less room than Candidate and Notes', () => {
+  it('gives Attendance, which holds only a pill, less room than Candidate and Status', () => {
     const width = col => Number.parseFloat(new RegExp(`col\\.ops-col--${col}\\{width:([^}]+)\\}`).exec(CSS)?.[1])
     expect(width('attendance')).toBeLessThan(width('candidate'))
-    expect(width('attendance')).toBeLessThan(width('notes'))
+    expect(width('attendance')).toBeLessThan(width('status'))
   })
 })

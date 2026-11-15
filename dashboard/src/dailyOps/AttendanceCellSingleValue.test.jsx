@@ -66,7 +66,7 @@ async function renderPanel() {
 }
 
 function attendanceCell(name) {
-  return screen.getByText(name).closest('tr').querySelector('td[data-label="Status"]')
+  return screen.getByText(name).closest('tr').querySelector('td[data-label="Attendance"]')
 }
 
 describe('the Attendance column', () => {

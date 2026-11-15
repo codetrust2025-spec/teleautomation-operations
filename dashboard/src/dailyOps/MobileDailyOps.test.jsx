@@ -142,7 +142,7 @@ describe('the status reads once', () => {
     // The label alone says the status (12 Oct: it is changed in Edit, not on
     // the row). The pill that once sat under the old dropdown is not rendered;
     // the phone rule that hid it stays as a guard.
-    const cell = screen.getByText('Asha Rao').closest('tr').querySelector('td[data-label="Status"]')
+    const cell = screen.getByText('Asha Rao').closest('tr').querySelector('td[data-label="Attendance"]')
     expect(cell.textContent.trim()).toBe('Pending')
     expect(cell.querySelector('select')).toBeNull()
     expect(document.querySelector('.ops-interview-attendance-form .ops-status-pill')).toBeNull()
@@ -156,15 +156,17 @@ describe('the status reads once', () => {
 })
 
 describe('the card labels say what the control does', () => {
-  it('calls the status column Status on a card and Attendance in the table head', async () => {
+  it('labels each card cell as its column head does: Attendance, and Status for the feedback', async () => {
     await renderPanel()
     await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 
-    // The card label is the cell's data-label; the desktop table head is
-    // untouched, so a laptop still reads exactly what it read before.
-    expect(cell('Status')).not.toBeNull()
-    expect(cell('Attendance')).toBeNull()
+    // 15 Nov: Notes became Status, so the attendance cell (whose card caption
+    // is hidden anyway) is labelled Attendance, as its column head says.
+    expect(cell('Attendance').querySelector('.ops-attendance-status')).not.toBeNull()
+    expect(cell('Status').classList.contains('ops-interview-status-cell')).toBe(true)
+    expect(cell('Notes')).toBeNull()
     expect(screen.getByRole('columnheader', { name: 'Attendance' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
   })
 
   it('names a missing round the way the booking page does', async () => {
@@ -313,14 +315,19 @@ describe('the card is not a page in itself', () => {
     expect(menu.some(r => /min-height\s*:\s*44px/.test(r.body))).toBe(true)
   })
 
-  it('leaves the note readable rather than shortening it', async () => {
+  it('shows the whole note on a tap of the badge, never shortened', async () => {
     const remark = 'Panel asked to move it to the afternoon slot.'
     mockFetch([row({ interview_attendance_remark: remark })])
     await renderPanel()
 
-    expect(await screen.findByText(remark)).toBeInTheDocument()
-    const notes = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-interview-notes-text'))
-    expect(notes.some(r => /max-width\s*:\s*none/.test(r.body)), 'the note must not be capped').toBe(true)
+    const badge = await screen.findByRole('button', { name: 'Status: Note. Show notes' })
+    expect(screen.queryByText(remark)).toBeNull()
+    fireEvent.click(badge)
+    expect(screen.getByRole('tooltip').textContent).toBe(remark)
+    // The card wraps the text; it is never ellipsised.
+    const card = ALL.filter(r => r.selector === '.ops-status-note').at(-1)
+    expect(card.body).toMatch(/white-space:normal/)
+    expect(card.body).not.toMatch(/text-overflow/)
   })
 })
 
@@ -381,10 +388,8 @@ describe('on an iPhone (390-430px)', () => {
     expect([span('Technology'), span('Round'), span('Attendee')]).toEqual(['2', '2', '2'])
   })
 
-  it('gives the notes the full width the desktop cap would take away', () => {
-    // A desktop rule caps the notes cell at 160px; on a card that left a long
-    // remark in a narrow column beside empty space.
-    const notes = cellRule('Notes')
+  it('gives the status its own full-width line', () => {
+    const notes = cellRule('Status')
     expect(notes.body).toMatch(/max-width\s*:\s*none/)
     expect(notes.body).not.toMatch(/grid-column\s*:\s*span/)
   })
@@ -392,22 +397,22 @@ describe('on an iPhone (390-430px)', () => {
   it('puts the status, the screenshot and the actions menu on one last row', () => {
     const shot = cellRule('Screenshot')
     const actions = cellRule('Actions')
-    const status = cellRule('Status')
-    expect([span('Status'), span('Screenshot'), span('Actions')]).toEqual(['4', '1', '1'])
+    const status = cellRule('Attendance')
+    expect([span('Attendance'), span('Screenshot'), span('Actions')]).toEqual(['4', '1', '1'])
     const order = rule => /(^|[;\s])order\s*:\s*(\d)/.exec(rule.body)?.[2]
     expect(order(shot)).toBe(order(actions))
     expect(order(status)).toBe(order(shot))
-    expect(Number(order(shot))).toBeGreaterThan(Number(order(cellRule('Notes'))))
+    expect(Number(order(shot))).toBeGreaterThan(Number(order(cellRule('Status'))))
     // The menu is its own label; "Actions" above a ⋮ only costs a line.
     const label = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('td[data-label="Actions"]::before')).at(-1)
     expect(label.body).toMatch(/display\s*:\s*none/)
   })
 
-  it('gives an empty note no space at all', () => {
+  it('gives an empty status no space at all', () => {
     // A row with nothing recorded holds only a dash; it took 39px of every
-    // such card. A note or a feedback pill still shows in full.
+    // such card. A badge (feedback, or Note) still shows.
     const empty = ALL.filter(r => phoneOnly(r.media) &&
-      r.selector.includes('td[data-label="Notes"]:not(:has(.ops-feedback-pill, .ops-interview-notes-text))')).at(-1)
+      r.selector.includes('td[data-label="Status"]:not(:has(.ops-status-badge))')).at(-1)
     expect(empty, 'nothing hides an empty note').toBeTruthy()
     expect(empty.body).toMatch(/display\s*:\s*none/)
   })
@@ -415,10 +420,10 @@ describe('on an iPhone (390-430px)', () => {
   it('drops only the captions whose values name themselves', () => {
     const hides = label => ALL.some(r => phoneOnly(r.media) && /display\s*:\s*none/.test(r.body) &&
       r.selector.split(',').some(s => s.trim() === `${CARD} > td[data-label="${label}"]::before`))
-    for (const label of ['Date', 'Time', 'Candidate', 'Status', 'Screenshot', 'Actions']) {
+    for (const label of ['Date', 'Time', 'Candidate', 'Attendance', 'Screenshot', 'Actions']) {
       expect(hides(label), `${label} keeps a caption it does not need`).toBe(true)
     }
-    for (const label of ['Technology', 'Round', 'Attendee', 'Notes']) {
+    for (const label of ['Technology', 'Round', 'Attendee', 'Status']) {
       expect(hides(label), `${label} lost the caption that says what its value is`).toBe(false)
     }
   })

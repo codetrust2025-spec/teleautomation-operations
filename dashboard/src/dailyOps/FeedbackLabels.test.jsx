@@ -1,5 +1,5 @@
 /**
- * Daily Ops Notes column: interview feedback says what was recorded.
+ * Daily Ops Status column (Notes until 15 Nov): the feedback badge; its note opens from it.
  *
  * It printed "Positive" for the legacy "positive" and "Negative" for every
  * other value, so rows the operator marked Good (two on 6 Oct, notes "went
@@ -11,7 +11,7 @@ import React from 'react'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../context/AuthContext.jsx', () => ({
@@ -91,33 +91,83 @@ describe('feedbackMeta', () => {
   })
 })
 
-describe('the Notes column', () => {
+describe('the Status column (was Notes)', () => {
   async function renderPanel() {
     render(<DailyOpsPanel />)
     await waitFor(() => expect(screen.getByText('Person 0')).toBeInTheDocument())
     await act(async () => { await Promise.resolve() })
   }
-  const notesOf = name => screen.getByText(name).closest('tr').querySelector('td[data-label="Notes"]')
+  const statusOf = name => screen.getByText(name).closest('tr').querySelector('td[data-label="Status"]')
 
-  it('shows each row the feedback that was stored, with the note beside it', async () => {
+  it('is headed Status, and Notes is gone', async () => {
+    await renderPanel()
+    const heads = [...document.querySelectorAll('.ops-interview-table thead th')].map(th => th.textContent)
+    expect(heads).toContain('Status')
+    expect(heads).not.toContain('Notes')
+    expect(document.querySelector('td[data-label="Notes"]')).toBeNull()
+  })
+
+  it('shows each row only the feedback badge that was stored; the note stays out of the row', async () => {
     await renderPanel()
     const expected = ['Excellent', 'Good', 'Positive', 'Average', 'Needs Improvement', 'Negative']
     FEEDBACK.slice(0, 6).forEach((value, i) => {
-      const pill = notesOf(`Person ${i}`).querySelector('.ops-feedback-pill')
+      const cell = statusOf(`Person ${i}`)
+      const pill = cell.querySelector('.ops-feedback-pill')
       expect(pill.textContent).toBe(expected[i])
       expect(pill.getAttribute('data-feedback')).toBe(value)
-      expect(notesOf(`Person ${i}`).querySelector('.ops-interview-notes-text').textContent).toBe('went well')
+      expect(cell.textContent).toBe(expected[i])
     })
-    expect(notesOf('Person 6').querySelector('.ops-feedback-pill')).toBeNull()
-    expect(notesOf('Person 6').textContent).toBe('—')
+    expect(screen.queryByText('went well')).toBeNull()
+    expect(statusOf('Person 6').querySelector('.ops-feedback-pill')).toBeNull()
+    expect(statusOf('Person 6').textContent).toBe('—')
+  })
+
+  it('opens the full note on hover and closes it when the pointer leaves', async () => {
+    await renderPanel()
+    const badge = within(statusOf('Person 1')).getByRole('button', { name: 'Status: Good. Show notes' })
+    fireEvent.mouseEnter(badge)
+    const card = screen.getByRole('tooltip')
+    expect(card.textContent).toBe('went well')
+    expect(badge.getAttribute('aria-describedby')).toBe(card.id)
+    // Portalled out of the table, so its scroll box cannot clip it.
+    expect(card.parentElement).toBe(document.body)
+    fireEvent.mouseLeave(badge)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('opens on a tap and stays until tapped again, tapped elsewhere or Escape, and never opens Edit', async () => {
+    await renderPanel()
+    const badge = within(statusOf('Person 0')).getByRole('button', { name: 'Status: Excellent. Show notes' })
+    fireEvent.focus(badge)
+    fireEvent.click(badge)
+    expect(screen.getByRole('tooltip').textContent).toBe('went well')
+    expect(screen.queryByText('Edit interview slot')).toBeNull()
+    fireEvent.click(badge)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+
+    fireEvent.click(badge)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+
+    fireEvent.click(badge)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    expect(screen.queryByText('Edit interview slot')).toBeNull()
+  })
+
+  it('still opens Edit from the rest of the row', async () => {
+    await renderPanel()
+    fireEvent.click(screen.getByText('Person 2').closest('tr').querySelector('td[data-label="Technology"]'))
+    expect(await screen.findByText('Edit interview slot')).toBeTruthy()
   })
 
   it('says Negative on the negative row only', async () => {
     await renderPanel()
     const negatives = [...document.querySelectorAll('.ops-feedback-pill')].filter(p => p.textContent === 'Negative')
     expect(negatives.map(p => p.getAttribute('data-feedback'))).toEqual(['negative'])
-    expect(notesOf('Person 1').querySelector('.ops-feedback-pill').className).toContain('ops-feedback-pill--positive')
-    expect(notesOf('Person 5').querySelector('.ops-feedback-pill').className).toContain('ops-feedback-pill--negative')
+    expect(statusOf('Person 1').querySelector('.ops-feedback-pill').className).toContain('ops-feedback-pill--positive')
+    expect(statusOf('Person 5').querySelector('.ops-feedback-pill').className).toContain('ops-feedback-pill--negative')
   })
 
   it('styles each tone, red for negative only', () => {

@@ -99,7 +99,7 @@ describe('a row opens its Edit dialog', () => {
   it('shows attendance read-only on the row; it is changed in Edit', async () => {
     render(<InterviewRoster />)
     await screen.findByText('Row A Candidate')
-    const cell = rowEl('Row A Candidate').querySelector('td[data-label="Status"]')
+    const cell = rowEl('Row A Candidate').querySelector('td[data-label="Attendance"]')
     expect(cell.querySelector('select')).toBeNull()
     fireEvent.click(cell.querySelector('.ops-attendance-status'))
     await screen.findByText('Edit interview slot')

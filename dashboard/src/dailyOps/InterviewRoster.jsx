@@ -16,6 +16,7 @@ import { CandidateSelectedBadge } from '../candidates/SelectedBadge.jsx'
 import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
 import { rowCompanyName as companyOf } from './companyName.js'
 import { appendFilterValues, describeFilterValues } from './filterParams.js'
+import { FeedbackStatusBadge } from './FeedbackStatusBadge.jsx'
 
 /** A filter as a list whose identity only changes with its values, so it can
  *  sit in a hook's dependencies. A single string is one value. */
@@ -38,7 +39,7 @@ const FEEDBACK_OPTIONS = [
   { value: 'negative', label: 'Negative' },
 ]
 
-// What the Notes column shows for a stored feedback value: its own label and
+// What the Status column shows for a stored feedback value: its own label and
 // a tone. The column used to print "Positive" for the legacy "positive" and
 // "Negative" for everything else, so a row the operator marked Good or
 // Excellent read "Negative". Every value now names itself; only "negative"
@@ -719,7 +720,7 @@ export function InterviewRoster({
           <div className="ta-table-responsive__scroll">
             <table className={`ops-interview-table${isDashboard ? ' ops-dash-table ops-dash-table--v3' : ''}`}>
           {/* The table is fixed-layout, so without these every column got an
-              equal share: Notes as wide as Candidate, Actions as wide as Time.
+              equal share: Status as wide as Candidate, Actions as wide as Time.
               One <col> per <th>, in the same order and under the same
               conditions, so the two cannot drift apart. */}
           <colgroup>
@@ -732,7 +733,7 @@ export function InterviewRoster({
             {showAttendeeColumn && <col className="ops-col ops-col--attendee" />}
             <col className="ops-col ops-col--attendance" />
             <col className="ops-col ops-col--screenshot" />
-            <col className="ops-col ops-col--notes" />
+            <col className="ops-col ops-col--status" />
           </colgroup>
           <thead>
             <tr>
@@ -745,7 +746,7 @@ export function InterviewRoster({
               {showAttendeeColumn && <th>Attendee</th>}
               <th>Attendance</th>
               <th>Screenshot</th>
-              <th>Notes</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -835,7 +836,7 @@ export function InterviewRoster({
                       {showAttendeeColumn && (
                         <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
                       )}
-                      <td data-label="Status" className="ops-interview-attendance-cell">
+                      <td data-label="Attendance" className="ops-interview-attendance-cell">
                         {/* Read-only here (12 Oct): the outcome is changed in the
                             row's Edit dialog, with the note it needs. */}
                         <span className={`ops-attendance-status ops-attendance-status--${statusTone(status)}`} aria-label={`Attendance: ${statusLabel(status)}`}>{statusLabel(status)}</span>
@@ -845,22 +846,13 @@ export function InterviewRoster({
                           ? <SlotShotThumb row={row} onOpen={() => setScreenshotRow(row)} />
                           : <span className="ops-slot-shot-empty" title="No booking screenshot" aria-label="No booking screenshot">—</span>}
                       </td>
-                      <td data-label="Notes" className="ops-interview-notes-cell">
-                        {(() => {
-                          const feedback = feedbackMeta(row.interview_feedback)
-                          return feedback && (
-                            <span
-                              className={`ops-feedback-pill ops-feedback-pill--${feedback.tone}`}
-                              data-feedback={feedback.value}
-                              title={`Interview feedback: ${feedback.label}`}
-                            >
-                              {feedback.label}
-                            </span>
-                          )
-                        })()}
-                        {row.interview_attendance_remark
-                          ? <span className="ops-interview-notes-text" title={row.interview_attendance_remark}>{row.interview_attendance_remark}</span>
-                          : (row.interview_feedback ? null : '—')}
+                      {/* Status (was Notes, 15 Nov mockup): the feedback badge
+                          alone; the full note opens on hover, focus or tap. */}
+                      <td data-label="Status" className="ops-interview-status-cell">
+                        <FeedbackStatusBadge
+                          feedback={feedbackMeta(row.interview_feedback)}
+                          note={row.interview_attendance_remark}
+                        />
                       </td>
                     </tr>
                   )
