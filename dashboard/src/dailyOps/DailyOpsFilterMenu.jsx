@@ -7,8 +7,9 @@ import { DEFAULT_ROSTER_SORT, ROSTER_SORT_OPTIONS, rosterSortLabel } from './ros
  *
  * - Trigger: [icon] Filters (n) [summary] [chevron]; n counts every chosen value.
  * - Panel: a floating panel (a bottom sheet on phones) with one checkbox list
- *   per field. Candidate and Profile lists are searchable.
- * - Matching: values inside one field are alternatives (Level HR OR L2 OR L3);
+ *   per field (Candidate, searchable, and Attendee) and Sort by. Profiles and
+ *   rounds are filtered by the Profile + Round control beside it (15 Nov).
+ * - Matching: values inside one field are alternatives (Bhavana OR Nikhila);
  *   different fields must all match (that level AND that attendee).
  * - Nothing changes until Apply. "Clear all" empties the panel's choices
  *   (still needs Apply); Reset clears and applies straight away.
@@ -28,7 +29,8 @@ export function summariseValues(values, max = 2) {
   return `${list.slice(0, max).join(', ')} +${list.length - max}`
 }
 
-const FIELD_KEYS = ['candidate', 'attendee', 'round', 'technology']
+// Profile and round are filtered by the Profile + Round control, not here.
+const FIELD_KEYS = ['candidate', 'attendee']
 
 function countValues(state) {
   return FIELD_KEYS.reduce((sum, key) => sum + state[key].length, 0)
@@ -146,15 +148,11 @@ export function DailyOpsFilterMenu({
   // Applied values: a list per field (a single string is still accepted)
   candidateFilter = [],
   attendeeFilter = [],
-  roundFilter = [],
-  technologyFilter = [],
   sortOrder = DEFAULT_ROSTER_SORT,
   // Options
   candidateOptions = [],
   attendeeOptions = ['Nikhila', 'Bhavana', 'Tool'],
-  roundOptions = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final'],
-  technologyOptions = [],
-  // Called with { candidate, attendee, round, technology } as lists, and sort
+  // Called with { candidate, attendee } as lists, and sort
   onApply,
 }) {
   const [open, setOpen] = useState(false)
@@ -167,13 +165,11 @@ export function DailyOpsFilterMenu({
   const appliedKey = JSON.stringify([
     toFilterList(candidateFilter),
     toFilterList(attendeeFilter),
-    toFilterList(roundFilter),
-    toFilterList(technologyFilter),
     sortOrder || DEFAULT_ROSTER_SORT,
   ])
   const applied = useMemo(() => {
-    const [candidate, attendee, round, technology, sort] = JSON.parse(appliedKey)
-    return { candidate, attendee, round, technology, sort }
+    const [candidate, attendee, sort] = JSON.parse(appliedKey)
+    return { candidate, attendee, sort }
   }, [appliedKey])
 
   const [draft, setDraft] = useState(applied)
@@ -190,15 +186,11 @@ export function DailyOpsFilterMenu({
   const summaryParts = [
     applied.candidate.length && summariseValues(applied.candidate, 1),
     applied.attendee.length && summariseValues(applied.attendee),
-    applied.round.length && summariseValues(applied.round, 3),
-    applied.technology.length && summariseValues(applied.technology, 1),
   ].filter(Boolean)
   const summary = summaryParts.join(' · ')
   const fullSummary = [
     applied.candidate.length && `Candidate: ${applied.candidate.join(', ')}`,
     applied.attendee.length && `Attendee: ${applied.attendee.join(', ')}`,
-    applied.round.length && `Level: ${applied.round.join(', ')}`,
-    applied.technology.length && `Profile: ${applied.technology.join(', ')}`,
     applied.sort !== DEFAULT_ROSTER_SORT && `Sort: ${rosterSortLabel(applied.sort)}`,
   ].filter(Boolean).join('\n')
 
@@ -271,8 +263,6 @@ export function DailyOpsFilterMenu({
     onApply?.({
       candidate: state.candidate,
       attendee: state.attendee,
-      round: state.round,
-      technology: state.technology,
       sort: state.sort,
     })
     setOpen(false)
@@ -280,11 +270,11 @@ export function DailyOpsFilterMenu({
   }
 
   function handleClearAll() {
-    setDraft({ candidate: [], attendee: [], round: [], technology: [], sort: DEFAULT_ROSTER_SORT })
+    setDraft({ candidate: [], attendee: [], sort: DEFAULT_ROSTER_SORT })
   }
 
   function handleReset() {
-    emit({ candidate: [], attendee: [], round: [], technology: [], sort: DEFAULT_ROSTER_SORT })
+    emit({ candidate: [], attendee: [], sort: DEFAULT_ROSTER_SORT })
   }
 
   function handleApply(e) {
@@ -383,28 +373,6 @@ export function DailyOpsFilterMenu({
                   selected={draft.attendee}
                   onChange={setDraftField('attendee')}
                 />
-                <MultiSelectField
-                  id={`${panelId}-level`}
-                  label="Level"
-                  groupLabel="Candidate interview level filter"
-                  anyLabel="All levels"
-                  options={simple(roundOptions)}
-                  selected={draft.round}
-                  onChange={setDraftField('round')}
-                />
-                <MultiSelectField
-                  id={`${panelId}-technology`}
-                  label="Profile / Technology"
-                  groupLabel="Technology filter"
-                  anyLabel="All profiles"
-                  options={simple(technologyOptions)}
-                  selected={draft.technology}
-                  onChange={setDraftField('technology')}
-                  searchable={technologyOptions.length > 6}
-                  searchPlaceholder="Search profiles..."
-                  layout="list"
-                />
-
                 <div className="ops-filter-field">
                   <label htmlFor={`${panelId}-sort`} className="ops-filter-field__label">
                     Sort by

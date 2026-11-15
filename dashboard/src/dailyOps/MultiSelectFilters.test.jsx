@@ -1,10 +1,11 @@
 /**
  * Daily Ops Filters take several values per field (Nov 2026).
  *
- * - Level HR + L2 + L3 goes to the server as `round=HR&round=L2&round=L3`,
- *   on the table's request and on the counters' request alike, so the two
- *   describe the same rows. The server ORs values within a field and ANDs the
- *   fields (tests/test_daily_ops_multi_select_filters.py).
+ * - Rounds HR + L2 + L3 (ticked in Profile + Round, the one place for rounds
+ *   and profiles since 15 Nov) go to the server as `round=HR&round=L2&round=L3`,
+ *   on the table's request and on the counters' request alike. The server ORs
+ *   values within a field and ANDs the fields
+ *   (tests/test_daily_ops_multi_select_filters.py).
  * - The Filters button shows the count and a summary of what is applied.
  * - Reset's badge counts fields in use, and Reset clears every value.
  * - With two attendees chosen the Attendee column stays: it tells their rows apart.
@@ -21,10 +22,9 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
-import { applyFilters, checkedFilterValues, openFilters, toggleFilterValue } from './filterMenuTestHelpers.js'
+import { applyFilters, closeMenus, openFilters, tickProfileRound, tickedProfileRound, toggleFilterValue } from './filterMenuTestHelpers.js'
 
 const TODAY = '2026-10-06'
-const LEVEL = 'Candidate interview level filter'
 let calls
 
 function jsonResponse(body) {
@@ -105,34 +105,35 @@ afterEach(() => {
 describe('several levels at once', () => {
   it('sends every ticked level to the table and the counters, and shows those rows', async () => {
     await renderPanel()
-    openFilters()
-    toggleFilterValue(LEVEL, 'HR')
-    toggleFilterValue(LEVEL, 'L2')
-    toggleFilterValue(LEVEL, 'L3')
-    applyFilters()
+    tickProfileRound('Interview rounds', 'HR')
+    tickProfileRound('Interview rounds', 'L2')
+    tickProfileRound('Interview rounds', 'L3')
 
-    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('round')).toEqual(['HR', 'L2', 'L3']))
-    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('round')).toEqual(['HR', 'L2', 'L3']))
+    // Applied as ticked, in interview order.
+    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('round')).toEqual(['L2', 'L3', 'HR']))
+    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('round')).toEqual(['L2', 'L3', 'HR']))
     await waitFor(() => expect(inTable('Dev Prasad')).toBe(false))
     expect(inTable('Asha Varma')).toBe(true)
     expect(inTable('Bala Kumar')).toBe(true)
     expect(inTable('Chitra Rao')).toBe(true)
 
-    const trigger = screen.getByRole('button', { name: 'Filters (3 active)' })
-    expect(trigger.querySelector('.ops-filter-trigger__summary')).toHaveTextContent('HR, L2, L3')
+    expect(screen.getByRole('button', { name: 'Profile and round (3 selected)' })).toBeInTheDocument()
+    // The Filters button does not count rounds any more.
+    expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument()
   })
 
   it('combines fields with AND: levels HR + L3 and attendee Bhavana', async () => {
     await renderPanel()
+    tickProfileRound('Interview rounds', 'HR')
+    tickProfileRound('Interview rounds', 'L2')
+    closeMenus()
     openFilters()
-    toggleFilterValue(LEVEL, 'HR')
-    toggleFilterValue(LEVEL, 'L2')
     toggleFilterValue('Attendee filter', 'Bhavana')
     applyFilters()
 
     await waitFor(() => {
       const last = rosterCalls().at(-1).searchParams
-      expect(last.getAll('round')).toEqual(['HR', 'L2'])
+      expect(last.getAll('round')).toEqual(['L2', 'HR'])
       expect(last.getAll('attendee')).toEqual(['Bhavana'])
     })
     await waitFor(() => expect(inTable('Bala Kumar')).toBe(false))
@@ -141,11 +142,9 @@ describe('several levels at once', () => {
 
   it('says which values narrow an empty table, joined with "or"', async () => {
     await renderPanel()
-    openFilters()
-    toggleFilterValue(LEVEL, 'Final')
-    toggleFilterValue(LEVEL, 'Screening')
-    applyFilters()
-    await waitFor(() => expect(screen.getByText(/level Final or Screening/)).toBeInTheDocument())
+    tickProfileRound('Interview rounds', 'Final')
+    tickProfileRound('Interview rounds', 'Screening')
+    await waitFor(() => expect(screen.getByText(/level Screening or Final/)).toBeInTheDocument())
   })
 })
 
@@ -184,11 +183,10 @@ describe('attendees and candidates', () => {
 describe('Reset', () => {
   it('counts fields in use and clears every value', async () => {
     await renderPanel()
-    openFilters()
-    toggleFilterValue(LEVEL, 'HR')
-    toggleFilterValue(LEVEL, 'L2')
-    toggleFilterValue('Technology filter', 'Java')
-    applyFilters()
+    tickProfileRound('Interview rounds', 'HR')
+    tickProfileRound('Interview rounds', 'L2')
+    tickProfileRound('Profiles', 'Java')
+    closeMenus()
     // Two fields, three values: Reset puts back two things.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reset all filters (2 set)' })).toBeInTheDocument())
 
@@ -198,8 +196,8 @@ describe('Reset', () => {
       expect(last.getAll('round')).toEqual([])
       expect(last.getAll('technology')).toEqual([])
     })
-    openFilters()
-    expect(checkedFilterValues(LEVEL)).toEqual([])
-    expect(checkedFilterValues('Technology filter')).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Profile and round' }))
+    expect(tickedProfileRound('Profiles')).toEqual([])
+    expect(tickedProfileRound('Interview rounds')).toEqual([])
   })
 })

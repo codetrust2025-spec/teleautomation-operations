@@ -1,7 +1,9 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon.jsx'
 import { toFilterList } from './DailyOpsFilterMenu.jsx'
-import { INTERVIEW_LEVELS } from './InterviewLevelsFilter.jsx'
+
+/** Every round the backend accepts (VALID_INTERVIEW_ROUNDS), in interview order. */
+export const INTERVIEW_LEVELS = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
 
 /** The three ways the menu filters, in the order the switch shows them. */
 export const PROFILE_ROUND_MODES = [
@@ -29,7 +31,7 @@ function saveMode(mode) {
 }
 
 /**
- * Profile + Round: a filter of its own beside Levels (Nov 2026).
+ * Profile + Round: the one Daily Ops filter for profiles and rounds (Nov 2026).
  *
  * Two checkbox lists in one menu -- profiles (technologies) and interview
  * rounds -- ticked in any combination. Each tick applies at once; there is no
@@ -37,9 +39,10 @@ function saveMode(mode) {
  * the two lists must both match (Java or Python, AND L2 or HR), like every
  * other Daily Ops filter.
  *
- * It holds no selection of its own: profiles are the Filters panel's Profile /
- * Technology field and rounds are the Levels selection, so all three controls
- * always agree.
+ * The page holds the two selections (technologyFilter, roundFilter); this is
+ * the only control that edits them, apart from the page Reset. The separate
+ * Levels button and the Filters panel's Level and Profile fields were
+ * duplicates and were removed (15 Nov).
  */
 export function ProfileRoundFilter({
   profiles = [],
@@ -62,8 +65,8 @@ export function ProfileRoundFilter({
 
   // Profile-wise shows only profiles, Round-wise only rounds, Both shows both.
   // A list that is hidden never filters: choosing a one-list mode clears the
-  // other list at once, and if Levels or the Filters panel ticks the hidden
-  // list later, the menu shows Both rather than hide an active filter.
+  // other list at once, and should the hidden list ever hold values anyway
+  // (a remembered mode that no longer fits), the menu shows Both.
   const [mode, setMode] = useState(readMode)
   const effectiveMode =
     (mode === 'profile' && chosenRounds.length) || (mode === 'round' && chosenProfiles.length)

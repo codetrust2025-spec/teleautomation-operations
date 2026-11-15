@@ -7,8 +7,7 @@ import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } 
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
 import { appendFilterValues, sameValues } from './filterParams.js'
-import { INTERVIEW_LEVELS, InterviewLevelsFilter } from './InterviewLevelsFilter.jsx'
-import { ProfileRoundFilter } from './ProfileRoundFilter.jsx'
+import { INTERVIEW_LEVELS, ProfileRoundFilter } from './ProfileRoundFilter.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
@@ -286,7 +285,7 @@ export function DailyOpsPanel({
         </div>
       </div>
 
-      {/* ── Controls row: Search → Calendar → Levels → Profile + Round → Filters → Today → Reset → Refresh ── */}
+      {/* ── Controls row: Search → Calendar → Profile + Round → Filters → Today → Reset → Refresh ── */}
       <div className="ops-roster-controls" aria-label="Roster controls">
         <div className="ops-roster-controls__filters">
           <label className="ops-roster-search">
@@ -311,18 +310,10 @@ export function DailyOpsPanel({
             />
           </div>
 
-          {/* Interview Levels: its own control, applied on every tick (no
-              Apply). Placed before Filters so Today stays beside Filters.
-              One selection with the panel's Level field. */}
-          <InterviewLevelsFilter
-            value={roundFilter}
-            levels={ROUNDS}
-            onChange={next => setRoundFilter(prev => (sameValues(prev, next) ? prev : next))}
-          />
-
-          {/* Profile + Round: profiles and rounds in any combination, applied
-              on every tick. It edits the same two selections as the Filters
-              panel (Profile / Technology) and Levels, so they always agree. */}
+          {/* Profile + Round: the one place profiles and interview rounds are
+              filtered (Profile-wise, Round-wise or Both), applied on every
+              tick. The separate Levels button and the Filters panel's Level
+              and Profile fields were duplicates of it and are gone. */}
           <ProfileRoundFilter
             profiles={technologyFilter}
             rounds={roundFilter}
@@ -337,14 +328,10 @@ export function DailyOpsPanel({
           <DailyOpsFilterMenu
             candidateFilter={candidateFilter}
             attendeeFilter={attendeeFilter}
-            roundFilter={roundFilter}
-            technologyFilter={technologyFilter}
             sortOrder={sortOrder}
             candidateOptions={candidateOptions}
             attendeeOptions={ATTENDEES}
-            roundOptions={ROUNDS}
-            technologyOptions={technologyOptions}
-            onApply={({ candidate, attendee, round, technology, sort }) => {
+            onApply={({ candidate, attendee, sort }) => {
               // A field whose values did not change keeps its list, so Apply
               // with only a new sort order does not reload from the server.
               const keep = next => prev => (sameValues(prev, next) ? prev : next)
@@ -352,8 +339,6 @@ export function DailyOpsPanel({
               setCandidateFilter(keep(candidates))
               if (candidates.length) setCandidateSearch('')
               setAttendeeFilter(keep(toFilterList(attendee)))
-              setRoundFilter(keep(toFilterList(round)))
-              setTechnologyFilter(keep(toFilterList(technology)))
               if (sort) changeSortOrder(sort)
             }}
           />

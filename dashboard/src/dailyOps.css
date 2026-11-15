@@ -2614,7 +2614,7 @@ tr.row-edit :is(button,a){cursor:pointer}
 }
 /* 1101-1240px: one row, little spare width. A long summary took it from the
    search box; the tooltip still names every choice. */
-/* With Levels and Profile + Round beside it, the Filters summary fits only on
+/* With Profile + Round beside it, the Filters summary fits only on
    a wide screen: below 1500px it took the search box down to 111px and split
    Today from Filters at 1024 and 768px. The count and the tooltip stay. */
 @media (max-width: 1499px) {
@@ -2624,7 +2624,7 @@ tr.row-edit :is(button,a){cursor:pointer}
    row is full Reset and Refresh wrap under it instead (they come last, so the
    Filters + Today pair stays together). It went down to 40px at 1280. */
 @media (min-width: 1101px) {
-  .ops-roster-controls .ops-roster-search { min-width: 170px; }
+  .ops-roster-controls .ops-roster-search { min-width: 210px; }
 }
 @media (min-width: 1101px) and (max-width: 1240px) {
   .ops-filter-trigger__chevron,

@@ -29,7 +29,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
-import { checkedFilterValues, toggleFilterValue } from './filterMenuTestHelpers.js'
+import { checkedFilterValues, closeMenus, tickProfileRound, tickedProfileRound, toggleFilterValue } from './filterMenuTestHelpers.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(here, '..', 'dailyOps.css'), 'utf-8').replace(/\r\n/g, '\n')
@@ -239,9 +239,8 @@ describe('Reset', () => {
     await renderPanel()
     const reset = screen.getByRole('button', { name: 'Reset all filters' })
     expect(reset).toBeInTheDocument()
-    openFilterPanel()
-    toggleFilterValue('Candidate interview level filter', 'L1')
-    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+    tickProfileRound('Interview rounds', 'L1')
+    closeMenus()
     fireEvent.click(screen.getByRole('button', { name: 'Filter interviews by date' }))
     const todayBtn = document.querySelector('.ops-datepicker__day--today')
     if (todayBtn) fireEvent.click(todayBtn)
@@ -257,9 +256,10 @@ describe('Reset', () => {
     openFilterPanel()
     toggleFilterValue('Candidate filter', 'Asha Rao')
     toggleFilterValue('Attendee filter', 'Bhavana')
-    toggleFilterValue('Candidate interview level filter', 'L1')
-    toggleFilterValue('Technology filter', 'Python')
     fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+    tickProfileRound('Interview rounds', 'L1')
+    tickProfileRound('Profiles', 'Python')
+    closeMenus()
     fireEvent.click(screen.getByRole('button', { name: /^Attended/ }))
     await waitFor(() => expect(globalCalls().at(-1).searchParams.get('technology')).toBe('Python'))
 
@@ -278,9 +278,13 @@ describe('Reset', () => {
     expect(screen.getByRole('button', { name: 'Filter interviews by date' })).toHaveTextContent('Upcoming')
     expect(screen.getByLabelText('Candidate search')).toHaveValue('')
     openFilterPanel()
-    for (const field of ['Candidate filter', 'Attendee filter', 'Candidate interview level filter', 'Technology filter']) {
+    for (const field of ['Candidate filter', 'Attendee filter']) {
       expect(checkedFilterValues(field), field).toEqual([])
     }
+    closeMenus()
+    fireEvent.click(screen.getByRole('button', { name: 'Profile and round' }))
+    expect(tickedProfileRound('Profiles')).toEqual([])
+    expect(tickedProfileRound('Interview rounds')).toEqual([])
     expect(screen.getByRole('button', { name: /^Scheduled/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Reset all filters' })).toBeInTheDocument()
   })

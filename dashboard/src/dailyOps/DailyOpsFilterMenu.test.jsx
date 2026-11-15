@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DailyOpsFilterMenu } from './DailyOpsFilterMenu.jsx'
 import { applyFilters, checkedFilterValues, filterGroup, openFilters, toggleFilterValue } from './filterMenuTestHelpers.js'
 
+/**
+ * The Filters panel: Candidate and Attendee (multi-select, Apply to use) and
+ * Sort by. Profiles and rounds are not here any more -- the Profile + Round
+ * control beside it is the one place for them (15 Nov).
+ */
 describe('DailyOpsFilterMenu', () => {
   afterEach(() => {
     cleanup()
@@ -13,19 +18,9 @@ describe('DailyOpsFilterMenu', () => {
     { name: 'Jane Smith', scheduled: 1 },
   ]
   const attendeeOptions = ['Nikhila', 'Bhavana', 'Tool']
-  const roundOptions = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
-  const technologyOptions = ['React', 'Node.js', 'Python']
-  const LEVEL = 'Candidate interview level filter'
 
   it('renders closed by default with no active count badge when filters are empty', () => {
-    render(
-      <DailyOpsFilterMenu
-        candidateOptions={candidateOptions}
-        attendeeOptions={attendeeOptions}
-        roundOptions={roundOptions}
-        technologyOptions={technologyOptions}
-      />
-    )
+    render(<DailyOpsFilterMenu candidateOptions={candidateOptions} attendeeOptions={attendeeOptions} />)
 
     const trigger = screen.getByRole('button', { name: 'Filters' })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
@@ -47,15 +42,8 @@ describe('DailyOpsFilterMenu', () => {
     expect(screen.getByText('(2)')).toBeInTheDocument()
   })
 
-  it('opens a panel with header, the AND/OR rule, Clear all, and fields in order', () => {
-    render(
-      <DailyOpsFilterMenu
-        candidateOptions={candidateOptions}
-        attendeeOptions={attendeeOptions}
-        roundOptions={roundOptions}
-        technologyOptions={technologyOptions}
-      />
-    )
+  it('opens a panel with Candidate, Attendee and Sort by only -- no Level or Profile', () => {
+    render(<DailyOpsFilterMenu candidateOptions={candidateOptions} attendeeOptions={attendeeOptions} />)
 
     openFilters()
 
@@ -67,53 +55,33 @@ describe('DailyOpsFilterMenu', () => {
     expect(screen.getByRole('button', { name: /Clear all/i })).toBeInTheDocument()
 
     const labels = Array.from(dialog.querySelectorAll('.ops-filter-field__label')).map(el => el.textContent.trim())
-    expect(labels).toEqual(['Candidate', 'Attendee', 'Level', 'Profile / Technology', 'Sort by'])
-
-    for (const name of ['Candidate filter', 'Attendee filter', LEVEL, 'Technology filter']) {
-      expect(filterGroup(name)).toBeInTheDocument()
-    }
+    expect(labels).toEqual(['Candidate', 'Attendee', 'Sort by'])
+    expect(filterGroup('Candidate filter')).toBeInTheDocument()
+    expect(filterGroup('Attendee filter')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Candidate interview level filter' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Technology filter' })).toBeNull()
     expect(screen.getByRole('combobox', { name: 'Sort by' })).toBeInTheDocument()
-    expect(within(filterGroup(LEVEL)).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
-      .toEqual(roundOptions)
-  })
-
-  it('offers every level the backend accepts by default, L3 included', () => {
-    render(<DailyOpsFilterMenu />)
-    openFilters()
-    expect(within(filterGroup(LEVEL)).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
-      .toEqual(['Screening', 'L1', 'L2', 'L3', 'HR', 'Final'])
   })
 
   it('lets several values be ticked in one field and applies them as lists', () => {
     const onApply = vi.fn()
     render(
-      <DailyOpsFilterMenu
-        candidateOptions={candidateOptions}
-        attendeeOptions={attendeeOptions}
-        roundOptions={roundOptions}
-        technologyOptions={technologyOptions}
-        onApply={onApply}
-      />
+      <DailyOpsFilterMenu candidateOptions={candidateOptions} attendeeOptions={attendeeOptions} onApply={onApply} />
     )
 
     openFilters()
-    toggleFilterValue(LEVEL, 'HR')
-    toggleFilterValue(LEVEL, 'L2')
-    toggleFilterValue(LEVEL, 'L3')
     toggleFilterValue('Candidate filter', 'John Doe')
     toggleFilterValue('Candidate filter', 'Jane Smith')
     toggleFilterValue('Attendee filter', 'Bhavana')
-    toggleFilterValue('Technology filter', 'React')
+    toggleFilterValue('Attendee filter', 'Tool')
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), { target: { value: 'date_desc' } })
 
-    // Seven values plus a non-default sort.
-    fireEvent.click(screen.getByRole('button', { name: 'Apply (8)' }))
+    // Four values plus a non-default sort.
+    fireEvent.click(screen.getByRole('button', { name: 'Apply (5)' }))
 
     expect(onApply).toHaveBeenCalledWith({
       candidate: ['John Doe', 'Jane Smith'],
-      attendee: ['Bhavana'],
-      round: ['HR', 'L2', 'L3'],
-      technology: ['React'],
+      attendee: ['Bhavana', 'Tool'],
       sort: 'date_desc',
     })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -121,33 +89,33 @@ describe('DailyOpsFilterMenu', () => {
 
   it('unticks a value on a second click', () => {
     const onApply = vi.fn()
-    render(<DailyOpsFilterMenu roundOptions={roundOptions} onApply={onApply} />)
+    render(<DailyOpsFilterMenu attendeeOptions={attendeeOptions} onApply={onApply} />)
     openFilters()
-    toggleFilterValue(LEVEL, 'HR')
-    toggleFilterValue(LEVEL, 'L2')
-    toggleFilterValue(LEVEL, 'HR')
-    expect(checkedFilterValues(LEVEL)).toEqual(['L2'])
+    toggleFilterValue('Attendee filter', 'Nikhila')
+    toggleFilterValue('Attendee filter', 'Tool')
+    toggleFilterValue('Attendee filter', 'Nikhila')
+    expect(checkedFilterValues('Attendee filter')).toEqual(['Tool'])
     applyFilters()
-    expect(onApply.mock.calls[0][0].round).toEqual(['L2'])
+    expect(onApply.mock.calls[0][0].attendee).toEqual(['Tool'])
   })
 
   it('changes nothing until Apply: closing drops the unapplied ticks', () => {
     const onApply = vi.fn()
-    render(<DailyOpsFilterMenu roundFilter={['HR']} roundOptions={roundOptions} onApply={onApply} />)
+    render(<DailyOpsFilterMenu attendeeFilter={['Tool']} attendeeOptions={attendeeOptions} onApply={onApply} />)
     openFilters()
-    toggleFilterValue(LEVEL, 'L2')
+    toggleFilterValue('Attendee filter', 'Bhavana')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onApply).not.toHaveBeenCalled()
     openFilters()
-    expect(checkedFilterValues(LEVEL)).toEqual(['HR'])
+    expect(checkedFilterValues('Attendee filter')).toEqual(['Tool'])
   })
 
   it('shows the applied choices on the button as a count and a summary', () => {
-    render(<DailyOpsFilterMenu roundFilter={['HR', 'L2', 'L3']} attendeeFilter={['Bhavana']} roundOptions={roundOptions} />)
-    const trigger = screen.getByRole('button', { name: 'Filters (4 active)' })
-    expect(trigger).toHaveTextContent('(4)')
-    expect(trigger.querySelector('.ops-filter-trigger__summary')).toHaveTextContent('Bhavana · HR, L2, L3')
-    expect(trigger.getAttribute('title')).toBe('Attendee: Bhavana\nLevel: HR, L2, L3')
+    render(<DailyOpsFilterMenu candidateFilter={['John Doe']} attendeeFilter={['Bhavana', 'Tool']} />)
+    const trigger = screen.getByRole('button', { name: 'Filters (3 active)' })
+    expect(trigger).toHaveTextContent('(3)')
+    expect(trigger.querySelector('.ops-filter-trigger__summary')).toHaveTextContent('John Doe · Bhavana, Tool')
+    expect(trigger.getAttribute('title')).toBe('Candidate: John Doe\nAttendee: Bhavana, Tool')
   })
 
   it('shortens a long summary but keeps the whole of it in the tooltip', () => {
@@ -187,11 +155,11 @@ describe('DailyOpsFilterMenu', () => {
   })
 
   it('clears one field with its own Clear link', () => {
-    render(<DailyOpsFilterMenu roundFilter={['HR', 'L2']} attendeeFilter={['Tool']} roundOptions={roundOptions} />)
+    render(<DailyOpsFilterMenu candidateFilter={['John Doe']} attendeeFilter={['Tool']} candidateOptions={candidateOptions} />)
     openFilters()
-    fireEvent.click(screen.getByRole('button', { name: 'Clear Level filter' }))
-    expect(checkedFilterValues(LEVEL)).toEqual([])
-    expect(checkedFilterValues('Attendee filter')).toEqual(['Tool'])
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Attendee filter' }))
+    expect(checkedFilterValues('Attendee filter')).toEqual([])
+    expect(checkedFilterValues('Candidate filter')).toEqual(['John Doe'])
   })
 
   it('still accepts a single string per field from older callers', () => {
@@ -225,7 +193,7 @@ describe('DailyOpsFilterMenu', () => {
     expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument()
   })
 
-  it('resets all filters and closes panel when Reset is clicked', () => {
+  it('resets its own fields and closes when Reset is clicked', () => {
     const onApply = vi.fn()
     render(
       <DailyOpsFilterMenu
@@ -240,7 +208,7 @@ describe('DailyOpsFilterMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filters (2 active)' }))
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
 
-    expect(onApply).toHaveBeenCalledWith({ candidate: [], attendee: [], round: [], technology: [], sort: 'date_asc' })
+    expect(onApply).toHaveBeenCalledWith({ candidate: [], attendee: [], sort: 'date_asc' })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 

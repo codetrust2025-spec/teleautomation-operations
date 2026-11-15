@@ -461,7 +461,7 @@ describe('on an iPhone (390-430px)', () => {
     await renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /^Filters/i }))
     // An admin sees all four (the attendee filter is hidden for a handler).
-    for (const name of ['Candidate filter', 'Attendee filter', 'Candidate interview level filter', 'Technology filter']) {
+    for (const name of ['Candidate filter', 'Attendee filter']) {
       expect(screen.getByRole('group', { name })).toBeInTheDocument()
     }
     const hidden = ALL.filter(r => r.selector.includes('.ops-roster-controls__filters .ops-roster-control > span'))

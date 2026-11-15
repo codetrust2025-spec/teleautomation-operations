@@ -1,5 +1,5 @@
 /**
- * Profile + Round: a filter of its own beside Levels (Nov 2026).
+ * Profile + Round: the one Daily Ops filter for profiles and rounds (Nov 2026).
  *
  * - Two checkbox lists in one menu: profiles (from the period) and the six
  *   interview rounds, ticked in any combination.
@@ -230,7 +230,7 @@ describe('Profile-wise, Round-wise and Both', () => {
     const { rerender } = render(<ProfileRoundFilter profileOptions={['Java']} />)
     openMenu()
     pick('Profile-wise')
-    // Levels ticks a round while this menu is on Profile-wise.
+    // A round arrives from outside (a remembered mode that no longer fits).
     rerender(<ProfileRoundFilter rounds={['L2']} profileOptions={['Java']} />)
     expect(mode()).toBe('Both')
     expect(lists()).toEqual(['Profiles', 'Interview rounds'])
@@ -321,28 +321,38 @@ describe('on Daily Ops (shared selections)', () => {
     await waitFor(() => expect(shown()).toEqual(['Asha Varma', 'Bala Kumar', 'Chitra Rao']))
   })
 
-  it('agrees with Levels and with the Filters panel, both ways', async () => {
+  it('is the only profile and round filter: no Levels button, no Level or Profile in Filters', async () => {
+    await renderPanel()
+    expect(screen.queryByRole('button', { name: /^Interview levels/ })).toBeNull()
+    expect(document.querySelectorAll('.ops-profile-round-filter')).toHaveLength(1)
+    openFilters()
+    expect(screen.queryByRole('group', { name: 'Candidate interview level filter' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Technology filter' })).toBeNull()
+    expect(screen.getByRole('group', { name: 'Candidate filter' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Attendee filter' })).toBeInTheDocument()
+  })
+
+  it('keeps its ticks through an Apply or Reset inside the Filters panel', async () => {
     await renderPanel()
     openMenu()
     tick('Profiles', 'Java')
     tick('Interview rounds', 'L1')
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    // Levels shows the round ticked here.
-    fireEvent.click(screen.getByRole('button', { name: /^Interview levels/ }))
-    expect(within(screen.getByRole('group', { name: 'Interview levels' })).getByRole('checkbox', { name: 'L1' })).toBeChecked()
-    fireEvent.keyDown(document, { key: 'Escape' })
-
-    // The Filters panel shows both, and an Apply there shows back here.
     openFilters()
-    expect(checkedFilterValues('Technology filter')).toEqual(['Java'])
-    expect(checkedFilterValues('Candidate interview level filter')).toEqual(['L1'])
-    toggleFilterValue('Technology filter', 'Angular')
+    toggleFilterValue('Attendee filter', 'Tool')
     applyFilters()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Profile and round (3 selected)' })).toBeInTheDocument())
-    openMenu()
-    // Listed in the period's (alphabetical) order.
-    expect(ticked('Profiles')).toEqual(['Angular', 'Java'])
+    await waitFor(() => {
+      const last = rosterCalls().at(-1).searchParams
+      expect(last.getAll('attendee')).toEqual(['Tool'])
+      expect(last.getAll('technology')).toEqual(['Java'])
+      expect(last.getAll('round')).toEqual(['L1'])
+    })
+    openFilters()
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('attendee')).toEqual([]))
+    expect(rosterCalls().at(-1).searchParams.getAll('technology')).toEqual(['Java'])
+    expect(screen.getByRole('button', { name: 'Profile and round (2 selected)' })).toBeInTheDocument()
   })
 
   it('leaves the other filters as they were', async () => {
@@ -362,12 +372,12 @@ describe('on Daily Ops (shared selections)', () => {
     await waitFor(() => expect(shown()).toEqual(['Asha Varma']))
   })
 
-  it('sits between Levels and Filters, and Today stays beside Filters', async () => {
+  it('sits right after the date, before Filters, and Today stays beside Filters', async () => {
     await renderPanel()
     const order = [...document.querySelector('.ops-roster-controls__filters').children]
       .map(el => el.classList.contains('ops-profile-round-filter') ? 'profile-round' : el.className.split(' ')[0])
     const at = name => order.indexOf(name)
-    expect(at('profile-round')).toBe(at('ops-levels-filter') + 1)
+    expect(at('profile-round')).toBe(at('ops-roster-control') + 1)
     expect(at('ops-filter-dropdown-wrap')).toBe(at('profile-round') + 1)
     expect(at('ops-roster-today')).toBe(at('ops-filter-dropdown-wrap') + 1)
   })
