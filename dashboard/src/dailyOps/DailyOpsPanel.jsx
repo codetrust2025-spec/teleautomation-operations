@@ -7,12 +7,13 @@ import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } 
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
 import { appendFilterValues, sameValues } from './filterParams.js'
+import { INTERVIEW_LEVELS, InterviewLevelsFilter } from './InterviewLevelsFilter.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 // Every level the backend accepts (VALID_INTERVIEW_ROUNDS), in interview order.
-const ROUNDS = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
+const ROUNDS = INTERVIEW_LEVELS
 
 function KpiCard({ label, value, tone = 'default', loading = false, active = false, onClick, title }) {
   return (
@@ -284,7 +285,7 @@ export function DailyOpsPanel({
         </div>
       </div>
 
-      {/* ── Controls row: Search → Calendar → Filters → Today → Reset → Refresh ── */}
+      {/* ── Controls row: Search → Calendar → Levels → Filters → Today → Reset → Refresh ── */}
       <div className="ops-roster-controls" aria-label="Roster controls">
         <div className="ops-roster-controls__filters">
           <label className="ops-roster-search">
@@ -308,6 +309,15 @@ export function DailyOpsPanel({
               onClear={clearDate}
             />
           </div>
+
+          {/* Interview Levels: its own control, applied on every tick (no
+              Apply). Placed before Filters so Today stays beside Filters.
+              One selection with the panel's Level field. */}
+          <InterviewLevelsFilter
+            value={roundFilter}
+            levels={ROUNDS}
+            onChange={next => setRoundFilter(prev => (sameValues(prev, next) ? prev : next))}
+          />
 
           <DailyOpsFilterMenu
             candidateFilter={candidateFilter}

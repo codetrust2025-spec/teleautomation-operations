@@ -2607,7 +2607,11 @@ tr.row-edit :is(button,a){cursor:pointer}
 /* 1101-1240px: one row, little spare width. A long summary took it from the
    search box; the tooltip still names every choice. */
 @media (min-width: 1101px) and (max-width: 1240px) {
-  .ops-filter-trigger__summary { max-width: 90px; }
+  /* With Levels beside it there is no room for the summary at all (the
+     search shrank to 63px); the count and the tooltip still say it. */
+  .ops-filter-trigger__summary { display: none; }
+  .ops-filter-trigger__chevron,
+  .ops-levels-trigger__chevron { display: none; }
 }
 
 /* Phones and small tablets: the panel is a bottom sheet over a dimmed page,
@@ -2640,6 +2644,139 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-filter-panel__footer { margin-top: 2px; }
   .ops-filter-panel__btn { flex: 1 1 0; height: 42px; }
 }
+
+/* ── Interview Levels (Nov 2026) ─────────────────────────────────────────
+   A filter of its own beside Filters: six checkboxes, each tick applied at
+   once. It shares its selection with the Filters panel's Level field. */
+.ops-levels-filter {
+  position: relative;
+  display: inline-flex;
+}
+.ops-levels-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(30, 41, 59, 0.7);
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.ops-levels-trigger svg { color: #60a5fa; }
+.ops-levels-trigger:hover,
+.ops-levels-trigger--open {
+  background: rgba(30, 58, 138, 0.4);
+  border-color: rgba(96, 165, 250, 0.6);
+  color: #ffffff;
+}
+.ops-levels-trigger--active {
+  background: rgba(37, 99, 235, 0.25);
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+.ops-levels-trigger:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.ops-levels-trigger__badge {
+  color: #bfdbfe;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.ops-levels-backdrop { display: none; }
+.ops-levels-trigger__chevron { display: inline-flex; }
+.ops-levels-trigger__chevron svg { color: #94a3b8; }
+
+.ops-levels-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 1050;
+  width: 230px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.32);
+  background: #0d131f;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  animation: opsFilterFadeIn 0.15s ease-out;
+}
+.ops-levels-menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ops-levels-menu__title { font-size: 13px; font-weight: 700; color: #ffffff; }
+.ops-levels-menu__clear {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #60a5fa;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ops-levels-menu__clear:disabled { color: #475569; cursor: default; }
+.ops-levels-menu__clear:not(:disabled):hover { text-decoration: underline; }
+.ops-levels-menu__list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.ops-levels-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+.ops-levels-option:hover { border-color: rgba(96, 165, 250, 0.5); color: #ffffff; }
+.ops-levels-option--checked,
+.ops-levels-option--checked:hover {
+  border-color: #3b82f6;
+  background: rgba(37, 99, 235, 0.22);
+  color: #ffffff;
+}
+.ops-levels-option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+.ops-levels-option:focus-within { outline: 2px solid #60a5fa; outline-offset: 1px; }
+.ops-levels-option__box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(148, 163, 184, 0.55);
+  background: #0b1220;
+  color: #ffffff;
+}
+.ops-levels-option--checked .ops-levels-option__box { border-color: #3b82f6; background: #2563eb; }
+.ops-levels-menu__hint { margin: 10px 0 0; font-size: 11px; color: #64748b; }
 
 /* ── Phone: Daily Ops, read and worked one-handed ────────────────────────
    Measured on a 440px viewport (iPhone 16 Pro Max). Everything here is inside
@@ -2889,9 +3026,25 @@ tr.row-edit :is(button,a){cursor:pointer}
      second row, at its height, so Today never wraps away from Filters. */
   .ops-roster-controls__filters .ops-filter-dropdown-wrap,
   .ops-roster-controls__filters .ops-roster-today { order: 2; flex: 0 0 auto; }
+  /* Levels follows the Filters + Today pair on a phone, so it can wrap to the
+     next row without splitting them. */
+  .ops-roster-controls__filters .ops-levels-filter { order: 3; flex: 0 0 auto; }
   .ops-roster-controls__filters .ops-roster-control--date { flex: 1 1 110px; }
   .ops-roster-controls__filters .ops-filter-trigger,
+  .ops-roster-controls__filters .ops-levels-trigger,
   .ops-roster-controls__filters .ops-roster-today { height: 40px; }
+  /* Levels on a phone: a bottom sheet, like Filters, so the controls box
+     cannot clip it and it never runs off the right edge. */
+  .ops-levels-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 1049; background: rgba(2, 6, 23, 0.6);
+  }
+  .ops-levels-menu {
+    position: fixed; top: auto; bottom: 0; left: 0; right: 0; width: 100%; max-width: 100%;
+    border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.7);
+  }
+  .ops-levels-menu__list { grid-template-columns: 1fr 1fr 1fr; }
+  .ops-levels-option { min-height: 42px; font-size: 13.5px; }
   .ops-roster-controls__filters .ops-roster-controls__actions {
     order: 1; flex: 0 0 auto; width: auto; margin-left: 0; gap: 6px;
   }
