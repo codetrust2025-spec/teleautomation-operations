@@ -570,6 +570,8 @@ ATTENTION_TEXT = {
     "changed_since_delivery": "The password changed in the Data Room after it was delivered",
     "delivery_expired": "A worker did not collect the delivery within 15 minutes; deliver again",
     "delivered_to_other_profile": "The last delivery went to an earlier Daybreak profile for this address; deliver again",
+    "earlier_delivery_superseded": ("An earlier delivery went to a Daybreak profile that has since been deleted; "
+                                    "nothing is delivered to the current one until consent is verified"),
 }
 
 
@@ -615,7 +617,9 @@ def status_view() -> dict:
             if profile is not None and delivery.get("profile_id") != profile.get("id"):
                 # The Daybreak profile was re-created (for example by the account-list mirror): the earlier
                 # delivery belongs to a profile that no longer exists, so this candidate holds no credential.
-                attention.append("delivered_to_other_profile")
+                # Without consent a new delivery is refused, so asking for one would mislead: say why instead.
+                attention.append("earlier_delivery_superseded" if "consent_missing" in attention
+                                 else "delivered_to_other_profile")
                 current = False
             delivered = current and len(receipts) == len(delivery["enrollments"]) > 0
         profile_id = str((profile or {}).get("id") or (delivery or {}).get("profile_id") or "")

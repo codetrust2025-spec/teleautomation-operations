@@ -420,6 +420,29 @@ class TestStatuses:
         chosen, _ = auto.plan(view(env)["_"])
         assert "asha_rao" not in chosen
 
+    def test_a_recreated_profile_without_consent_does_not_ask_for_a_redelivery(self, env):
+        # Sailaja's case (15 Nov): the mirror re-created the profile with no consent. A delivery would be
+        # refused, so the status must say consent is needed rather than "deliver again".
+        approve_all(env)
+        deliver(env, "asha_rao")
+        env["daybreak"].collect()
+        profile = next(p for p in env["daybreak"].roster if p["id"] == P["asha"])
+        profile.update(id="0000bbbb-0000-4000-8000-000000000000", consent_at=None)
+        row = view(env)["asha_rao"]
+        assert row["attention_codes"] == ["consent_missing", "earlier_delivery_superseded"]
+        assert not any("deliver again" in reason for reason in row["attention"])
+        assert row["delivered"] is False and row["connected"] is False
+        assert sync.deliver(["asha_rao"], actor="admin")["refused"] == [
+            {"account_id": "asha_rao", "reason": "consent_missing"}]
+
+    def test_a_recreated_profile_with_consent_still_asks_for_a_redelivery(self, env):
+        approve_all(env)
+        deliver(env, "asha_rao")
+        env["daybreak"].collect()
+        profile = next(p for p in env["daybreak"].roster if p["id"] == P["asha"])
+        profile.update(id="0000bbbb-0000-4000-8000-000000000000")
+        assert "delivered_to_other_profile" in view(env)["asha_rao"]["attention_codes"]
+
     def test_an_uncollected_delivery_expires_into_attention(self, env, monkeypatch):
         approve_all(env)
         deliver(env, "asha_rao")
