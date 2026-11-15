@@ -8,6 +8,9 @@
  *   request, and other filters keep working alongside it.
  */
 import React from 'react'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -22,6 +25,7 @@ import { DailyOpsPanel } from './DailyOpsPanel.jsx'
 import { FeedbackStatusFilter } from './FeedbackStatusFilter.jsx'
 import { countFeedback, filterByFeedback } from './feedbackScale.js'
 
+const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'dailyOps.css'), 'utf-8').replace(/\r\n/g, '\n')
 const TODAY = '2026-10-06'
 let calls
 
@@ -115,6 +119,13 @@ describe('the Status control', () => {
       .toEqual(['positive', 'excellent', 'caution', 'warning', 'negative'])
     expect(screen.getByRole('button', { name: 'Clear all status filters' }).textContent).toBe('Clear All')
     expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
+  })
+
+  it('centres each badge in its row (the shared pill aligns to the top)', () => {
+    // Live 15 Nov: each badge sat 0px from the top of its row, 24px from the bottom.
+    expect(CSS).toMatch(/\.ops-feedback-pill\{[^}]*align-self:flex-start/)
+    const rule = /\.ops-feedback-filter-menu \.ops-feedback-filter-pill \{([^}]*)\}/.exec(CSS)?.[1]
+    expect(rule).toMatch(/align-self:\s*center/)
   })
 
   it('emits on every click, in the menu order', () => {
