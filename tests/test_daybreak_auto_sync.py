@@ -75,7 +75,8 @@ def stub_roster(monkeypatch, total=28):
         assert action == "roster_sync"
         assert payload["sourceCount"] == total
         assert len(payload["accounts"]) == total
-        assert all(set(item) == {"id", "label", "email", "enabled"} for item in payload["accounts"])
+        assert all(set(item) == {"id", "label", "email", "enabled", "consentVerified"} for item in payload["accounts"])
+        assert all(item["consentVerified"] is False for item in payload["accounts"])
         return {"status": "ok", "sourceCount": total, "matchedCount": total}
     monkeypatch.setattr(sync, "_daybreak", daybreak)
     return requests
