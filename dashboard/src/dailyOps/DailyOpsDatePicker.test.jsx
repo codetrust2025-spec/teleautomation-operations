@@ -20,6 +20,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
+import { checkedFilterValues, toggleFilterValue } from './filterMenuTestHelpers.js'
 
 // 11:30 IST on 8 September 2026 — the day in the brief, so "Yesterday" is the
 // 7th. The label reads "7 Sept 2026": en-IN abbreviates September as "Sept",
@@ -398,7 +399,7 @@ describe('a day with nothing on it', () => {
     await renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^Filters/ }))
-    fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Nikhila' } })
+    toggleFilterValue('Attendee filter', 'Nikhila')
     fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     const calendar = await openCalendar()
     fireEvent.click(dayCell(calendar, 'Monday', '7 September', '2026'))

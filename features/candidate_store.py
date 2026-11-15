@@ -3350,13 +3350,13 @@ def daily_interview_roster(
     day: str,
     *,
     viewer_reference: str | None = None,
-    filter_attendee: str | None = None,
+    filter_attendee: str | list[str] | None = None,
     filter_search: str | None = None,
     filter_channel: str | None = None,
-    filter_round: str | None = None,
-    filter_technology: str | None = None,
+    filter_round: str | list[str] | None = None,
+    filter_technology: str | list[str] | None = None,
     include_unconfirmed: bool = False,
-    filter_candidate: str | None = None,
+    filter_candidate: str | list[str] | None = None,
 ) -> dict:
     """Confirmed interview slots for one calendar day (YYYY-MM-DD).
 
@@ -4436,43 +4436,69 @@ def _resolve_public_slot_conflicts(
         cancel_interview_slot(candidate_id=row["id"])
 
 
+def filter_values(value: Any) -> list[str]:
+    """The values chosen for one Daily Ops filter field, as a clean list.
+
+    A field may arrive as one string (older callers, a single choice) or as a
+    list (the multi-select panel sends `round=HR&round=L2`). Anything else --
+    a route called as a plain function hands over its unfilled `Query(...)`
+    default -- means nothing was chosen. Blank entries are dropped and
+    duplicates kept once, in the order given.
+    """
+    if isinstance(value, str):
+        items = [value]
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        items = [item for item in value if isinstance(item, str)]
+    else:
+        return []
+    seen: list[str] = []
+    for item in items:
+        cleaned = item.strip()
+        if cleaned and cleaned not in seen:
+            seen.append(cleaned)
+    return seen
+
+
 def _filter_interview_rows(
     rows: list[dict],
     *,
     viewer_reference: str | None = None,
-    filter_attendee: str | None = None,
+    filter_attendee: str | list[str] | None = None,
     filter_search: str | None = None,
     filter_channel: str | None = None,
-    filter_round: str | None = None,
-    filter_technology: str | None = None,
-    filter_candidate: str | None = None,
+    filter_round: str | list[str] | None = None,
+    filter_technology: str | list[str] | None = None,
+    filter_candidate: str | list[str] | None = None,
 ) -> list[dict]:
-    attendee_filter = (filter_attendee or "").strip()
-    search_filter = (filter_search or "").strip()
-    # Only text is a selection: a route called as a plain function hands over
-    # its unfilled `Query(...)` default, which must mean "no candidate chosen".
-    candidate_key = candidate_filter_key(filter_candidate) if isinstance(filter_candidate, str) else ""
-    channel_filter = (filter_channel or "").strip().lower()
-    viewer = (viewer_reference or "").strip()
+    """Narrow interview rows by the Daily Ops filters.
+
+    Several values in one field are alternatives (Level HR or L2 or L3);
+    different fields must all match (that level AND that attendee).
+    """
+    attendee_keys = {value.lower() for value in filter_values(filter_attendee)}
+    search_filter = (filter_search or "").strip() if isinstance(filter_search, str) else ""
+    candidate_keys = {
+        key for key in (candidate_filter_key(value) for value in filter_values(filter_candidate)) if key
+    }
+    channel_filter = (filter_channel or "").strip().lower() if isinstance(filter_channel, str) else ""
     # Daily Ops is a shared operations roster.  Do not hide another
     # handler's booked interview from a handler session; every authenticated
     # operator needs the same live schedule as admin.
-    if attendee_filter:
-        needle = attendee_filter.lower()
+    if attendee_keys:
         rows = [
             r for r in rows
-            if _reference_key(row_interview_attendee(r)) == needle
+            if _reference_key(row_interview_attendee(r)) in attendee_keys
         ]
     if search_filter:
         rows = [
             r for r in rows
             if candidate_matches_search(r.get("name") or "", search_filter)
         ]
-    # A selected candidate is exact: that person's rows and nobody else's.
-    if candidate_key:
+    # A selected candidate is exact: those people's rows and nobody else's.
+    if candidate_keys:
         rows = [
             r for r in rows
-            if candidate_filter_key(r.get("name") or "") == candidate_key
+            if candidate_filter_key(r.get("name") or "") in candidate_keys
         ]
     if channel_filter and channel_filter != "all":
         if channel_filter == "round_wise":
@@ -4486,22 +4512,23 @@ def _filter_interview_rows(
                 if _normalise_service_type(r.get("service_type"), r) != "round_wise"
             ]
 
-    # Round filter — normalize both the filter value and each row's round
-    round_val = (filter_round or "").strip()
-    if round_val:
-        round_key = normalise_interview_round(round_val)
+    # Round filter — normalize both the filter values and each row's round.
+    # A value that names no known round matches nothing rather than everything.
+    round_values = filter_values(filter_round)
+    if round_values:
+        round_keys = {normalise_interview_round(value) or value for value in round_values}
         rows = [
             r for r in rows
-            if normalise_interview_round(r.get("interview_round")) == round_key
+            if normalise_interview_round(r.get("interview_round")) in round_keys
         ]
 
     # Technology filter — normalize and compare case-insensitively
-    tech_val = (filter_technology or "").strip()
-    if tech_val:
-        tech_key = canonical_technology(tech_val).lower()
+    tech_values = filter_values(filter_technology)
+    if tech_values:
+        tech_keys = {canonical_technology(value).lower() for value in tech_values}
         rows = [
             r for r in rows
-            if canonical_technology(r.get("technology") or "").lower() == tech_key
+            if canonical_technology(r.get("technology") or "").lower() in tech_keys
         ]
 
     rows.sort(key=_slot_chronological_sort_key)
@@ -4559,15 +4586,15 @@ def interview_monitor(
     to_date: str,
     *,
     viewer_reference: str | None = None,
-    filter_attendee: str | None = None,
+    filter_attendee: str | list[str] | None = None,
     filter_search: str | None = None,
     filter_channel: str | None = None,
-    filter_round: str | None = None,
-    filter_technology: str | None = None,
+    filter_round: str | list[str] | None = None,
+    filter_technology: str | list[str] | None = None,
     include_unconfirmed: bool = False,
     upcoming_only: bool = False,
     unresolved_only: bool = False,
-    filter_candidate: str | None = None,
+    filter_candidate: str | list[str] | None = None,
 ) -> dict:
     """All confirmed interview slots in a date range — admin monitor view.
 
@@ -4647,7 +4674,7 @@ def interview_upcoming(
     *,
     days: int = 14,
     filter_search: str | None = None,
-    filter_attendee: str | None = None,
+    filter_attendee: str | list[str] | None = None,
     filter_channel: str | None = None,
     viewer_reference: str | None = None,
     include_today_pending: bool = True,
@@ -4815,15 +4842,15 @@ def interview_global_summary(
     to_date: str,
     *,
     viewer_reference: str | None = None,
-    filter_attendee: str | None = None,
+    filter_attendee: str | list[str] | None = None,
     filter_search: str | None = None,
     filter_channel: str | None = None,
-    filter_round: str | None = None,
-    filter_technology: str | None = None,
+    filter_round: str | list[str] | None = None,
+    filter_technology: str | list[str] | None = None,
     include_unconfirmed: bool = False,
     upcoming_only: bool = False,
     unresolved_only: bool = False,
-    filter_candidate: str | None = None,
+    filter_candidate: str | list[str] | None = None,
 ) -> dict:
     """Ops snapshot — interviews by attendee/referrer/tech + tasks (scoped per viewer).
 
@@ -4870,7 +4897,7 @@ def interview_global_summary(
     # must not remove everyone else from the list it was chosen from. Every
     # count below it describes the selection.
     candidate_option_rows = rows
-    if isinstance(filter_candidate, str) and filter_candidate.strip():
+    if filter_values(filter_candidate):
         rows = _filter_interview_rows(rows, filter_candidate=filter_candidate)
     # The booking overview (the "Bookings by candidate" pie, its total and the
     # level/technology breakdowns beside it) describes the active selection,
@@ -7527,7 +7554,7 @@ def interview_candidate_filter_options(
     to_date: str | None = None,
     channel: str | None = None,
     viewer_reference: str | None = None,
-    filter_attendee: str | None = None,
+    filter_attendee: str | list[str] | None = None,
 ) -> list[dict]:
     """Unique candidate names for roster filters — same store rows as interview monitor."""
     start = (from_date or "").strip()[:10]

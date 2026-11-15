@@ -25,6 +25,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
+import { checkedFilterValues, toggleFilterValue } from './filterMenuTestHelpers.js'
 
 const NOW = '2026-09-28T06:00:00Z'
 let calls
@@ -115,7 +116,7 @@ afterEach(() => {
 
 async function selectCandidateFilter(value) {
   fireEvent.click(screen.getByRole('button', { name: /^Filters/i }))
-  fireEvent.change(screen.getByRole('combobox', { name: 'Candidate filter' }), { target: { value } })
+  toggleFilterValue('Candidate filter', value)
   fireEvent.click(screen.getByRole('button', { name: /^Apply/i }))
 }
 

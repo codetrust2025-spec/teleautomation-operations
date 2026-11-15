@@ -142,14 +142,16 @@ async def candidates_pending_works(
 async def candidates_interviews_daily(
     request: Request,
     date: str | None = Query(default=None),
-    attendee: str | None = Query(default=None),
+    attendee: list[str] | None = Query(default=None),
     search: str | None = Query(default=None),
     channel: str | None = Query(default=None),
-    round: str | None = Query(default=None),
-    technology: str | None = Query(default=None),
-    # A Candidate dropdown selection: one person, matched exactly. `search`
-    # stays the loose free-text match for the search box.
-    candidate: str | None = Query(default=None),
+    round: list[str] | None = Query(default=None),
+    technology: list[str] | None = Query(default=None),
+    # Candidate selections: each person matched exactly, several allowed
+    # (`candidate=A&candidate=B`). `search` stays the loose free-text match.
+    # Repeated attendee/round/technology values are alternatives too; the
+    # fields themselves combine with AND.
+    candidate: list[str] | None = Query(default=None),
 ):
     from fastapi import HTTPException
 
@@ -179,14 +181,16 @@ async def candidates_interviews_monitor(
     request: Request,
     from_date: str | None = Query(default=None, alias="from"),
     to_date: str | None = Query(default=None, alias="to"),
-    attendee: str | None = Query(default=None),
+    attendee: list[str] | None = Query(default=None),
     search: str | None = Query(default=None),
     channel: str | None = Query(default=None),
-    round: str | None = Query(default=None),
-    technology: str | None = Query(default=None),
-    # A Candidate dropdown selection: one person, matched exactly. `search`
-    # stays the loose free-text match for the search box.
-    candidate: str | None = Query(default=None),
+    round: list[str] | None = Query(default=None),
+    technology: list[str] | None = Query(default=None),
+    # Candidate selections: each person matched exactly, several allowed
+    # (`candidate=A&candidate=B`). `search` stays the loose free-text match.
+    # Repeated attendee/round/technology values are alternatives too; the
+    # fields themselves combine with AND.
+    candidate: list[str] | None = Query(default=None),
     upcoming_only: bool = Query(default=False),
     # The global Pending view: every interview still waiting for an outcome,
     # whatever its date. from/to stay required so the request shape does not
@@ -251,14 +255,16 @@ async def candidates_interviews_global(
     request: Request,
     from_date: str | None = Query(default=None, alias="from"),
     to_date: str | None = Query(default=None, alias="to"),
-    attendee: str | None = Query(default=None),
+    attendee: list[str] | None = Query(default=None),
     search: str | None = Query(default=None),
     channel: str | None = Query(default=None),
-    round: str | None = Query(default=None),
-    technology: str | None = Query(default=None),
-    # A Candidate dropdown selection: one person, matched exactly. `search`
-    # stays the loose free-text match for the search box.
-    candidate: str | None = Query(default=None),
+    round: list[str] | None = Query(default=None),
+    technology: list[str] | None = Query(default=None),
+    # Candidate selections: each person matched exactly, several allowed
+    # (`candidate=A&candidate=B`). `search` stays the loose free-text match.
+    # Repeated attendee/round/technology values are alternatives too; the
+    # fields themselves combine with AND.
+    candidate: list[str] | None = Query(default=None),
     upcoming_only: bool = Query(default=False),
     unresolved_only: bool = Query(default=False),
 ):

@@ -29,6 +29,7 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 }))
 
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
+import { checkedFilterValues, toggleFilterValue } from './filterMenuTestHelpers.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(here, '..', 'dailyOps.css'), 'utf-8').replace(/\r\n/g, '\n')
@@ -159,7 +160,7 @@ describe('columns', () => {
   it('drops the attendee <col> with the attendee column', async () => {
     await renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /^Filters/ }))
-    fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Bhavana' } })
+    toggleFilterValue('Attendee filter', 'Bhavana')
     fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     await waitFor(() => expect(rosterCalls().at(-1).searchParams.get('attendee')).toBe('Bhavana'))
     await waitFor(() => expect(document.querySelectorAll('.ops-interview-table thead th')).toHaveLength(9))
@@ -239,7 +240,7 @@ describe('Reset', () => {
     const reset = screen.getByRole('button', { name: 'Reset all filters' })
     expect(reset).toBeInTheDocument()
     openFilterPanel()
-    fireEvent.change(screen.getByLabelText('Candidate interview level filter'), { target: { value: 'L1' } })
+    toggleFilterValue('Candidate interview level filter', 'L1')
     fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Filter interviews by date' }))
     const todayBtn = document.querySelector('.ops-datepicker__day--today')
@@ -254,10 +255,10 @@ describe('Reset', () => {
     if (todayBtn) fireEvent.click(todayBtn)
     fireEvent.change(screen.getByLabelText('Candidate search'), { target: { value: 'asha' } })
     openFilterPanel()
-    fireEvent.change(screen.getByLabelText('Candidate filter'), { target: { value: 'Asha Rao' } })
-    fireEvent.change(screen.getByLabelText('Attendee filter'), { target: { value: 'Bhavana' } })
-    fireEvent.change(screen.getByLabelText('Candidate interview level filter'), { target: { value: 'L1' } })
-    fireEvent.change(screen.getByLabelText('Technology filter'), { target: { value: 'Python' } })
+    toggleFilterValue('Candidate filter', 'Asha Rao')
+    toggleFilterValue('Attendee filter', 'Bhavana')
+    toggleFilterValue('Candidate interview level filter', 'L1')
+    toggleFilterValue('Technology filter', 'Python')
     fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
     fireEvent.click(screen.getByRole('button', { name: /^Attended/ }))
     await waitFor(() => expect(globalCalls().at(-1).searchParams.get('technology')).toBe('Python'))
@@ -277,10 +278,9 @@ describe('Reset', () => {
     expect(screen.getByRole('button', { name: 'Filter interviews by date' })).toHaveTextContent('Upcoming')
     expect(screen.getByLabelText('Candidate search')).toHaveValue('')
     openFilterPanel()
-    expect(screen.getByLabelText('Candidate filter')).toHaveValue('')
-    expect(screen.getByLabelText('Attendee filter')).toHaveValue('')
-    expect(screen.getByLabelText('Candidate interview level filter')).toHaveValue('')
-    expect(screen.getByLabelText('Technology filter')).toHaveValue('')
+    for (const field of ['Candidate filter', 'Attendee filter', 'Candidate interview level filter', 'Technology filter']) {
+      expect(checkedFilterValues(field), field).toEqual([])
+    }
     expect(screen.getByRole('button', { name: /^Scheduled/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Reset all filters' })).toBeInTheDocument()
   })

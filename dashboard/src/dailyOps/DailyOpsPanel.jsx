@@ -5,12 +5,14 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { InterviewRoster } from './InterviewRoster.jsx'
 import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } from './rosterSort.js'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
-import { DailyOpsFilterMenu } from './DailyOpsFilterMenu.jsx'
+import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
+import { appendFilterValues, sameValues } from './filterParams.js'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
-const ROUNDS = ['L1', 'L2', 'HR', 'Final', 'Screening']
+// Every level the backend accepts (VALID_INTERVIEW_ROUNDS), in interview order.
+const ROUNDS = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
 
 function KpiCard({ label, value, tone = 'default', loading = false, active = false, onClick, title }) {
   return (
@@ -97,11 +99,13 @@ export function DailyOpsPanel({
   // Clearing the date or preset returns to all upcoming interviews.
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedPreset, setSelectedPreset] = useState('')
-  const [attendeeFilter, setAttendeeFilter] = useState('')
-  const [roundFilter, setRoundFilter] = useState('')
-  const [technologyFilter, setTechnologyFilter] = useState('')
+  // Each Filters field holds a list: values inside one field are
+  // alternatives (Level HR or L2), different fields must all match.
+  const [attendeeFilter, setAttendeeFilter] = useState([])
+  const [roundFilter, setRoundFilter] = useState([])
+  const [technologyFilter, setTechnologyFilter] = useState([])
   const [candidateSearch, setCandidateSearch] = useState('')
-  const [candidateFilter, setCandidateFilter] = useState('')
+  const [candidateFilter, setCandidateFilter] = useState([])
   const [statusFilter, setStatusFilter] = useState('')
   // Sort By is a view preference, kept across reloads in this browser; Reset
   // leaves it alone, as it clears filters rather than the way they are read.
@@ -168,12 +172,12 @@ export function DailyOpsPanel({
         range = { from: today, to: addDaysIso(today, 30) }
       }
       const params = new URLSearchParams({ from: range.from, to: range.to })
-      if (attendeeFilter) params.set('attendee', attendeeFilter)
-      if (roundFilter) params.set('round', roundFilter)
-      if (technologyFilter) params.set('technology', technologyFilter)
+      appendFilterValues(params, 'attendee', attendeeFilter)
+      appendFilterValues(params, 'round', roundFilter)
+      appendFilterValues(params, 'technology', technologyFilter)
       // The dropdown is a selection and the search box is a search: sent as
       // one `search`, "Ram Charan M S" also matched "Rama Krishna" on "ram".
-      if (candidateFilter) params.set('candidate', candidateFilter)
+      appendFilterValues(params, 'candidate', candidateFilter)
       const search = candidateSearch.trim()
       if (search) params.set('search', search)
       if (upcomingOnly) params.set('upcoming_only', 'true')
@@ -213,14 +217,16 @@ export function DailyOpsPanel({
   const rangeInterviews = globalStats?.interviews || {}
   const technologyOptions = (rangeInterviews.by_technology || []).map(item => item.name).sort()
   const candidateOptions = rangeInterviews.by_candidate || []
-  const activeFilterCount = [attendeeFilter, roundFilter, technologyFilter, candidateSearch.trim(), candidateFilter].filter(Boolean).length
+  // Reset's badge counts fields in use, not values: Level HR + L2 is one thing to put back.
+  const activeFilterCount = [attendeeFilter, roundFilter, technologyFilter, candidateFilter]
+    .filter(list => list.length > 0).length + (candidateSearch.trim() ? 1 : 0)
 
   function clearFilters() {
-    setAttendeeFilter('')
-    setRoundFilter('')
-    setTechnologyFilter('')
+    setAttendeeFilter([])
+    setRoundFilter([])
+    setTechnologyFilter([])
     setCandidateSearch('')
-    setCandidateFilter('')
+    setCandidateFilter([])
   }
 
   // Everything Reset puts back, counted for its badge: a picked date/preset, the status tab,
@@ -314,14 +320,17 @@ export function DailyOpsPanel({
             roundOptions={ROUNDS}
             technologyOptions={technologyOptions}
             onApply={({ candidate, attendee, round, technology, sort }) => {
-              setCandidateFilter(candidate)
-              if (candidate) setCandidateSearch('')
-              setAttendeeFilter(attendee)
-              setRoundFilter(round)
-              setTechnologyFilter(technology)
+              // A field whose values did not change keeps its list, so Apply
+              // with only a new sort order does not reload from the server.
+              const keep = next => prev => (sameValues(prev, next) ? prev : next)
+              const candidates = toFilterList(candidate)
+              setCandidateFilter(keep(candidates))
+              if (candidates.length) setCandidateSearch('')
+              setAttendeeFilter(keep(toFilterList(attendee)))
+              setRoundFilter(keep(toFilterList(round)))
+              setTechnologyFilter(keep(toFilterList(technology)))
               if (sort) changeSortOrder(sort)
             }}
-            onResetAll={clearFilters}
           />
 
           <button

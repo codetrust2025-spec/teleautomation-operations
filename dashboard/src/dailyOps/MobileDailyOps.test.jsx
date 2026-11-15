@@ -457,12 +457,12 @@ describe('on an iPhone (390-430px)', () => {
     expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument()
   })
 
-  it('drops the captions above the filters only because each select names itself', async () => {
+  it('drops the captions above the filters only because each field names itself', async () => {
     await renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /^Filters/i }))
     // An admin sees all four (the attendee filter is hidden for a handler).
     for (const name of ['Candidate filter', 'Attendee filter', 'Candidate interview level filter', 'Technology filter']) {
-      expect(screen.getByRole('combobox', { name })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name })).toBeInTheDocument()
     }
     const hidden = ALL.filter(r => r.selector.includes('.ops-roster-controls__filters .ops-roster-control > span'))
     expect(hidden.length).toBeGreaterThan(0)

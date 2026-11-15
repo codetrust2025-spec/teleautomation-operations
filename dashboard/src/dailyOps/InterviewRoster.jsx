@@ -15,6 +15,15 @@ import { Icon } from '../components/ui/Icon.jsx'
 import { CandidateSelectedBadge } from '../candidates/SelectedBadge.jsx'
 import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
 import { rowCompanyName as companyOf } from './companyName.js'
+import { appendFilterValues, describeFilterValues } from './filterParams.js'
+
+/** A filter as a list whose identity only changes with its values, so it can
+ *  sit in a hook's dependencies. A single string is one value. */
+function useFilterList(value) {
+  const list = (Array.isArray(value) ? value : [value]).filter(v => typeof v === 'string' && v.trim() !== '')
+  const key = list.join('')
+  return useMemo(() => list, [key])
+}
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
@@ -394,14 +403,16 @@ export function InterviewRoster({
     else publishPendingWorkChanged(totalPending)
   }, [unresolvedOnly, upcomingOnly, pendingOnlyView])
 
-  const effectiveAttendee = isDashboard ? dashboardAttendeeFilter : attendeeFilter
-  // A chosen candidate goes as `candidate` (one person, exactly); only typed
+  // Each filter is a list (several values = any of them); a plain string from
+  // an older caller is one value.
+  const effectiveAttendee = useFilterList(isDashboard ? dashboardAttendeeFilter : attendeeFilter)
+  // A chosen candidate goes as `candidate` (each person, exactly); only typed
   // text goes as `search`, which matches any word of it.
   const effectiveSearch = isDashboard ? dashboardCandidateSearch : ''
-  const effectiveCandidate = isDashboard ? dashboardCandidate : candidateFilter
+  const effectiveCandidate = useFilterList(isDashboard ? dashboardCandidate : candidateFilter)
   const effectiveChannel = isDashboard ? dashboardCandidateTypeFilter : channelFilter
-  const effectiveRound = isDashboard ? dashboardRoundFilter : ''
-  const effectiveTechnology = isDashboard ? dashboardTechnologyFilter : ''
+  const effectiveRound = useFilterList(isDashboard ? dashboardRoundFilter : '')
+  const effectiveTechnology = useFilterList(isDashboard ? dashboardTechnologyFilter : '')
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true)
@@ -421,13 +432,13 @@ export function InterviewRoster({
       } else {
         params.set('date', hasRange ? dashboardFromDate : day)
       }
-      if (effectiveAttendee) params.set('attendee', effectiveAttendee)
-      if (effectiveCandidate) params.set('candidate', effectiveCandidate)
+      appendFilterValues(params, 'attendee', effectiveAttendee)
+      appendFilterValues(params, 'candidate', effectiveCandidate)
       const search = effectiveSearch.trim()
       if (search) params.set('search', search)
       if (effectiveChannel) params.set('channel', effectiveChannel)
-      if (effectiveRound) params.set('round', effectiveRound)
-      if (effectiveTechnology) params.set('technology', effectiveTechnology)
+      appendFilterValues(params, 'round', effectiveRound)
+      appendFilterValues(params, 'technology', effectiveTechnology)
       if (unresolvedOnly) params.set('unresolved_only', 'true')
       else if (upcomingOnly) params.set('upcoming_only', 'true')
 
@@ -610,10 +621,10 @@ export function InterviewRoster({
   // An empty table has to name the day it is empty for, or a date picked in
   // the calendar and a date the roster is actually showing look the same.
   const activeFilterLabels = [
-    effectiveAttendee && `attendee ${effectiveAttendee}`,
-    effectiveRound && `level ${effectiveRound}`,
-    effectiveTechnology && `profile ${effectiveTechnology}`,
-    effectiveCandidate && `candidate ${effectiveCandidate}`,
+    effectiveAttendee.length > 0 && `attendee ${describeFilterValues(effectiveAttendee)}`,
+    effectiveRound.length > 0 && `level ${describeFilterValues(effectiveRound)}`,
+    effectiveTechnology.length > 0 && `profile ${describeFilterValues(effectiveTechnology)}`,
+    effectiveCandidate.length > 0 && `candidate ${describeFilterValues(effectiveCandidate)}`,
     effectiveSearch.trim() && `search "${effectiveSearch.trim()}"`,
   ].filter(Boolean)
   // This list is not about a date, so an empty one must not name one.
@@ -628,14 +639,15 @@ export function InterviewRoster({
       ? 'Every interview on record has an outcome against it.'
       : 'Pick another date in the calendar, or switch the period above.'
 
-  // Shown unless one attendee is already chosen (every row would repeat it)
-  // or this is a handler's own roster.
-  const showAttendeeColumn = !handlerView && !effectiveAttendee
+  // Shown unless exactly one attendee is chosen (every row would repeat it)
+  // or this is a handler's own roster. With two or more chosen, the column
+  // still tells their rows apart.
+  const showAttendeeColumn = !handlerView && effectiveAttendee.length !== 1
 
   const scopeHint = handlerView
     ? `${reference} — your interview roster`
-    : effectiveAttendee
-      ? `Attendee: ${effectiveAttendee}`
+    : effectiveAttendee.length
+      ? `Attendee: ${effectiveAttendee.join(', ')}`
       : 'All Referrers'
 
   return (
