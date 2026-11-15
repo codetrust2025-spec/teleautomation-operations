@@ -3276,3 +3276,68 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-roster-controls__actions .ops-roster-refresh svg { width: 18px; height: 18px; }
 }
 
+
+/* ── iPhone controls (owner, 16 Nov) ──────────────────────────────────────
+   Three even rows, every control 40px tall with 8px between:
+     1. search · Reset · Refresh
+     2. date · Today          (halves)
+     3. Profile + Round · Filters   (halves; Status is a section of
+        Profile + Round on a phone, so it has no button here)
+   The search's 60% floor keeps the date from climbing onto row 1, and the
+   halves wrap in pairs. Desktop and tablet are untouched. */
+@media (max-width: 767px) {
+  .ops-roster-controls .ops-roster-controls__filters {
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; padding: 10px;
+  }
+  .ops-roster-controls .ops-roster-controls__filters .ops-roster-search,
+  .ops-roster-controls .ops-roster-controls__filters:has(.ops-roster-clear) .ops-roster-search {
+    order: 0; flex: 1 1 60%; min-width: 60%; height: 40px; border-radius: 8px;
+  }
+  .ops-roster-controls .ops-roster-search input { font-size: 16px; } /* 16px: iOS does not zoom in on focus */
+  .ops-roster-controls .ops-roster-controls__filters .ops-roster-controls__actions {
+    order: 1; flex: 0 0 auto; gap: 8px; margin: 0; width: auto;
+  }
+  .ops-roster-controls .ops-roster-controls__actions .ops-roster-clear,
+  .ops-roster-controls .ops-roster-controls__actions .ops-roster-refresh {
+    height: 40px; min-height: 40px; min-width: 44px; padding: 0 10px; justify-content: center; border-radius: 8px;
+  }
+  .ops-roster-controls .ops-roster-controls__actions .ops-roster-refresh { width: 44px; flex: 0 0 44px; padding: 0; }
+  /* Reset keeps its icon and count; its name stays in the aria-label and title. */
+  .ops-roster-controls .ops-roster-reset__label { display: none; }
+
+  .ops-roster-controls .ops-roster-controls__filters .ops-roster-control--date,
+  .ops-roster-controls .ops-roster-controls__filters .ops-roster-today {
+    order: 2; flex: 1 1 calc(50% - 4px); min-width: 0;
+  }
+  .ops-roster-controls .ops-roster-controls__filters .ops-profile-round-filter,
+  .ops-roster-controls .ops-roster-controls__filters .ops-filter-dropdown-wrap {
+    order: 3; flex: 1 1 calc(50% - 4px); min-width: 0;
+  }
+  .ops-roster-controls .ops-roster-control--date .ops-datepicker__trigger,
+  .ops-roster-controls .ops-roster-controls__filters .ops-roster-today,
+  .ops-roster-controls .ops-roster-controls__filters .ops-levels-trigger,
+  .ops-roster-controls .ops-roster-controls__filters .ops-filter-trigger {
+    width: 100%; min-width: 0; height: 40px; min-height: 40px; border-radius: 8px;
+    justify-content: center; gap: 6px; padding: 0 10px;
+  }
+  .ops-roster-controls .ops-roster-controls__filters .ops-levels-trigger__label,
+  .ops-roster-controls .ops-roster-controls__filters .ops-filter-trigger > span,
+  .ops-roster-controls .ops-roster-control--date .ops-datepicker__trigger > span {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* The status counts strip scrolls sideways: give its ends room and a fade,
+     so the clipped card reads as "more this way", not as a broken edge. */
+  .ops-topbar__kpis {
+    scroll-padding-inline: 2px; padding-right: 16px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+            mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  }
+  .ops-topbar__kpis::-webkit-scrollbar { display: none; }
+}
+/* The smallest iPhones (320-360px): the chevrons give their room to the
+   labels, so "Profile + Round" is never cut short. */
+@media (max-width: 360px) {
+  .ops-roster-controls .ops-roster-controls__filters .ops-levels-trigger__chevron,
+  .ops-roster-controls .ops-roster-controls__filters .ops-filter-trigger__chevron { display: none; }
+}

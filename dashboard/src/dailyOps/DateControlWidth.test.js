@@ -24,10 +24,16 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const CSS = readFileSync(
+const FULL_CSS = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'dailyOps.css'),
   'utf-8',
 )
+// The iPhone block (owner, 16 Nov) sits last and only applies at 767px and
+// below, where the date control deliberately fills half of its own row
+// (PhoneControls.test.jsx covers it). The row this file protects is the
+// desktop one, so it reads the rules before that block.
+const IPHONE_BLOCK = FULL_CSS.indexOf('/* ── iPhone controls (owner, 16 Nov)')
+const CSS = IPHONE_BLOCK >= 0 ? FULL_CSS.slice(0, IPHONE_BLOCK) : FULL_CSS
 
 /** Every rule body whose selector contains `needle`, comments stripped. */
 function bodies(needle) {

@@ -453,10 +453,13 @@ describe('on an iPhone (390-430px)', () => {
     expect(order('.ops-roster-controls__filters .ops-roster-control')).toBe('2')
     const refresh = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === '.ops-roster-controls__actions .ops-roster-refresh').at(-1)
     expect(refresh.body).toMatch(/width\s*:\s*44px/)
-    // With a filter set, Clear joins them; the search makes room rather than
-    // the two buttons dropping to a row of their own.
+    // With a filter set, Reset joins them; the search makes room rather than
+    // the buttons dropping to a row of their own. Since the iPhone layout (16
+    // Nov) the search grows from a 60% floor, which also keeps the date row
+    // from climbing up beside it.
     const withClear = ALL.filter(r => phoneOnly(r.media) && r.selector.includes(':has(.ops-roster-clear) .ops-roster-search'))
-    expect(withClear.at(-1)?.body).toMatch(/flex-basis\s*:\s*calc\(100% - \d+px\)/)
+    expect(withClear.at(-1)?.body).toMatch(/flex\s*:\s*1 1 60%/)
+    expect(withClear.at(-1)?.body).toMatch(/min-width\s*:\s*60%/)
     // font-size:0 hides the word visually only; it still names the button.
     await renderPanel()
     expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument()

@@ -11,6 +11,7 @@ import { ALL_BOOKING_TYPES, ROUND_FILTER_OPTIONS, ProfileRoundFilter, channelFor
 import { FeedbackStatusFilter } from './FeedbackStatusFilter.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
+import { PHONE_QUERY, useMediaQuery } from '../utils/useMediaQuery.js'
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 // The six standard rounds in interview order, then Others (round not
@@ -116,6 +117,9 @@ export function DailyOpsPanel({
   const [feedbackFilter, setFeedbackFilter] = useState([])
   // What the loaded rows carry, for the Status menu's counts.
   const [feedbackCounts, setFeedbackCounts] = useState({})
+  const changeFeedbackFilter = next => setFeedbackFilter(prev => (sameValues(prev, next) ? prev : next))
+  // Phones (iPhone request, 16 Nov): Status is a section of Profile + Round, not a button of its own.
+  const phone = useMediaQuery(PHONE_QUERY)
   const [statusFilter, setStatusFilter] = useState('')
   // Sort By is a view preference, kept across reloads in this browser; Reset
   // leaves it alone, as it clears filters rather than the way they are read.
@@ -302,7 +306,7 @@ export function DailyOpsPanel({
               <Icon name="search" size={15} />
             </span>
             <input
-              placeholder="Search candidate or phone..."
+              placeholder={phone ? 'Search name or phone' : 'Search candidate or phone...'}
               value={candidateSearch}
               onChange={e => setCandidateSearch(e.target.value)}
               aria-label="Candidate search"
@@ -330,15 +334,19 @@ export function DailyOpsPanel({
               setBookingTypeFilter(prev => (sameValues(prev, bookingTypes) ? prev : bookingTypes))
               setRoundFilter(prev => (sameValues(prev, round) ? prev : round))
             }}
+            status={phone ? { selected: feedbackFilter, counts: feedbackCounts, onChange: changeFeedbackFilter } : null}
           />
 
           {/* Status (owner's mockup, 15 Nov): the feedback the Status column
-              shows, several at once, with counts; applied on every click. */}
-          <FeedbackStatusFilter
-            selected={feedbackFilter}
-            counts={feedbackCounts}
-            onChange={next => setFeedbackFilter(prev => (sameValues(prev, next) ? prev : next))}
-          />
+              shows, several at once, with counts; applied on every click.
+              On a phone it is a section of Profile + Round instead (16 Nov). */}
+          {!phone && (
+            <FeedbackStatusFilter
+              selected={feedbackFilter}
+              counts={feedbackCounts}
+              onChange={changeFeedbackFilter}
+            />
+          )}
 
           <DailyOpsFilterMenu
             candidateFilter={candidateFilter}

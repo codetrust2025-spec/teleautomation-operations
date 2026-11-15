@@ -1,6 +1,8 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon.jsx'
 import { toFilterList } from './DailyOpsFilterMenu.jsx'
+import { FeedbackStatusOptions } from './FeedbackStatusFilter.jsx'
+import { feedbackMeta } from './feedbackScale.js'
 
 /** The six standard rounds (STANDARD_INTERVIEW_ROUNDS), in interview order. */
 export const INTERVIEW_LEVELS = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
@@ -42,12 +44,16 @@ export function channelFor(types) {
  *   (any of them). "All Rounds" unticks them all.
  * - Booking type and rounds must both match. Every click applies at once.
  * - "Clear All" ticks both types again and unticks every round.
+ * - `status` (phones, owner's iPhone request 16 Nov): the Status filter is a
+ *   section of this menu instead of a button of its own -- the same options,
+ *   counts and instant clicks. Clear All clears it too.
  */
 export function ProfileRoundFilter({
   bookingTypes = ALL_BOOKING_TYPES,
   rounds = [],
   roundOptions = ROUND_FILTER_OPTIONS,
   onChange,
+  status = null,
 }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
@@ -60,7 +66,8 @@ export function ProfileRoundFilter({
   const chosenRounds = toFilterList(rounds)
   const roundSet = new Set(chosenRounds)
   const typeNarrowed = types.length === 1
-  const count = chosenRounds.length + (typeNarrowed ? 1 : 0)
+  const chosenStatus = status ? toFilterList(status.selected) : []
+  const count = chosenRounds.length + (typeNarrowed ? 1 : 0) + chosenStatus.length
 
   useEffect(() => {
     if (!open) return undefined
@@ -111,8 +118,9 @@ export function ProfileRoundFilter({
 
   const typeLabel = typeNarrowed ? BOOKING_TYPES.find(t => t.id === types[0]).label : 'Profile-wise and Round-wise'
   const describe = count
-    ? [`Bookings: ${typeLabel}`, chosenRounds.length && `Rounds: ${chosenRounds.map(roundFilterLabel).join(', ')}`].filter(Boolean).join('\n')
-    : 'Filter by booking type and interview round'
+    ? [`Bookings: ${typeLabel}`, chosenRounds.length && `Rounds: ${chosenRounds.map(roundFilterLabel).join(', ')}`,
+      chosenStatus.length && `Status: ${chosenStatus.map(v => feedbackMeta(v).label).join(', ')}`].filter(Boolean).join('\n')
+    : status ? 'Filter by booking type, interview round and status' : 'Filter by booking type and interview round'
 
   const box = checked => (
     <span className="ops-levels-option__box" aria-hidden="true">
@@ -130,7 +138,7 @@ export function ProfileRoundFilter({
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={menuId}
-        aria-label={count ? `Profile and round (${count} selected)` : 'Profile and round'}
+        aria-label={`${status ? 'Profile, round and status' : 'Profile and round'}${count ? ` (${count} selected)` : ''}`}
         title={describe}
       >
         <Icon name="users" size={14} strokeWidth={2.1} />
@@ -151,9 +159,12 @@ export function ProfileRoundFilter({
               <button
                 type="button"
                 className="ops-levels-menu__clear"
-                onClick={() => onChange?.({ bookingTypes: ALL_BOOKING_TYPES, round: [] })}
+                onClick={() => {
+                  onChange?.({ bookingTypes: ALL_BOOKING_TYPES, round: [] })
+                  if (chosenStatus.length) status.onChange?.([])
+                }}
                 disabled={!count}
-                aria-label="Clear all profile and round filters"
+                aria-label={status ? 'Clear all profile, round and status filters' : 'Clear all profile and round filters'}
               >
                 Clear All
               </button>
@@ -214,6 +225,25 @@ export function ProfileRoundFilter({
                 )
               })}
             </div>
+
+            {status && (
+              <>
+                <div className="ops-profile-round-menu__divider" aria-hidden="true" />
+                <div className="ops-profile-round-menu__label">
+                  <span>Status</span>
+                  <button
+                    type="button"
+                    className="ops-levels-menu__clear"
+                    onClick={() => status.onChange?.([])}
+                    disabled={!chosenStatus.length}
+                    aria-label="Clear all status filters"
+                  >
+                    All Statuses
+                  </button>
+                </div>
+                <FeedbackStatusOptions selected={chosenStatus} counts={status.counts || {}} onChange={status.onChange} />
+              </>
+            )}
 
             <p className="ops-levels-menu__hint">Select at least one filter (Profile-wise or Round-wise).</p>
           </div>

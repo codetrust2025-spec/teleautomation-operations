@@ -21,13 +21,6 @@ export function FeedbackStatusFilter({ selected = [], counts = {}, onChange }) {
   const menuId = useId()
 
   const chosen = toFilterList(selected)
-  const chosenSet = new Set(chosen)
-  const extras = Object.keys(counts)
-    .filter(value => !FEEDBACK_FILTER_VALUES.includes(value) && counts[value] > 0)
-    .sort()
-  // A ticked value stays listed even if the period no longer has it.
-  const stale = chosen.filter(value => !FEEDBACK_FILTER_VALUES.includes(value) && !extras.includes(value))
-  const options = [...FEEDBACK_FILTER_VALUES, ...extras, ...stale].map(value => feedbackMeta(value))
 
   useEffect(() => {
     if (!open) return undefined
@@ -53,14 +46,6 @@ export function FeedbackStatusFilter({ selected = [], counts = {}, onChange }) {
   useEffect(() => {
     if (open) wrapRef.current?.querySelector('.ops-feedback-filter-menu input')?.focus()
   }, [open])
-
-  function toggle(value) {
-    // Kept in the menu's order, whatever order they were ticked in.
-    const order = options.map(o => o.value)
-    onChange?.(chosenSet.has(value)
-      ? chosen.filter(v => v !== value)
-      : order.filter(v => v === value || chosenSet.has(v)))
-  }
 
   const describe = chosen.length
     ? `Status: ${chosen.map(v => feedbackMeta(v).label).join(', ')}`
@@ -104,35 +89,68 @@ export function FeedbackStatusFilter({ selected = [], counts = {}, onChange }) {
                 Clear All
               </button>
             </div>
-            <div className="ops-feedback-filter-list" role="group" aria-label="Interview status">
-              {options.map(option => {
-                const checked = chosenSet.has(option.value)
-                const count = counts[option.value] || 0
-                return (
-                  <label
-                    key={option.value}
-                    className={`ops-feedback-filter-option${checked ? ' ops-feedback-filter-option--checked' : ''}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggle(option.value)}
-                      aria-label={`${option.label} (${count})`}
-                    />
-                    <span className="ops-levels-option__box" aria-hidden="true">
-                      {checked && <Icon name="check" size={11} strokeWidth={3} />}
-                    </span>
-                    <span className={`ops-feedback-pill ops-feedback-pill--${option.tone} ops-feedback-filter-pill`} data-feedback={option.value}>
-                      {option.label}
-                    </span>
-                    <span className="ops-feedback-filter-count" aria-hidden="true">({count})</span>
-                  </label>
-                )
-              })}
-            </div>
+            <FeedbackStatusOptions selected={chosen} counts={counts} onChange={onChange} />
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** The options a Status list offers: the five, then any off-scale value rows carry or that is ticked. */
+export function feedbackFilterOptions(selected, counts) {
+  const chosen = toFilterList(selected)
+  const extras = Object.keys(counts || {})
+    .filter(value => !FEEDBACK_FILTER_VALUES.includes(value) && counts[value] > 0)
+    .sort()
+  // A ticked value stays listed even if the period no longer has it.
+  const stale = chosen.filter(value => !FEEDBACK_FILTER_VALUES.includes(value) && !extras.includes(value))
+  return [...FEEDBACK_FILTER_VALUES, ...extras, ...stale].map(value => feedbackMeta(value))
+}
+
+/**
+ * The Status checkboxes with their badges and counts. The Status menu shows
+ * them on wider screens; on a phone they are a section of Profile + Round.
+ */
+export function FeedbackStatusOptions({ selected = [], counts = {}, onChange }) {
+  const chosen = toFilterList(selected)
+  const chosenSet = new Set(chosen)
+  const options = feedbackFilterOptions(chosen, counts)
+
+  function toggle(value) {
+    // Kept in the menu's order, whatever order they were ticked in.
+    const order = options.map(o => o.value)
+    onChange?.(chosenSet.has(value)
+      ? chosen.filter(v => v !== value)
+      : order.filter(v => v === value || chosenSet.has(v)))
+  }
+
+  return (
+    <div className="ops-feedback-filter-list" role="group" aria-label="Interview status">
+      {options.map(option => {
+        const checked = chosenSet.has(option.value)
+        const count = counts[option.value] || 0
+        return (
+          <label
+            key={option.value}
+            className={`ops-feedback-filter-option${checked ? ' ops-feedback-filter-option--checked' : ''}`}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => toggle(option.value)}
+              aria-label={`${option.label} (${count})`}
+            />
+            <span className="ops-levels-option__box" aria-hidden="true">
+              {checked && <Icon name="check" size={11} strokeWidth={3} />}
+            </span>
+            <span className={`ops-feedback-pill ops-feedback-pill--${option.tone} ops-feedback-filter-pill`} data-feedback={option.value}>
+              {option.label}
+            </span>
+            <span className="ops-feedback-filter-count" aria-hidden="true">({count})</span>
+          </label>
+        )
+      })}
     </div>
   )
 }
