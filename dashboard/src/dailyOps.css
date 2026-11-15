@@ -2597,6 +2597,14 @@ tr.row-edit :is(button,a){cursor:pointer}
 
 .ops-filter-backdrop { display: none; }
 
+/* The controls box clips its content (overflow: hidden) below 1101px, where
+   it is not the flex row it is above. That cut the Filters panel and the
+   Levels menu off at the box's bottom edge: 110px of a 457px panel showed
+   at 915px (15 Nov). Above 1100px the box already lets them out. */
+@media (max-width: 1100px) {
+  .ops-roster-controls { overflow: visible; }
+}
+
 /* Below 1100px the controls wrap and Filters starts its row, so the panel
    opens to the right of the button instead of hanging off the left edge
    (it ran 29px past it at 900px). The component also nudges it back inside
