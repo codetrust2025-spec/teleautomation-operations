@@ -265,3 +265,33 @@ record and writes down `sha256sum purge-before.txt` next to the table above. Tha
 Approved by: ______________________   Date/time: ______________________
 
 (Until this block is signed, nothing is stopped and nothing is deleted.)
+
+## 11. Re-check, 15 Nov 2026 (read-only; still NOT APPROVED, nothing executed)
+
+Everything below was measured on production, read-only, after the owner deleted the two duplicate "Sai" Naukri
+entries from the Data Room (15 Nov ~19:01 UTC). That edit, and other Data Room edits since 9 Oct, changed the rest
+of `credentials.json`, so the tool's pinned rest-of-file digest was re-pinned in this commit. The records to purge
+did not change.
+
+| Item | Value now |
+|---|---|
+| Scope, live file | 99 records, digest `d292eec0cf32e5d6` (unchanged) |
+| Scope, older copy | 81 records, digest `0b07fefcd1841e85`; rest `aeba532e0c43b6f1` (both unchanged) |
+| Live `credentials.json` | 112,650 bytes, sha256 `e2efc42c653db817a56e62682e8cf8cc497f4f3f71112fcd10d4b79dfe2b7637`, last written 15 Nov 19:01:31 UTC |
+| Rest-of-file digest (re-pinned) | `951d97c172681cfd` (was `33622d20f6231a7e` on 9 Oct) |
+| Older copy sha256 | `78424ddfa75f365ed5300246b7ad65128679e0c4d17f4fe2eb9545b6f235967d` (unchanged) |
+| Recovery point | nightly restic snapshot `7a1db571`, 15 Nov 20:32:34 UTC: both files **IDENTICAL**; job `ok`, restore test passed, 0 failures |
+| Other files mentioning the key | none |
+| Dry run gates | all data gates PASS; the writer gates FAIL only because the application is running (expected before Phase 1) |
+| Quiet check (19:37 UTC) | GO: no data-changing request in the previous 30 minutes |
+| Disk | 4.6 GB free (91% used): enough for the rollback copy (~200 KB), but worth freeing before any window |
+| Application | Operations `74de228`, healthy, 4/4 containers |
+
+**Before an approved window:**
+- Any Data Room edit after 15 Nov 19:01 UTC changes `credentials.json` again, and the rest-of-file gate will stop the
+  apply. That is the gate working. Re-run the dry run, re-pin `EXPECTED["live"]["rest_digest"]` with the value it
+  prints, and commit that, in the hour before the window.
+- Use the newest nightly snapshot as the recovery point (re-run 0.2) rather than `da4a7033`, which retention may
+  since have pruned.
+- The four owner decisions in section 10 (window and date, scope, backups left to expire, notice to handlers) and the
+  signed approval are still required. Claude does not stop the application or run the apply.

@@ -87,7 +87,7 @@ EXPECTED = {
         "name": LIVE_NAME,
         "count": 99,
         "digest": "d292eec0cf32e5d6",
-        "rest_digest": "33622d20f6231a7e",
+        "rest_digest": "951d97c172681cfd",
     },
     "older_copy": {
         "name": "credentials.json.pre-srujan-import-20261005T093705Z",
