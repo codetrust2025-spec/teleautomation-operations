@@ -66,11 +66,11 @@ afterEach(() => {
 
 describe('feedbackMeta', () => {
   it.each([
-    ['excellent', 'Excellent', 'positive'],
+    ['excellent', 'Excellent', 'excellent'],
     ['good', 'Good', 'positive'],
     ['positive', 'Positive', 'positive'],
-    ['average', 'Average', 'neutral'],
-    ['needs_improvement', 'Needs Improvement', 'caution'],
+    ['average', 'Average', 'caution'],
+    ['needs_improvement', 'Needs Improvement', 'warning'],
     ['negative', 'Negative', 'negative'],
     ['mixed_signals', 'Mixed signals', 'neutral'],
   ])('labels %s as %s (%s)', (value, label, tone) => {

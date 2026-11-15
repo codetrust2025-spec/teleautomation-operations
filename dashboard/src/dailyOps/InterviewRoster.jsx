@@ -17,6 +17,7 @@ import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
 import { rowCompanyName as companyOf } from './companyName.js'
 import { appendFilterValues, describeFilterValues } from './filterParams.js'
 import { FeedbackStatusBadge } from './FeedbackStatusBadge.jsx'
+import { FEEDBACK_OPTIONS, countFeedback, feedbackMeta, filterByFeedback } from './feedbackScale.js'
 
 /** A filter as a list whose identity only changes with its values, so it can
  *  sit in a hook's dependencies. A single string is one value. */
@@ -28,40 +29,8 @@ function useFilterList(value) {
 
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
-// How an attended interview went, best to worst. Values match the server's
-// normalise_interview_feedback scale; "negative" is shared with the legacy
-// two-value scale so old rows stay valid.
-const FEEDBACK_OPTIONS = [
-  { value: 'excellent', label: 'Excellent' },
-  { value: 'good', label: 'Good' },
-  { value: 'average', label: 'Average' },
-  { value: 'needs_improvement', label: 'Needs Improvement' },
-  { value: 'negative', label: 'Negative' },
-]
-
-// What the Status column shows for a stored feedback value: its own label and
-// a tone. The column used to print "Positive" for the legacy "positive" and
-// "Negative" for everything else, so a row the operator marked Good or
-// Excellent read "Negative". Every value now names itself; only "negative"
-// says Negative.
-const FEEDBACK_TONES = {
-  excellent: 'positive',
-  good: 'positive',
-  positive: 'positive',
-  average: 'neutral',
-  needs_improvement: 'caution',
-  negative: 'negative',
-}
-
-export function feedbackMeta(value) {
-  const key = String(value || '').trim()
-  if (!key) return null
-  const option = FEEDBACK_OPTIONS.find(o => o.value === key)
-  const label = option
-    ? option.label
-    : key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
-  return { value: key, label, tone: FEEDBACK_TONES[key] || 'neutral' }
-}
+// The feedback scale lives in feedbackScale.js, shared with the Status filter.
+export { feedbackMeta }
 
 // A stored legacy feedback value ("positive") is not on the new scale, so the
 // dropdown would show the placeholder for it. Offer it as a one-off option so
@@ -278,6 +247,9 @@ export function InterviewRoster({
   dashboardCandidate = '',
   dashboardCandidateTypeFilter = '',
   dashboardStatusFilter = '',
+  // The Status filter (interview feedback: Good, Excellent, ...): any of them.
+  dashboardFeedbackFilter = '',
+  onFeedbackCountsChange,
   dashboardSortOrder = DEFAULT_ROSTER_SORT,
   upcomingOnly = false,
   // The global Pending view: every interview still waiting for an outcome, at
@@ -337,6 +309,8 @@ export function InterviewRoster({
 
   const rosterCountsRef = useRef(onRosterCountsChange)
   rosterCountsRef.current = onRosterCountsChange
+  const feedbackCountsRef = useRef(onFeedbackCountsChange)
+  feedbackCountsRef.current = onFeedbackCountsChange
 
   // Pending and All unresolved list rows *because* they have no outcome, so
   // recording one takes the row off the list. Waiting for a reload to say so
@@ -382,13 +356,10 @@ export function InterviewRoster({
       }
     }
     setRows(visible)
-    // Counted from the rows just shown rather than read off the payload:
-    // the top counter and the sidebar badge disagreed with the table and
-    // with each other because all three measured different things.
-    const nextCounts = countStatusRows(visible, resolvedStatus)
-    setCounts(nextCounts)
-    rosterCountsRef.current?.(nextCounts, { isUpcomingView: upcomingOnly })
-    const totalPending = nextCounts.pending_count
+    // The top counters are tallied from the rows on screen (below, after the
+    // Status filter). The sidebar's Pending badge is not about that filter: it
+    // takes every loaded row, so ticking "Good" cannot announce 0 pending.
+    const totalPending = countStatusRows(visible, resolvedStatus).pending_count
     // The sidebar badge counts pending interviews in its own seven-day
     // window. This view counts every unresolved interview ever, which is a
     // different and much larger number, so it asks the badge to re-read its
@@ -414,6 +385,27 @@ export function InterviewRoster({
   const effectiveChannel = isDashboard ? dashboardCandidateTypeFilter : channelFilter
   const effectiveRound = useFilterList(isDashboard ? dashboardRoundFilter : '')
   const effectiveTechnology = useFilterList(isDashboard ? dashboardTechnologyFilter : '')
+  const effectiveFeedback = useFilterList(isDashboard ? dashboardFeedbackFilter : '')
+
+  // The Status filter works on the rows already loaded, so a tick applies at
+  // once with no request. `rows` stays the whole loaded set (saves update it);
+  // `shownRows` is what the table draws and the counters count.
+  const shownRows = useMemo(() => filterByFeedback(rows, effectiveFeedback), [rows, effectiveFeedback])
+
+  useEffect(() => {
+    // Counted from the rows shown rather than read off the payload: the top
+    // counter and the sidebar badge disagreed with the table and with each
+    // other because all three measured different things.
+    const nextCounts = countStatusRows(shownRows, resolvedStatus)
+    setCounts(nextCounts)
+    rosterCountsRef.current?.(nextCounts, { isUpcomingView: upcomingOnly })
+  }, [shownRows, upcomingOnly])
+
+  useEffect(() => {
+    // The Status menu's counts: every loaded row, before the Status filter,
+    // so a value's count does not drop to 0 the moment another is ticked.
+    feedbackCountsRef.current?.(countFeedback(rows))
+  }, [rows])
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true)
@@ -628,6 +620,7 @@ export function InterviewRoster({
     effectiveRound.length > 0 && `level ${describeFilterValues(effectiveRound)}`,
     effectiveTechnology.length > 0 && `profile ${describeFilterValues(effectiveTechnology)}`,
     effectiveCandidate.length > 0 && `candidate ${describeFilterValues(effectiveCandidate)}`,
+    effectiveFeedback.length > 0 && `status ${describeFilterValues(effectiveFeedback.map(v => feedbackMeta(v)?.label || v))}`,
     effectiveSearch.trim() && `search "${effectiveSearch.trim()}"`,
   ].filter(Boolean)
   // This list is not about a date, so an empty one must not name one.
@@ -708,9 +701,9 @@ export function InterviewRoster({
 
       {error && <p className="admin-error" role="alert">{error}</p>}
 
-      {loading && rows.length === 0 ? (
+      {loading && shownRows.length === 0 ? (
         <p className="ops-checklist-empty">Loading interview roster…</p>
-      ) : rows.length === 0 ? (
+      ) : shownRows.length === 0 ? (
         <div className="ops-checklist-empty ops-roster-empty" role="status">
           <strong>{emptyHeadline}</strong>
           <span>{emptyHint}</span>
@@ -750,7 +743,7 @@ export function InterviewRoster({
             </tr>
           </thead>
           <tbody>
-            {sortRosterRows(rows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)), dashboardSortOrder).map(row => {
+            {sortRosterRows(shownRows.filter(row => matchesStatusFilter(resolvedStatus(row), dashboardStatusFilter)), dashboardSortOrder).map(row => {
               const status = resolvedStatus(row)
               const bookingSource = bookingSourceMeta(row)
               return (

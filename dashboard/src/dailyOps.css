@@ -2005,7 +2005,7 @@ tr.row-edit :is(button,a){cursor:pointer}
 .ops-feedback-pill{display:inline-block;align-self:flex-start;max-width:100%;overflow:hidden;text-overflow:ellipsis;height:18px;line-height:16px;margin-right:6px;padding:0 7px;border-radius:999px;border:1px solid rgba(148,163,184,.3);background:rgba(148,163,184,.1);color:#cbd5e1;font-size:10.5px;font-weight:700;white-space:nowrap;vertical-align:middle}
 .ops-feedback-pill--positive{border-color:rgba(16,185,129,.35);background:rgba(16,185,129,.12);color:#6ee7b7}
 .ops-feedback-pill--caution{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.12);color:#fcd34d}
-.ops-feedback-pill--negative{border-color:rgba(248,113,113,.4);background:rgba(239,68,68,.12);color:#fca5a5}
+.ops-feedback-pill--negative{border-color:rgba(248,113,113,.4);background:rgba(239,68,68,.12);color:#fca5a5}.ops-feedback-pill--excellent{border-color:rgba(45,212,191,.4);background:rgba(20,184,166,.13);color:#5eead4}.ops-feedback-pill--warning{border-color:rgba(251,146,60,.45);background:rgba(249,115,22,.14);color:#fdba74}
 
 /* ── Edit interview slot modal: readability + spacing polish ──────────────
    Scoped to .ops-slot-modal so the shared candidate modal is untouched. This
@@ -2805,6 +2805,52 @@ tr.row-edit :is(button,a){cursor:pointer}
 .ops-levels-option--checked .ops-levels-option__box { border-color: #3b82f6; background: #2563eb; }
 .ops-levels-menu__hint { margin: 10px 0 0; font-size: 11px; color: #64748b; }
 
+/* ── Status filter (owner's mockup, 15 Nov) ─────────────────────────────
+   The feedback the Status column shows, one row each: checkbox, the badge in
+   its own colour, and the count. Built from the Levels menu pieces. */
+.ops-feedback-filter-menu {
+  width: 260px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ops-feedback-filter-menu .ops-levels-menu__head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+.ops-feedback-filter-list { display: flex; flex-direction: column; }
+.ops-feedback-filter-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.ops-feedback-filter-option + .ops-feedback-filter-option { border-top: 1px solid rgba(148, 163, 184, 0.08); }
+.ops-feedback-filter-option:hover { background: rgba(30, 41, 59, 0.8); }
+.ops-feedback-filter-option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+.ops-feedback-filter-option:focus-within { outline: 2px solid #60a5fa; outline-offset: -1px; }
+.ops-feedback-filter-option .ops-levels-option__box { width: 17px; height: 17px; }
+.ops-feedback-filter-option--checked .ops-levels-option__box { border-color: #3b82f6; background: #2563eb; }
+.ops-feedback-filter-menu .ops-feedback-filter-pill { margin: 0; height: 22px; line-height: 20px; padding: 0 10px; font-size: 11.5px; }
+.ops-feedback-filter-count {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Profile + Round (Nov 2026) ───────────────────────────────────────────
    Booking type (Profile-wise / Round-wise) above the six interview rounds,
    built from the Levels menu pieces (ops-levels-*). */
@@ -3128,6 +3174,8 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-levels-option { min-height: 42px; font-size: 13.5px; }
   .ops-profile-round-menu { width: 100%; max-height: 88vh; max-height: 88dvh; overflow-y: auto; }
   .ops-profile-round-type { min-height: 42px; font-size: 13.5px; }
+  .ops-feedback-filter-menu { width: 100%; max-height: 88vh; max-height: 88dvh; }
+  .ops-feedback-filter-option { min-height: 46px; }
   .ops-roster-controls__filters .ops-roster-controls__actions {
     order: 1; flex: 0 0 auto; width: auto; margin-left: 0; gap: 6px;
   }

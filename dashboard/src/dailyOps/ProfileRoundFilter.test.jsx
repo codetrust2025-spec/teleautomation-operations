@@ -267,13 +267,15 @@ describe('on Daily Ops', () => {
     expect(ticked('Booking type')).toEqual(['Profile-wise', 'Round-wise'])
   })
 
-  it('sits right after the date, before Filters, and Today stays beside Filters', async () => {
+  it('sits right after the date, then Status, then Filters, and Today stays beside Filters', async () => {
     await renderPanel()
     const order = [...document.querySelector('.ops-roster-controls__filters').children]
-      .map(el => el.classList.contains('ops-profile-round-filter') ? 'profile-round' : el.className.split(' ')[0])
+      .map(el => el.classList.contains('ops-profile-round-filter') ? 'profile-round'
+        : el.classList.contains('ops-feedback-filter') ? 'status' : el.className.split(' ')[0])
     const at = name => order.indexOf(name)
     expect(at('profile-round')).toBe(at('ops-roster-control') + 1)
-    expect(at('ops-filter-dropdown-wrap')).toBe(at('profile-round') + 1)
+    expect(at('status')).toBe(at('profile-round') + 1)
+    expect(at('ops-filter-dropdown-wrap')).toBe(at('status') + 1)
     expect(at('ops-roster-today')).toBe(at('ops-filter-dropdown-wrap') + 1)
   })
 })

@@ -8,6 +8,7 @@ import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
 import { appendFilterValues, sameValues } from './filterParams.js'
 import { ALL_BOOKING_TYPES, INTERVIEW_LEVELS, ProfileRoundFilter, channelFor } from './ProfileRoundFilter.jsx'
+import { FeedbackStatusFilter } from './FeedbackStatusFilter.jsx'
 import { addDaysIso, isValidIsoDay, resolveCalendarPreset, todayIso } from './calendarDates.js'
 import { Icon } from '../components/ui/Icon.jsx'
 
@@ -110,6 +111,10 @@ export function DailyOpsPanel({
   const bookingChannel = channelFor(bookingTypeFilter)
   const [candidateSearch, setCandidateSearch] = useState('')
   const [candidateFilter, setCandidateFilter] = useState([])
+  // The Status filter: interview feedback values (good, excellent, ...), any of them.
+  const [feedbackFilter, setFeedbackFilter] = useState([])
+  // What the loaded rows carry, for the Status menu's counts.
+  const [feedbackCounts, setFeedbackCounts] = useState({})
   const [statusFilter, setStatusFilter] = useState('')
   // Sort By is a view preference, kept across reloads in this browser; Reset
   // leaves it alone, as it clears filters rather than the way they are read.
@@ -221,7 +226,7 @@ export function DailyOpsPanel({
   const rangeInterviews = globalStats?.interviews || {}
   const candidateOptions = rangeInterviews.by_candidate || []
   // Reset's badge counts fields in use, not values: Level HR + L2 is one thing to put back.
-  const activeFilterCount = [attendeeFilter, roundFilter, candidateFilter]
+  const activeFilterCount = [attendeeFilter, roundFilter, candidateFilter, feedbackFilter]
     .filter(list => list.length > 0).length + (candidateSearch.trim() ? 1 : 0) + (bookingChannel ? 1 : 0)
 
   function clearFilters() {
@@ -230,6 +235,7 @@ export function DailyOpsPanel({
     setBookingTypeFilter(ALL_BOOKING_TYPES)
     setCandidateSearch('')
     setCandidateFilter([])
+    setFeedbackFilter([])
   }
 
   // Everything Reset puts back, counted for its badge: a picked date/preset, the status tab,
@@ -325,6 +331,14 @@ export function DailyOpsPanel({
             }}
           />
 
+          {/* Status (owner's mockup, 15 Nov): the feedback the Status column
+              shows, several at once, with counts; applied on every click. */}
+          <FeedbackStatusFilter
+            selected={feedbackFilter}
+            counts={feedbackCounts}
+            onChange={next => setFeedbackFilter(prev => (sameValues(prev, next) ? prev : next))}
+          />
+
           <DailyOpsFilterMenu
             candidateFilter={candidateFilter}
             attendeeFilter={attendeeFilter}
@@ -403,6 +417,8 @@ export function DailyOpsPanel({
           dashboardCandidate={candidateFilter}
           dashboardCandidateSearch={candidateSearch}
           dashboardStatusFilter={statusFilter}
+          dashboardFeedbackFilter={feedbackFilter}
+          onFeedbackCountsChange={setFeedbackCounts}
           dashboardSortOrder={sortOrder}
           upcomingOnly={upcomingOnly}
           unresolvedOnly={false}

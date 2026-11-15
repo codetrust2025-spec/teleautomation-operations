@@ -127,7 +127,7 @@ describe('the section is gone from the component, not hidden', () => {
   })
 
   it('publishes the pending count it displays', () => {
-    expect(roster).toMatch(/const totalPending = nextCounts\.pending_count/)
+    expect(roster).toMatch(/const totalPending = countStatusRows\(visible, resolvedStatus\)\.pending_count/)
     expect(roster).toContain('publishPendingWorkChanged(totalPending)')
   })
 

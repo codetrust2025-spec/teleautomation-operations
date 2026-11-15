@@ -161,6 +161,8 @@ const PATHS = {
     </>
   ),
   'chevron-down': <path d="m6 9 6 6 6-6" />,
+  // Daily Ops Status filter.
+  'bar-chart': <path d="M5 20V11M10 20V5M15 20v-8M20 20v-4M3 20h18" />,
   // Daily Ops Status badge: the note behind it.
   info: (
     <>
