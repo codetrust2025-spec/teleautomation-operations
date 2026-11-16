@@ -1,21 +1,21 @@
-// "Needs reading" and Opened never contradict each other (16 Nov 2026): a card
-// whose 8 mails were all opened still said "Needs reading" with a check mark.
-// A mail the reader could not classify says "Needs reading" while unopened and
-// "Needs Review" once opened, both in the review style with the info icon.
+// On Selection Related, "Needs Review" is not displayed; Opened already
+// describes a read mail. Keep unread "Needs reading" and real verified statuses.
+// The stored classification is unchanged, and Interview Related is unaffected.
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ConfirmProvider } from "../context/ConfirmContext.jsx";
-import { MailCategoryPage, isNeedsReading, needsReadingLabel } from "./MailCategoryPage.jsx";
+import { MailCategoryPage, isNeedsReading, needsReadingLabel, selectionVisibleStatus } from "./MailCategoryPage.jsx";
 
 const group = (over) => ({
   candidate_id: "c1", company_key: "", company_name: null, candidate_name: "Sakthi", candidate_email: null,
   total: 5, unread: 0, read: 5, category_total: 5, category_unread: 0, category_read: 5,
   latest_classification: "selection_needs_reading", latest_status: "Needs reading", latest_status_evidence: "classified", ...over,
 });
-function serve(groups) {
+function serve(groups, history = []) {
   vi.stubGlobal("fetch", vi.fn(async (url) => {
-    const body = String(url).includes("/groups?") ? { groups, total: groups.length, companies: [] }
+    const body = String(url).includes("/groups/emails?") ? { notifications: history, total: history.length }
+      : String(url).includes("/groups?") ? { groups, total: groups.length, companies: [] }
       : { notifications: [], total: 0, summary: {} };
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }));
@@ -30,18 +30,45 @@ describe("Needs reading vs Opened", () => {
     expect(isNeedsReading("offer_received")).toBe(false);
     expect(needsReadingLabel(true)).toBe("Needs reading");
     expect(needsReadingLabel(false)).toBe("Needs Review");
+    expect(selectionVisibleStatus("Needs Review", "selection")).toBe("");
+    expect(selectionVisibleStatus(" Needs Review ", "selection")).toBe("");
+    expect(selectionVisibleStatus("Needs Review", "interview")).toBe("Needs Review");
+    expect(selectionVisibleStatus("Offer Received", "selection")).toBe("Offer Received");
   });
 
-  it("an all-opened card says Needs Review, in the review style, never with a check mark", async () => {
+  it("an all-opened Selection card has no Needs Review badge", async () => {
     serve([group({})]);
     render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
     const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
-    const pill = card.querySelector(".mcp-pill--status");
-    expect(pill.textContent).toBe("Needs Review");
-    expect(pill.className).toMatch(/mcp-pill--review/);
-    expect(pill.querySelector(".mcp-glyph--info")).not.toBeNull();
-    expect(pill.querySelector(".mcp-glyph--check")).toBeNull();
+    expect(card.querySelector(".mcp-pill--status")).toBeNull();
+    expect(within(card).queryByText("Needs Review")).toBeNull();
     expect(within(card).getByLabelText("5 opened")).toBeInTheDocument();
+  });
+
+  it("also hides a stored Needs Review label without changing its backend status", async () => {
+    serve([group({ latest_classification: "selection_other", latest_status: "Needs Review" })]);
+    render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
+    const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
+    expect(card.querySelector(".mcp-pill--status")).toBeNull();
+  });
+
+  it("expanded Selection emails omit Needs Review but keep Opened and verified statuses", async () => {
+    serve([group({})], [
+      { id: "one", candidate_id: "c1", classification: "selection_needs_reading",
+        candidate_status: "Needs reading", email_subject: "Verification reminder", is_read: true,
+        email_received_at: "2026-11-15T08:00:00Z" },
+      { id: "two", candidate_id: "c1", classification: "offer_received",
+        candidate_status: "Offer Received", email_subject: "Offer letter", is_read: true,
+        email_received_at: "2026-11-14T08:00:00Z" },
+    ]);
+    render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
+    const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
+    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(2));
+    expect(within(card).queryByText("Needs Review")).toBeNull();
+    const labels = [...card.querySelectorAll(".mcp-mail__label")].map((el) => el.textContent);
+    expect(labels).toEqual(["Selection", "Selection · Offer Received"]);
+    expect(within(card).getAllByText("Opened")).toHaveLength(2);
   });
 
   it("a card with unopened mail says Needs reading", async () => {
