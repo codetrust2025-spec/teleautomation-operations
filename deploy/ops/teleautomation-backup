@@ -71,7 +71,7 @@ PY
 }
 
 cleanup() {
-  docker rm -f ta-restore-verify-operations ta-restore-verify-marketing >/dev/null 2>&1 || true
+  docker rm -f -v ta-restore-verify-operations ta-restore-verify-marketing >/dev/null 2>&1 || true
   rm -rf "$VERIFY"
 }
 fail() {
@@ -157,7 +157,7 @@ python3 "$LIB/ta_backup_verify.py" files "$RESTORED"
 
 restore_db() {  # restore_db LABEL
   local c="ta-restore-verify-$1"
-  docker rm -f "$c" >/dev/null 2>&1 || true
+  docker rm -f -v "$c" >/dev/null 2>&1 || true
   docker run -d --name "$c" --network none --memory 768m \
     -e POSTGRES_PASSWORD=restore-test -e POSTGRES_DB=restore "$PG_IMAGE" >/dev/null
   for _ in $(seq 1 90); do
@@ -169,7 +169,10 @@ restore_db() {  # restore_db LABEL
   docker exec -i "$c" psql -X -q -U postgres -d restore -v ON_ERROR_STOP=1 < "$RESTORED/db/$1.sql" >/dev/null
   count_rows "$c" postgres restore > "$VERIFY/restored-$1.tsv"
   python3 "$LIB/ta_backup_verify.py" counts "$RESTORED" "$1" "$VERIFY/restored-$1.tsv"
-  docker rm -f "$c" >/dev/null
+  # -v: postgres:16 declares a VOLUME, so every restore test also creates an
+  # anonymous volume holding a full restored copy of the database. Without -v
+  # it outlived the container: about 1.2 GB left behind every night.
+  docker rm -f -v "$c" >/dev/null
 }
 STEP="restore test: operations database"
 restore_db operations

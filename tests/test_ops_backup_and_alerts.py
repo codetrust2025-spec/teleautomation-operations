@@ -438,3 +438,17 @@ def test_the_manifest_is_never_written_inside_the_stage_it_hashes():
     script = open(os.path.join(OPS, "teleautomation-backup"), encoding="utf-8").read()
     assert '> "$STAGE/manifest.json.tmp"' not in script
     assert '> "$ROOT/manifest.json.tmp"' in script
+
+
+def test_restore_test_containers_are_removed_with_their_volumes():
+    """postgres:16 declares a VOLUME, so each restore-test container gets an
+    anonymous volume holding a full restored copy of the database. Removing
+    the container without -v left ~1.2 GB behind every night (47 volumes,
+    ~28 GB, found 16 Nov 2026)."""
+    with open(os.path.join(OPS, "teleautomation-backup"), encoding="utf-8") as f:
+        script = f.read()
+    removals = [line for line in script.splitlines()
+                if "docker rm" in line and not line.lstrip().startswith("#")]
+    assert removals, "the restore test must remove its containers"
+    for line in removals:
+        assert "-v" in line.split("docker rm", 1)[1].split(), line
