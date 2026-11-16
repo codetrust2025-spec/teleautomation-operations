@@ -295,3 +295,28 @@ did not change.
   since have pruned.
 - The four owner decisions in section 10 (window and date, scope, backups left to expire, notice to handlers) and the
   signed approval are still required. Claude does not stop the application or run the apply.
+
+## 12. Executed, 16 Nov 2026 (owner-approved)
+
+The owner approved execution in chat on 16 Nov 2026: "Execute the approved deletion of 99 + 81 interview-data records
+using the existing runbook. Recheck backups, safety gates, downtime window and rollback readiness. Preserve all
+unrelated data." Decisions: both files; existing snapshots left to age out; no advance notice (early-morning IST,
+quiet check GO); operator Claude, on the owner's instruction.
+
+| Step | Time (UTC) | Result |
+|---|---|---|
+| 0.2 backup check | 00:19 | snapshot `7a1db571` IDENTICAL for both files; job `ok`, 0 failures |
+| 0.3 dry run | 00:19 | all 12 data gates PASS (live sha `e2efc42c...`, rest `951d97c172681cfd`) |
+| 0.4 / 0.5 | 00:20 | running healthy, one listener; quiet check `VERDICT: GO` |
+| 1.1 stop | 00:20:25 | 0 containers, 0 listeners |
+| 1.2 baseline | 00:20:30 | 559 lines, `purge-before.txt` sha256 `25df5151...` |
+| 2.1 dry run + writer | 00:20:35 | all 18 gates PASS |
+| 2.2 apply | 00:20:41 | 81 + 99 records removed; live -> 25,619 bytes `bb232f9f...`, older -> 16,137 bytes `1b12a5ff...`; rest digests unchanged; `RESULT: done.`, exit 0 |
+| 2.3 verify | 00:20:55 | `RESULT: clean.` |
+| 2.4 diff | 00:21 | exactly the two credentials files changed of 559 |
+| 3.1 start | 00:21:04 | healthy on the 2nd check; downtime 39 s |
+| 3.2 | 00:21 | `/health` ok, `/version` `74de228` (same release as before) |
+| 4.1 watch 60 s | 00:22 | `RESULT: clean.`, the key did not come back |
+| 4.2 diff after restart | 00:23 | still only the two credentials files |
+
+Recovery point for a rollback: snapshot `7a1db571` (and older nightlies) until retention expires them.
