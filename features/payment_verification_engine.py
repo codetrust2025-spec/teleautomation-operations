@@ -2224,7 +2224,25 @@ def verify_payment_screenshot(
     ):
         reasons.append("The matched receiver account is not verified.")
     elif result["receiver_type"] not in {"company", "referrer"}:
-        if referrer_hint and referrer_id:
+        if purpose == "candidate_payment":
+            # Candidate payments can be received by the COMPANY regardless of
+            # which referrer was selected for the candidate. Referrer-specific
+            # advice here sent operators to register a company-owned account
+            # under an unrelated referrer, which is both misleading and unsafe.
+            if not str(result.get("receiver_name") or "").strip():
+                reasons.append(
+                    "The receipt's payee (Banking Name) was not detected. "
+                    "Re-analyse the receipt and check its Sent to identifier "
+                    "against the verified company receiver accounts."
+                )
+            else:
+                reasons.append(
+                    "The recipient does not match a verified company receiver "
+                    "or an authorised referrer account. Check the Banking Name "
+                    "and Sent to identifier against the receiver registry; "
+                    "do not register a company-owned account under a referrer."
+                )
+        elif referrer_hint and referrer_id:
             reasons.append(
                 f"The receiver does not match any payment account registered to "
                 f"{referrer_hint}. Add their account via Manage payment accounts, "
@@ -2233,10 +2251,17 @@ def verify_payment_screenshot(
         else:
             reasons.append("The receiver is not present in the configured receiver registry.")
     elif not has_stable_receiver_match:
-        reasons.append(
-            "A configured receiver UPI, phone, or account identifier must be visible; "
-            "a receiver name alone is not sufficient."
-        )
+        if purpose == "candidate_payment" and result.get("receiver_type") == "company":
+            reasons.append(
+                "The company payee name was recognised, but the receiving UPI, "
+                "phone or bank account has not been verified against company "
+                "payment accounts. A name or masked UPI alone cannot confirm payment."
+            )
+        else:
+            reasons.append(
+                "A configured receiver UPI, phone, or account identifier must be visible; "
+                "a receiver name alone is not sufficient."
+            )
     if "LOW_EXTRACTION_CONFIDENCE" in reason_codes:
         reasons.append("Payment extraction confidence is below the configured threshold.")
     if "TRANSACTION_REFERENCE_MISSING" in reason_codes:
