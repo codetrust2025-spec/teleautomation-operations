@@ -532,18 +532,19 @@ export function MailCategoryPage({ category }) {
 
   const filtered = Boolean(search.trim() || companyKey || status);
   const tileLabel = CATEGORY_TILES.find((t) => t.id === tile)?.label || "All Alerts";
-  // Selection Related on a phone follows its iPhone mockup (16 Nov 2026): the
-  // five counters fit one row with short labels, and the search says what it
-  // searches. Wider screens and Interview Related keep their own wording.
-  const phone = useMediaQuery("(max-width: 640px)") && category === "selection";
+  // On a phone both pages follow the Selection Related iPhone mockup (16 Nov
+  // 2026): the five counters fit one row with short labels. Selection's search
+  // also says what it searches. Wider screens keep the full wording.
+  const phoneWidth = useMediaQuery("(max-width: 640px)");
+  const phone = phoneWidth && category === "selection";
   return <section className={`mcp mcp--${category}`}>
     <div className="mcp-tiles" role="tablist" aria-label={`${page.title} tabs`}>
       {CATEGORY_TILES.map((t) => <button key={t.id} type="button" role="tab" aria-selected={tile === t.id}
         title={t.id === "retry" ? `${CATEGORY_NAME[category]} alerts waiting for AI retry` : `${t.label} ${CATEGORY_NAME[category]} alerts`}
         className={`mcp-tile mcp-tile--${t.id}${tile === t.id ? " mcp-tile--active" : ""}`}
         onClick={() => { setTile(t.id); setOffset(0); }}>
-        <span className="mcp-tile__icon"><Glyph name={(phone && t.phoneIcon) || t.icon} size={22} /></span>
-        <span className="mcp-tile__text"><span className="mcp-tile__label">{(phone && t.short) || t.label}</span><span className="mcp-tile__count">{counts[t.id] ?? 0}</span></span>
+        <span className="mcp-tile__icon"><Glyph name={(phoneWidth && t.phoneIcon) || t.icon} size={22} /></span>
+        <span className="mcp-tile__text"><span className="mcp-tile__label">{(phoneWidth && t.short) || t.label}</span><span className="mcp-tile__count">{counts[t.id] ?? 0}</span></span>
       </button>)}
     </div>
 

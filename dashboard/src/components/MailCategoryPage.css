@@ -27,10 +27,12 @@
 /* The live pill beside the page title in the shell header. */
 .business-header__live { flex: none; }
 
-/* Counters = tabs, one compact row. */
+/* Counters = tabs: all five in one compact row at every width (16 Nov 2026;
+   four columns had pushed All Alerts onto a second row). */
 .mcp-tiles {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  container: mcp-tiles / inline-size;
   padding: 8px;
   border: 1px solid var(--mcp-border);
   border-radius: 14px;
@@ -69,9 +71,22 @@
 .mcp-tile--opened .mcp-tile__icon { background: #1e3aa8; color: #dbe6ff; }
 .mcp-tile--retry .mcp-tile__icon { background: #4c2a96; color: #ddd0ff; }
 .mcp-tile--all .mcp-tile__icon { background: #22345a; color: #c7d2fe; }
+.mcp-tile--booking .mcp-tile__icon { background: #1f3147; color: #dbe3ef; }
 .mcp-tile__text { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
 .mcp-tile__label { overflow: hidden; color: var(--mcp-text-2); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .mcp-tile__count { color: var(--mcp-text); font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+/* A counter too narrow for icon beside text (a row under ~916px: tablets, a
+   narrow desktop window, the sidebar open) stacks icon over label over count,
+   as the approved Selection Related iPhone mockup draws it, so nothing clips. */
+@container mcp-tiles (max-width: 915px) {
+  .mcp-tile { flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 4px 6px; text-align: center; }
+  .mcp-tile__icon { width: 36px; height: 36px; border-radius: 9px; }
+  .mcp-tile__icon .mcp-glyph { width: 19px; height: 19px; }
+  .mcp-tile__text { align-items: center; max-width: 100%; }
+  .mcp-tile__label { max-width: 100%; font-size: 13px; }
+  .mcp-tile__count { font-size: 22px; }
+  .mcp-tile + .mcp-tile::before { top: 12%; bottom: 12%; }
+}
 
 /* Search, company and status in one row. */
 .mcp-filters { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
@@ -670,7 +685,9 @@
    and Interview Related keep the rules above. Kept last so it wins over the
    phone and unread rules. The mockup's sizes: five counters in one row (icon
    over label over count), 41px fields with their icons, a 39px tool row, cards
-   with a 54px logo, 18px names and 23px pills. Inputs stay 16px (iOS zoom). */
+   with a 54px logo, 18px names and 23px pills. Inputs stay 16px (iOS zoom).
+   The counter rules (.mcp-tile*) also serve Interview Related phones, so both
+   pages show all five counters in one row (16 Nov 2026). */
 @media (max-width: 640px) {
   .mcp--selection { gap: 14px; margin-top: -4px; --mcp-text-2: #d3dae4; }
   /* The mockup's page is navy-black, a shade darker than the shell's grey. */
@@ -683,21 +700,21 @@
   .business-desktop-app:has(.mcp--selection) .business-header__live { gap: 7px; min-height: 22px; padding: 0 11px; background: #063b22; color: #4ade80; font-size: 13px; }
   .business-desktop-app:has(.mcp--selection) .desktop-header__user { flex: none; width: 33px; min-width: 33px; height: 33px; font-size: 13px; }
 
-  .mcp--selection .mcp-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 4px; border-color: #1e2a3a; border-radius: 12px; background: #080e19; }
-  .mcp--selection .mcp-tile { flex-direction: column; align-items: center; justify-content: flex-start; gap: 0; min-height: 84px; padding: 6px 2px 3px; border-radius: 10px; text-align: center; }
-  .mcp--selection .mcp-tile:hover { background: transparent; }
-  .mcp--selection .mcp-tile + .mcp-tile::before { top: 10%; bottom: 10%; background: #2d3c4d; }
-  .mcp--selection .mcp-tile__icon { width: 31px; height: 31px; margin-bottom: 1px; border-radius: 7px; color: #fff; }
-  .mcp--selection .mcp-tile__icon .mcp-glyph { width: 18px; height: 18px; }
-  .mcp--selection .mcp-tile--unread .mcp-tile__icon { background: #0060aa; color: #fff; }
-  .mcp--selection .mcp-tile--opened .mcp-tile__icon { background: #0040d4; color: #fff; }
-  .mcp--selection .mcp-tile--retry .mcp-tile__icon { background: #7229c9; color: #fff; }
-  .mcp--selection .mcp-tile--booking .mcp-tile__icon { background: #1f3147; color: #fff; }
-  .mcp--selection .mcp-tile--all .mcp-tile__icon { background: #21427e; color: #fff; }
-  .mcp--selection .mcp-tile__text { align-items: center; gap: 0; max-width: 100%; }
-  .mcp--selection .mcp-tile__label { max-width: 100%; color: #e8ecf2; font-size: 13px; letter-spacing: 0; line-height: 16px; }
-  .mcp--selection .mcp-tile__count { font-size: 23px; line-height: 27px; }
-  .mcp--selection .mcp-tile--active { background: #09193e; box-shadow: inset 0 0 0 2px #1d5fe0; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 4px; border-color: #1e2a3a; border-radius: 12px; background: #080e19; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile { flex-direction: column; align-items: center; justify-content: flex-start; gap: 0; min-height: 84px; padding: 6px 2px 3px; border-radius: 10px; text-align: center; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile:hover { background: transparent; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile + .mcp-tile::before { top: 10%; bottom: 10%; background: #2d3c4d; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile__icon { width: 31px; height: 31px; margin-bottom: 1px; border-radius: 7px; color: #fff; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile__icon .mcp-glyph { width: 18px; height: 18px; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile--unread .mcp-tile__icon { background: #0060aa; color: #fff; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile--opened .mcp-tile__icon { background: #0040d4; color: #fff; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile--retry .mcp-tile__icon { background: #7229c9; color: #fff; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile--booking .mcp-tile__icon { background: #1f3147; color: #fff; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile--all .mcp-tile__icon { background: #21427e; color: #fff; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile__text { align-items: center; gap: 0; max-width: 100%; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile__label { max-width: 100%; color: #e8ecf2; font-size: 13px; letter-spacing: 0; line-height: 16px; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile__count { font-size: 23px; line-height: 27px; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile--active { background: #09193e; box-shadow: inset 0 0 0 2px #1d5fe0; }
 
   .mcp--selection .mcp-filters { gap: 14px 12px; }
   .mcp--selection .mcp-search,
@@ -784,7 +801,7 @@
   .business-desktop-app:has(.mcp--selection) .business-header__live { gap: 5px; padding: 0 8px; font-size: 11px; }
   .mcp--selection .mcp-download__button { gap: 6px; padding: 0 9px; }
   .mcp--selection .mcp-sound output { display: none; }
-  .mcp--selection .mcp-tile__label { font-size: 11.5px; }
+  :is(.mcp--selection, .mcp--interview) .mcp-tile__label { font-size: 11.5px; }
   .mcp--selection .mcp-group__head { column-gap: 11px; }
   .mcp--selection .mcp-logo { width: 48px; height: 46px; }
   .mcp--selection .mcp-logo--md span { font-size: 10px; }
