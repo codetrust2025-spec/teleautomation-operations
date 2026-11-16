@@ -74,9 +74,30 @@ const MAIL_EMAILS = MAIL_SUBJECTS.map(([name, company, role, subject, classifica
   email_subject: subject, classification, candidate_status: status, latest_status: status, is_read: read,
   email_received_at: `2026-11-12T${String(16 - i).padStart(2, '0')}:${String(52 - i * 3).padStart(2, '0')}:00Z`,
 }))
+// Selection Related: one card per Candidate + Company, drawn like the approved
+// iPhone mockup (16 Nov 2026) -- an unread group with no company, a Needs
+// Review pair, and an opened Offer Received. Invented people and addresses.
+const SELECTION_GROUPS = [
+  ['c-s1', '', 'Sakthi Varadarajan', '', 8, 4, 'Needs reading', 'selection_review', ''],
+  ['c-s2', 'hcltech', 'Ashwin Upadhyay', 'ashwin.upadhyay2026@example.com', 3, 0, 'Needs Review', 'selection_review', 'not stated', 'HCLTech'],
+  ['c-s3', '', 'Gautham Nagaraju', 'gautham.nagaraju.it@example.com', 3, 0, 'Needs Review', 'selection_review', 'not stated'],
+  ['c-s3', 'vhs', 'Gautham Nagaraju', 'gautham.nagaraju.it@example.com', 3, 0, 'Offer Received', 'offer_received', '', 'VHS Professional Services Pvt Ltd'],
+].map(([id, key, name, email, total, unread, status, classification, evidence, company = null]) => ({
+  candidate_id: id, company_key: key, company_name: company, candidate_name: name, candidate_email: email || null,
+  total, unread, read: total - unread, category_total: total, category_unread: unread, category_read: total - unread,
+  latest_status: status, latest_classification: classification, latest_status_evidence: evidence,
+}))
+const SELECTION_TILE_TOTALS = { unread: 4, opened: 37, retry: 0, booking: 0, all: 41 }
 const MAIL_ROUTES = [
   [/^\/api\/mail-monitoring\/emails$/, { emails: MAIL_EMAILS, total: 210, companies: [] }],
-  [/^\/api\/mail-monitoring\/notifications$/, { notifications: [], total: 17 }],
+  [/^\/api\/mail-monitoring\/groups$/, { groups: SELECTION_GROUPS, total: 11, companies: [{ key: 'hcltech', name: 'HCLTech' }, { key: 'vhs', name: 'VHS Professional Services Pvt Ltd' }] }],
+  [/^\/api\/mail-monitoring\/notifications$/, ({ url }) => {
+    const q = url.searchParams
+    if (q.get('classification_group') !== 'selection') return { notifications: [], total: 17 }
+    const tile = q.get('is_read') === 'false' ? 'unread' : q.get('is_read') === 'true' ? 'opened'
+      : q.get('priority') === 'retry_pending' ? 'retry' : q.get('priority') === 'booking_failed' ? 'booking' : 'all'
+    return { notifications: [], total: SELECTION_TILE_TOTALS[tile] }
+  }],
   [/^\/api\/mail-monitoring\/summary$/, { summary: { unread: 17 } }],
 ]
 

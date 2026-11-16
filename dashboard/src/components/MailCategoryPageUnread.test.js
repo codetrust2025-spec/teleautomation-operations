@@ -9,7 +9,10 @@ import { describe, expect, it } from 'vitest'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(here, 'MailCategoryPage.css'), 'utf-8').replace(/\r\n/g, '\n')
-const section = CSS.slice(CSS.indexOf('/* Unread vs Opened'))
+// Up to the Selection iPhone mockup block (16 Nov 2026), which follows it on
+// purpose: phones-only, Selection-only rules (MailCategoryPagePhoneMockup.test.jsx).
+const PHONE_MOCKUP = CSS.indexOf('/* Selection Related on an iPhone, matched')
+const section = CSS.slice(CSS.indexOf('/* Unread vs Opened'), PHONE_MOCKUP > 0 ? PHONE_MOCKUP : undefined)
 const rule = (selector) => {
   const at = section.indexOf(`${selector} {`) >= 0 ? section.indexOf(`${selector} {`) : section.indexOf(`${selector},`)
   expect(at, `${selector} is styled`).toBeGreaterThanOrEqual(0)
@@ -17,7 +20,7 @@ const rule = (selector) => {
 }
 
 describe('Mail Alerts: Unread vs Opened', () => {
-  it('is the last section, so phone and base rules cannot undo it', () => {
+  it('is the last section before the Selection phone mockup, so phone and base rules cannot undo it', () => {
     expect(section.length).toBeGreaterThan(0)
     expect(section).not.toMatch(/@media/)
   })

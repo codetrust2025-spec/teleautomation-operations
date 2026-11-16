@@ -664,3 +664,137 @@
   font-weight: 600;
   box-shadow: none;
 }
+
+/* Selection Related on an iPhone, matched to the approved mockup (owner,
+   16 Nov 2026; an iPhone 430pt wide). Phones only and Selection only: desktop
+   and Interview Related keep the rules above. Kept last so it wins over the
+   phone and unread rules. The mockup's sizes: five counters in one row (icon
+   over label over count), 41px fields with their icons, a 39px tool row, cards
+   with a 54px logo, 18px names and 23px pills. Inputs stay 16px (iOS zoom). */
+@media (max-width: 640px) {
+  .mcp--selection { gap: 14px; margin-top: -4px; --mcp-text-2: #d3dae4; }
+  /* The mockup's page is navy-black, a shade darker than the shell's grey. */
+  body:has(.mcp--selection),
+  .business-desktop-app:has(.mcp--selection),
+  .business-body:has(.mcp--selection) { background: #060c15; }
+  .business-desktop-app:has(.mcp--selection) .business-header { border-bottom-color: #2d3c4a; background: rgba(8, 14, 22, 0.97); }
+  .business-desktop-app:has(.mcp--selection) .business-header__eyebrow { color: #aab4c3; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; }
+  .business-desktop-app:has(.mcp--selection) .business-header__title { font-size: 19px; font-weight: 800; }
+  .business-desktop-app:has(.mcp--selection) .business-header__live { gap: 7px; min-height: 22px; padding: 0 11px; background: #063b22; color: #4ade80; font-size: 13px; }
+  .business-desktop-app:has(.mcp--selection) .desktop-header__user { flex: none; width: 33px; min-width: 33px; height: 33px; font-size: 13px; }
+
+  .mcp--selection .mcp-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 4px; border-color: #1e2a3a; border-radius: 12px; background: #080e19; }
+  .mcp--selection .mcp-tile { flex-direction: column; align-items: center; justify-content: flex-start; gap: 0; min-height: 84px; padding: 6px 2px 3px; border-radius: 10px; text-align: center; }
+  .mcp--selection .mcp-tile:hover { background: transparent; }
+  .mcp--selection .mcp-tile + .mcp-tile::before { top: 10%; bottom: 10%; background: #2d3c4d; }
+  .mcp--selection .mcp-tile__icon { width: 31px; height: 31px; margin-bottom: 1px; border-radius: 7px; color: #fff; }
+  .mcp--selection .mcp-tile__icon .mcp-glyph { width: 18px; height: 18px; }
+  .mcp--selection .mcp-tile--unread .mcp-tile__icon { background: #0060aa; color: #fff; }
+  .mcp--selection .mcp-tile--opened .mcp-tile__icon { background: #0040d4; color: #fff; }
+  .mcp--selection .mcp-tile--retry .mcp-tile__icon { background: #7229c9; color: #fff; }
+  .mcp--selection .mcp-tile--booking .mcp-tile__icon { background: #1f3147; color: #fff; }
+  .mcp--selection .mcp-tile--all .mcp-tile__icon { background: #21427e; color: #fff; }
+  .mcp--selection .mcp-tile__text { align-items: center; gap: 0; max-width: 100%; }
+  .mcp--selection .mcp-tile__label { max-width: 100%; color: #e8ecf2; font-size: 13px; letter-spacing: 0; line-height: 16px; }
+  .mcp--selection .mcp-tile__count { font-size: 23px; line-height: 27px; }
+  .mcp--selection .mcp-tile--active { background: #09193e; box-shadow: inset 0 0 0 2px #1d5fe0; }
+
+  .mcp--selection .mcp-filters { gap: 14px 12px; }
+  .mcp--selection .mcp-search,
+  .mcp--selection .mcp-select { gap: 12px; min-height: 41px; padding: 0 10px 0 11px; border-color: #1f2c3d; border-radius: 9px; background: #0b1523; }
+  .mcp--selection .mcp-search { gap: 13px; }
+  .mcp--selection .mcp-select > .mcp-glyph:first-child { display: block; width: 21px; height: 21px; color: #e8ecf2; }
+  .mcp--selection .mcp-search .mcp-glyph { width: 21px; height: 21px; color: #e8ecf2; }
+  .mcp--selection .mcp-search input,
+  .mcp--selection .mcp-select select { height: 39px; min-height: 0; }
+  .mcp--selection .mcp-select select { padding-right: 22px; }
+  /* index.css holds phone inputs at 44px with (0,3,1) specificity; this field is the mockup's 41px. */
+  .mcp--selection .mcp-search input:not([type='checkbox']):not([type='radio']):not([type='range']) { min-height: 0; height: 39px; padding: 0; }
+  .mcp--selection .mcp-select .mcp-glyph--chevron { right: 9px; width: 17px; height: 17px; color: #e8ecf2; }
+
+  .mcp--selection .mcp-tools { gap: 11px; }
+  .mcp--selection .mcp-download__button { gap: 9px; min-height: 39px; padding: 0 12px; border: 1.5px solid #16a34a; border-radius: 9px; background: #013824; color: #4ade80; font-size: 16px; font-weight: 700; }
+  .mcp--selection .mcp-download__button .mcp-glyph { width: 20px; height: 20px; }
+  .mcp--selection .mcp-download__button .mcp-glyph--chevron { width: 18px; height: 18px; }
+  .mcp--selection .mcp-sound { gap: 11px; }
+  .mcp--selection .mcp-sound input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 16px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .mcp--selection .mcp-sound input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: linear-gradient(90deg, #026dfd var(--mcp-volume, 100%), rgba(100, 116, 145, 0.45) var(--mcp-volume, 100%)); }
+  .mcp--selection .mcp-sound input[type="range"]::-moz-range-track { height: 6px; border-radius: 999px; background: linear-gradient(90deg, #026dfd var(--mcp-volume, 100%), rgba(100, 116, 145, 0.45) var(--mcp-volume, 100%)); }
+  .mcp--selection .mcp-sound input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 23px; height: 15px; margin-top: -4.5px; border: 0; border-radius: 999px; background: #fefefe; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
+  .mcp--selection .mcp-sound input[type="range"]::-moz-range-thumb { width: 23px; height: 15px; border: 0; border-radius: 999px; background: #fefefe; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
+  .mcp--selection .mcp-sound output { min-width: 0; color: #e8ecf2; font-size: 14px; }
+  .mcp--selection .mcp-icon-btn { width: 39px; height: 39px; border-color: #2a3646; border-radius: 9px; background: #08101a; }
+  .mcp--selection .mcp-icon-btn + .mcp-icon-btn { margin-left: -4px; }
+  .mcp--selection .mcp-icon-btn .mcp-glyph { width: 22px; height: 22px; }
+
+  .mcp--selection .mcp-results { margin-top: 1px; }
+  .mcp--selection .mcp-results h2 { gap: 10px; font-size: 21px; }
+  .mcp--selection .mcp-results h2 .mcp-glyph { width: 26px; height: 26px; color: #a5b4fc; }
+  .mcp--selection .mcp-results span { color: #e8ecf2; font-size: 15px; }
+  .mcp--selection .mcp-list { gap: 9px; margin-top: -4px; }
+
+  .mcp--selection .mcp-group { padding: 8px 10px 10px 11px; border-radius: 11px; }
+  .mcp--selection .mcp-group__head { gap: 0 15px; }
+  .mcp--selection .mcp-logo { width: 54px; height: 51px; margin-top: 2px; padding: 3px; border-radius: 9px; background: #f7fbfd; }
+  .mcp--selection .mcp-logo span { font-size: 12px; }
+  .mcp--selection .mcp-logo--lg span { font-size: 14px; }
+  .mcp--selection .mcp-logo--md span { font-size: 11.5px; letter-spacing: -0.02em; }
+  .mcp--selection .mcp-logo--sm span { font-size: 10px; }
+  .mcp--selection .mcp-group__main { gap: 0; }
+  .mcp--selection .mcp-group__name,
+  .mcp--selection .mcp-group:not(.mcp-group--unread) .mcp-group__name { color: #fff; font-size: 18px; font-weight: 700; line-height: 22px; }
+  .mcp--selection .mcp-group__meta { gap: 0; font-size: 15px; line-height: 18px; }
+  .mcp--selection .mcp-group__email { color: #8ea8ff; }
+  .mcp--selection .mcp-group__company { color: #d3dae4; }
+  .mcp--selection .mcp-group__badges { gap: 9px 8px; margin-top: 7px; }
+  .mcp--selection .mcp-group .mcp-pill { min-height: 23px; padding: 0 10px; gap: 7px; font-size: 14px; line-height: 21px; }
+  .mcp--selection .mcp-group .mcp-pill .mcp-glyph { width: 18px; height: 18px; }
+  .mcp--selection .mcp-group .mcp-pill--count { border-color: #2563eb; background: #061942; color: #e8ecf2; }
+  .mcp--selection .mcp-group .mcp-pill--count .mcp-glyph { width: 19px; height: 19px; }
+  .mcp--selection .mcp-group .mcp-pill--new { border-color: #3b82f6; background: #0759f2; color: #fff; font-weight: 700; }
+  .mcp--selection .mcp-group .mcp-pill--neutral { border-color: #5b6b82; background: #1c2e52; color: #d3dae4; }
+  .mcp--selection .mcp-group .mcp-pill--review { border-color: #eab308; background: #2f2307; color: #facc15; }
+  .mcp--selection .mcp-group .mcp-pill--success { border-color: #16a34a; background: #022f22; color: #4ade80; }
+  .mcp--selection .mcp-group__opened { gap: 8px; padding: 0 0 0 12px; border-left-color: #344152; color: #fff; font-size: 16px; font-weight: 700; }
+  .mcp--selection .mcp-group__opened .mcp-glyph { width: 21px; height: 21px; }
+  .mcp--selection .mcp-chevron { width: 30px; height: 30px; margin-top: 4px; }
+  .mcp--selection .mcp-group:not(.mcp-group--unread) { border-color: #243141; background: #070d17; }
+  .mcp--selection .mcp-group--unread { border-color: #268df5; background: #091b41; box-shadow: inset 5px 0 0 #0879fc; }
+}
+/* Narrower iPhones keep the same layout with tighter spacing: the filter text
+   stays whole at 390, and at 375 and below the title keeps one line and the
+   volume slider keeps its width (the percentage gives way; the slider still
+   announces it). */
+@media (max-width: 400px) {
+  .mcp--selection .mcp-search, .mcp--selection .mcp-select { gap: 8px; padding-left: 9px; }
+  .mcp--selection .mcp-select select { padding-right: 18px; }
+  .mcp--selection .mcp-select .mcp-glyph--chevron { right: 7px; }
+  .mcp--selection .mcp-tools, .mcp--selection .mcp-sound { gap: 8px; }
+  .mcp--selection .mcp-sound input[type="range"] { min-width: 56px; }
+}
+@media (max-width: 374px) {
+  .business-desktop-app:has(.mcp--selection) .business-header__title { font-size: 15px; }
+  .business-desktop-app:has(.mcp--selection) .business-header__live { gap: 5px; padding: 0 8px; font-size: 11px; }
+  .mcp--selection .mcp-download__button { gap: 6px; padding: 0 9px; }
+  .mcp--selection .mcp-sound output { display: none; }
+  .mcp--selection .mcp-tile__label { font-size: 11.5px; }
+  .mcp--selection .mcp-group__head { column-gap: 11px; }
+  .mcp--selection .mcp-logo { width: 48px; height: 46px; }
+  .mcp--selection .mcp-logo--md span { font-size: 10px; }
+  .mcp--selection .mcp-group__name,
+  .mcp--selection .mcp-group:not(.mcp-group--unread) .mcp-group__name { font-size: 16px; line-height: 20px; }
+  .mcp--selection .mcp-group__meta { font-size: 13.5px; line-height: 17px; }
+  .mcp--selection .mcp-group .mcp-pill { padding: 0 8px; gap: 5px; font-size: 13px; }
+}
+/* The narrowest phones (320px): the filter text reads in full; the selects'
+   leading icons give way, as they did before the mockup. */
+@media (max-width: 350px) {
+  .mcp--selection .mcp-select > .mcp-glyph:first-child { display: none; }
+}

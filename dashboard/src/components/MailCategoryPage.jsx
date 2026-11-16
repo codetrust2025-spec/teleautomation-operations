@@ -10,6 +10,7 @@ import { fetchMailSummary, publishMailCategoryUnread, publishMailUnread } from "
 import { OverlayLoader } from "../Loader.jsx";
 import { formatIstDateTime } from "../utils/istTime.js";
 import { OriginalEmail } from "./OriginalEmail.jsx";
+import { useMediaQuery } from "../utils/useMediaQuery.js";
 import "./MailCategoryPage.css";
 import {
   CLASSIFICATION_GROUPS, MAIL_CATEGORY_PAGES, displayLabel, mailAlertCategory,
@@ -52,7 +53,7 @@ export const CATEGORY_TILES = [
   { id: "unread", label: "Unread", icon: "mail", params: { is_read: "false" } },
   { id: "opened", label: "Opened", icon: "eye", params: { is_read: "true" } },
   { id: "retry", label: "AI Retry", icon: "sparkles", params: { priority: "retry_pending" } },
-  { id: "booking", label: "Booking failed", icon: "info", params: { priority: "booking_failed" } },
+  { id: "booking", label: "Booking failed", short: "Booking", icon: "info", phoneIcon: "calendar", params: { priority: "booking_failed" } },
   { id: "all", label: "All Alerts", icon: "layers", params: {} },
 ];
 
@@ -60,6 +61,7 @@ const SVG = {
   mail: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="m4 7 8 6 8-6" /></>,
   sparkles: <><path d="M12 4.5 13.6 9l4.4 1.5-4.4 1.6L12 16.5l-1.6-4.4L6 10.5 10.4 9z" /><path d="M18.5 4v3M17 5.5h3" /></>,
   layers: <><path d="m12 4 8.5 4.5L12 13 3.5 8.5z" /><path d="m3.5 12.5 8.5 4.5 8.5-4.5" /><path d="m3.5 16.5 8.5 4.5 8.5-4.5" /></>,
+  calendar: <><rect x="4" y="5.5" width="16" height="14.5" rx="2.5" /><path d="M8 3.5v4M16 3.5v4M4 10h16" /></>,
   info: <><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" /></>,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></>,
   building: <><path d="M5 20.5V4.5h9v16M14 9.5h5v11M3.5 20.5h17" /><path d="M8 8h.01M11 8h.01M8 11.5h.01M11 11.5h.01M8 15h.01M11 15h.01" /></>,
@@ -349,6 +351,7 @@ function SoundControls({ category }) {
   return <div className="mcp-sound" role="group" aria-label="Selection alarm sound">
     <Glyph name="speaker" size={22} />
     <input type="range" min="0" max="100" step="5" value={percent} aria-label="Selection alarm volume" aria-valuetext={`${percent}%`}
+      style={{ "--mcp-volume": `${percent}%` }}
       onChange={(event) => setSelectionAlarmVolumeLevel(Number(event.target.value) / 100)} />
     <output>{percent}%</output>
     <button type="button" className="mcp-icon-btn" aria-pressed={!!alarm.muted} aria-label={alarm.muted ? "Unmute selection alarm" : "Mute selection alarm"}
@@ -529,21 +532,25 @@ export function MailCategoryPage({ category }) {
 
   const filtered = Boolean(search.trim() || companyKey || status);
   const tileLabel = CATEGORY_TILES.find((t) => t.id === tile)?.label || "All Alerts";
+  // Selection Related on a phone follows its iPhone mockup (16 Nov 2026): the
+  // five counters fit one row with short labels, and the search says what it
+  // searches. Wider screens and Interview Related keep their own wording.
+  const phone = useMediaQuery("(max-width: 640px)") && category === "selection";
   return <section className={`mcp mcp--${category}`}>
     <div className="mcp-tiles" role="tablist" aria-label={`${page.title} tabs`}>
       {CATEGORY_TILES.map((t) => <button key={t.id} type="button" role="tab" aria-selected={tile === t.id}
         title={t.id === "retry" ? `${CATEGORY_NAME[category]} alerts waiting for AI retry` : `${t.label} ${CATEGORY_NAME[category]} alerts`}
         className={`mcp-tile mcp-tile--${t.id}${tile === t.id ? " mcp-tile--active" : ""}`}
         onClick={() => { setTile(t.id); setOffset(0); }}>
-        <span className="mcp-tile__icon"><Glyph name={t.icon} size={22} /></span>
-        <span className="mcp-tile__text"><span className="mcp-tile__label">{t.label}</span><span className="mcp-tile__count">{counts[t.id] ?? 0}</span></span>
+        <span className="mcp-tile__icon"><Glyph name={(phone && t.phoneIcon) || t.icon} size={22} /></span>
+        <span className="mcp-tile__text"><span className="mcp-tile__label">{(phone && t.short) || t.label}</span><span className="mcp-tile__count">{counts[t.id] ?? 0}</span></span>
       </button>)}
     </div>
 
     <div className="mcp-filters">
       <label className="mcp-search">
         <Glyph name="search" size={20} />
-        <input aria-label="Search notifications" placeholder="Search" value={search} onChange={reset(setSearch)} />
+        <input aria-label="Search notifications" placeholder={phone ? "Search mail alerts..." : "Search"} value={search} onChange={reset(setSearch)} />
       </label>
       <label className="mcp-select"><Glyph name="building" size={20} />
         <select aria-label="Company filter" value={companyKey} onChange={reset(setCompanyKey)}>
