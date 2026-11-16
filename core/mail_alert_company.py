@@ -41,6 +41,13 @@ from typing import Any, Iterable
 
 from features.ollama_invite_extract import clean_company_name
 
+# Background-verification vendors run checks for many employers: a BGV
+# invitation from digiverifier.com is not an offer from "Digiverifier"
+# (16 Nov 2026). Neither their domain nor their name ever names the employer.
+BGV_VENDOR_DOMAINS = frozenset({
+    "digiverifier.com", "securitas-india.com", "authbridge.com", "firstadvantage.com", "hireright.com",
+    "sterlingcheck.com", "ongrid.in", "idfy.com", "springverify.com", "checkr.com", "verifyme.in",
+})
 # Mail, applicant-tracking, scheduling and interview-platform domains: they
 # carry mail for many employers, so their domain names nobody.
 PLATFORM_DOMAINS = frozenset({
@@ -54,7 +61,7 @@ PLATFORM_DOMAINS = frozenset({
     "zohorecruit.in", "freshteam.com", "keka.com", "darwinbox.in", "darwinbox.com", "superset.com",
     "workablemail.com", "karat.io", "risebird.io", "zohocalendar.com", "ceipalmail.com", "ripplehire.com",
     "zeko.ai",
-})
+}) | BGV_VENDOR_DOMAINS
 # A domain as it appears in a mail: "hr@hcltech.com", "https://www.accellor.com/careers".
 _DOMAIN = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}"
 _BODY_DOMAINS = re.compile(r"(?:@|https?://(?:www\.)?|\bwww\.)(" + _DOMAIN + r")", re.I)
@@ -261,9 +268,30 @@ class Evidence:
         return self.spelled(name)
 
 
+def is_bgv_vendor_name(name: str) -> bool:
+    """A background-check vendor's own name ("Digiverifier", "AuthBridge Research"): never an employer."""
+    compact = "".join(company_key(name).split())
+    return any(len(label) >= 5 and compact.startswith(label)
+               for label in (re.sub(r"[^a-z0-9]", "", d.split(".")[0]) for d in BGV_VENDOR_DOMAINS))
+
+
 def resolve(row: dict[str, Any], evidence: Evidence, *, booking_company: str = "",
             thread_companies: Iterable[str] = (), body: str = "") -> tuple[str, str]:
-    """(company, source) for one alert without a company, or ("", "") when nothing proves one."""
+    """(company, source) for one alert without a company, or ("", "") when nothing proves one.
+
+    A background-check vendor is never the answer, even when another alert
+    stored it as a company (an AI reading once named "Digiverifier"): the
+    vendor checks a candidate for some employer, it does not employ them.
+    """
+    company, source = _resolve(row, evidence, booking_company=booking_company,
+                               thread_companies=thread_companies, body=body)
+    if company and is_bgv_vendor_name(company):
+        return "", ""
+    return company, source
+
+
+def _resolve(row: dict[str, Any], evidence: Evidence, *, booking_company: str = "",
+             thread_companies: Iterable[str] = (), body: str = "") -> tuple[str, str]:
     people = tuple(p for p in (row.get("candidate_name"),) if p)
     domain = sender_domain(row.get("sender_email"))
     subject = row.get("email_subject") or ""

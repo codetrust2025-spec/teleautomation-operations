@@ -159,3 +159,19 @@ def test_a_relay_marker_character_and_the_mails_own_capitals():
     ev = Evidence([("a@x-staffing.com", "kpmg"), ("b@y-staffing.com", "kpmg")])
     # The data has it only in lower case; the mail's own capitals are kept.
     assert resolve(sent("KPMG L1 Interview: Azure Data Engineer || Saturday", "t@tdstaffing.com"), ev) == ("KPMG", "subject")
+
+
+def test_a_background_check_vendor_is_never_the_employer():
+    # 16 Nov 2026: digiverifier BGV invitations showed as a "Digiverifier"
+    # card, because one other alert had stored that vendor as its company.
+    from core.mail_alert_company import is_bgv_vendor_name
+    ev = Evidence([*KNOWN, ("noreply@digiverifier.com", "Digiverifier")])
+    body = "Digiverifier has been engaged to verify your employment. Visit https://www.digiverifier.com to begin."
+    assert resolve(alert("Invitation - Digital Employment BGV_RH29885831", "noreply@digiverifier.com"), ev, body=body) == ("", "")
+    assert resolve(alert("Reminder: BGV", "noreply@digiverifier.com"), ev,
+                   thread_companies=["Digiverifier"]) == ("", "")
+    assert is_bgv_vendor_name("Digiverifier") and is_bgv_vendor_name("AuthBridge Research Services")
+    assert not is_bgv_vendor_name("VHS Professional Services") and not is_bgv_vendor_name("HCLTech")
+    # The employer's own evidence still names the employer.
+    assert resolve(alert("RE: Offer", "p@vhspro.net"), ev,
+                   thread_companies=["VHS Professional Services Pvt Ltd"]) == ("VHS Professional Services Pvt Ltd", "thread")

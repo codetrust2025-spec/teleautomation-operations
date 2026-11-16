@@ -104,18 +104,28 @@ const CATEGORY_NAME = { selection: "Selection", interview: "Interview" };
 // The status the alert's own mail states (server: verified_status and its
 // evidence). Shown as stated; a step other than the label, a rejection or
 // withdrawal, or Needs Review when the mail states none.
-const statusText = (item) => displayLabel(item.verified_status || item.candidate_status || item.classification);
+// A mail the reader could not classify (selection_ / interview_needs_reading)
+// says "Needs reading" only while nobody has opened it; once opened it says
+// "Needs Review" (16 Nov 2026: a card showed "Needs reading" beside "8 opened").
+// Both use the review style, never the check mark of a verified status.
+export const isNeedsReading = (classification) => /_needs_reading$/.test(String(classification || ""));
+export const needsReadingLabel = (unread) => (unread ? "Needs reading" : "Needs Review");
+const statusText = (item) => (isNeedsReading(item.classification)
+  ? needsReadingLabel(!item.is_read)
+  : displayLabel(item.verified_status || item.candidate_status || item.classification));
 const EVIDENCE_NOTE = {
   "different step": "The email states this step, not the detected label.",
   "not a selection": "The email states a rejection or a withdrawal, not a selection.",
   "not stated": "The email does not state this status; open it to review.",
+  "needs reading": "The reader could not classify this email; open it and act on it.",
 };
-const evidenceOf = (item) => item.status_evidence || item.latest_status_evidence || "";
+const evidenceOf = (item) => (isNeedsReading(item.classification) ? "needs reading" : item.status_evidence || item.latest_status_evidence || "");
 function StatusPill({ label, evidence, tone }) {
-  const kind = evidence === "not stated" ? "review" : evidence === "not a selection" ? "muted" : tone;
+  const review = evidence === "not stated" || evidence === "needs reading";
+  const kind = review ? "review" : evidence === "not a selection" ? "muted" : tone;
   return <span className={`mcp-pill mcp-pill--status mcp-pill--${kind}`}
     title={EVIDENCE_NOTE[evidence] ? `Latest status. ${EVIDENCE_NOTE[evidence]}` : "Latest verified status"}>
-    <Glyph name={evidence === "not stated" || evidence === "not a selection" ? "info" : "check"} size={16} />{label}
+    <Glyph name={review || evidence === "not a selection" ? "info" : "check"} size={16} />{label}
   </span>;
 }
 const groupKey = (group) => `${group.candidate_id}::${group.company_key || ""}`;
@@ -173,7 +183,7 @@ function query(params) {
 
 function GroupCard({ group, category, expanded, onToggle, history, openMails, contents, onOpenMail, onAction, onMarkAllRead }) {
   const company = group.company_name || "Company not identified";
-  const status = group.latest_status || displayLabel(group.latest_classification || "");
+  const needsReading = isNeedsReading(group.latest_classification);
   const tone = mailStatusTone({ candidate_status: group.latest_status, classification: group.latest_classification });
   const listId = `mcp-history-${groupKey(group).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   const name = group.candidate_name || "Candidate";
@@ -184,6 +194,7 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
   const unread = Number(group.category_unread ?? group.unread) || 0;
   const opened = Number(group.category_read ?? group.read) || 0;
   const historyUnread = Number(group.unread) || 0;
+  const status = needsReading ? needsReadingLabel(unread > 0) : group.latest_status || displayLabel(group.latest_classification || "");
   const logo = group.company_name ? logoText(company) : "—";
   return <article className={`mcp-group${expanded ? " mcp-group--open" : ""}${unread ? " mcp-group--unread" : ""}`} aria-label={`${name}, ${company}`}>
     {/* Tapping anywhere on the card opens its emails here, in the app; only
@@ -201,7 +212,7 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
             <Glyph name="mail" size={16} />{total}
           </span>
           {unread > 0 && <span className="mcp-pill mcp-pill--new" title={`Unread ${kind} emails`}>{unread} unread</span>}
-          {status && <StatusPill label={status} evidence={group.latest_status_evidence} tone={tone} />}
+          {status && <StatusPill label={status} evidence={needsReading ? "needs reading" : group.latest_status_evidence} tone={tone} />}
         </span>
       </div>
       <span className="mcp-group__opened" title={`${opened} ${kind} opened`} aria-label={`${opened} opened`}><Glyph name="eye" size={20} />{opened}</span>
@@ -229,7 +240,7 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
               <span className="mcp-mail__icon"><Glyph name="mail" size={18} /></span>
               <span className="mcp-mail__text">
                 <span className="mcp-mail__subject">{item.email_subject || "(no subject)"}</span>
-                <span className={`mcp-mail__label${itemKind ? ` mcp-mail__label--${itemKind}` : ""}${evidence === "not stated" ? " mcp-mail__label--review" : ""}`}
+                <span className={`mcp-mail__label${itemKind ? ` mcp-mail__label--${itemKind}` : ""}${evidence === "not stated" || evidence === "needs reading" ? " mcp-mail__label--review" : ""}`}
                   title={EVIDENCE_NOTE[evidence]}>{itemKind ? `${CATEGORY_NAME[itemKind]} · ` : ""}{statusText(item)}</span>
               </span>
               <span className={`mcp-state mcp-state--${item.is_read ? "read" : "unread"}`}>{item.is_read ? "Opened" : "Unread"}</span>

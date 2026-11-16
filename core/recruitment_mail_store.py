@@ -2881,14 +2881,42 @@ def create_monitoring_notification(
         # can change how a re-read mail is filed.
         confidence = float(event.get("confidence") or analysis.get("confidence") or 0)
         priority = notification_priority(classification, confidence=confidence, requires_review=bool(event.get("requires_manual_review")))
-        if str(analysis["classification"]) in SELECTION_RELATED_CLASSIFICATIONS:
-            cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now(),
-              priority=""" + _REREAD_PRIORITY_SQL + """
-              WHERE gmail_message_id=%s AND classification = ANY(%s) RETURNING *""",
-              (priority, priority, provider_id, sorted({str(analysis["classification"]), *_SELECTION_REFILINGS})))
-            existing = _rows(cur)
-            if existing:
-                return existing[0]
+        if str(analysis["classification"]) in SELECTION_RELATED_CLASSIFICATIONS or classification in SELECTION_RELATED_CLASSIFICATIONS:
+            # One mail is one Selection alert (16 Nov 2026). A re-read that
+            # files it differently -- HR Confirmation then Joining Confirmed, or
+            # a "Needs reading" mail the reader later managed to read -- moves
+            # the existing alert to the newer reading; read state, dismissal and
+            # id are kept, and no second alert is made.
+            cur.execute("""SELECT id, classification FROM mail_monitoring_notifications
+              WHERE gmail_message_id=%s AND classification = ANY(%s)
+              ORDER BY classification = %s DESC, dismissed_at IS NULL DESC, created_at DESC, id LIMIT 1""",
+              (provider_id, sorted({str(analysis["classification"]), classification, *_SELECTION_REFILINGS,
+                                    *SELECTION_RELATED_CLASSIFICATIONS}), classification))
+            found = cur.fetchone()
+            if found:
+                if (found[1] != classification and classification in SELECTION_RELATED_CLASSIFICATIONS
+                        and found[1] in SELECTION_RELATED_CLASSIFICATIONS):
+                    cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now(),
+                      classification=%s, candidate_status=%s, ai_recruitment_event_id=%s, email_analysis_id=%s,
+                      priority=""" + _REREAD_PRIORITY_SQL + """
+                      WHERE id=%s RETURNING *""",
+                      (classification, candidate_status, event['id'], analysis['id'], priority, priority, found[0]))
+                else:
+                    cur.execute("""UPDATE mail_monitoring_notifications SET updated_at=now(),
+                      priority=""" + _REREAD_PRIORITY_SQL + """
+                      WHERE id=%s RETURNING *""", (priority, priority, found[0]))
+                existing = _rows(cur)
+                if existing:
+                    return existing[0]
+        # An identical copy of a mail that already has its Selection alert: the
+        # sender delivered it twice. One mail, one alert. Selection only:
+        # interview alerts drive booking, which has its own one-booking rule.
+        copy = (_same_mail_alert(cur, candidate_id=str(notification_candidate_id), provider_id=provider_id,
+                                 sender_email=sender_email, subject=subject, sent_at=sent_at,
+                                 classifications=SELECTION_RELATED_CLASSIFICATIONS, other_message_only=True)
+                if classification in SELECTION_RELATED_CLASSIFICATIONS else None)
+        if copy:
+            return copy
         notification_id = _id()
         company = structured.get("company") or {}
         job = structured.get("job") or {}
@@ -3713,8 +3741,10 @@ def list_notification_groups(
     page = max(1, min(int(limit), 100))
     skip = max(0, int(offset))
     with get_connection() as conn, conn.cursor() as cur:
+        shadow, shadow_params = _resolved_company_shadow(cur)
         resolved = employer_aliases(cur)
         alias_sql, alias_params = _alias_cte(resolved)
+        alias_sql, alias_params = f"{shadow}, {alias_sql}", shadow_params + alias_params
         names = {v[0]: v[1] for v in resolved[0].values()}
         cur.execute(
             f"""WITH {alias_sql}, matched AS (
@@ -3931,6 +3961,35 @@ def _notification_columns(cur) -> list[str]:
     return _notification_columns_cache[schema]
 
 
+def _resolved_company_shadow(cur) -> tuple[str, list[Any]]:
+    """CTEs that read `mail_monitoring_notifications` with each alert's company resolved.
+
+    A CTE of the table's own name whose company_name is the stored one or,
+    when empty, the one its evidence proves (`resolved_alert_companies`), so
+    every filter and grouping after it sees one company per alert. Selection
+    Related groups read through it too (16 Nov 2026): before, a VHS offer
+    whose company sat only on its thread sibling, its RE: reply and a BGV mail
+    from vhspro.net made a separate "Company not identified" card beside the
+    VHS card. Read-only: the stored rows keep what they hold.
+    """
+    resolved_items = sorted(resolved_alert_companies(cur).items())
+    columns = _notification_columns(cur)
+    cur.execute("SELECT quote_ident(current_schema())")
+    table = f"{cur.fetchone()[0]}.mail_monitoring_notifications"
+    select = ", ".join(
+        "COALESCE(NULLIF(btrim(t.company_name), ''), r.company) AS company_name" if column == "company_name"
+        else f"t.{column}" for column in columns if column != "company_source"
+    )
+    # A company the backfill stored keeps the source it recorded.
+    stored_source = "t.company_source" if "company_source" in columns else "NULL::text"
+    shadow = (
+        "resolved AS (SELECT * FROM unnest(%s::text[], %s::text[], %s::text[]) AS r(id, company, source)),"
+        f" mail_monitoring_notifications AS (SELECT {select}, COALESCE({stored_source}, r.source) AS company_source"
+        f" FROM {table} t LEFT JOIN resolved r ON r.id = t.id::text)"
+    )
+    return shadow, [[k for k, _ in resolved_items], [v[0] for _, v in resolved_items], [v[1] for _, v in resolved_items]]
+
+
 def list_category_emails(*, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0) -> dict[str, Any]:
     """One row per alert, newest first, for the Interview Related page's email cards.
 
@@ -3949,26 +4008,7 @@ def list_category_emails(*, filters: dict[str, Any] | None = None, limit: int = 
     page = max(1, min(int(limit), 100))
     skip = max(0, int(offset))
     with get_connection() as conn, conn.cursor() as cur:
-        resolved = resolved_alert_companies(cur)
-        resolved_items = sorted(resolved.items())
-        columns = _notification_columns(cur)
-        cur.execute("SELECT quote_ident(current_schema())")
-        table = f"{cur.fetchone()[0]}.mail_monitoring_notifications"
-        # The query reads `mail_monitoring_notifications` through a CTE of the
-        # same name whose company_name is the stored one or, when empty, the
-        # resolved one -- so every filter below sees one company per alert.
-        select = ", ".join(
-            "COALESCE(NULLIF(btrim(t.company_name), ''), r.company) AS company_name" if column == "company_name"
-            else f"t.{column}" for column in columns if column != "company_source"
-        )
-        # A company the backfill stored keeps the source it recorded.
-        stored_source = "t.company_source" if "company_source" in columns else "NULL::text"
-        shadow = (
-            "resolved AS (SELECT * FROM unnest(%s::text[], %s::text[], %s::text[]) AS r(id, company, source)),"
-            f" mail_monitoring_notifications AS (SELECT {select}, COALESCE({stored_source}, r.source) AS company_source"
-            f" FROM {table} t LEFT JOIN resolved r ON r.id = t.id::text)"
-        )
-        shadow_params = [[k for k, _ in resolved_items], [v[0] for _, v in resolved_items], [v[1] for _, v in resolved_items]]
+        shadow, shadow_params = _resolved_company_shadow(cur)
         resolved_aliases = employer_aliases(cur)
         alias_sql, alias_params = _alias_cte(resolved_aliases)
         names = {v[0]: v[1] for v in resolved_aliases[0].values()}
@@ -4018,7 +4058,9 @@ def list_group_emails(candidate_id: str, company_key: str, *, limit: int = 200) 
     """
     vis, vis_params = notification_visibility_sql()
     with get_connection() as conn, conn.cursor() as cur:
+        shadow, shadow_params = _resolved_company_shadow(cur)
         alias_sql, alias_params = _alias_cte(employer_aliases(cur))
+        alias_sql, alias_params = f"{shadow}, {alias_sql}", shadow_params + alias_params
         cur.execute(
             f"""WITH {alias_sql} SELECT * FROM mail_monitoring_notifications
                  WHERE {vis} AND {_person_sql()} = %s AND {_employer_key_sql()} = %s
@@ -4385,6 +4427,61 @@ def unread_interview_candidates(*, since, limit: int = 200) -> list[dict[str, An
         return _rows(cur)
 
 
+def _candidate_ids(candidate_id: str) -> list[str]:
+    """The candidate id and the person it is linked to: one person's alerts can carry either."""
+    ids = [str(candidate_id or "")]
+    try:
+        person = canonical_candidate_id(ids[0])
+    except Exception:  # identity links unavailable: the id alone
+        person = ids[0]
+    return sorted({i for i in (*ids, person) if i})
+
+
+def _same_mail_alert(cur, *, candidate_id: str, provider_id: str, sender_email: Any, subject: Any,
+                     sent_at: Any, classifications: Any, other_message_only: bool = False) -> dict[str, Any] | None:
+    """An alert already filed for this mail, in the same category. Read-only.
+
+    Two ways one mail is "already filed" (16 Nov 2026):
+
+    - the same Gmail message under another classification of the category
+      (`UNIQUE(gmail_message_id, classification)` let a mail filed as HR
+      Confirmation in September come back as Joining Confirmed in November:
+      two alerts, one mail); skipped with `other_message_only`;
+    - an identical copy: the same candidate, sender, subject and sent time to
+      the second under another Gmail id. Senders deliver some mails twice
+      (each digiverifier BGV reminder came as two SES messages with identical
+      content), Gmail gives each copy its own id, and the mail-level duplicate
+      check only sees copies that already have an AI event -- so every copy of
+      a mail the reader could not read became its own alert.
+
+    Dismissed alerts count: a copy of a mail someone removed stays removed.
+    """
+    if not provider_id:
+        return None
+    clauses = []
+    params: list[Any] = [sorted(classifications)]
+    if not other_message_only:
+        clauses.append("gmail_message_id = %s")
+        params.append(provider_id)
+    if sent_at is not None and str(subject or "").strip():
+        clauses.append(
+            "(candidate_id = ANY(%s) AND gmail_message_id <> %s AND email_received_at = %s"
+            " AND lower(COALESCE(sender_email, '')) = lower(COALESCE(%s, ''))"
+            " AND COALESCE(email_subject, '') = COALESCE(%s, ''))"
+        )
+        params += [_candidate_ids(candidate_id), provider_id, sent_at, sender_email, subject]
+    if not clauses:
+        return None
+    cur.execute(
+        f"""SELECT * FROM mail_monitoring_notifications
+             WHERE classification = ANY(%s) AND ({' OR '.join(clauses)})
+             ORDER BY dismissed_at IS NULL DESC, created_at, id LIMIT 1""",
+        params,
+    )
+    rows = _rows(cur)
+    return rows[0] if rows else None
+
+
 def record_walkin_alert(
     message: dict[str, Any], *, reason_code: str = "GENERIC_WALK_IN_DRIVE",
 ) -> dict[str, Any] | None:
@@ -4396,6 +4493,10 @@ def record_walkin_alert(
     summary = "Generic walk-in recruitment campaign; open drive without a candidate-specific interview slot."
     action = "No booking required; generic recruitment walk-in drive."
     with get_connection() as conn, conn.cursor() as cur:
+        if _same_mail_alert(cur, candidate_id=str(message.get("candidate_id") or ""), provider_id=provider_id,
+                            sender_email=message.get("sender_email"), subject=message.get("subject"),
+                            sent_at=message.get("sent_at"), classifications={"recruitment_walkin"}):
+            return None
         cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
           gmail_message_id,gmail_thread_id,email_analysis_id,classification,candidate_status,
           email_subject,sender_name,sender_email,email_received_at,ai_confidence,ai_summary,ai_reason,
@@ -4428,6 +4529,10 @@ def record_unread_selection_alert(message: dict[str, Any], *, evidence: str) -> 
     summary = (f"The reader could not classify this mail, and it states {evidence}. "
                "Open it and its attachments and act on it.")
     with get_connection() as conn, conn.cursor() as cur:
+        if _same_mail_alert(cur, candidate_id=str(message.get("candidate_id") or ""), provider_id=provider_id,
+                            sender_email=message.get("sender_email"), subject=message.get("subject"),
+                            sent_at=message.get("sent_at"), classifications=SELECTION_RELATED_CLASSIFICATIONS):
+            return None
         cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
           gmail_message_id,gmail_thread_id,email_analysis_id,classification,candidate_status,
           email_subject,sender_name,sender_email,email_received_at,ai_confidence,ai_summary,ai_reason,
@@ -4472,6 +4577,10 @@ def record_unread_interview_alert(
     action = ("Read the mail and cancel the booking by hand if there is one." if cancelling
               else "Read the mail and book the interview by hand if it is real.")
     with get_connection() as conn, conn.cursor() as cur:
+        if _same_mail_alert(cur, candidate_id=str(message.get("candidate_id") or ""), provider_id=provider_id,
+                            sender_email=message.get("sender_email"), subject=message.get("subject"),
+                            sent_at=message.get("sent_at"), classifications=INTERVIEW_RELATED_CLASSIFICATIONS):
+            return None
         cur.execute("""INSERT INTO mail_monitoring_notifications(id,candidate_id,candidate_name,candidate_email,
           gmail_message_id,gmail_thread_id,email_analysis_id,classification,candidate_status,
           email_subject,sender_name,sender_email,email_received_at,ai_confidence,ai_summary,ai_reason,
