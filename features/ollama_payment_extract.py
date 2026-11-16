@@ -867,7 +867,11 @@ def extract_payment_with_ollama(
                         extracted["receiver_name"] = str(backup_parsed["receiver_name"]).strip()
                         if not str(extracted.get("receiver_upi_id") or "").strip():
                             extracted["receiver_upi_id"] = str(backup_parsed.get("receiver_upi_id") or "").strip()
-                        extracted.setdefault("warnings", []).append(
+                        warnings = extracted.get("warnings")
+                        if not isinstance(warnings, list):
+                            warnings = []
+                            extracted["warnings"] = warnings
+                        warnings.append(
                             "Payee details recovered from a second reading with a matching transaction reference"
                         )
 
