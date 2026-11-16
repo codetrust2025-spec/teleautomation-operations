@@ -79,6 +79,16 @@ Rules:
 - "direction" is critical. A person under "Received from" is the sender, not the receiver.
 - For RECEIVED_FROM, put the account after "Credited to" in "credited_to_identifier".
 - Never copy sender details into receiver fields.
+- On a PhonePe transfer-details receipt, "Banking Name" beside "Sent to"
+  is the PAYEE / receiver_name. For example, "Banking Name : Jollu Ravinder"
+  means receiver_name is "Jollu Ravinder", not blank and not sender_name.
+- The identifier on the "Sent to" line is receiver_upi_id, even if masked,
+  e.g. "XXXXXX4573@yescred". Copy the visible mask exactly; NEVER invent its
+  hidden prefix, expand it into a full handle, or infer a phone number.
+- "Debited from" identifies the PAYER's account, not the receiver account.
+  Put it in debited_from_identifier / sender_account_identifier, never in
+  receiver_account_identifier. Company payment recipients are not necessarily
+  referrers: extract the banking name literally without guessing the owner.
 - "receiver_phone_number" is the complete phone shown for the paid-to recipient.
 - "receiver_account_identifier" is the receiving bank account identifier, if visible.
 - Confidence values are 0.0-1.0. The backend makes the final authorization decision.
@@ -808,10 +818,20 @@ def extract_payment_with_ollama(
     # verified. The screenshot carries both identifiers plainly; the model had
     # skipped its Transfer Details block. Without this the reading was final,
     # because the backup only ran when the receipt was not recognised at all.
+    # The payee's banking name is necessary to identify the company receiving
+    # a masked UPI transfer. A model can read amount and UTR yet skip the
+    # "Banking Name" line entirely. Let an independent configured backup read
+    # the same image; do not replace an otherwise sound receipt merely because
+    # its payee was missed.
+    receiver_missing = bool(
+        extracted and extracted.get("is_payment_screenshot")
+        and not str(extracted.get("receiver_name") or "").strip()
+    )
     if (
         (not extracted
          or not extracted.get("is_payment_screenshot")
-         or _reference_missing(extracted))
+         or _reference_missing(extracted)
+         or receiver_missing)
         and OLLAMA_BACKUP_VISION_MODEL != OLLAMA_VISION_MODEL
     ):
         logger.warning(
@@ -828,10 +848,32 @@ def extract_payment_with_ollama(
                 # Never trade a reading that has a reference for one that does
                 # not: the backup is here to recover what the primary missed.
                 recovered = not _reference_missing(backup_parsed)
-                if recovered or not extracted or not extracted.get("is_payment_screenshot"):
+                primary_reference_missing = _reference_missing(extracted)
+                if not extracted or not extracted.get("is_payment_screenshot") or (primary_reference_missing and recovered):
                     extracted = backup_parsed
                     used_model = OLLAMA_BACKUP_VISION_MODEL
                     used_raw_response = backup_response
+                elif receiver_missing:
+                    # Only recover the payee details if both readings identify
+                    # the same transaction by an identical full UTR or PhonePe
+                    # transaction ID. Preserve the primary amount, status and
+                    # references; the backup is never trusted just for a name.
+                    same_payment = any(
+                        str(extracted.get(field) or "").strip()
+                        and str(extracted.get(field) or "").strip() == str(backup_parsed.get(field) or "").strip()
+                        for field in ("utr", "utr_number", "transaction_id")
+                    )
+                    if same_payment and str(backup_parsed.get("receiver_name") or "").strip():
+                        extracted["receiver_name"] = str(backup_parsed["receiver_name"]).strip()
+                        if not str(extracted.get("receiver_upi_id") or "").strip():
+                            extracted["receiver_upi_id"] = str(backup_parsed.get("receiver_upi_id") or "").strip()
+                        warnings = extracted.get("warnings")
+                        if not isinstance(warnings, list):
+                            warnings = []
+                            extracted["warnings"] = warnings
+                        warnings.append(
+                            "Payee details recovered from a second reading with a matching transaction reference"
+                        )
 
     # ── Build final result ──────────────────────────────────────────────────
     if extracted and extracted.get("is_payment_screenshot"):
