@@ -154,9 +154,9 @@ describe.each([['desktop', 1440], ['mobile', 440]])('No round, no status update 
   })
 
   it('enables status immediately after an admin selects Final and saves both changes in order', async () => {
-    mockFetch([row('Gangadhar Nagarale', { technology: 'ServiceNow' })])
-    await renderPanel('Gangadhar Nagarale')
-    openRowEdit('Gangadhar Nagarale')
+    mockFetch([row('Zara Testname', { technology: 'ServiceNow' })])
+    await renderPanel('Zara Testname')
+    openRowEdit('Zara Testname')
     expect(attendanceSelect()).toBeDisabled()
     expect(within(editDialog()).getByRole('alert')).toHaveTextContent(MESSAGE)
     fireEvent.change(roundSelect(), { target: { value: 'Final' } })
@@ -169,7 +169,7 @@ describe.each([['desktop', 1440], ['mobile', 440]])('No round, no status update 
     await act(async () => { fireEvent.click(saveButton()) })
     await waitFor(() => expect(attendanceCalls()).toHaveLength(1))
     expect(sent.map(call => call.method)).toEqual(['PATCH', 'POST'])
-    expect(sent[0].path).toMatch(/\/interviews\/slots\/Gangadhar%20Nagarale$/)
+    expect(sent[0].path).toMatch(/\/interviews\/slots\/Zara%20Testname$/)
     expect(sent[0].body.interview_round).toBe('Final')
     expect(sent[1].body.status).toBe('not_attended')
     expect(sent[1].body.remark).toBe('No show')
