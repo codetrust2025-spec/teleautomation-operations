@@ -31,8 +31,8 @@ function useFilterList(value) {
 const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 
 // The rounds the server accepts (VALID_INTERVIEW_ROUNDS). No specified round,
-// no status update: the round is corrected first, separately, by an admin in
-// this edit -- never prompted for during a status change, never guessed.
+// no status update. Admins may select a valid round and record attendance in
+// one edit; the slot PATCH commits the round before the attendance POST.
 export const ROUND_MISSING_MESSAGE = 'Interview round is missing. Update the round before changing the status.'
 export const INTERVIEW_ROUNDS = ['L1', 'L2', 'L3', 'HR', 'Final', 'Screening', 'Assessment']
 
@@ -194,9 +194,10 @@ function SlotEditModal({ row, busy, onClose, onSave, onRemove, canCorrectRound =
   const changeNeedsFeedback = statusChanged && slotStatus === 'attended'
   const changeNeedsNote = statusChanged && slotStatus !== ''
   const storedRound = knownRound(row)
-  // A note saves through the attendance route, so a row with no round takes
-  // neither a status nor a note until its round is set.
-  const roundMissing = !storedRound
+  // Validate the round currently selected in this form, not the stale value
+  // from when the modal opened. The round is persisted before attendance.
+  // This also keeps legacy/unknown rounds blocked until corrected by an admin.
+  const roundMissing = !round
   const canEditNote = !roundMissing && (statusChanged
     ? slotStatus !== ''
     : [...SITTING_OUTCOMES, 'cancelled'].includes(slotNoteStatus))
@@ -584,8 +585,11 @@ export function InterviewRoster({
     const { noteRemark, noteChanged, statusChange, slotChanged, ...slotValues } = values
     setBusyId(row.id)
     try {
-      // No specified round, no status update -- the server refuses it too.
-      if ((statusChange || noteChanged) && !knownRound(row)) throw new Error(ROUND_MISSING_MESSAGE)
+      // Check the effective round, including a valid selection made in this
+      // edit. PATCH runs before POST so the backend still rejects any status
+      // update if that round has not actually been saved.
+      const effectiveRound = slotChanged ? slotValues.interview_round : row.interview_round
+      if ((statusChange || noteChanged) && !knownRound({ interview_round: effectiveRound })) throw new Error(ROUND_MISSING_MESSAGE)
       if (slotChanged) {
         const res = await fetch(`${API}/candidates/interviews/slots/${row.id}`, {
           method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slotValues),

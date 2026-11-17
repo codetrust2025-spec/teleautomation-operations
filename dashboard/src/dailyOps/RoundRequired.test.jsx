@@ -10,9 +10,9 @@
  *      sent to the attendance route.
  *   2. It does not ask for a round as part of the status change: there is no
  *      "Required" round and no hint to pick one.
- *   3. The round is corrected separately, in the same edit, by an admin only:
- *      it saves with the slot, the table shows it at once, and only then can
- *      the status change.
+ *   3. An admin can set the round and attendance in one edit: the slot PATCH
+ *      saves the round first, then the attendance POST records the outcome.
+ *      The previous separate-save workflow still works.
  *   4. Rows that carry a round change status exactly as before.
  *   5. The round's change history is listed in the dialog.
  * The API side of the same rule is tests/test_interview_round_required.py.
@@ -151,6 +151,28 @@ describe.each([['desktop', 1440], ['mobile', 440]])('No round, no status update 
     await act(async () => { fireEvent.submit(editDialog()) })
     expect(within(editDialog()).getAllByText(MESSAGE).length).toBeGreaterThan(0)
     expect(attendanceCalls()).toEqual([])
+  })
+
+  it('enables status immediately after an admin selects Final and saves both changes in order', async () => {
+    mockFetch([row('Zara Testname', { technology: 'ServiceNow' })])
+    await renderPanel('Zara Testname')
+    openRowEdit('Zara Testname')
+    expect(attendanceSelect()).toBeDisabled()
+    expect(within(editDialog()).getByRole('alert')).toHaveTextContent(MESSAGE)
+    fireEvent.change(roundSelect(), { target: { value: 'Final' } })
+    expect(attendanceSelect()).not.toBeDisabled()
+    expect(within(editDialog()).queryByText(MESSAGE)).toBeNull()
+    expect(roundSelect().className).not.toContain('ops-slot-round-select--missing')
+    setAttendance('not_attended')
+    setNote('No show')
+    expect(saveButton()).not.toBeDisabled()
+    await act(async () => { fireEvent.click(saveButton()) })
+    await waitFor(() => expect(attendanceCalls()).toHaveLength(1))
+    expect(sent.map(call => call.method)).toEqual(['PATCH', 'POST'])
+    expect(sent[0].path).toMatch(/\/interviews\/slots\/Zara%20Testname$/)
+    expect(sent[0].body.interview_round).toBe('Final')
+    expect(sent[1].body.status).toBe('not_attended')
+    expect(sent[1].body.remark).toBe('No show')
   })
 
   it('lets an admin set the round in the edit; the table shows it and the status then saves', async () => {
