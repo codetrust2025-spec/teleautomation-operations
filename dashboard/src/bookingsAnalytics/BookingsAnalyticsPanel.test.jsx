@@ -81,7 +81,7 @@ function select(url) {
   const p = url.searchParams
   let rows = ROWS.filter(row => row.date >= p.get('from') && row.date <= p.get('to'))
   if (p.get('technology')) rows = rows.filter(row => row.technology === p.get('technology'))
-  if (p.get('round')) rows = rows.filter(row => (row.interview_round || 'Unspecified') === p.get('round'))
+  if (p.get('round')) rows = rows.filter(row => (row.interview_round || 'Needs Review') === p.get('round'))
   const optionRows = rows
   if (p.get('candidate')) rows = rows.filter(row => row.name === p.get('candidate'))
   return { rows, optionRows }
@@ -103,7 +103,7 @@ function summary(url) {
   const levels = new Map(); const techs = new Map(); const people = new Map()
   for (const row of rows) {
     tally(row.interview_attendance_status || 'pending', counts)
-    tally(row.interview_round || 'Unspecified', levels)
+    tally(row.interview_round || 'Needs Review', levels)
     tally(row.technology, techs)
     tally(row.name, people)
   }
@@ -253,10 +253,10 @@ describe('choosing a candidate, a level or a technology narrows the page', () =>
 
   it('a level, including bookings with none recorded', async () => {
     await openPage()
-    fireEvent.click(within(screen.getByRole('list', { name: 'Interview levels' })).getByRole('button', { name: /^Unspecified/ }))
+    fireEvent.click(within(screen.getByRole('list', { name: 'Interview levels' })).getByRole('button', { name: /^Needs Review/ }))
     const none = ROWS.filter(row => !row.interview_round).length
     await waitFor(() => expect(kpiValue('Total bookings')).toBe(String(none)))
-    expect(globalReads().some(url => url.searchParams.get('round') === 'Unspecified')).toBe(true)
+    expect(globalReads().some(url => url.searchParams.get('round') === 'Needs Review')).toBe(true)
     // The level list itself is read without the level, so the other levels stay listed.
     expect(within(screen.getByRole('list', { name: 'Interview levels' })).getAllByRole('button').length).toBeGreaterThan(1)
   })

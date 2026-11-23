@@ -483,7 +483,7 @@ function InterviewsView({ range, filters, initialStatus, period, onClose }) {
                   <td data-label="Date">{formatDayLabel(row.date)}</td>
                   <td data-label="Time">{[row.time, row.time_end].filter(Boolean).map(formatClockTime).join(' – ') || '—'}</td>
                   <td data-label="Candidate" className="ba-table__strong">{row.name || '—'}<CandidateSelectedBadge row={row} /></td>
-                  <td data-label="Level">{row.interview_round || 'Unspecified'}</td>
+                  <td data-label="Level">{row.interview_round || (row.booking_type === 'Assessment' ? 'Assessment' : 'Needs Review')}</td>
                   <td data-label="Technology">{row.technology_resolved || row.technology || 'Unspecified'}</td>
                   <td data-label="Company">{row.interview_company || '—'}</td>
                   <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || '—'}</td>

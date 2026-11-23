@@ -1126,7 +1126,7 @@ def render_booking_evidence_png(
         ("Candidate", candidate.get("name") or result.get("candidate", {}).get("name") or "Unknown"),
         ("Interview", f"{booking.get('date') or interview.get('date') or 'Unknown date'}  {booking.get('time') or interview.get('time') or 'Unknown time'}  Asia/Kolkata"),
         ("Company / role", f"{company or 'Unknown company'} / {role or 'Unknown role'}"),
-        ("Round", interview.get("round") or booking.get("interview_round") or "Not specified"),
+        ("Round", interview.get("round") or booking.get("interview_round") or round_evidence.NEEDS_REVIEW_LABEL),
         ("Email subject", message.get("subject") or "No subject"),
         ("From", f"{message.get('sender_name') or ''} <{message.get('sender_email') or 'Unknown'}>"),
         ("To", message.get("recipient_email") or "Unknown"),

@@ -163,7 +163,9 @@ export function topWithOthers(items, total, limit) {
 const LEVEL_ORDER = ['Screening', 'L1', 'L2', 'L3', 'Final', 'HR']
 
 export function orderedLevels(levels, total) {
-  const position = name => (name === 'Unspecified' ? 99 : (LEVEL_ORDER.indexOf(name) + 1 || 50))
+  // Bookings with no evidenced round ("Needs Review"; "Unspecified" before
+  // 23 Nov) come last.
+  const position = name => (name === 'Needs Review' || name === 'Unspecified' ? 99 : (LEVEL_ORDER.indexOf(name) + 1 || 50))
   return ranked(levels, total).sort((a, b) => position(a.name) - position(b.name) || b.count - a.count)
 }
 

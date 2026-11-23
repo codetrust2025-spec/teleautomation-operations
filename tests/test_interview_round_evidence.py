@@ -199,3 +199,31 @@ def test_auto_booking_does_not_guess_from_technical():
     message = {"subject": "NTT DATA : Teams Meeting:: Technical Round", "body_text": "your interview (Technical round)"}
     assert auto.normalize_booking_round(result, message) == ""
     assert result["interview"]["round"] is None
+
+
+# -- the same name everywhere ----------------------------------------------
+
+def _roster():
+    return [
+        booking(id="l1", interview_round="L1"),
+        booking(id="nr"),
+        booking(id="asmt", booking_type="Assessment", interview_round="Assessment"),
+    ]
+
+
+@pytest.mark.parametrize("value", ["Needs Review", "needs_review", "Unspecified"])
+def test_the_needs_review_level_selects_bookings_with_no_round(value):
+    rows = cs._filter_interview_rows(_roster(), filter_round=[value])
+    assert [r["id"] for r in rows] == ["nr"]
+
+
+def test_other_level_filters_are_unchanged():
+    assert [r["id"] for r in cs._filter_interview_rows(_roster(), filter_round=["L1"])] == ["l1"]
+    assert {r["id"] for r in cs._filter_interview_rows(_roster(), filter_round=["Others"])} == {"nr", "asmt"}
+
+
+def test_bookings_analytics_counts_them_as_needs_review(store):
+    store["candidates"] += _roster()
+    payload = cs.interview_global_summary(LATER, LATER)
+    names = {level["name"] for c in payload["booking_overview"]["by_candidate"] for level in c["levels"]}
+    assert "Needs Review" in names and "Unspecified" not in names

@@ -256,7 +256,16 @@ VALID_INTERVIEW_ROUNDS = STANDARD_INTERVIEW_ROUNDS | frozenset({"Assessment"})
 #: "Others" is every booking whose round is not one of the standard six -- no
 #: round recorded, Assessment, or any other label.
 ROUND_FILTER_OTHER = "other"
-_ROUND_FILTER_ALIASES = {"other": ROUND_FILTER_OTHER, "others": ROUND_FILTER_OTHER}
+#: Bookings with no round their evidence states (23 Nov): what Daily Ops shows
+#: as "Needs Review" and Bookings analytics counts under that name. The old
+#: analytics label "Unspecified" still selects them.
+ROUND_FILTER_NEEDS_REVIEW = "needs_review"
+ROUND_NEEDS_REVIEW_LABEL = "Needs Review"
+_ROUND_FILTER_ALIASES = {
+    "other": ROUND_FILTER_OTHER, "others": ROUND_FILTER_OTHER,
+    "needs review": ROUND_FILTER_NEEDS_REVIEW, "needs_review": ROUND_FILTER_NEEDS_REVIEW,
+    "unspecified": ROUND_FILTER_NEEDS_REVIEW,
+}
 #: The sitting is off and the hour is free, but no replacement has been booked
 #: yet: "Awaiting new slot" in Daily Ops.
 RELEASED_FOR_RESCHEDULE_STATUS = "released_for_reschedule"
@@ -4477,6 +4486,8 @@ def _row_matches_round_filter(row: dict, round_keys: set[str]) -> bool:
     label = normalise_interview_round(row.get("interview_round"))
     if label and label in round_keys:
         return True
+    if ROUND_FILTER_NEEDS_REVIEW in round_keys and not label and _clean_str(row.get("booking_type")) != "Assessment":
+        return True
     return ROUND_FILTER_OTHER in round_keys and label not in STANDARD_INTERVIEW_ROUNDS
 
 
@@ -4954,7 +4965,10 @@ def interview_global_summary(
     overview_technologies: dict[str, int] = {}
     for overview_row in overview_rows:
         candidate_label = canonical_candidate_name((overview_row.get("name") or "").strip()) or "Unknown"
-        level_label = normalise_interview_round(overview_row.get("interview_round")) or "Unspecified"
+        level_label = normalise_interview_round(overview_row.get("interview_round")) or (
+            "Assessment" if _clean_str(overview_row.get("booking_type")) == "Assessment"
+            else ROUND_NEEDS_REVIEW_LABEL
+        )
         technology_label = row_candidate_technology(overview_row) or "Unspecified"
         candidate_bucket = overview_candidates.setdefault(candidate_label, {"count": 0, "levels": {}, "technologies": {}})
         candidate_bucket["count"] += 1
