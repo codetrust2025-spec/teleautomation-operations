@@ -62,6 +62,7 @@ from features.candidate_attachments import (
     parse_attachment_type,
     partition_candidate_attachments,
 )
+from features import interview_round_evidence as round_evidence
 from features import payment_allocation
 from features import payment_receipts
 from features import test_record_exclusions
@@ -2217,6 +2218,8 @@ def _compute_row(row: dict) -> dict:
     enriched["interview_attendee_resolved"] = row_interview_attendee(enriched)
     enriched["interview_attendance_status_resolved"] = row_interview_attendance_status(enriched)
     enriched["technology_resolved"] = row_candidate_technology(enriched)
+    # No round its evidence states: Daily Ops shows "Needs Review" (23 Nov).
+    enriched["interview_round_needs_review"] = interview_round_needs_review(enriched)
     return enriched
 
 
@@ -5280,6 +5283,7 @@ def set_interview_round(
     interview_round: str,
     by: str = "",
     source: str = "dashboard",
+    evidence: dict | None = None,
 ) -> dict | None:
     """Set or correct an interview's round and record who changed it, when.
 
@@ -5311,6 +5315,101 @@ def set_interview_round(
         })
         r["interview_round"] = label
         r["interview_round_history"] = history[-INTERVIEW_ROUND_HISTORY_LIMIT:]
+        if evidence is not None:
+            r["interview_round_evidence"] = dict(evidence)
+        elif (r.get("interview_round_evidence") or {}).get("status") == round_evidence.NEEDS_REVIEW_STATUS:
+            # A person settled what the evidence could not.
+            r["interview_round_evidence"] = {
+                **(r.get("interview_round_evidence") or {}),
+                "status": "reviewed",
+                "round": label,
+                "reviewed_by": (by or "").strip()[:120],
+                "reviewed_at": _now_iso(),
+            }
+        r["updated_at"] = _now_iso()
+        rows[i] = r
+        data["candidates"] = rows
+        _save(data)
+        return _with_computed(r)
+    return None
+
+
+def interview_round_needs_review(row: dict | None) -> bool:
+    """A booking with no recognised round: Daily Ops shows "Needs Review".
+
+    An assessment has no round by nature and is not one of these.
+    """
+    row = row or {}
+    if _clean_str(row.get("booking_type")) == "Assessment":
+        return False
+    if len(_clean_str(row.get("date"))[:10]) != 10:
+        return False
+    return not interview_round_is_set(row)
+
+
+def round_evidence_sources(row: dict) -> list[tuple[str, str]]:
+    """The text a booking row itself carries that may state its round."""
+    return [
+        ("booking.invite_title", _clean_str(row.get("interview_role"))),
+        ("booking.notes", _clean_str(row.get("notes"))),
+        ("booking.telegram_slot", _clean_str(row.get("telegram_slot"))),
+    ]
+
+
+def record_interview_round_evidence(
+    cid: str,
+    *,
+    sources: list[tuple[str, object]] | None = None,
+    by: str = "round-evidence",
+    resolution: dict | None = None,
+) -> dict | None:
+    """Give a booking with no round the round its own evidence states, or mark it.
+
+    Runs after every booking write (create, clone, assign, reschedule), and
+    from the backfill with the linked emails as extra `sources`. A booking that
+    already holds a round, or is an assessment, is left exactly as it is. A
+    round is set only when the text names it outright
+    (`features.interview_round_evidence`); otherwise the booking is stored as
+    needing review, with what was read and why it was not enough. Returns the
+    row as stored, or None when there is no such row.
+    """
+    cid = _clean_str(cid)
+    if not cid:
+        return None
+    data = _load()
+    rows = data.get("candidates") or []
+    for i, r in enumerate(rows):
+        if r.get("id") != cid:
+            continue
+        if not interview_round_needs_review(r):
+            return _with_computed(r)
+        result = resolution or round_evidence.resolve_round(
+            round_evidence_sources(r) + list(sources or [])
+        )
+        evidence = {
+            "status": result.get("status") or round_evidence.NEEDS_REVIEW_STATUS,
+            "round": result.get("round") or "",
+            "evidence_source": result.get("evidence_source") or "",
+            "phrase": _clean_str(result.get("phrase"))[:200],
+            "confidence": result.get("confidence") or "",
+            "reason": _clean_str(result.get("reason"))[:500],
+            "sources_checked": list(result.get("sources_checked") or [])[:20],
+            "checked_at": _now_iso(),
+            "checked_by": _clean_str(by)[:120],
+        }
+        label = normalise_interview_round(evidence["round"])
+        if label:
+            evidence["round"] = label
+            return set_interview_round(
+                cid, interview_round=label, by=by, source="evidence", evidence=evidence,
+            )
+        evidence["status"] = round_evidence.NEEDS_REVIEW_STATUS
+        evidence["round"] = ""
+        previous = r.get("interview_round_evidence") or {}
+        if previous.get("status") == evidence["status"] and previous.get("reason") == evidence["reason"]:
+            return _with_computed(r)
+        r = dict(r)
+        r["interview_round_evidence"] = evidence
         r["updated_at"] = _now_iso()
         rows[i] = r
         data["candidates"] = rows
@@ -5743,7 +5842,8 @@ def create_interview_slot(
         "slot_confirmed": True,
         "slots_group_posted": True,
     }
-    return create_candidate(record, allow_slot_without_rules=True)
+    created = create_candidate(record, allow_slot_without_rules=True)
+    return record_interview_round_evidence(str(created.get("id") or "")) or created
 
 
 def _candidate_has_confirmed_slot(row: dict) -> bool:
@@ -5810,7 +5910,9 @@ def _duplicate_candidate_slot(
         "time_end": _clean_str(time_end),
         "notes": _clean_str(notes),
         "interview_attendee": attendee,
-        "interview_round": normalise_interview_round(interview_round) or normalise_interview_round(source.get("interview_round")),
+        # The round is this booking's own: the person's previous interview
+        # was another round, and copying it here was a guess (23 Nov).
+        "interview_round": normalise_interview_round(interview_round),
         "interview_company": _clean_str(interview_company),
         "interview_role": _clean_str(interview_role),
         "interview_source_thread_id": _clean_str(interview_source_thread_id),
@@ -5931,7 +6033,7 @@ def _assign_interview_slot_unlocked(
         assert_slot_persisted(
             str(clone.get("id") or ""), date=day, time=slot_time, time_end=time_end,
         )
-        return clone
+        return record_interview_round_evidence(str(clone.get("id") or "")) or clone
 
     existing_service = _normalise_service_type(existing.get("service_type"), existing)
     patch: dict = {
@@ -5982,7 +6084,7 @@ def _assign_interview_slot_unlocked(
     booked = update_candidate(cid, patch, allow_slot_without_rules=True)
     # Report the slot only once storage actually holds it.
     assert_slot_persisted(cid, date=day, time=slot_time, time_end=time_end)
-    return booked
+    return record_interview_round_evidence(cid) or booked
 
 
 def update_interview_slot(
@@ -6063,7 +6165,7 @@ def update_interview_slot(
         rescheduled = _carry_sitting_into_history(cid, previous=existing) or rescheduled
     # A reschedule that did not survive the write must not read as rescheduled.
     assert_slot_persisted(cid, date=day, time=slot_time, time_end=time_end)
-    return rescheduled
+    return record_interview_round_evidence(cid) or rescheduled
 
 
 def _carry_sitting_into_history(cid: str, *, previous: dict) -> dict | None:

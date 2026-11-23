@@ -1,7 +1,7 @@
 /**
  * No specified round, no status update (owner, 14 Nov).
  *
- * Rows read "Round not specified" and could still be marked Attended, Not
+ * Rows with no round (shown "Needs Review") could still be marked Attended, Not
  * attended, Rescheduled or Cancelled. The owner's rule, held here on the real
  * Daily Ops panel at a desktop width and at a phone width:
  *   1. On a row with no round, Edit interview slot blocks the status: the
@@ -133,7 +133,7 @@ describe.each([['desktop', 1440], ['mobile', 440]])('No round, no status update 
     auth.role = who
     mockFetch([row('Zara Testname', { interview_attendance_status: 'attended', interview_attendance_remark: 'went well' })])
     await renderPanel('Zara Testname')
-    expect(within(rowOf('Zara Testname')).getByText('Round not specified')).toBeInTheDocument()
+    expect(within(rowOf('Zara Testname')).getByText('Needs Review')).toBeInTheDocument()
     openRowEdit('Zara Testname')
 
     expect(attendanceSelect()).toBeDisabled()

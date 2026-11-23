@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from core import recruitment_mail_store as mail_store
 from features import candidate_store
+from features import interview_round_evidence as round_evidence
 from services import booking_block_reasons, interview_timezones
 from services import interview_lifecycle
 
@@ -54,8 +55,15 @@ def _confidence(result: dict[str, Any]) -> float:
     return value / 100 if value > 1 else value
 
 
-def normalize_booking_round(result: dict[str, Any]) -> str:
-    """Discard model/calendar labels unless they are supported round values."""
+def normalize_booking_round(result: dict[str, Any], message: dict[str, Any] | None = None) -> str:
+    """Discard model/calendar labels unless they are supported round values.
+
+    When the model left the round empty, the invite itself is read: a round
+    its subject, calendar title or body states outright ("Round 1", "Level 1",
+    "R1-...", "Screening call") is used, and nothing else is guessed
+    (`features.interview_round_evidence`). With no such words the booking is
+    saved without a round and Daily Ops shows it as "Needs Review".
+    """
     # Keep the source result and its automation projection in sync.  The
     # booking wrapper adds top-level decision fields, but callers may retain
     # the nested interview object for subsequent event/alert persistence.
@@ -64,8 +72,22 @@ def normalize_booking_round(result: dict[str, Any]) -> str:
         interview = {}
         result["interview"] = interview
     round_name = candidate_store.normalise_interview_round(interview.get("round"))
+    if not round_name and message:
+        round_name = round_evidence.resolve_round(_round_evidence_sources(result, message))["round"]
     interview["round"] = round_name or None
     return round_name
+
+
+def _round_evidence_sources(result: dict[str, Any], message: dict[str, Any]) -> list[tuple[str, Any]]:
+    """The invite's own words, named for the evidence trail."""
+    calendar = result.get("calendar") if isinstance(result.get("calendar"), dict) else {}
+    job = result.get("job") if isinstance(result.get("job"), dict) else {}
+    return [
+        ("email.subject", message.get("subject")),
+        ("calendar.title", calendar.get("summary") or calendar.get("title")),
+        ("invite.title", job.get("title")),
+        ("email.body", message.get("body_text") or message.get("body")),
+    ]
 
 
 def parse_interview_time(value: str) -> str:
@@ -1345,7 +1367,7 @@ def _execute_auto_booking(
 ) -> dict[str, Any]:
     """Apply one actionable classification and durably describe every outcome."""
     correlation_id = correlation_id or str(uuid.uuid4())
-    interview_round = normalize_booking_round(result)
+    interview_round = normalize_booking_round(result, message)
     classification = mail_store.canonical_classification(result)
     notification = event.get("notification") or {}
     prior_audit = mail_store.booking_audit_for_message(message['provider_message_id'], classification)

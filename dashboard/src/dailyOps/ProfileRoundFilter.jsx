@@ -216,7 +216,7 @@ export function ProfileRoundFilter({
                   <label
                     key={r}
                     className={`ops-levels-option${checked ? ' ops-levels-option--checked' : ''}`}
-                    title={r === ROUND_OTHER ? 'Round not specified, Assessment, and any round other than Screening, L1, L2, L3, HR or Final' : undefined}
+                    title={r === ROUND_OTHER ? 'Needs Review (no round), Assessment, and any round other than Screening, L1, L2, L3, HR or Final' : undefined}
                   >
                     <input type="checkbox" checked={checked} onChange={() => toggleRound(r)} aria-label={label} />
                     {box(checked)}

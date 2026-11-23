@@ -604,13 +604,15 @@ def _parse_times_from_blob(blob: str) -> tuple[str, str]:
 
 
 def _parse_round_from_blob(blob: str) -> str:
-    text = (blob or "").upper()
-    for label in ("L4", "L3", "L2", "L1", "HR", "FINAL", "SCREENING"):
-        if re.search(rf"\b{label}\b", text):
-            return "Final" if label == "FINAL" else ("Screening" if label == "SCREENING" else label)
-    if re.search(r"\bTECHNICAL\b", text):
-        return "L1"
-    return ""
+    """The round the screenshot's text states outright, or "".
+
+    "Technical" alone used to be read as L1 -- a guess (23 Nov). The shared
+    evidence reader takes only a named round ("Round 2", "Level 1", "L1
+    Interview", "HR round") and returns nothing when two rounds are named.
+    """
+    from features.interview_round_evidence import resolve_round
+
+    return resolve_round([("screenshot.text", blob)])["round"]
 
 
 def _parse_platform_from_blob(blob: str) -> str:

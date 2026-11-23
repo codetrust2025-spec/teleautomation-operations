@@ -306,10 +306,12 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
                           <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
                         ) : (
                           <span
-                            className="sbs-slot-card__round sbs-slot-card__round--unspecified"
-                            title="Interview round was not specified in invitation"
+                            className="sbs-slot-card__round sbs-slot-card__round--unspecified sbs-slot-card__round--needs-review"
+                            title={slot.interview_round_evidence?.reason
+                              ? `Round needs review: ${slot.interview_round_evidence.reason}`
+                              : "No round is stated in this booking's evidence"}
                           >
-                            Round not specified
+                            Needs Review
                           </span>
                         )}
                       </span>

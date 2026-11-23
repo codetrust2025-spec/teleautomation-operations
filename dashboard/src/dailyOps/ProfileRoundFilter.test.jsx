@@ -185,7 +185,7 @@ describe('Others (owner, 15 Nov)', () => {
     render(<ProfileRoundFilter />)
     openMenu()
     const others = box('Interview rounds', 'Others').closest('label')
-    expect(others.getAttribute('title')).toMatch(/Round not specified, Assessment, and any round other than Screening, L1, L2, L3, HR or Final/)
+    expect(others.getAttribute('title')).toMatch(/Needs Review \(no round\), Assessment, and any round other than Screening, L1, L2, L3, HR or Final/)
   })
 
   it('emits the server token, alone or with rounds, in menu order', () => {

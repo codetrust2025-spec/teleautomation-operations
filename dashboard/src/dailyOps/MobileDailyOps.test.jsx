@@ -174,7 +174,8 @@ describe('the card labels say what the control does', () => {
     await renderPanel()
     await waitFor(() => expect(screen.getByText('Asha Rao')).toBeInTheDocument())
 
-    expect(cell('Round').textContent).toBe('Round not specified')
+    expect(cell('Round').textContent).toBe('Needs Review')
+    expect(ROSTER).not.toContain('Round not specified')
     expect(ROSTER).not.toContain('Not specified in email')
   })
 })

@@ -257,13 +257,14 @@ describe('candidate name capitalization and round badge presentation', () => {
     expect(screen.getByText('Candidate Gamma')).toBeTruthy()
   })
 
-  it('renders "Round not specified" badge when interview has no round or generic technical round', async () => {
+  it('renders "Needs Review" badge when interview has no round or generic technical round', async () => {
     const slots = [
       { name: 'Candidate Delta', technology: 'Data', interview_round: '', date: '2026-09-24', time: '16:00', booking_type: 'Interview' },
     ]
     await openConfirmed(slots)
     await waitFor(() => expect(screen.getByText('Candidate Delta')).toBeTruthy())
-    const badge = screen.getByText('Round not specified')
+    const badge = screen.getByText('Needs Review')
+    expect(screen.queryByText('Round not specified')).toBeNull()
     expect(badge).toBeTruthy()
     expect(badge.className).toContain('sbs-slot-card__round--unspecified')
     expect(screen.queryByText('Technical')).toBeNull()
