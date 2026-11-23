@@ -3494,4 +3494,23 @@ tr.row-edit :is(button,a){cursor:pointer}
     border-radius: 999px; font-size: 13px; font-weight: 700; background: color-mix(in srgb, currentColor 12%, transparent); border-width: 1px; border-style: solid;
   }
   .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Status"] { grid-area: feed; order: 0; justify-content: flex-end; }
+
+  /* 4. Latest mockup (24 Nov, second pass): Upcoming, Today and Profile + Round
+     share one row and Filters takes the full row under them, outlined in the
+     same blue as Refresh; its active and open states keep their own looks. */
+  .ops-roster-controls .ops-roster-controls__filters .ops-roster-control--date { flex: 1.4 1 28%; }
+  .ops-roster-controls .ops-roster-controls__filters .ops-roster-today { flex: 1 1 20%; }
+  .ops-roster-controls .ops-roster-controls__filters .ops-profile-round-filter { flex: 1.7 1 36%; }
+  .ops-roster-controls .ops-roster-controls__filters .ops-filter-dropdown-wrap { order: 4; flex: 1 1 100%; }
+  .ops-roster-controls .ops-roster-controls__filters .ops-filter-trigger:not(.ops-filter-trigger--active):not(.ops-filter-trigger--open) {
+    border: 1px solid #3b82f6; background: rgba(59, 130, 246, .12); color: #dbeafe;
+  }
+
+  /* 5. WhatsApp: the green outlined circle sits beside the number, centred on
+     the name line, with the same gap the name and number keep. */
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-interview-identity { align-items: center; column-gap: 10px; }
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-whatsapp {
+    width: 30px; height: 30px; margin-left: 0; align-self: center;
+    background: rgba(37, 211, 102, .08); border: 1.5px solid rgba(37, 211, 102, .6);
+  }
 }

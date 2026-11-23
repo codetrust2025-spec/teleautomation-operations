@@ -49,3 +49,18 @@ describe('Daily Ops phone layout matches the 24 Nov mockup', () => {
     expect(BLOCK).toContain('flex: 1 1 auto; width: auto; min-width: 0;')
   })
 })
+
+describe('Daily Ops phone layout, second 24 Nov mockup', () => {
+  it('puts Upcoming, Today and Profile + Round on one row and Filters on its own, outlined in blue', () => {
+    expect(BLOCK).toContain('.ops-roster-control--date { flex: 1.4 1 28%; }')
+    expect(BLOCK).toContain('.ops-roster-today { flex: 1 1 20%; }')
+    expect(BLOCK).toContain('.ops-profile-round-filter { flex: 1.7 1 36%; }')
+    expect(BLOCK).toContain('.ops-filter-dropdown-wrap { order: 4; flex: 1 1 100%; }')
+    expect(BLOCK).toMatch(/\.ops-filter-trigger:not\(\.ops-filter-trigger--active\):not\(\.ops-filter-trigger--open\) \{\s*border: 1px solid #3b82f6;/)
+  })
+
+  it('centres the green outlined WhatsApp circle beside the number', () => {
+    expect(BLOCK).toContain('.ops-interview-identity { align-items: center; column-gap: 10px; }')
+    expect(BLOCK).toMatch(/\.ops-whatsapp \{\s*width: 30px; height: 30px; margin-left: 0; align-self: center;\s*background: rgba\(37, 211, 102, \.08\); border: 1\.5px solid rgba\(37, 211, 102, \.6\);/)
+  })
+})
