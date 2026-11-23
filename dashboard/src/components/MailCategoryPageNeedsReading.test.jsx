@@ -21,6 +21,20 @@ function serve(groups, history = []) {
   }));
 }
 beforeEach(() => serve([]));
+
+// Selection Related, 24 Nov: one card per candidate, each company's card inside
+// it. Opening the candidate shows them; a single company's emails open with it.
+async function companyCard(name) {
+  const candidate = await screen.findByRole("article", { name: name.split(", ")[0] });
+  const open = within(candidate).getByRole("button", { name: /companies and emails for/ });
+  if (open.getAttribute("aria-expanded") !== "true") fireEvent.click(open);
+  return screen.findByRole("article", { name });
+}
+const showEmails = (card) => {
+  const button = within(card).getByRole("button", { name: /(Show|Hide) emails for/ });
+  if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
+};
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("Needs reading vs Opened", () => {
@@ -39,7 +53,7 @@ describe("Needs reading vs Opened", () => {
   it("an all-opened Selection card has no Needs Review badge", async () => {
     serve([group({})]);
     render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
-    const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
+    const card = await companyCard("Sakthi, Company not identified");
     expect(card.querySelector(".mcp-pill--status")).toBeNull();
     expect(within(card).queryByText("Needs Review")).toBeNull();
     expect(within(card).getByLabelText("5 opened")).toBeInTheDocument();
@@ -48,7 +62,7 @@ describe("Needs reading vs Opened", () => {
   it("also hides a stored Needs Review label without changing its backend status", async () => {
     serve([group({ latest_classification: "selection_other", latest_status: "Needs Review" })]);
     render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
-    const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
+    const card = await companyCard("Sakthi, Company not identified");
     expect(card.querySelector(".mcp-pill--status")).toBeNull();
   });
 
@@ -62,8 +76,8 @@ describe("Needs reading vs Opened", () => {
         email_received_at: "2026-11-14T08:00:00Z" },
     ]);
     render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
-    const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
-    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    const card = await companyCard("Sakthi, Company not identified");
+    showEmails(card);
     await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(2));
     expect(within(card).queryByText("Needs Review")).toBeNull();
     const labels = [...card.querySelectorAll(".mcp-mail__label")].map((el) => el.textContent);
@@ -74,7 +88,7 @@ describe("Needs reading vs Opened", () => {
   it("a card with unopened mail says Needs reading", async () => {
     serve([group({ unread: 2, category_unread: 2, read: 3, category_read: 3 })]);
     render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
-    const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
+    const card = await companyCard("Sakthi, Company not identified");
     expect(card.querySelector(".mcp-pill--status").textContent).toBe("Needs reading");
     expect(card.querySelector(".mcp-pill--new").textContent).toBe("2 unread");
   });
@@ -82,7 +96,7 @@ describe("Needs reading vs Opened", () => {
   it("other statuses are unchanged", async () => {
     serve([group({ latest_classification: "offer_received", latest_status: "Offer Received", latest_status_evidence: "stated" })]);
     render(<ConfirmProvider><MailCategoryPage category="selection" /></ConfirmProvider>);
-    const card = await screen.findByRole("article", { name: "Sakthi, Company not identified" });
+    const card = await companyCard("Sakthi, Company not identified");
     const pill = card.querySelector(".mcp-pill--status");
     expect(pill.textContent).toBe("Offer Received");
     expect(pill.querySelector(".mcp-glyph--check")).not.toBeNull();

@@ -185,7 +185,7 @@ function query(params) {
   return search.toString();
 }
 
-function GroupCard({ group, category, expanded, onToggle, history, openMails, contents, onOpenMail, onAction, onMarkAllRead }) {
+function GroupCard({ group, category, expanded, onToggle, history, openMails, contents, onOpenMail, onAction, onMarkAllRead, nested = false }) {
   const company = group.company_name || "Company not identified";
   const needsReading = isNeedsReading(group.latest_classification);
   const tone = mailStatusTone({ candidate_status: group.latest_status, classification: group.latest_classification });
@@ -200,17 +200,18 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
   const historyUnread = Number(group.unread) || 0;
   const status = selectionVisibleStatus(needsReading ? needsReadingLabel(unread > 0) : group.latest_status || displayLabel(group.latest_classification || ""), category);
   const logo = group.company_name ? logoText(company) : "—";
-  return <article className={`mcp-group${expanded ? " mcp-group--open" : ""}${unread ? " mcp-group--unread" : ""}`} aria-label={`${name}, ${company}`}>
+  return <article className={`mcp-group${nested ? " mcp-group--nested" : ""}${expanded ? " mcp-group--open" : ""}${unread ? " mcp-group--unread" : ""}`} aria-label={`${name}, ${company}`}>
     {/* Tapping anywhere on the card opens its emails here, in the app; only
         its own buttons and links do something else. */}
     <div className="mcp-group__head" onClick={(event) => { if (!event.target.closest("button, a, input, select")) onToggle(); }}>
       <div className={`mcp-logo mcp-logo--${logoSize(logo)}`} title={company} aria-hidden="true"><span>{logo}</span></div>
       <div className="mcp-group__main">
-        <strong className="mcp-group__name" title={name}>{name}</strong>
-        <span className="mcp-group__meta">
+        {/* Inside a candidate's card the candidate is already named: the company leads. */}
+        <strong className="mcp-group__name" title={nested ? company : name}>{nested ? company : name}</strong>
+        {!nested && <span className="mcp-group__meta">
           {group.candidate_email && <span className="mcp-group__email" title={group.candidate_email}>{group.candidate_email}</span>}
           <span className="mcp-group__company" title={company}>{company}</span>
-        </span>
+        </span>}
         <span className="mcp-group__badges">
           <span className="mcp-pill mcp-pill--count" title={`${plural(total, `${kind} email`)} with ${company}`} aria-label={plural(total, `${kind} email`)}>
             <Glyph name="mail" size={16} />{total}
@@ -257,6 +258,71 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
         {history && !history.loading && !history.error && !(history.items || []).length && <li className="mcp-history__note">No emails in this group.</li>}
       </ol>
     </div>}
+  </article>;
+}
+
+// Selection Related, 24 Nov: one card per candidate. The server pages by
+// candidate (`group_by=candidate`) and returns every company group of each,
+// newest first, so the rows only need gathering here, in the order they came.
+export function groupsByCandidate(groups) {
+  const byId = new Map();
+  for (const group of groups || []) {
+    if (!byId.has(group.candidate_id)) byId.set(group.candidate_id, { key: group.candidate_id, candidate_id: group.candidate_id, groups: [] });
+    byId.get(group.candidate_id).groups.push(group);
+  }
+  return [...byId.values()].map((entry) => {
+    const sum = (field, fallback) => entry.groups.reduce((total, g) => total + (Number(g[field] ?? g[fallback]) || 0), 0);
+    // The latest status is the newest company's: groups arrive newest first.
+    const latest = [...entry.groups].sort((a, b) => String(b.latest_at || "").localeCompare(String(a.latest_at || "")))[0];
+    return {
+      ...entry,
+      name: entry.groups.find((g) => g.candidate_name)?.candidate_name || "Candidate",
+      email: entry.groups.find((g) => g.candidate_email)?.candidate_email || "",
+      total: sum("category_total", "total"),
+      unread: sum("category_unread", "unread"),
+      opened: sum("category_read", "read"),
+      latest,
+    };
+  });
+}
+
+const initials = (name) => String(name || "").trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "—";
+
+// One candidate: their total alerts, how many companies, and the latest
+// status; expanded, each company's card with its own emails, exactly as
+// before (counts, history, mark all read, opening a mail).
+function CandidateCard({ candidate, category, expanded, onToggle, children }) {
+  const kind = CATEGORY_NAME[category] || "";
+  const { latest } = candidate;
+  const needsReading = isNeedsReading(latest?.latest_classification);
+  const tone = mailStatusTone({ candidate_status: latest?.latest_status, classification: latest?.latest_classification });
+  const status = latest ? selectionVisibleStatus(needsReading ? needsReadingLabel(candidate.unread > 0) : latest.latest_status || displayLabel(latest.latest_classification || ""), category) : "";
+  const companies = candidate.groups.length;
+  const listId = `mcp-candidate-${String(candidate.key).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  return <article className={`mcp-group mcp-group--candidate${expanded ? " mcp-group--open" : ""}${candidate.unread ? " mcp-group--unread" : ""}`} aria-label={candidate.name}>
+    <div className="mcp-group__head" onClick={(event) => { if (!event.target.closest("button, a, input, select")) onToggle(); }}>
+      <div className="mcp-logo mcp-logo--lg mcp-logo--person" aria-hidden="true"><span>{initials(candidate.name)}</span></div>
+      <div className="mcp-group__main">
+        <strong className="mcp-group__name" title={candidate.name}>{candidate.name}</strong>
+        {candidate.email && <span className="mcp-group__meta"><span className="mcp-group__email" title={candidate.email}>{candidate.email}</span></span>}
+        <span className="mcp-group__badges">
+          <span className="mcp-pill mcp-pill--count" title={`${plural(candidate.total, `${kind} alert`)} in total`} aria-label={plural(candidate.total, `${kind} alert`)}>
+            <Glyph name="mail" size={16} />{candidate.total}
+          </span>
+          <span className="mcp-pill mcp-pill--companies" title={companies === 1 ? "1 company" : `${companies} companies`}>
+            <Glyph name="building" size={16} />{companies === 1 ? "1 company" : `${companies} companies`}
+          </span>
+          {candidate.unread > 0 && <span className="mcp-pill mcp-pill--new" title={`Unread ${kind} alerts`}>{candidate.unread} unread</span>}
+          {status && <StatusPill label={status} evidence={needsReading ? "needs reading" : latest?.latest_status_evidence} tone={tone} />}
+        </span>
+      </div>
+      <span className="mcp-group__opened" title={`${candidate.opened} ${kind} opened`} aria-label={`${candidate.opened} opened`}><Glyph name="eye" size={20} />{candidate.opened}</span>
+      <button type="button" className={`mcp-chevron${expanded ? " mcp-chevron--open" : ""}`} aria-expanded={expanded} aria-controls={listId}
+        aria-label={`${expanded ? "Hide" : "Show"} companies and emails for ${candidate.name}`} onClick={() => onToggle()}>
+        <Glyph name="chevron" size={22} />
+      </button>
+    </div>
+    {expanded && <div className="mcp-candidate__companies" id={listId} role="group" aria-label={`${candidate.name}'s companies`}>{children}</div>}
   </article>;
 }
 
@@ -399,6 +465,7 @@ export function MailCategoryPage({ category }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [expanded, setExpanded] = useState(() => new Set());
+  const [openCandidates, setOpenCandidates] = useState(() => new Set());
   const [histories, setHistories] = useState({});
   const [openMails, setOpenMails] = useState(() => new Set());
   const [contents, setContents] = useState({});
@@ -435,7 +502,7 @@ export function MailCategoryPage({ category }) {
           // resolved from an alert's evidence, so those can be filtered too.
           ? request(`/api/mail-monitoring/emails?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit, offset })}`)
             .then((emails) => ({ emails: emails.emails || [], total: emails.total, companies: emails.companies || [] }))
-          : request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit, offset })}`),
+          : request(`/api/mail-monitoring/groups?${query({ ...base, company_key: companyKey, ...tileParams(tile), limit, offset, group_by: "candidate" })}`),
         fetchMailSummary(),
         ...CATEGORY_TILES.map((t) => request(`/api/mail-monitoring/notifications?${query({ ...base, ...t.params, limit: 1, offset: 0, sort: "newest" })}`)),
       ]);
@@ -470,6 +537,17 @@ export function MailCategoryPage({ category }) {
     setExpanded((value) => { const next = new Set(value); if (open) next.add(key); else next.delete(key); return next; });
     if (open) loadHistory(group);
   };
+  // Opening a candidate shows each company's card. With one company, its
+  // emails open too -- a second tap would add nothing; with several, the
+  // companies are listed folded, each with its counts and status, and open
+  // on their own.
+  const toggleCandidate = (candidate) => {
+    const open = !openCandidates.has(candidate.key);
+    setOpenCandidates((value) => { const next = new Set(value); if (open) next.add(candidate.key); else next.delete(candidate.key); return next; });
+    const [only] = candidate.groups;
+    if (open && candidate.groups.length === 1 && !expanded.has(groupKey(only))) toggle(only, true);
+  };
+  const candidates = useMemo(() => groupsByCandidate(data.groups), [data.groups]);
   // Opening a mail shows its content inside the card and marks that one mail
   // read: the row, its group's counts and the tile at once, then the server's
   // own figures. Opening it again closes it.
@@ -592,7 +670,7 @@ export function MailCategoryPage({ category }) {
 
     <div className="mcp-results">
       <h2><Glyph name="mail" size={24} />{CATEGORY_NAME[category]} Alerts</h2>
-      <span>{plural(data.total, perEmail ? "Email" : "Result")}</span>
+      <span>{plural(data.total, perEmail ? "Email" : "Candidate")}</span>
     </div>
 
     <div className={`mcp-list${loading ? " is-loading" : ""}`}>
@@ -605,10 +683,13 @@ export function MailCategoryPage({ category }) {
       </div>}
       {perEmail && data.emails.map((item) => <EmailCard key={item.id} item={item} open={openMails.has(item.id)}
         content={contents[item.id]} onOpenMail={openMail} onAction={act} />)}
-      {!perEmail && data.groups.map((group) => <GroupCard key={groupKey(group)} group={group}
-        category={category} expanded={expanded.has(groupKey(group))} onToggle={(force) => toggle(group, force)}
-        history={histories[groupKey(group)]} openMails={openMails} contents={contents} onOpenMail={openMail}
-        onAction={act} onMarkAllRead={() => markAllRead(group)} />)}
+      {!perEmail && candidates.map((candidate) => <CandidateCard key={candidate.key} candidate={candidate} category={category}
+        expanded={openCandidates.has(candidate.key)} onToggle={() => toggleCandidate(candidate)}>
+        {candidate.groups.map((group) => <GroupCard key={groupKey(group)} group={group} nested
+          category={category} expanded={expanded.has(groupKey(group))} onToggle={(force) => toggle(group, force)}
+          history={histories[groupKey(group)]} openMails={openMails} contents={contents} onOpenMail={openMail}
+          onAction={act} onMarkAllRead={() => markAllRead(group)} />)}
+      </CandidateCard>)}
     </div>
     {(data.total > limit || (perEmail && data.total > INTERVIEW_PAGE_SIZES[0])) && <footer className="mcp-pages">
       <button type="button" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - limit))}>Previous</button>

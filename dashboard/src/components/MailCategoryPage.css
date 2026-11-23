@@ -815,3 +815,16 @@
 @media (max-width: 350px) {
   .mcp--selection .mcp-select > .mcp-glyph:first-child { display: none; }
 }
+
+/* Selection Related, 24 Nov: one card per candidate. The candidate card is a
+   .mcp-group (same surface, borders and unread blue); its companies sit inside
+   it as nested .mcp-group cards, each with its own emails. */
+.mcp--selection .mcp-logo--person { border-radius: 50%; }
+.mcp--selection .mcp-pill--companies { border-color: rgba(148, 163, 184, 0.45); background: rgba(148, 163, 184, 0.1); color: var(--mcp-text-2); }
+.mcp--selection .mcp-candidate__companies { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(148, 163, 184, 0.18); }
+.mcp--selection .mcp-group.mcp-group--nested { margin: 0; padding: 12px 14px; background: rgba(255, 255, 255, 0.025); box-shadow: none; }
+.mcp--selection .mcp-group--nested .mcp-group__name { font-size: 15px; }
+@media (max-width: 640px) {
+  .mcp--selection .mcp-candidate__companies { gap: 8px; margin-top: 10px; padding-top: 10px; }
+  .mcp--selection .mcp-group.mcp-group--nested { padding: 10px; }
+}

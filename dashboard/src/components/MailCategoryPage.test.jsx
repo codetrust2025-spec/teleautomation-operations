@@ -91,6 +91,19 @@ function install({ groups = GROUPS, history = HISTORY, emailTotal = null } = {})
 const renderPage = (category = "selection") => render(<ConfirmProvider><MailCategoryPage category={category} /></ConfirmProvider>);
 const groupsRequests = () => calls.filter((c) => c.path.includes("/groups?")).map((c) => new URL(c.path, "http://test.invalid").searchParams);
 
+// Selection Related, 24 Nov: one card per candidate, each company's card inside
+// it. Opening the candidate shows them; a single company's emails open with it.
+async function companyCard(name) {
+  const candidate = await screen.findByRole("article", { name: name.split(", ")[0] });
+  const open = within(candidate).getByRole("button", { name: /companies and emails for/ });
+  if (open.getAttribute("aria-expanded") !== "true") fireEvent.click(open);
+  return screen.findByRole("article", { name });
+}
+const showEmails = (card) => {
+  const button = within(card).getByRole("button", { name: /(Show|Hide) emails for/ });
+  if (button.getAttribute("aria-expanded") !== "true") fireEvent.click(button);
+};
+
 beforeEach(() => install());
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -115,13 +128,15 @@ describe("the counters are the tabs", () => {
 describe("a Candidate + Company card", () => {
   it("shows total, unread and read, and the latest verified status", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    const card = await companyCard("Ashok Rao, HCLTech");
     // The card counts Selection mail, like the counters; the history counts all.
     expect(within(card).getByLabelText("1 Selection email")).toBeInTheDocument();
     expect(card.querySelector(".mcp-pill--new").textContent).toBe("1 unread");
     expect(within(card).getByLabelText("0 opened")).toBeInTheDocument();
     expect(within(card).getByTitle("Latest verified status").textContent).toBe("Joining Confirmed");
-    expect(screen.getByText("2 Results")).toBeInTheDocument();
+    expect(screen.getByText("2 Candidates")).toBeInTheDocument();
+    // The server pages by candidate and returns all of their companies.
+    expect(groupsRequests().at(-1).get("group_by")).toBe("candidate");
   });
 
   it("shows the status the mail states, not an unproven Joining Confirmed", async () => {
@@ -130,9 +145,10 @@ describe("a Candidate + Company card", () => {
       history: [{ ...HISTORY[0], verified_status: "Background Verification", status_evidence: "different step" }],
     });
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    expect(within(card).getByTitle(/states this step, not the detected label/).textContent).toBe("Background Verification");
-    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    const card = await companyCard("Ashok Rao, HCLTech");
+    expect(card.querySelector(".mcp-group__head .mcp-pill--status").getAttribute("title")).toMatch(/states this step, not the detected label/);
+    expect(card.querySelector(".mcp-group__head .mcp-pill--status").textContent).toBe("Background Verification");
+    showEmails(card);
     const list = await within(card).findByRole("list", { name: "Emails, newest first" });
     await waitFor(() => expect(list.textContent).toContain("Selection · Background Verification"));
     expect(list.textContent).not.toContain("Joining Confirmed");
@@ -140,8 +156,8 @@ describe("a Candidate + Company card", () => {
 
   it("expands to every mail of the group, newest first, Selection and Interview labelled", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    fireEvent.click(within(card).getByRole("button", { name: /Show emails for Ashok Rao at HCLTech/ }));
+    const card = await companyCard("Ashok Rao, HCLTech");
+    showEmails(card);
     const list = await within(card).findByRole("list", { name: "Emails, newest first" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
     const history = calls.find((c) => c.path.includes("/groups/emails")).path;
@@ -160,8 +176,8 @@ describe("a Candidate + Company card", () => {
 
   it("opening a mail marks only that mail read", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    const card = await companyCard("Ashok Rao, HCLTech");
+    showEmails(card);
     const list = await within(card).findByRole("list", { name: "Emails, newest first" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
     fireEvent.click(within(list).getByRole("button", { name: "Unread: Evaluation 2 Selection for 141850" }));
@@ -182,7 +198,7 @@ describe("a Candidate + Company card", () => {
 describe("filters", () => {
   it("search, company and status narrow the groups and keep the category", async () => {
     renderPage();
-    await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    await companyCard("Ashok Rao, HCLTech");
     fireEvent.change(screen.getByLabelText("Search notifications"), { target: { value: "Ashok" } });
     fireEvent.change(screen.getByLabelText("Company filter"), { target: { value: "hcltech" } });
     fireEvent.change(screen.getByLabelText("Status filter"), { target: { value: "joining_confirmed" } });
@@ -215,19 +231,19 @@ describe("filters", () => {
 });
 
 describe("reading mail in the app", () => {
-  it("tapping anywhere on the card opens its emails", async () => {
+  it("tapping anywhere on the candidate's card opens their emails, and again closes it", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    fireEvent.click(card.querySelector(".mcp-group__email"));
-    expect(await within(card).findByRole("list", { name: "Emails, newest first" })).toBeInTheDocument();
-    fireEvent.click(card.querySelector(".mcp-group__name"));
-    await waitFor(() => expect(within(card).queryByRole("list", { name: "Emails, newest first" })).toBeNull());
+    const candidate = await screen.findByRole("article", { name: "Ashok Rao" });
+    fireEvent.click(candidate.querySelector(".mcp-group__email"));
+    expect(await within(candidate).findByRole("list", { name: "Emails, newest first" })).toBeInTheDocument();
+    fireEvent.click(candidate.querySelector(".mcp-group__name"));
+    await waitFor(() => expect(within(candidate).queryByRole("list", { name: "Emails, newest first" })).toBeNull());
   });
 
   it("Gmail is an optional link inside the opened mail, never the default", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    const card = await companyCard("Ashok Rao, HCLTech");
+    showEmails(card);
     const list = await within(card).findByRole("list", { name: "Emails, newest first" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
     // Nothing on the card or the list links to Gmail until a mail is opened.
@@ -256,8 +272,8 @@ describe("reading mail in the app", () => {
 describe("unread counts", () => {
   it("the history line shows every mail with the company, by kind, and its unread", async () => {
     renderPage();
-    const card = await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
-    fireEvent.click(within(card).getByRole("button", { name: /Show emails/ }));
+    const card = await companyCard("Ashok Rao, HCLTech");
+    showEmails(card);
     await waitFor(() => expect(card.querySelector(".mcp-history__summary").textContent)
       .toBe("All emails with HCLTech: 3 (1 Selection, 2 Interview)2 unread"));
   });
@@ -369,7 +385,7 @@ describe("Interview Related: one card per email", () => {
 
   it("Selection Related keeps its Candidate + Company cards", async () => {
     renderPage("selection");
-    expect(await screen.findByRole("article", { name: "Ashok Rao, HCLTech" })).toBeInTheDocument();
+    expect(await companyCard("Ashok Rao, HCLTech")).toBeInTheDocument();
     expect(calls.some((c) => c.path.includes("/mail-monitoring/emails?"))).toBe(false);
   });
 
@@ -450,7 +466,7 @@ describe("Interview Related: page size", () => {
 
   it("Selection keeps its fixed page of 20 groups and has no size control", async () => {
     renderPage("selection");
-    await screen.findByRole("article", { name: "Ashok Rao, HCLTech" });
+    await companyCard("Ashok Rao, HCLTech");
     expect(groupsRequests().at(-1).get("limit")).toBe("20");
     expect(screen.queryByLabelText("Emails per page")).toBeNull();
   });

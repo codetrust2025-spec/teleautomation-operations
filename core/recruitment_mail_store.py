@@ -3718,7 +3718,7 @@ def _mail_texts(cur, ids: list[str]) -> dict[str, list[str]]:
 
 
 def list_notification_groups(
-    *, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0,
+    *, filters: dict[str, Any] | None = None, limit: int = 20, offset: int = 0, by_candidate: bool = False,
 ) -> dict[str, Any]:
     """Mail Alerts by Candidate + Company, for the Selection / Interview pages.
 
@@ -3728,6 +3728,12 @@ def list_notification_groups(
     categories, because that is what expanding it shows. `latest_*` is the
     newest alert of the page's category (or of any, without one): the latest
     status the pipeline verified for that group. Read-only.
+
+    `by_candidate` (Selection Related, 24 Nov): the page unit is the candidate,
+    not the group. `limit` / `offset` count candidates -- each by their latest
+    group -- and every group of a candidate on the page is returned, newest
+    first under them, so one candidate is never split across pages. `total` is
+    then the number of candidates. The groups themselves are unchanged.
     """
     filters = dict(filters or {})
     company_key = str(filters.pop("company_key", "") or "").strip().lower()
@@ -3746,7 +3752,7 @@ def list_notification_groups(
         alias_sql, alias_params = _alias_cte(resolved)
         alias_sql, alias_params = f"{shadow}, {alias_sql}", shadow_params + alias_params
         names = {v[0]: v[1] for v in resolved[0].values()}
-        cur.execute(
+        ctes = (
             f"""WITH {alias_sql}, matched AS (
                   SELECT {_person_sql()} AS candidate_id, {key} AS company_key FROM mail_monitoring_notifications
                    WHERE {clause} GROUP BY 1, 2
@@ -3760,8 +3766,10 @@ def list_notification_groups(
                          classification, candidate_status, id AS latest_id
                     FROM hist WHERE classification = ANY(%s)
                    ORDER BY person_id, company_key, COALESCE(email_received_at, created_at) DESC, id
-                )
-                SELECT h.person_id AS candidate_id, h.company_key,
+                )"""
+        )
+        grouped = (
+            f"""SELECT h.person_id AS candidate_id, h.company_key,
                        (array_agg(h.candidate_name ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
                           FILTER (WHERE COALESCE(h.candidate_name, '') <> ''))[1] AS candidate_name,
                        (array_agg(h.candidate_email ORDER BY COALESCE(h.email_received_at, h.created_at) DESC)
@@ -3775,17 +3783,28 @@ def list_notification_groups(
                        l.classification AS latest_classification, l.candidate_status AS latest_status,
                        l.latest_id, count(*) OVER () AS group_total
                   FROM hist h LEFT JOIN latest l USING (person_id, company_key)
-                 GROUP BY h.person_id, h.company_key, l.classification, l.candidate_status, l.latest_id
-                 ORDER BY latest_at DESC NULLS LAST, h.person_id, h.company_key
-                 LIMIT %s OFFSET %s""",
-            alias_params + params + _visibility_params() + [status_set, status_set, status_set, page, skip],
+                 GROUP BY h.person_id, h.company_key, l.classification, l.candidate_status, l.latest_id"""
         )
+        if by_candidate:
+            sql = f"""{ctes}, grp AS ({grouped}),
+                cand AS (SELECT candidate_id, max(latest_at) AS cand_latest FROM grp GROUP BY candidate_id),
+                pg AS (SELECT candidate_id, cand_latest, count(*) OVER () AS cand_total FROM cand
+                        ORDER BY cand_latest DESC NULLS LAST, candidate_id LIMIT %s OFFSET %s)
+                SELECT g.*, pg.cand_total FROM grp g JOIN pg USING (candidate_id)
+                 ORDER BY pg.cand_latest DESC NULLS LAST, g.candidate_id, g.latest_at DESC NULLS LAST, g.company_key"""
+        else:
+            sql = f"""{ctes}
+                {grouped}
+                 ORDER BY latest_at DESC NULLS LAST, h.person_id, h.company_key
+                 LIMIT %s OFFSET %s"""
+        cur.execute(sql, alias_params + params + _visibility_params() + [status_set, status_set, status_set, page, skip])
         rows = _rows(cur)
         texts = _mail_texts(cur, [r["latest_id"] for r in rows if r.get("latest_id")])
-        total = int(rows[0]["group_total"]) if rows else 0
+        total = int(rows[0]["cand_total" if by_candidate else "group_total"]) if rows else 0
         if not rows and skip:
+            unit = f"{_person_sql()}" if by_candidate else f"{_person_sql()}, {key}"
             cur.execute(
-                f"WITH {alias_sql} SELECT count(*) FROM (SELECT 1 FROM mail_monitoring_notifications WHERE {clause} GROUP BY {_person_sql()}, {key}) g",
+                f"WITH {alias_sql} SELECT count(*) FROM (SELECT 1 FROM mail_monitoring_notifications WHERE {clause} GROUP BY {unit}) g",
                 alias_params + params,
             )
             total = int(cur.fetchone()[0])
@@ -3803,6 +3822,7 @@ def list_notification_groups(
         company["name"] = names.get(company["key"], company["name"])
     for row in rows:
         row.pop("group_total", None)
+        row.pop("cand_total", None)
         row["read"] = int(row["total"]) - int(row["unread"])
         # The card counts this page's category, as the counters above it do;
         # total / unread / read are the whole history the card expands to.

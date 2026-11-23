@@ -252,3 +252,24 @@ def test_a_stored_resolution_is_not_evidence_for_another_alert(schema, monkeypat
     with schema() as conn, conn.cursor() as cur:
         cur.execute("UPDATE mail_monitoring_notifications SET company_source = 'subject' WHERE id = 'resolved'")
         assert store.resolved_alert_companies(cur, refresh=True) == {}
+
+
+def test_by_candidate_pages_candidates_and_keeps_all_their_companies(mails):
+    """Selection Related, 24 Nov: one card per candidate. Paging counts
+    candidates, so a candidate's companies are never split across pages."""
+    add(mails, "a-offer", candidate="ashok", company="Infosys", hours_ago=3,
+        classification="offer_received", status="Offer Received")
+    every = store.list_notification_groups(filters={"classification_group": "selection"}, by_candidate=True)
+    assert every["total"] == 2  # candidates: ashok, gopal
+    assert [(g["candidate_id"], g["company_key"]) for g in every["groups"]] == [
+        ("ashok", "hcltech"), ("ashok", "infosys"), ("gopal", "northwind professional services")]
+    first = store.list_notification_groups(filters={"classification_group": "selection"}, by_candidate=True, limit=1)
+    assert first["total"] == 2
+    assert {g["candidate_id"] for g in first["groups"]} == {"ashok"} and len(first["groups"]) == 2
+    second = store.list_notification_groups(filters={"classification_group": "selection"}, by_candidate=True, limit=1, offset=1)
+    assert [g["candidate_id"] for g in second["groups"]] == ["gopal"]
+    past = store.list_notification_groups(filters={"classification_group": "selection"}, by_candidate=True, limit=1, offset=5)
+    assert past["groups"] == [] and past["total"] == 2
+    # Without it, the page unit is still the group.
+    plain = store.list_notification_groups(filters={"classification_group": "selection"})
+    assert plain["total"] == 3

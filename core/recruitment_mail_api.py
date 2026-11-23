@@ -550,13 +550,15 @@ def install_recruitment_mail_routes(app):
         request:Request, response:Response, search:str|None=None,
         classification:str|None=None, classification_group:str|None=None,
         company_key:str|None=None, priority:str|None=None, is_read:bool|None=None,
-        limit:int=20, offset:int=0,
+        limit:int=20, offset:int=0, group_by:str|None=None,
     ):
-        """Candidate + Company groups for the Selection / Interview Related pages."""
+        """Candidate + Company groups for the Selection / Interview Related pages.
+        `group_by=candidate` pages by candidate and returns all of their groups."""
         _guard();require_fleet_admin(request)
         filters={'search':search,'classification':classification,'classification_group':classification_group,
                  'company_key':company_key,'priority':priority,'is_read':is_read}
-        result=await asyncio.to_thread(store.list_notification_groups,filters=filters,limit=limit,offset=offset)
+        result=await asyncio.to_thread(store.list_notification_groups,filters=filters,limit=limit,offset=offset,
+                                       by_candidate=(group_by or '').strip().lower()=='candidate')
         response.headers['Cache-Control']='no-store, max-age=0'
         return {'status':'ok',**result,'limit':min(max(limit,1),100),'offset':max(offset,0)}
 
