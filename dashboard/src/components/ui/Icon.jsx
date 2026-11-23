@@ -183,6 +183,20 @@ const PATHS = {
   'arrow-down': <path d="M12 5v14M6 13l6 6 6-6" />,
   'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
   code: <path d="m8.5 7.5-5 4.5 5 4.5M15.5 7.5l5 4.5-5 4.5" />,
+  // Daily Ops phone cards (24 Nov mockup): company.
+  building: (
+    <>
+      <rect x="5" y="3" width="14" height="18" rx="1.5" />
+      <path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10 21v-3h4v3" />
+    </>
+  ),
+  // Daily Ops phone cards (24 Nov mockup): technology and round.
+  layers: (
+    <>
+      <path d="m12 3 9 4.5-9 4.5-9-4.5z" />
+      <path d="m3 12 9 4.5 9-4.5" />
+    </>
+  ),
   user: (
     <>
       <circle cx="12" cy="8" r="3.6" />

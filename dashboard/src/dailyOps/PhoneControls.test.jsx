@@ -123,7 +123,8 @@ describe('on wider screens', () => {
 })
 
 describe('the phone layout rules', () => {
-  const block = CSS.slice(CSS.indexOf('/* ── iPhone controls (owner, 16 Nov)'))
+  // The 16 Nov block, up to the 24 Nov mockup block that follows it.
+  const block = CSS.slice(CSS.indexOf('/* ── iPhone controls (owner, 16 Nov)'), CSS.indexOf('/* ── Daily Ops on an iPhone: the owner'))
 
   it('sit last in the stylesheet, inside the phone breakpoint only', () => {
     expect(block.length).toBeGreaterThan(0)

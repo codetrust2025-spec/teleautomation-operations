@@ -33,6 +33,16 @@ const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
 // The rounds the server accepts (VALID_INTERVIEW_ROUNDS). No specified round,
 // no status update. Admins may select a valid round and record attendance in
 // one edit; the slot PATCH commits the round before the attendance POST.
+
+/**
+ * A card's icon (iPhone mockup, 24 Nov): on a phone each value is named by an
+ * icon instead of a caption. Hidden from 768px up, so the desktop table is
+ * unchanged, and from screen readers, which read the cell's label.
+ */
+function CardIcon({ name }) {
+  return <span className="ops-card-icon" aria-hidden="true"><Icon name={name} size={15} strokeWidth={1.9} /></span>
+}
+
 export const ROUND_MISSING_MESSAGE = 'Interview round is missing. Update the round before changing the status.'
 export const INTERVIEW_ROUNDS = ['L1', 'L2', 'L3', 'HR', 'Final', 'Screening', 'Assessment']
 
@@ -839,6 +849,7 @@ export function InterviewRoster({
                   } : {})}
                 >
                   <td data-label="Date" className="ops-interview-date">
+                    <CardIcon name="calendar" />
                     {formatDayLabel(row.date)}
                   </td>
                   <td data-label="Time" className="ops-interview-time">
@@ -905,6 +916,7 @@ export function InterviewRoster({
                     )}
                       </td>
                       <td data-label="Company" className="ops-interview-company">
+                        <CardIcon name="building" />
                         {/* The company's name and nothing else (19 Oct): the role
                             line under it was the invite's subject, which carries
                             the candidate's name and the job title. */}
@@ -912,10 +924,10 @@ export function InterviewRoster({
                           ? <span className="ops-interview-company__name" title={companyOf(row)}>{companyOf(row)}</span>
                           : <span className="ops-interview-company__none" title="No company recorded for this interview" aria-label="No company recorded">—</span>}
                       </td>
-                      <td data-label="Technology">{row.technology || '—'}</td>
-                      <td data-label="Round">{knownRound(row) || (row.booking_type === 'Assessment' ? 'Assessment' : isNonInterviewBooking(row) ? <NotAnInterview row={row} /> : <RoundNeedsReview row={row} />)}</td>
+                      <td data-label="Technology"><CardIcon name="layers" />{row.technology || '—'}</td>
+                      <td data-label="Round"><CardIcon name="layers" />{knownRound(row) || (row.booking_type === 'Assessment' ? 'Assessment' : isNonInterviewBooking(row) ? <NotAnInterview row={row} /> : <RoundNeedsReview row={row} />)}</td>
                       {showAttendeeColumn && (
-                        <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
+                        <td data-label="Attendee"><CardIcon name="user" />{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
                       )}
                       <td data-label="Attendance" className="ops-interview-attendance-cell">
                         {/* Read-only here (12 Oct): the outcome is changed in the

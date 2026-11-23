@@ -144,7 +144,9 @@ describe('and leaves tablet and phone alone', () => {
       r =>
         r.selector.includes('.ops-topbar__kpis .ops-dash-kpi') &&
         !isDesktopOnly(r.media) &&
-        /min-width/.test(r.body),
+        // max-content (24 Nov iPhone mockup) only ever widens a card to its
+        // label, so it cannot squash the strip below the floor.
+        /min-width\s*:(?!\s*max-content)/.test(r.body),
     )
     expect(later).toHaveLength(0)
   })

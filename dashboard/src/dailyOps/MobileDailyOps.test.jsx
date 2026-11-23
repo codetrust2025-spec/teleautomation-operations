@@ -197,7 +197,8 @@ describe('the counters scroll instead of colliding', () => {
     expect(held, 'the cards have to keep their width for a scroll to mean anything').toBeTruthy()
     // That floor belongs to the 900px block; a later min-width here would
     // outrank it at every width below 900 and squash the strip again.
-    for (const rule of chip) expect(rule.body).not.toMatch(/min-width\s*:/)
+    // max-content (24 Nov mockup) only widens a card to its label.
+    for (const rule of chip) expect(rule.body).not.toMatch(/min-width\s*:(?!\s*max-content)/)
   })
 
   it('keeps a thumb-sized target', () => {
@@ -297,7 +298,10 @@ describe('the card is not a page in itself', () => {
         /\btd\s*$/.test(r.selector) && /padding\s*:/.test(r.body),
     )
     expect(padded.length).toBeGreaterThan(0)
-    expect(padded.at(-1).body).toMatch(/padding\s*:\s*4px 10px/)
+    expect(padded.some(r => /padding\s*:\s*4px 10px/.test(r.body))).toBe(true)
+    // 24 Nov mockup: the card's own 12px padding replaces every cell's.
+    const cells = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === '.ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td').at(-1)
+    expect(cells.body).toMatch(/padding\s*:\s*0/)
   })
 
   it('keeps the screenshot openable and the menu thumb-sized', async () => {
@@ -310,8 +314,9 @@ describe('the card is not a page in itself', () => {
     expect(screen.getByTitle('View booking screenshot for Asha Rao')).toBeInTheDocument()
     // The last phone-scoped rule wins: an earlier 700px block sizes it 86x50.
     const thumb = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-slot-shot-thumb')).at(-1)
-    expect(thumb.body).toMatch(/width\s*:\s*64px/)
-    expect(thumb.body).toMatch(/height\s*:\s*40px/)
+    // 24 Nov mockup: beside the details, the height of two of their lines.
+    expect(thumb.body).toMatch(/width\s*:\s*78px/)
+    expect(thumb.body).toMatch(/height\s*:\s*58px/)
     const menu = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-row-menu__trigger'))
     expect(menu.some(r => /min-height\s*:\s*44px/.test(r.body))).toBe(true)
   })
@@ -374,39 +379,20 @@ describe('on an iPhone (390-430px)', () => {
   const cellRule = label => ALL.filter(
     r => phoneOnly(r.media) && r.selector.split(',').some(s => s.trim() === `${CARD} > td[data-label="${label}"]`),
   ).at(-1)
-  const span = label => /grid-column\s*:\s*span\s*(\d)/.exec(cellRule(label)?.body || '')?.[1]
 
-  it('lays the card out as a grid, not ten label rows', () => {
-    const grid = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === CARD).at(-1)
-    expect(grid.body).toMatch(/display\s*:\s*grid/)
-    // Four shared columns and two fixed ones for the last row's thumbnail
-    // (64px plus its padding) and the 44px menu.
-    expect(grid.body).toMatch(/grid-template-columns\s*:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)\s+72px\s+52px/)
+  it('lays the card out as the 24 Nov mockup grid', () => {
+    const grids = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === CARD)
+    expect(grids.some(r => /display\s*:\s*grid/.test(r.body))).toBe(true)
+    const grid = grids.at(-1)
+    // Details in two columns and the screenshot in a fixed third.
+    expect(grid.body).toMatch(/grid-template-columns\s*:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1\.2fr\)\s+80px/)
+    expect(grid.body.replace(/\s+/g, ' ')).toContain('grid-template-areas: "date time time" "cand cand cand" "comp tech shot" "attd round shot" "attn feed feed"')
   })
 
-  it('pairs date with time, and technology, round and attendee on one row', () => {
-    expect([span('Date'), span('Time')]).toEqual(['3', '3'])
-    expect([span('Technology'), span('Round'), span('Attendee')]).toEqual(['2', '2', '2'])
-  })
-
-  it('gives the status its own full-width line', () => {
-    const notes = cellRule('Status')
-    expect(notes.body).toMatch(/max-width\s*:\s*none/)
-    expect(notes.body).not.toMatch(/grid-column\s*:\s*span/)
-  })
-
-  it('puts the status, the screenshot and the actions menu on one last row', () => {
-    const shot = cellRule('Screenshot')
-    const actions = cellRule('Actions')
-    const status = cellRule('Attendance')
-    expect([span('Attendance'), span('Screenshot'), span('Actions')]).toEqual(['4', '1', '1'])
-    const order = rule => /(^|[;\s])order\s*:\s*(\d)/.exec(rule.body)?.[2]
-    expect(order(shot)).toBe(order(actions))
-    expect(order(status)).toBe(order(shot))
-    expect(Number(order(shot))).toBeGreaterThan(Number(order(cellRule('Status'))))
-    // The menu is its own label; "Actions" above a ⋮ only costs a line.
-    const label = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('td[data-label="Actions"]::before')).at(-1)
-    expect(label.body).toMatch(/display\s*:\s*none/)
+  it('puts every cell in its mockup place', () => {
+    const area = label => /grid-area\s*:\s*([a-z]+)/.exec(cellRule(label)?.body || '')?.[1]
+    expect(['Date', 'Time', 'Candidate', 'Company', 'Technology', 'Attendee', 'Round', 'Screenshot', 'Attendance', 'Status'].map(area))
+      .toEqual(['date', 'time', 'cand', 'comp', 'tech', 'attd', 'round', 'shot', 'attn', 'feed'])
   })
 
   it('gives an empty status no space at all', () => {
@@ -418,14 +404,12 @@ describe('on an iPhone (390-430px)', () => {
     expect(empty.body).toMatch(/display\s*:\s*none/)
   })
 
-  it('drops only the captions whose values name themselves', () => {
-    const hides = label => ALL.some(r => phoneOnly(r.media) && /display\s*:\s*none/.test(r.body) &&
-      r.selector.split(',').some(s => s.trim() === `${CARD} > td[data-label="${label}"]::before`))
-    for (const label of ['Date', 'Time', 'Candidate', 'Attendance', 'Screenshot', 'Actions']) {
-      expect(hides(label), `${label} keeps a caption it does not need`).toBe(true)
-    }
-    for (const label of ['Technology', 'Round', 'Attendee', 'Status']) {
-      expect(hides(label), `${label} lost the caption that says what its value is`).toBe(false)
+  it('names every value with an icon instead of a caption (24 Nov mockup)', () => {
+    const hidesAll = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === `${CARD} > td::before`).at(-1)
+    expect(hidesAll.body).toMatch(/display\s*:\s*none/)
+    for (const label of ['Date', 'Company', 'Technology', 'Round', 'Attendee']) {
+      const at = ROSTER.indexOf(`data-label="${label}"`)
+      expect(ROSTER.slice(at, at + 200), `${label} has no icon`).toMatch(/<CardIcon name="[a-z-]+" \/>/)
     }
   })
 
@@ -454,13 +438,17 @@ describe('on an iPhone (390-430px)', () => {
     expect(order('.ops-roster-controls__filters .ops-roster-control')).toBe('2')
     const refresh = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === '.ops-roster-controls__actions .ops-roster-refresh').at(-1)
     expect(refresh.body).toMatch(/width\s*:\s*44px/)
+    // 24 Nov mockup: 48px square buttons beside a 44px search box.
+    const square = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-roster-controls .ops-roster-controls__actions .ops-roster-refresh') && /width\s*:/.test(r.body)).at(-1)
+    expect(square.body).toMatch(/width\s*:\s*48px/)
     // With a filter set, Reset joins them; the search makes room rather than
     // the buttons dropping to a row of their own. Since the iPhone layout (16
     // Nov) the search grows from a 60% floor, which also keeps the date row
     // from climbing up beside it.
     const withClear = ALL.filter(r => phoneOnly(r.media) && r.selector.includes(':has(.ops-roster-clear) .ops-roster-search'))
-    expect(withClear.at(-1)?.body).toMatch(/flex\s*:\s*1 1 60%/)
-    expect(withClear.at(-1)?.body).toMatch(/min-width\s*:\s*60%/)
+    // 24 Nov mockup: the search takes all but the two buttons, so the four
+    // filters share the next row.
+    expect(withClear.at(-1)?.body).toMatch(/flex\s*:\s*1 1 calc\(100% - 116px\)/)
     // font-size:0 hides the word visually only; it still names the button.
     await renderPanel()
     expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument()
