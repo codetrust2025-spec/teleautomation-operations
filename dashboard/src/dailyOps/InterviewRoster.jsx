@@ -15,6 +15,7 @@ import { Icon } from '../components/ui/Icon.jsx'
 import { CandidateSelectedBadge } from '../candidates/SelectedBadge.jsx'
 import { DEFAULT_ROSTER_SORT, sortRosterRows } from './rosterSort.js'
 import { rowCompanyName as companyOf } from './companyName.js'
+import { whatsappLink } from './whatsappMessage.js'
 import { appendFilterValues, describeFilterValues } from './filterParams.js'
 import { FeedbackStatusBadge } from './FeedbackStatusBadge.jsx'
 import { roundFilterLabel } from './ProfileRoundFilter.jsx'
@@ -39,6 +40,36 @@ const ATTENDEES = ['Nikhila', 'Bhavana', 'Tool']
  * icon instead of a caption. Hidden from 768px up, so the desktop table is
  * unchanged, and from screen readers, which read the cell's label.
  */
+/**
+ * WhatsApp beside the candidate's number (owner, 24 Nov): opens a chat with a
+ * short message from this card -- name, company and round -- asking for their
+ * attendance while Pending, or their result once Attended. A link, so a click
+ * never opens the row's Edit dialog. No usable number, no icon.
+ */
+function WhatsAppLink({ row, status }) {
+  const href = whatsappLink({
+    name: row.name,
+    phone: row.phone,
+    company: companyOf(row),
+    round: knownRound(row) || (row.booking_type === 'Assessment' ? 'Assessment' : ''),
+    status,
+  })
+  if (!href) return null
+  return (
+    <a
+      className="ops-whatsapp"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`WhatsApp ${row.name}`}
+      aria-label={`WhatsApp ${row.name}`}
+      onClick={event => event.stopPropagation()}
+    >
+      <Icon name="whatsapp" size={15} strokeWidth={1.8} />
+    </a>
+  )
+}
+
 function CardIcon({ name }) {
   return <span className="ops-card-icon" aria-hidden="true"><Icon name={name} size={15} strokeWidth={1.9} /></span>
 }
@@ -865,6 +896,7 @@ export function InterviewRoster({
                       <strong title={row.name}>{row.name}</strong>
                       <CandidateSelectedBadge row={row} />
                       {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
+                      <WhatsAppLink row={row} status={status} />
                     </span>
                     {/* Every row said "Candidate booked" on a line of its own.
                         The source is still here, as a small chip that names it

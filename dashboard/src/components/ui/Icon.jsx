@@ -183,6 +183,13 @@ const PATHS = {
   'arrow-down': <path d="M12 5v14M6 13l6 6 6-6" />,
   'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
   code: <path d="m8.5 7.5-5 4.5 5 4.5M15.5 7.5l5 4.5-5 4.5" />,
+  // Daily Ops booking cards: open WhatsApp with a follow-up (24 Nov).
+  whatsapp: (
+    <>
+      <path d="M4 20l1.2-3.6A8 8 0 1 1 8 19z" />
+      <path d="M9.3 8.5c.3-.5.9-.5 1.1-.1l.8 1.3c.2.3.1.6-.1.9l-.5.5c.5 1.1 1.3 1.9 2.4 2.4l.5-.5c.3-.2.6-.3.9-.1l1.3.8c.4.2.4.8-.1 1.1-1 .6-2.4.4-3.8-.6a8 8 0 0 1-2-2c-1-1.4-1.2-2.8-.5-3.7z" />
+    </>
+  ),
   // Daily Ops phone cards (24 Nov mockup): company.
   building: (
     <>

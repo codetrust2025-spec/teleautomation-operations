@@ -3,6 +3,20 @@
    block at the end of the sheet shows them. */
 .ops-card-icon { display: none; }
 
+/* WhatsApp beside the candidate's number on every booking (24 Nov): WhatsApp
+   green on the page's dark surface; a 32px target on a phone. */
+.ops-whatsapp {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 24px; height: 24px; margin-left: 6px; vertical-align: middle; border-radius: 999px;
+  color: #25d366; background: rgba(37, 211, 102, .12); border: 1px solid rgba(37, 211, 102, .35);
+  text-decoration: none;
+}
+.ops-whatsapp:hover, .ops-whatsapp:focus-visible { background: rgba(37, 211, 102, .22); border-color: #25d366; outline: none; }
+@media (max-width: 767px) {
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-whatsapp { width: 32px; height: 32px; margin-left: 2px; align-self: center; }
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-whatsapp svg { width: 17px; height: 17px; }
+}
+
 .ta-table-responsive--cards table,.ta-table-responsive--cards .cand-table,.ta-table-responsive--cards .ops-interview-table,.ta-table-responsive--cards .admin-table,.ta-table-responsive--cards .fleet-health-table,.ta-table-responsive--cards .dr-table{min-width:0!important;display:block;width:100%}
 .ta-table-responsive--cards .ops-interview-attendance-form{flex-direction:column;align-items:stretch}
 .ta-table-responsive--cards .ops-interview-attendance-cell{min-width:0!important}
