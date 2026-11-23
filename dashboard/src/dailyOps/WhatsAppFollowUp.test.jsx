@@ -18,22 +18,22 @@ vi.mock('../context/ConfirmContext.jsx', () => ({
 import { DailyOpsPanel } from './DailyOpsPanel.jsx'
 
 describe('the message', () => {
-  const card = { name: 'Tummala Sankara Sai', company: 'Accenture', round: 'L1' }
+  const card = { name: 'Priya Nair', company: 'Accenture', round: 'L1' }
 
   it('asks a Pending candidate to confirm attendance', () => {
     expect(whatsappMessage({ ...card, status: '' }))
-      .toBe('Hi Tummala Sankara Sai, please confirm your attendance for your L1 interview with Accenture.')
+      .toBe('Hi Priya Nair, please confirm your attendance for your L1 interview with Accenture.')
     expect(whatsappMessage({ ...card, status: 'pending' })).toContain('please confirm your attendance')
   })
 
   it('asks an Attended candidate for the result', () => {
     expect(whatsappMessage({ ...card, status: 'attended' }))
-      .toBe('Hi Tummala Sankara Sai, how did your L1 interview with Accenture go? Please share the result when you hear back.')
+      .toBe('Hi Priya Nair, how did your L1 interview with Accenture go? Please share the result when you hear back.')
   })
 
   it('follows up plainly on any other status', () => {
     expect(whatsappMessage({ ...card, status: 'not_attended' }))
-      .toBe('Hi Tummala Sankara Sai, following up on your L1 interview with Accenture.')
+      .toBe('Hi Priya Nair, following up on your L1 interview with Accenture.')
   })
 
   it('leaves out what the card does not have', () => {
@@ -46,9 +46,9 @@ describe('the message', () => {
 
 describe('the number', () => {
   it('adds India\'s code to a 10-digit number and keeps a full one', () => {
-    expect(whatsappNumber('7036580775')).toBe('917036580775')
-    expect(whatsappNumber('+91 70365 80775')).toBe('917036580775')
-    expect(whatsappNumber('07036580775')).toBe('917036580775')
+    expect(whatsappNumber('9000000003')).toBe('919000000003')
+    expect(whatsappNumber('+91 90000 00003')).toBe('919000000003')
+    expect(whatsappNumber('09000000003')).toBe('919000000003')
     expect(whatsappNumber('+44 7700 900123')).toBe('447700900123')
   })
 
