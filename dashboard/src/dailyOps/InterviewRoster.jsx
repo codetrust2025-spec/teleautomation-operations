@@ -43,6 +43,10 @@ export const NON_INTERVIEW_BOOKING_TYPES = ['Career Consultation', 'BGV Verifica
 export function isNonInterviewBooking(row) {
   return NON_INTERVIEW_BOOKING_TYPES.includes(String(row?.booking_type || '').trim())
 }
+/** A booking with no interview round by nature: an assessment or a non-interview. */
+export function bookingHasNoRound(row) {
+  return String(row?.booking_type || '').trim() === 'Assessment' || isNonInterviewBooking(row)
+}
 
 /** The Round cell for a booking that is not an interview. */
 export function NotAnInterview({ row }) {
@@ -228,7 +232,7 @@ function SlotEditModal({ row, busy, onClose, onSave, onRemove, canCorrectRound =
   // Validate the round currently selected in this form, not the stale value
   // from when the modal opened. The round is persisted before attendance.
   // This also keeps legacy/unknown rounds blocked until corrected by an admin.
-  const roundMissing = !round && !isNonInterviewBooking(row)
+  const roundMissing = !round && !bookingHasNoRound(row)
   const canEditNote = !roundMissing && (statusChanged
     ? slotStatus !== ''
     : [...SITTING_OUTCOMES, 'cancelled'].includes(slotNoteStatus))
@@ -620,7 +624,7 @@ export function InterviewRoster({
       // edit. PATCH runs before POST so the backend still rejects any status
       // update if that round has not actually been saved.
       const effectiveRound = slotChanged ? slotValues.interview_round : row.interview_round
-      if ((statusChange || noteChanged) && !knownRound({ interview_round: effectiveRound }) && !isNonInterviewBooking(row)) throw new Error(ROUND_MISSING_MESSAGE)
+      if ((statusChange || noteChanged) && !knownRound({ interview_round: effectiveRound }) && !bookingHasNoRound(row)) throw new Error(ROUND_MISSING_MESSAGE)
       if (slotChanged) {
         const res = await fetch(`${API}/candidates/interviews/slots/${row.id}`, {
           method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slotValues),
@@ -909,7 +913,7 @@ export function InterviewRoster({
                           : <span className="ops-interview-company__none" title="No company recorded for this interview" aria-label="No company recorded">—</span>}
                       </td>
                       <td data-label="Technology">{row.technology || '—'}</td>
-                      <td data-label="Round">{knownRound(row) || (isNonInterviewBooking(row) ? <NotAnInterview row={row} /> : <RoundNeedsReview row={row} />)}</td>
+                      <td data-label="Round">{knownRound(row) || (row.booking_type === 'Assessment' ? 'Assessment' : isNonInterviewBooking(row) ? <NotAnInterview row={row} /> : <RoundNeedsReview row={row} />)}</td>
                       {showAttendeeColumn && (
                         <td data-label="Attendee">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
                       )}

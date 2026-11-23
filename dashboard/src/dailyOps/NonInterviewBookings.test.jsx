@@ -39,6 +39,7 @@ beforeEach(() => {
     row('Consultation Candidate', { booking_type: 'Career Consultation' }),
     row('Verification Candidate', { booking_type: 'BGV Verification' }),
     row('Roundless Candidate', { booking_type: 'Interview' }),
+    row('Blank Assessment Candidate', { booking_type: 'Assessment' }),
   ]
   vi.stubGlobal('fetch', vi.fn(async (input) => {
     const url = new URL(String(input), 'http://localhost')
@@ -71,5 +72,10 @@ describe('bookings that are not interviews', () => {
     }
     const plain = (await screen.findByText('Roundless Candidate')).closest('tr')
     expect(within(plain).getByText('Needs Review')).toBeTruthy()
+    // An assessment stored without a round is counted as Assessment by the
+    // server; the roster says the same instead of "Needs Review".
+    const assessment = (await screen.findByText('Blank Assessment Candidate')).closest('tr')
+    expect(within(assessment).queryByText('Needs Review')).toBeNull()
+    expect(assessment.querySelector('td[data-label="Round"]').textContent).toBe('Assessment')
   })
 })
