@@ -57,8 +57,6 @@ function stubFetch(candidateName) {
 }
 
 const nameBox = () => document.querySelector('.sbs-field--client input')
-const CHOOSE_HINT = 'Choose from the subscribed Profile Service candidates.'
-const CHOSEN_HINT = 'From Candidates. Check it is the right person.'
 
 /** Choose a profile-service client from the list, as a person does: search, then pick. */
 function pick(name) {
@@ -66,7 +64,8 @@ function pick(name) {
   fireEvent.change(nameBox(), { target: { value: name } })
   fireEvent.click(screen.getByRole('option', { name: new RegExp(`^${name}`) }))
 }
-const nameHint = () => nameBox().closest('label').querySelector('.sbs-hint')
+/** Helper text was removed from the booking page (24 Nov): only warnings and actions remain under the name. */
+const neutralHint = () => nameBox().closest('label').querySelector('.sbs-hint:not(.sbs-hint--warn)')
 const inviteInput = () => [...document.querySelectorAll('input[type="file"]')].find(i => !i.multiple)
 
 async function readInvite() {
@@ -111,10 +110,10 @@ describe('which client an invite name matches', () => {
 })
 
 describe('profile service: a reliable match is picked', () => {
-  it('fills the client, says so, and books under that client exactly as if picked by hand', async () => {
+  it('fills the client and books under that client exactly as if picked by hand', async () => {
     const { confirm, calls } = await openForm('Ira Testwala')
     expect(nameBox().value).toBe('Ira Testwala')
-    expect(nameHint().textContent).toBe('Matched from the invite. Check it.')
+    expect(neutralHint()).toBeNull()
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -130,25 +129,26 @@ describe('profile service: a reliable match is picked', () => {
 
 describe('anything less reliable is left for the candidate to confirm', () => {
   it.each([['no client has the name', 'Someone Else'], ['two clients have those words', 'Ravi Sample'], ['one word only', 'Ira']])(
-    '%s: nothing is picked, the read name is offered', async (_, read) => {
+    '%s: nothing is picked, and a click asks for the candidate', async (_, read) => {
       const { confirm, calls } = await openForm(read)
       expect(nameBox().value).toBe('')
-      expect(nameHint().textContent).toBe(`The invite names “${read}”. Pick the client to confirm.`)
+      expect(neutralHint()).toBeNull()
       fireEvent.click(confirm)
       expect(await screen.findByText('Choose the candidate from the list of subscribed Profile Service candidates.')).toBeInTheDocument()
       expect(calls.confirms).toHaveLength(0)
     })
 
-  it('an invite that names nobody leaves the usual hint', async () => {
+  it('an invite that names nobody leaves the box empty, with no helper text', async () => {
     await openForm('')
     expect(nameBox().value).toBe('')
-    expect(nameHint().textContent).toBe(CHOOSE_HINT)
+    expect(neutralHint()).toBeNull()
   })
 
-  it('once the candidate picks a client, the offer goes away', async () => {
+  it('once the candidate picks a client, that client is the one shown', async () => {
     await openForm('Someone Else')
     pick('Ira Testwala')
-    expect(nameHint().textContent).toBe(CHOSEN_HINT)
+    expect(nameBox().value).toBe('Ira Testwala')
+    expect(neutralHint()).toBeNull()
   })
 })
 
@@ -156,7 +156,7 @@ describe('the candidate stays in charge', () => {
   it('a name typed or picked before the invite is read is never replaced', async () => {
     await openForm('Ira Testwala', { typed: 'Nova Q Fakename' })
     expect(nameBox().value).toBe('Nova Q Fakename')
-    expect(nameHint().textContent).toBe(CHOSEN_HINT)
+    expect(neutralHint()).toBeNull()
   })
 
   it('a matched name the candidate then changes is theirs: the next invite does not touch it', async () => {
@@ -176,7 +176,7 @@ describe('the candidate stays in charge', () => {
 })
 
 describe('round-wise', () => {
-  it('never fills the client name by itself; it offers the read name to use or type', async () => {
+  it('never fills the client name by itself; it offers the read name as one tap', async () => {
     const calls = stubFetch('Ira Testwala')
     render(<SubmitSlotPage />)
     await screen.findByRole('button', { name: /Confirm booking/i })
@@ -185,11 +185,10 @@ describe('round-wise', () => {
     await readInvite()
     const typed = screen.getByPlaceholderText('Type client name')
     expect(typed.value).toBe('')
-    expect(typed.closest('label').querySelector('.sbs-hint').textContent)
-      .toBe('The invite names “Ira Testwala”. Use this name or type it.')
+    expect(typed.closest('label').querySelector('.sbs-hint').textContent).toBe('Use “Ira Testwala”')
     expect(calls.confirms).toHaveLength(0)
     // One tap enters it, exactly as typing it would.
-    fireEvent.click(screen.getByRole('button', { name: 'Use this name' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use “Ira Testwala”' }))
     expect(typed.value).toBe('Ira Testwala')
   })
 })

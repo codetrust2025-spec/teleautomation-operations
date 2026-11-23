@@ -191,11 +191,10 @@ describe('the company is read from the invite', () => {
     expect(companyBox().value).toBe('Tech Mahindra')
   })
 
-  it('leaves the box empty and says the invite did not name one, as a hint rather than a warning', async () => {
+  it('leaves the box empty with no helper text when the invite names no company', async () => {
     await completedForm({ readCompany: '' })
     expect(companyBox().value).toBe('')
-    expect(hintOf().textContent).toBe('Not on the invite. Type it.')
-    expect(hintOf().className).not.toContain('sbs-hint--warn')
+    expect(hintOf()).toBeNull()
     expect(document.querySelector('.sbs-hint--warn')).toBeNull()
   })
 
@@ -229,7 +228,7 @@ describe('the company is read from the invite', () => {
     calls.invite.company = ''
     await attachInvite()
     expect(companyBox().value).toBe('')
-    expect(hintOf().textContent).toBe('Not on the invite. Type it.')
+    expect(hintOf()).toBeNull()
   })
 
   it('removing the invite clears a company that was read from it, but not one the candidate typed', async () => {

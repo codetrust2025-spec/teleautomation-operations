@@ -71,7 +71,7 @@ async function completedForm(name) {
 describe('the first interview', () => {
   it('books with the balance pending, which is shown as a reminder', async () => {
     const { confirm, calls } = await completedForm('Asha Fakename')
-    expect(screen.getByText('₹20,000 payment pending. You can book this first interview now.')).toBeInTheDocument()
+    expect(screen.getByText('₹20,000 payment pending.', { selector: '.sbs-pay-card [role="status"]' })).toBeInTheDocument()
     expect(screen.queryByText(/Clear the balance to book another/)).toBeNull()
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
@@ -82,9 +82,11 @@ describe('a later interview', () => {
   it('is not booked while anything is owed, and says so', async () => {
     const { confirm, calls } = await completedForm('Ravi Kolla')
     expect(screen.getByText('₹10,000 payment pending. Clear the balance to book another interview slot.', { selector: '[role="status"]' })).toBeInTheDocument()
-    // Confirm waits for verified payment screenshots that clear the balance.
-    expect(confirm).toBeDisabled()
+    // Confirm stays enabled (24 Nov); a click names the balance beside the
+    // payment and books nothing until it is cleared.
+    expect(confirm).not.toBeDisabled()
     fireEvent.click(confirm)
+    await waitFor(() => expect(document.querySelector('.sbs-pay-card [role="alert"]')).not.toBeNull())
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(calls.confirms).toHaveLength(0)
   })

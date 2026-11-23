@@ -105,7 +105,7 @@ describe('choosing the service type after the invite is read keeps what it fille
     await waitFor(() => expect(screen.getByPlaceholderText(/technology/i).value).toBe('Python'))
     // Round-wise names are the payment identity: offered, never entered.
     expect(nameBox().value).toBe('')
-    expect(screen.getByText(/The invite names “Ira Testwala”/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use “Ira Testwala”' })).toBeInTheDocument()
     expect(screen.getByLabelText('Company').value).toBe('Contoso Ltd')
   })
 
@@ -117,7 +117,6 @@ describe('choosing the service type after the invite is read keeps what it fille
     chooseService('Round-wise')
     chooseService('Profile service')
     await waitFor(() => expect(nameBox().value).toBe('Ira Testwala'))
-    expect(screen.getByText('Matched from the invite. Check it.')).toBeInTheDocument()
   })
 
   it('without an invite, changing the service type still starts from an empty name', async () => {

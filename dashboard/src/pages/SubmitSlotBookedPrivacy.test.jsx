@@ -32,10 +32,10 @@ afterEach(() => {
 })
 
 describe('confirmed slots for a signed-out visitor', () => {
-  it('lists the slot under the full name and says why client and technology are not shown', async () => {
+  it('lists the slot under the full name, with no explanatory note (24 Nov)', async () => {
     await openConfirmed({ slots: [SLOT], details_withheld: true })
     expect(await screen.findByText('Asha Fakename')).toBeTruthy()
-    expect(screen.getByText(NOTE)).toBeTruthy()
+    expect(screen.queryByText(NOTE)).toBeNull()
     expect(screen.queryByText(/Names, clients/)).toBeNull()
   })
 

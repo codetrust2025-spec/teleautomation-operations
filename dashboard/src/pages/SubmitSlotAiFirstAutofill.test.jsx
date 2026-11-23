@@ -171,7 +171,7 @@ describe('nothing missing or doubtful is guessed', () => {
     expect(screen.getByRole('combobox').value).toBe('')
   })
 
-  it('a date and time read without confidence are shown but not filled, and Confirm waits for them', async () => {
+  it('a date and time read without confidence are shown but not filled, and Confirm asks for them', async () => {
     const { confirm, calls } = await openAndRead({
       ...CONFIDENT(), confidence_score: 0, manual_fields_required: true, auto_booking_safe: false,
       warnings: ['OCR and AI did not independently agree on the booking date/time.'],
@@ -181,7 +181,11 @@ describe('nothing missing or doubtful is guessed', () => {
       .toContain('The invite could not be read with confidence. Enter the date and time (IST).')
     expect(document.querySelector('.sbs-slot-hints').textContent)
       .toContain('OCR and AI did not independently agree on the booking date/time.')
-    expect(confirm.disabled).toBe(true)
+    // Confirm stays enabled (24 Nov): a click asks for the date and time and books nothing.
+    expect(confirm.disabled).toBe(false)
+    fireEvent.click(confirm)
+    expect(await screen.findByText('Enter the interview date and time.')).toBeInTheDocument()
+    expect(calls.confirms).toHaveLength(0)
 
     openWhen()
     fireEvent.change(field('Interview date'), { target: { value: upcomingDate(8) } })

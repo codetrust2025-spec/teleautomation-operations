@@ -18830,6 +18830,71 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   }
 }
 
+/* ── Book Interview Slot: Round-wise and Profile Service forms (owner, 24 Nov) ─
+   One rhythm for both forms, at every width: 52px controls, a 56px Confirm,
+   24px between sections and 8px from a label to its control. On a phone the
+   card fills the screen with 20px side padding. Colours are unchanged; only
+   sizes, spacing and alignment move. Dropdowns never cut their text: Company
+   and Interview round stack on a phone, every select keeps room for its icon
+   and arrow, and a long value ends in an ellipsis rather than a hard cut. */
+.sbs-screen .sbs-header { padding: 24px 24px 0; }
+.sbs-screen .sbs-header__title { font-size: 1.25rem; }
+.sbs-screen .sbs-tabs { padding: 16px 24px 0; gap: 8px; }
+.sbs-screen .sbs-tab { min-height: 44px; font-size: 0.875rem; }
+.sbs-screen .sbs-body { padding: 24px; gap: 24px; }
+.sbs-screen .sbs-form { gap: 24px; }
+.sbs-screen .sbs-field { gap: 8px; }
+.sbs-screen .sbs-label { font-size: 0.875rem; }
+.sbs-screen .sbs-field-row { gap: 16px; }
+
+.sbs-screen .sbs-form .sbs-input,
+.sbs-screen .sbs-form .sbs-select,
+.sbs-screen .sbs-form .sbs-select--custom,
+.sbs-screen .sbs-field-row .sbs-input,
+.sbs-screen .sbs-field-row .sbs-select {
+  height: 52px; min-height: 52px; padding-top: 0; padding-bottom: 0;
+  font-size: 1rem; line-height: 1.25; border-radius: 10px; box-sizing: border-box;
+}
+.sbs-screen .sbs-form .sbs-input { padding-left: 14px; padding-right: 14px; }
+.sbs-screen .sbs-form .sbs-select,
+.sbs-screen .sbs-form .sbs-select--custom { padding-left: 14px; padding-right: 40px; }
+/* Leading icon: the text starts after it, centred on the control. */
+.sbs-screen .sbs-form .sbs-input--lead,
+.sbs-screen .sbs-form .sbs-select--lead { padding-left: 42px !important; }
+.sbs-screen .sbs-form .sbs-name-input { padding-left: 40px !important; padding-right: 44px !important; }
+.sbs-screen .sbs-icon-input > .sbs-lead-icon { left: 14px; }
+.sbs-screen .sbs-picker__icon { left: 14px; }
+.sbs-screen .sbs-picker__toggle { right: 8px; width: 36px; height: 36px; }
+.sbs-screen .sbs-select-wrap::after { right: 16px; }
+.sbs-screen .sbs-select__arrow { flex: 0 0 auto; }
+/* No cut-off text in a select or select-like button. */
+.sbs-screen .sbs-form .sbs-select { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sbs-screen .sbs-form .sbs-select--custom .sbs-lead { min-width: 0; display: inline-flex; align-items: center; gap: 10px; font-size: inherit; color: inherit; }
+.sbs-screen .sbs-form .sbs-select--custom .sbs-lead > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Menus: full-width rows a finger can hit. */
+.sbs-screen .sbs-dropdown__item,
+.sbs-screen .sbs-picker__option { min-height: 48px; display: flex; align-items: center; padding: 0 14px; font-size: 1rem; }
+.sbs-screen .sbs-picker__menu { max-height: 288px; }
+
+/* Uploads: the invite and payment drop zones keep their look at the same rhythm. */
+.sbs-screen .submit-slot-drop { min-height: 72px; border-radius: 12px; }
+.sbs-screen .sbs-pay-card { gap: 16px; }
+
+/* Confirm: always enabled, 56px. */
+.sbs-screen .sbs-cta { min-height: 56px; height: 56px; border-radius: 12px; font-size: 1rem; }
+.sbs-screen .sbs-when__button--missing { border-color: rgba(248,113,113,0.4); box-shadow: 0 0 0 1px rgba(248,113,113,0.2); }
+
+@media (max-width: 599px) {
+  .sbs-screen { padding: 0; }
+  .sbs-screen .sbs-card { max-width: none; min-height: 100svh; border: 0; border-radius: 0; }
+  .sbs-screen .sbs-header { padding: 20px 20px 0; }
+  .sbs-screen .sbs-tabs { padding: 16px 20px 0; }
+  .sbs-screen .sbs-body { padding: 20px 20px 32px; }
+  /* Company and Interview round stack, so neither is cut short. */
+  .sbs-screen .sbs-field-row { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .sbs-screen .sbs-when__panel .sbs-field-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+}
+
 /* ── Edit Candidate modal: proof cards, footer and scroll ──────────────────────
    Three faults, all from rules written for the old 120px thumbnail layout that
    outranked the later card rules:
@@ -19532,6 +19597,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .dr-page .dr-kl-copy { width: 40px; height: 40px; border-radius: 9px; }
 }
 
+
+
 /* Confirmed slots: one interview booked twice (12 Oct). */
 .sbs-duplicate-flag {
   display: inline-flex; align-items: center; margin-left: 6px; padding: 1px 7px;
@@ -19648,6 +19715,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .dr-db-reason { color: #fde047; }
 .dr-db-actions { white-space: nowrap; }
 .dr-db-actions .dr-copy-btn + .dr-copy-btn { margin-left: 6px; }
+
 
 /* ── Edit Candidate, compact (Oct 2026) ───────────────────────────────────────
    One resume bar (Upload | saved file + View), fields two to a row, a one-line
@@ -20037,4 +20105,5 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-modal--compact .cand-panel .cand-proofs .cand-proof-card:has(.cand-proof-thumb--lost) .cand-proof-meta,
   .cand-modal--compact .cand-panel .cand-proofs .cand-proof-card:has(.cand-proof-thumb--lost) .cand-proof-actions { grid-column: 1 / -1; }
 }
+
 

@@ -24,7 +24,7 @@ const PROFILE_CANDIDATES = [
 // Round-wise shows no price, minimum or pricing explanation, so the payment card
 // is recognised by its upload hint. Asserting the absence of pricing text alone
 // would pass whether or not the card was on screen.
-const PAYMENT_UPLOAD = /paid in parts\? attach each screenshot/i
+const PAYMENT_UPLOAD = /^Upload screenshots$/
 
 /** Nothing on the page states a price, a minimum or how the amount is set. */
 function expectNoPricing(...amounts) {
@@ -391,8 +391,12 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     expect(result.textContent).toMatch(/UTR 2001/)
     expect(result.textContent).toMatch(/UTR 2002/)
     expect(result.textContent).toMatch(/UTR 1001/)
-    // Payment is done, but the invite has not been read yet.
-    expect(screen.getByRole('button', { name: /confirm booking/i }).disabled).toBe(true)
+    // Payment is done, but the invite has not been read yet. Confirm stays
+    // enabled (24 Nov); a click asks for the invite and books nothing.
+    expect(screen.getByRole('button', { name: /confirm booking/i }).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
+    expect(await screen.findByText('Attach the interview invite screenshot.')).toBeTruthy()
+    expect(calls.confirms).toHaveLength(0)
 
     // 6. Upload invite screenshot
     const inviteInput = inviteFileInput()
@@ -422,7 +426,7 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     expect(confirmBody.get('payment_proof_ids')).toBe('proof-1,proof-2,proof-3')
   })
 
-  it('past detected date disables Confirm and shows manual date correction fields, enabling when corrected', async () => {
+  it('a past detected date is refused on click and books once corrected', async () => {
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     const yesterdayIso = yesterday.toISOString().slice(0, 10)
@@ -455,7 +459,9 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Python' } })
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
 
-    // Payment verified first, so the date is the only thing holding Confirm.
+    fireEvent.change(screen.getByLabelText('Company'), { target: { value: 'Contoso Ltd' } })
+
+    // Payment verified first, so the date is the only thing left to correct.
     attach([...document.querySelectorAll('input[type="file"]')].find(input => input.multiple), [screenshot('pay')])
     await screen.findByText(/payment verified/i)
 
@@ -468,7 +474,10 @@ describe('Round-wise booking form — Confirm button gating and compact layout',
     // Manual date fields must be visible because date is in the past
     expect(screen.getByText(/interview date is in the past/i)).toBeTruthy()
     const confirmBtn = screen.getByRole('button', { name: /confirm booking/i })
-    expect(confirmBtn.disabled).toBe(true)
+    // Always enabled (24 Nov): a click says the date is in the past.
+    expect(confirmBtn.disabled).toBe(false)
+    fireEvent.click(confirmBtn)
+    await waitFor(() => expect(screen.getAllByRole('alert').map(a => a.textContent).join(' | ')).toMatch(/interview date is in the past/i))
 
     // User corrects date to an upcoming date, in the Interview date & time picker
     fireEvent.click(document.querySelector('.sbs-when__button'))

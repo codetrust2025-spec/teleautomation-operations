@@ -114,23 +114,19 @@ export function SubmitSlotFileDrop({
             picked.length ? (
               <>
                 <strong>{picked.length} screenshot{picked.length === 1 ? '' : 's'} ready</strong>
-                <span>Tap to add another</span>
               </>
             ) : (
               <>
                 <strong>{compact ? 'Upload screenshots' : 'Drop payment screenshots here'}</strong>
-                <span>one per payment · PNG, JPG, WebP</span>
               </>
             )
           ) : file ? (
             <>
               <strong>{attachedLabel}</strong>
-              <span>Tap to replace</span>
             </>
           ) : (
             <>
               <strong>{compact ? 'Upload screenshot' : 'Drop invite screenshot here'}</strong>
-              <span>or tap to browse · PNG, JPG, WebP</span>
             </>
           )}
         </div>

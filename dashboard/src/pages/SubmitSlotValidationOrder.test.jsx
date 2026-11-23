@@ -127,7 +127,9 @@ describe('validation runs top to bottom', () => {
       // The invite is the first field (19 Oct): reading it fills the rest.
       // invite_name (11 Oct): an invite addressed to someone else must be
       // confirmed as this client's before anything below it is judged.
-      'invite', 'name', 'invite_name', 'phone', 'technology', 'company', 'round', 'payment',
+      // when (24 Nov): Confirm is always enabled, so the date and time are
+      // checked on click, where they sit on the form -- after the round.
+      'invite', 'name', 'invite_name', 'phone', 'technology', 'company', 'round', 'when', 'payment',
     ])
   })
 
@@ -158,6 +160,8 @@ describe('validation runs top to bottom', () => {
       'Attach a payment screenshot that covers the amount due.',
       'Attach the payment screenshot.',
       'Attach the interview invite screenshot.',
+      'Enter the interview date and time.',
+      'Wait for the payment to finish verifying.',
     ]) {
       expect(page).toContain(message)
     }
@@ -199,7 +203,9 @@ describe('every field in the sequence can actually be reached', () => {
     const refFor = { name: 'nameRef', invite_name: 'nameRef', phone: 'phoneRef', technology: 'technologyRef',
                      company: 'companyRef', round: 'roundRef', payment: 'paymentRef', invite: 'inviteRef' }
     for (const key of steps()) {
-      expect(page).toContain(`ref={${refFor[key]}}`)
+      // The date and time field hands its ref to the button it opens with.
+      if (key === 'when') expect(page).toContain('buttonRef={whenRef}')
+      else expect(page).toContain(`ref={${refFor[key]}}`)
     }
   })
 
@@ -346,11 +352,11 @@ describe('the payment card is compact, without shrinking what you tap', () => {
     expect(rule('.submit-slot-drop')).toContain('min-height: 2.75rem')
   })
 
-  it('fits the split-payment hint on one line', () => {
-    // Two lines of hint inside a card that already stacks seven things is most
-    // of the difference in height against the invite field.
-    expect(page).toContain('Paid in parts? Attach each screenshot — they are added up.')
-    expect(page).not.toContain('they are added up for this booking.')
+  it('carries no split-payment instructions (24 Nov: no helper text on the booking page)', () => {
+    // Several screenshots are still accepted -- the drop takes many and they are
+    // added up -- but the page no longer explains it.
+    expect(page).not.toContain('Paid in parts? Attach each screenshot')
+    expect(page).toMatch(/<SubmitSlotFileDrop\s+compact\s+multiple/)
   })
 
   it('keeps the drop component and multi-file upload, and analyses on attach', () => {
@@ -418,25 +424,28 @@ ${selector} {`)
 })
 
 
-describe('Confirm opens only once both uploads have been analysed', () => {
+describe('Confirm is always enabled and checks the form on click (24 Nov)', () => {
   const confirmButton = () => screen.getByRole('button', { name: /Confirm booking/i })
 
-  it('stays disabled on an empty form', async () => {
+  it('is enabled on an empty form, and a click marks the invite and books nothing', async () => {
     stubFetch()
     render(<SubmitSlotPage />)
-    expect((await screen.findByRole('button', { name: /Confirm booking/i })).disabled).toBe(true)
+    expect((await screen.findByRole('button', { name: /Confirm booking/i })).disabled).toBe(false)
+    fireEvent.click(confirmButton())
+    expect(await screen.findByText('Attach the interview invite screenshot.')).toBeTruthy()
+    expect(confirmButton().disabled).toBe(false)
   })
 
-  it('opens once the invite is read when nothing is owed', async () => {
+  it('stays enabled before and after the invite is read when nothing is owed', async () => {
     stubFetch({ paymentRequired: false })
     render(<SubmitSlotPage />)
     await screen.findByRole('button', { name: /Confirm booking/i })
-    expect(confirmButton().disabled).toBe(true)
+    expect(confirmButton().disabled).toBe(false)
     await readInvite()
     expect(confirmButton().disabled).toBe(false)
   })
 
-  it('stays disabled while an owed payment is unverified, and opens once it is', async () => {
+  it('marks an owed, unverified payment on click, and is still enabled once it is verified', async () => {
     stubFetch({
       upload: {
         status: 'ok', proof_ids: ['proof-1'], verified_total: 5000, remaining_due: 0, amount_due: 5000,
@@ -451,8 +460,8 @@ describe('Confirm opens only once both uploads have been analysed', () => {
     fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000066350' } })
 
     await readInvite()
-    // The invite is read; the payment is still owed.
-    expect(confirmButton().disabled).toBe(true)
+    // The invite is read; the payment is still owed. Nothing is flagged until a click.
+    expect(confirmButton().disabled).toBe(false)
     expect(document.querySelector('.sbs-hint--warn')).toBeNull()
 
     attach([...document.querySelectorAll('input[type="file"]')].find(i => i.multiple),

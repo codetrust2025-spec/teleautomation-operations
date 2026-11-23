@@ -430,7 +430,7 @@ function SlotTechnologyPicker({ options, value, onChange, disabled }) {
               aria-selected={t.toLocaleLowerCase() === query}
               className="sbs-picker__option"
               onClick={() => { onChange(t); setOpen(false) }}>{t}</button>
-          )) : <p className="sbs-picker__empty">Type the technology to continue.</p>}
+          )) : <p className="sbs-picker__empty">No matches</p>}
         </div>
       )}
     </div>
@@ -439,7 +439,7 @@ function SlotTechnologyPicker({ options, value, onChange, disabled }) {
 
 /** Why a Profile Service list is empty, said where the list would be. */
 export const NO_SUBSCRIBED_CANDIDATES =
-  'No subscribed Profile Service candidates yet. A candidate appears here once they are on Candidates with Profile service, In progress.'
+  'No subscribed Profile Service candidates yet.'
 
 /**
  * Profile Service books a subscribed candidate who is already on Candidates --
@@ -655,11 +655,6 @@ const LIST_ICON = (
     <path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="0.9" fill="currentColor" /><circle cx="4.5" cy="12" r="0.9" fill="currentColor" /><circle cx="4.5" cy="18" r="0.9" fill="currentColor" />
   </svg>
 )
-const ALERT_ICON = (
-  <svg className="sbs-confirm-pending-hint__icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="12" cy="12" r="10" fill="currentColor" /><path d="M12 7v6" stroke="#1a1408" strokeWidth="2.4" strokeLinecap="round" /><circle cx="12" cy="16.8" r="1.4" fill="#1a1408" />
-  </svg>
-)
 const CHEVRON = (
   <svg className="sbs-select__arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
 )
@@ -672,7 +667,7 @@ const CHEVRON = (
  * and booked exactly as shown. It opens once the invite is read, so a later
  * upload can never wipe what was set by hand.
  */
-function SlotWhenField({ date, time, timeEnd, onDate, onTime, onTimeEnd, disabled, waiting, children }) {
+function SlotWhenField({ date, time, timeEnd, onDate, onTime, onTimeEnd, disabled, waiting, buttonRef, missing, children }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
   useEffect(() => {
@@ -689,8 +684,9 @@ function SlotWhenField({ date, time, timeEnd, onDate, onTime, onTimeEnd, disable
     <div ref={rootRef} className="sbs-field sbs-when">
       <span className="sbs-label" id="sbs-when-label">Interview date &amp; time (IST) <span className="sbs-required" aria-hidden="true">*</span></span>
       <button
+        ref={buttonRef}
         type="button"
-        className={`sbs-select sbs-select--custom sbs-when__button${text ? '' : ' sbs-when__button--empty'}`}
+        className={`sbs-select sbs-select--custom sbs-when__button${text ? '' : ' sbs-when__button--empty'}${missing ? ' sbs-when__button--missing' : ''}`}
         aria-labelledby="sbs-when-label sbs-when-value"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -733,7 +729,7 @@ export function SubmitSlotPage() {
   const [booked, setBooked] = useState([])
   // Signed out, the server leaves out the client and technology (names are
   // shown in full to everyone since 12 Oct).
-  const [bookedDetailsWithheld, setBookedDetailsWithheld] = useState(false)
+  const [, setBookedDetailsWithheld] = useState(false)
   // Earliest first on this page whatever order the payload holds: the one
   // rule Daily Ops uses, from each slot's IST start.
   const awaitingSlots = useMemo(() => sortInterviewsEarliestFirst(booked.filter(needsStatusUpdate)), [booked])
@@ -808,6 +804,7 @@ export function SubmitSlotPage() {
   const technologyRef = useRef(null)
   const companyRef = useRef(null)
   const roundRef = useRef(null)
+  const whenRef = useRef(null)
   const paymentRef = useRef(null)
   const inviteRef = useRef(null)
   const [userEditedFields, setUserEditedFields] = useState({})
@@ -929,12 +926,8 @@ export function SubmitSlotPage() {
   // analysis can start straight away: there is nothing to hold and nothing to
   // save later.
   const paymentUploadReady = Boolean(effectiveName && (!roundWise || roundWisePhone.trim()))
-  // Confirm opens only once both uploads have been analysed successfully: the
-  // payment verified when one is owed, and the invite read to a date and start
-  // time that is not in the past. /bookings/confirm refuses a booking without
-  // either, so offering the button earlier only offered a refusal.
-  const inviteReady = Boolean(slotFile && !parsing && !aiBlocked && bookingSlot && !isPastDate)
-  const confirmReady = inviteReady && !needsPaymentProof && !paymentAnalysing
+  // Confirm stays enabled; submitBook checks the invite, the date and time and
+  // the payment on click, as it checks every other required field.
 
   // Asked of the backend, never derived here. The Re-Service waiver depends on
   // who is booking and for which round, so it is re-asked as those change.
@@ -1355,7 +1348,11 @@ export function SubmitSlotPage() {
         ok: serviceType !== 'round_wise' || !!effectiveTechnology },
       { key: 'company', ref: companyRef, ok: !!company.trim() },
       { key: 'round', ref: roundRef, ok: !!interviewRound },
-      { key: 'payment', ref: paymentRef, ok: !needsPaymentProof },
+      // Confirm is always enabled (owner, 24 Nov), so what used to keep it
+      // disabled is checked here instead: a date and time to book, and a
+      // payment that has finished verifying.
+      { key: 'when', ref: whenRef, ok: !!bookingSlot && !endBeforeStart && !isPastDate },
+      { key: 'payment', ref: paymentRef, ok: !needsPaymentProof && !paymentAnalysing },
     ]
     const firstMissing = steps.find(step => !step.ok)
     if (firstMissing) {
@@ -1451,16 +1448,6 @@ export function SubmitSlotPage() {
     finally { setBusy(false) }
   }
 
-  const TrustBadges = () => (
-    <div className="sbs-trust-compact">
-      <span>🔒 Secure &amp; Private</span>
-      <span className="sbs-trust-dot">•</span>
-      <span>⚡ Smart Detection</span>
-      <span className="sbs-trust-dot">•</span>
-      <span>✓ Instant Confirmation</span>
-    </div>
-  )
-
   return (
     <div className="sbs-screen">
       <div className="sbs-glow" aria-hidden="true" />
@@ -1468,7 +1455,6 @@ export function SubmitSlotPage() {
         <header className="sbs-header">
           <div className="sbs-header__text">
             <h1 className="sbs-header__title">Book Interview Slot</h1>
-            <p className="sbs-header__sub">Pick the right slot, upload invite, and confirm.</p>
           </div>
           <div className="sbs-header__icon" aria-hidden="true">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -1507,7 +1493,6 @@ export function SubmitSlotPage() {
                     <h2 id="sbs-needs-update-title" className="sbs-step-title">Needs status update</h2>
                     <p className="sbs-step-sub">
                       {awaitingSlots.length} interview{awaitingSlots.length !== 1 ? 's' : ''} ended with no outcome recorded.
-                      Record attended, not attended or rescheduled in Daily Ops; {awaitingSlots.length !== 1 ? 'they stay' : 'it stays'} here until then.
                     </p>
                   </div>
                 </div>
@@ -1522,9 +1507,6 @@ export function SubmitSlotPage() {
                       an assessment is a confirmed slot too, and it sits here
                       beside them. The wording has to cover both. */}
                   <p className="sbs-step-sub">{upcomingSlots.length > 0 ? `${upcomingSlots.length} slot${upcomingSlots.length !== 1 ? 's' : ''} scheduled` : booked.length > 0 ? 'No upcoming slots.' : 'No confirmed slots yet.'}</p>
-                  {bookedDetailsWithheld && booked.length > 0 && (
-                    <p className="sbs-step-sub sbs-step-sub--note">Clients and technologies are shown to signed-in staff only.</p>
-                  )}
                 </div>
               </div>
               {booked.length === 0 ? (
@@ -1532,7 +1514,7 @@ export function SubmitSlotPage() {
                   <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" opacity="0.3">
                     <rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/>
                   </svg>
-                  <p>No confirmed slots yet. Book your first slot.</p>
+                  <p>No confirmed slots yet.</p>
                   <button type="button" className="sbs-cta sbs-cta--ready" style={{maxWidth:'200px'}}
                     onClick={() => { setTab('book'); setError(''); setSuccess('') }}>
                     Book a slot
@@ -1542,7 +1524,6 @@ export function SubmitSlotPage() {
                 <ConfirmedSlotList slots={upcomingSlots} />
               ) : null}
             </section>
-            <TrustBadges />
           </div>
         ) : (
           /* ── Book slot tab — direct booking form only ─────── */
@@ -1562,7 +1543,7 @@ export function SubmitSlotPage() {
                   was not read with confidence is left empty, never guessed. */}
               <div ref={inviteRef} className="sbs-field">
                 <span className="sbs-label">Interview invite screenshot</span>
-                <SubmitSlotFileDrop hint="Teams, Gmail, Calendar, or Zoom — date and time must be visible." file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} attachedLabel="Invite screenshot attached" removeLabel="Remove invite screenshot" />
+                <SubmitSlotFileDrop file={slotFile} previewUrl={slotPreview} disabled={busy} busy={parsing} onFile={onSlotFileChange} attachedLabel="Invite screenshot attached" removeLabel="Remove invite screenshot" />
                 {missingField === 'invite' && <span className="sbs-hint sbs-hint--warn" role="alert">Attach the interview invite screenshot.</span>}
               </div>
 
@@ -1602,13 +1583,9 @@ export function SubmitSlotPage() {
                   ? <span className="sbs-hint sbs-profile-empty" role="status">{NO_SUBSCRIBED_CANDIDATES}</span>
                   : missingField === 'name'
                   ? <span className="sbs-hint sbs-hint--warn" role="alert">{serviceType === "round_wise" ? "Enter the client name for this round." : "Choose the candidate from the list of subscribed Profile Service candidates."}</span>
-                  : nameFromInvite
-                    ? <span className="sbs-hint">Matched from the invite. Check it.</span>
-                    : inviteNameHint && !name.trim()
-                      ? <span className="sbs-hint sbs-name-offer">{serviceType === "round_wise"
-                          ? <>{`The invite names “${inviteNameHint}”. `}<button type="button" className="sbs-link-btn" onClick={e => { e.preventDefault(); typeClientName(inviteNameHint) }} disabled={busy || parsing}>Use this name</button>{' or type it.'}</>
-                          : `The invite names “${inviteNameHint}”. Pick the client to confirm.`}</span>
-                      : <span className="sbs-hint">{serviceType === "round_wise" ? "Type the client name for this round." : selected ? "From Candidates. Check it is the right person." : "Choose from the subscribed Profile Service candidates."}</span>}
+                  : serviceType === "round_wise" && inviteNameHint && !name.trim() && !nameFromInvite
+                    ? <span className="sbs-hint sbs-name-offer"><button type="button" className="sbs-link-btn" onClick={e => { e.preventDefault(); typeClientName(inviteNameHint) }} disabled={busy || parsing}>{`Use “${inviteNameHint}”`}</button></span>
+                    : null}
                 {inviteNamesAnotherClient(inviteReadName, name) && (
                   <span className="sbs-hint sbs-hint--warn sbs-name-check" role={missingField === 'invite_name' ? 'alert' : undefined}>
                     <input
@@ -1638,9 +1615,7 @@ export function SubmitSlotPage() {
                     placeholder="10-digit phone number"
                     disabled={busy || parsing}
                   />
-                  {missingField === 'phone'
-                    ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter the candidate phone number.</span>
-                    : <span className="sbs-hint">Identifies the candidate across rounds.</span>}
+                  {missingField === 'phone' && <span className="sbs-hint sbs-hint--warn" role="alert">Enter the candidate phone number.</span>}
                 </label>
               )}
 
@@ -1657,9 +1632,7 @@ export function SubmitSlotPage() {
                     onChange={value => { setTechnology(value); setUserEditedFields(prev => ({ ...prev, technology: true })) }}
                     disabled={busy || parsing}
                   />
-                  {missingField === 'technology'
-                    ? <span className="sbs-hint sbs-hint--warn" role="alert">Choose the technology for this interview.</span>
-                    : <span className="sbs-hint">Read from the invite when it says; otherwise pick or type it.</span>}
+                  {missingField === 'technology' && <span className="sbs-hint sbs-hint--warn" role="alert">Choose the technology for this interview.</span>}
                 </label>
               )}
 
@@ -1688,18 +1661,14 @@ export function SubmitSlotPage() {
                 </span>
                 {/* Short, because this column is half a row: where the name came
                     from, or that the candidate has to supply it. */}
-                {missingField === 'company'
-                  ? <span className="sbs-hint sbs-hint--warn" role="alert">Enter the company name.</span>
-                  : slotFile && !parsing && !aiBlocked && !company.trim()
-                    ? <span className="sbs-hint">Not on the invite. Type it.</span>
-                    : null}
+                {missingField === 'company' && <span className="sbs-hint sbs-hint--warn" role="alert">Enter the company name.</span>}
               </label>
               <label className="sbs-field">
                 <span className="sbs-label">Interview round <span className="sbs-required" aria-hidden="true">*</span></span>
                 <div className={`sbs-select-wrap sbs-icon-input${missingField === 'round' ? ' sbs-select-wrap--required' : ''}`}>
                   {LIST_ICON}
                   <select ref={roundRef} className="sbs-select sbs-select--lead" value={interviewRound} onChange={e => { setInterviewRound(e.target.value); setUserEditedFields(f => ({ ...f, round: true })) }} disabled={busy || parsing}>
-                    <option value="">Select round (L1, L2…)</option>
+                    <option value="">Select round</option>
                     {ROUND_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
@@ -1716,7 +1685,12 @@ export function SubmitSlotPage() {
                 onTimeEnd={value => { setManualEnd(value); setUserEditedFields(f => ({ ...f, time_end: true })) }}
                 disabled={busy || !showSlotFields}
                 waiting={!slotFile || parsing}
+                buttonRef={whenRef}
+                missing={missingField === 'when'}
               >
+                {missingField === 'when' && (
+                  <span className="sbs-hint sbs-hint--warn" role="alert">{isPastDate ? 'Interview date is in the past. Please select today or a future date.' : endBeforeStart ? 'End time is before the start time.' : 'Enter the interview date and time.'}</span>
+                )}
                 {/* Only what needs doing: what the reader could not settle, and a
                     date or time that cannot be booked. */}
                 {showSlotFields && (aiExtraction?.warnings?.length > 0 || (!inviteConfident && !bookingSlot) || isPastDate || endBeforeStart) && (
@@ -1757,7 +1731,7 @@ export function SubmitSlotPage() {
                     <span className="sbs-hint sbs-hint--warn" role="status">{lockedText}</span>
                   )}
                   {profileReminder && !paymentComplete && (
-                    <span className="sbs-hint" role="status">{pendingText} You can book this first interview now.</span>
+                    <span className="sbs-hint" role="status">{pendingText}</span>
                   )}
                   {/* The same flow as the invite below: upload, the node reading
                       it, then the result. Nothing waits to be saved. */}
@@ -1770,7 +1744,6 @@ export function SubmitSlotPage() {
                       <SubmitSlotFileDrop
                         compact
                         multiple
-                        hint="Paid in parts? Attach each screenshot — they are added up."
                         disabled={busy || parsing || !paymentUploadReady}
                         busy={paymentAnalysing}
                         onFiles={analysePaymentScreenshots}
@@ -1778,7 +1751,7 @@ export function SubmitSlotPage() {
                       {!paymentUploadReady && (
                         <span className="sbs-hint">{roundWise ? 'Enter the client name and phone number first.' : 'Enter the client name first.'}</span>
                       )}
-                      {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{roundWise ? 'Attach the payment screenshot.' : profileLocked ? lockedText : 'Attach a payment screenshot that covers the amount due.'}</span>}
+                      {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{paymentAnalysing ? 'Wait for the payment to finish verifying.' : roundWise ? 'Attach the payment screenshot.' : profileLocked ? lockedText : 'Attach a payment screenshot that covers the amount due.'}</span>}
                     </>
                   )}
                   {/* The node reading the screenshots, while they are read. */}
@@ -1825,40 +1798,16 @@ export function SubmitSlotPage() {
               {error && <p className="sbs-alert sbs-alert--error" role="alert">{error}</p>}
               {success && <div className="sbs-alert sbs-alert--success sbs-success-anim"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{flexShrink:0}}><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg><span>{success}</span></div>}
 
-              {!confirmReady && !busy && !success && !aiBlocked && (
-                <div className="sbs-confirm-pending-hint" role="status">
-                  {ALERT_ICON}
-                  <span>{!slotFile
-                    ? 'Attach interview invite screenshot to continue'
-                    : parsing
-                    ? 'Reading interview invite...'
-                    : isPastDate
-                    ? 'Selected slot date has expired — choose a future date'
-                    : !bookingSlot
-                    ? 'Interview date and time are required'
-                    : needsPaymentProof
-                    ? (roundWise ? 'Attach payment screenshot to continue' : 'Clear pending payment to continue')
-                    : paymentAnalysing
-                    ? 'Verifying payment proof...'
-                    : !effectiveName
-                    ? 'Enter client name'
-                    : !company.trim()
-                    ? 'Enter company name'
-                    : !interviewRound
-                    ? 'Select interview round'
-                    : 'Please complete all required fields to confirm booking'}</span>
-                </div>
-              )}
-
-              <button type="submit" className="sbs-cta sbs-cta--ready" disabled={busy || !confirmReady}>
+              {/* Always enabled (owner, 24 Nov): a click checks every required
+                  field in order, marks the first one missing, and books only
+                  when all are valid. */}
+              <button type="submit" className="sbs-cta sbs-cta--ready" disabled={busy}>
                 {busy ? <Spinner size={18} /> : parsing ? 'Reading invite...' : 'Confirm booking'}
               </button>
             </form>
-            <TrustBadges />
           </div>
         )}
       </div>
-      <p className="sbs-foot">TeleAutomation · secure slot booking</p>
     </div>
   )
 }

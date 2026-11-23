@@ -98,7 +98,7 @@ async function startPaymentUpload() {
   fireEvent.change(screen.getByPlaceholderText(/10-digit phone number/i), { target: { value: '9000000101' } })
   fireEvent.change(screen.getByPlaceholderText(/choose or type the technology/i), { target: { value: 'Java' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L1' } })
-  await screen.findByText(/paid in parts\? attach each screenshot/i)
+  await screen.findByText(/^Upload screenshots$/)
   // Attaching is the upload: the analysis starts at once, as the invite's does.
   attach([...document.querySelectorAll('input[type="file"]')].find(input => input.multiple), [screenshot('receipt')])
 }

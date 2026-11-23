@@ -116,9 +116,9 @@ describe('Submit slot — round-wise technology', () => {
     await waitFor(() => expect(document.querySelector(".ai-node-progress--active")).toBeNull())
     // This candidate is waived, so the fee must have cleared before confirming.
     // Asserting it makes the precondition explicit instead of timing-dependent.
-    // Round-wise shows no pricing, so the card is recognised by its upload hint,
+    // Round-wise shows no pricing, so the card is recognised by its upload label,
     // which is gone once the fee is waived or cleared.
-    await waitFor(() => expect(screen.queryByText(/paid in parts\? attach each screenshot/i)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(/^Upload screenshots$/)).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
 
     await waitFor(() => expect(calls.confirms).toHaveLength(1))

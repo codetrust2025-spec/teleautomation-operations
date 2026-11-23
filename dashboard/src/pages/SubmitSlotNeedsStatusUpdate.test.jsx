@@ -64,12 +64,11 @@ describe('Needs status update', () => {
     expect(card('Overdue One').className).toContain('sbs-confirmed-card--awaiting')
   })
 
-  it('says how many need an update and where to record it', async () => {
+  it('says how many need an update, without instructions (24 Nov)', async () => {
     await openConfirmed(MIXED)
     const needs = (await screen.findByRole('heading', { name: 'Needs status update' })).closest('section')
     expect(needs.textContent).toMatch(/2 interviews ended with no outcome recorded/)
-    expect(needs.textContent).toMatch(/Daily Ops/)
-    expect(needs.textContent).toMatch(/they stay here until then/)
+    expect(needs.textContent).not.toMatch(/they stay here until then/)
   })
 
   it('keeps each card intact: round and booking source still shown', async () => {
@@ -114,7 +113,7 @@ describe('Upcoming slots', () => {
 
   it('keeps the empty state and its Book button when there are no slots at all', async () => {
     await openConfirmed([])
-    expect(await screen.findByText(/No confirmed slots yet\. Book your first slot\./)).toBeTruthy()
+    expect(await screen.findByText(/^No confirmed slots yet\.$/, { selector: '.sbs-confirmed-empty p' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Book a slot' })).toBeTruthy()
   })
 })
