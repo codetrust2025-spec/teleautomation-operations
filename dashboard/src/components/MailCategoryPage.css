@@ -861,3 +861,12 @@
   .mcp--selection .mcp-group--nested .mcp-group__head > .mcp-logo { width: 40px; height: 40px; }
   .mcp--selection .mcp-candidate__companies { margin-top: 10px; padding-top: 10px; }
 }
+/* Selection Related on a phone: an email's subject gets the row's full width;
+   its Opened / Unread state and its time sit on the line under it, so the
+   subject is read whole rather than cut short beside them (24 Nov). */
+@media (max-width: 640px) {
+  .mcp--selection .mcp-mail__row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon text text" "icon state when"; row-gap: 4px; }
+  .mcp--selection .mcp-mail__subject { display: block; -webkit-line-clamp: unset; overflow: visible; }
+  .mcp--selection .mcp-mail__row .mcp-state { justify-self: start; }
+  .mcp--selection .mcp-mail__when { justify-self: end; }
+}

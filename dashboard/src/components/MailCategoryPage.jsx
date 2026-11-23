@@ -519,7 +519,10 @@ export function MailCategoryPage({ category }) {
         setLoadError(error?.message || "Mail alerts could not be loaded.");
       }
     } finally {
-      if (!silent && current === version.current) setLoading(false);
+      // Whichever load is the latest ends the loading state, silent or not: a
+      // live update that overtook the first load used to leave the list
+      // dimmed under its loader for good (24 Nov).
+      if (current === version.current) setLoading(false);
     }
   }, [filterParams, companyKey, tile, offset, limit, perEmail, category]);
 

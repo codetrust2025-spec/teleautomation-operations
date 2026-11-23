@@ -93,3 +93,18 @@ describe("one card per candidate", () => {
     expect(await within(ravi).findByRole("list", { name: "Emails, newest first" })).toBeInTheDocument();
   });
 });
+
+describe("live Selection page (24 Nov)", () => {
+  it("never leaves the list dimmed when a live update overtakes the first load", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const page = readFileSync(join(here, "MailCategoryPage.jsx"), "utf-8");
+    expect(page).toContain("if (current === version.current) setLoading(false);");
+    expect(page).not.toContain("if (!silent && current === version.current) setLoading(false);");
+    const css = readFileSync(join(here, "MailCategoryPage.css"), "utf-8").replace(/\r\n/g, "\n");
+    // On a phone an email subject has the whole row; state and time sit under it.
+    expect(css).toContain('.mcp--selection .mcp-mail__row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon text text" "icon state when";');
+  });
+});
