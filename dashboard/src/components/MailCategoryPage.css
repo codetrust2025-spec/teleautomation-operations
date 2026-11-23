@@ -828,3 +828,36 @@
   .mcp--selection .mcp-candidate__companies { gap: 8px; margin-top: 10px; padding-top: 10px; }
   .mcp--selection .mcp-group.mcp-group--nested { padding: 10px; }
 }
+
+/* Selection Related, compact cards (24 Nov). Every width:
+   - header: logo/initials, name and email, chevron -- nothing else;
+   - one badge row under it, across the card: count, companies, unread, and
+     the latest status pinned to the right edge, so badges line up card to card;
+   - no opened figure (it is the count less unread), so no number appears twice;
+   - names, emails, companies and subjects wrap rather than being cut off. */
+.mcp--selection .mcp-group__head { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "logo main chevron" "badges badges badges"; align-items: center; gap: 10px 12px; }
+.mcp--selection .mcp-group__head > .mcp-logo { grid-area: logo; align-self: center; margin-top: 0; }
+.mcp--selection .mcp-group__head > .mcp-group__main { grid-area: main; gap: 2px; }
+.mcp--selection .mcp-group__head > .mcp-chevron { grid-area: chevron; align-self: center; margin-top: 0; }
+.mcp--selection .mcp-group__head > .mcp-group__badges { grid-area: badges; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; }
+.mcp--selection .mcp-group__badges .mcp-pill--status { margin-left: auto; }
+.mcp--selection .mcp-group__name { display: block; overflow: visible; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+.mcp--selection .mcp-group__meta { overflow: visible; white-space: normal; }
+.mcp--selection .mcp-group__email { overflow: visible; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+.mcp--selection .mcp-group.mcp-group--nested .mcp-group__head { gap: 8px 10px; }
+.mcp--selection .mcp-mail__subject { display: -webkit-box; overflow: hidden; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mcp--selection .mcp-mail__label { white-space: normal; overflow-wrap: anywhere; }
+.mcp--selection .mcp-history__summary { flex-wrap: wrap; gap: 2px 10px; }
+@media (max-width: 640px) {
+  .mcp--selection .mcp-group { padding: 10px 12px; }
+  .mcp--selection .mcp-group__head { gap: 8px 10px; }
+  .mcp--selection .mcp-group__head > .mcp-logo { width: 44px; height: 44px; padding: 2px; }
+  .mcp--selection .mcp-group__name,
+  .mcp--selection .mcp-group:not(.mcp-group--unread) .mcp-group__name { font-size: 16px; line-height: 20px; }
+  .mcp--selection .mcp-group__meta { font-size: 13px; line-height: 17px; }
+  .mcp--selection .mcp-group .mcp-pill { min-height: 24px; padding: 0 9px; gap: 5px; font-size: 13px; line-height: 20px; }
+  .mcp--selection .mcp-group .mcp-pill .mcp-glyph { width: 15px; height: 15px; }
+  .mcp--selection .mcp-group.mcp-group--nested { padding: 9px 10px; }
+  .mcp--selection .mcp-group--nested .mcp-group__head > .mcp-logo { width: 40px; height: 40px; }
+  .mcp--selection .mcp-candidate__companies { margin-top: 10px; padding-top: 10px; }
+}

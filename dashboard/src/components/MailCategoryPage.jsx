@@ -212,19 +212,20 @@ function GroupCard({ group, category, expanded, onToggle, history, openMails, co
           {group.candidate_email && <span className="mcp-group__email" title={group.candidate_email}>{group.candidate_email}</span>}
           <span className="mcp-group__company" title={company}>{company}</span>
         </span>}
-        <span className="mcp-group__badges">
-          <span className="mcp-pill mcp-pill--count" title={`${plural(total, `${kind} email`)} with ${company}`} aria-label={plural(total, `${kind} email`)}>
-            <Glyph name="mail" size={16} />{total}
-          </span>
-          {unread > 0 && <span className="mcp-pill mcp-pill--new" title={`Unread ${kind} emails`}>{unread} unread</span>}
-          {status && <StatusPill label={status} evidence={needsReading ? "needs reading" : group.latest_status_evidence} tone={tone} />}
-        </span>
       </div>
-      <span className="mcp-group__opened" title={`${opened} ${kind} opened`} aria-label={`${opened} opened`}><Glyph name="eye" size={20} />{opened}</span>
       <button type="button" className={`mcp-chevron${expanded ? " mcp-chevron--open" : ""}`} aria-expanded={expanded} aria-controls={listId}
         aria-label={`${expanded ? "Hide" : "Show"} emails for ${name} at ${company}`} onClick={() => onToggle()}>
         <Glyph name="chevron" size={22} />
       </button>
+      {/* One row of badges under the name (24 Nov): the count says what it
+          counts; opened is the count less unread, so it is not shown again. */}
+      <span className="mcp-group__badges">
+        <span className="mcp-pill mcp-pill--count" title={`${plural(total, `${kind} email`)} with ${company} · ${opened} opened`} aria-label={plural(total, `${kind} email`)}>
+          <Glyph name="mail" size={16} />{plural(total, "email")}
+        </span>
+        {unread > 0 && <span className="mcp-pill mcp-pill--new" title={`Unread ${kind} emails`}>{unread} unread</span>}
+        {status && <StatusPill label={status} evidence={needsReading ? "needs reading" : group.latest_status_evidence} tone={tone} />}
+      </span>
     </div>
     {expanded && <div className="mcp-history-wrap">
       <div className="mcp-history__head">
@@ -305,22 +306,21 @@ function CandidateCard({ candidate, category, expanded, onToggle, children }) {
       <div className="mcp-group__main">
         <strong className="mcp-group__name" title={candidate.name}>{candidate.name}</strong>
         {candidate.email && <span className="mcp-group__meta"><span className="mcp-group__email" title={candidate.email}>{candidate.email}</span></span>}
-        <span className="mcp-group__badges">
-          <span className="mcp-pill mcp-pill--count" title={`${plural(candidate.total, `${kind} alert`)} in total`} aria-label={plural(candidate.total, `${kind} alert`)}>
-            <Glyph name="mail" size={16} />{candidate.total}
-          </span>
-          <span className="mcp-pill mcp-pill--companies" title={companies === 1 ? "1 company" : `${companies} companies`}>
-            <Glyph name="building" size={16} />{companies === 1 ? "1 company" : `${companies} companies`}
-          </span>
-          {candidate.unread > 0 && <span className="mcp-pill mcp-pill--new" title={`Unread ${kind} alerts`}>{candidate.unread} unread</span>}
-          {status && <StatusPill label={status} evidence={needsReading ? "needs reading" : latest?.latest_status_evidence} tone={tone} />}
-        </span>
       </div>
-      <span className="mcp-group__opened" title={`${candidate.opened} ${kind} opened`} aria-label={`${candidate.opened} opened`}><Glyph name="eye" size={20} />{candidate.opened}</span>
       <button type="button" className={`mcp-chevron${expanded ? " mcp-chevron--open" : ""}`} aria-expanded={expanded} aria-controls={listId}
         aria-label={`${expanded ? "Hide" : "Show"} companies and emails for ${candidate.name}`} onClick={() => onToggle()}>
         <Glyph name="chevron" size={22} />
       </button>
+      <span className="mcp-group__badges">
+        <span className="mcp-pill mcp-pill--count" title={`${plural(candidate.total, `${kind} alert`)} in total · ${candidate.opened} opened`} aria-label={plural(candidate.total, `${kind} alert`)}>
+          <Glyph name="mail" size={16} />{plural(candidate.total, "alert")}
+        </span>
+        <span className="mcp-pill mcp-pill--companies" title={companies === 1 ? "1 company" : `${companies} companies`}>
+          <Glyph name="building" size={16} />{companies === 1 ? "1 company" : `${companies} companies`}
+        </span>
+        {candidate.unread > 0 && <span className="mcp-pill mcp-pill--new" title={`Unread ${kind} alerts`}>{candidate.unread} unread</span>}
+        {status && <StatusPill label={status} evidence={needsReading ? "needs reading" : latest?.latest_status_evidence} tone={tone} />}
+      </span>
     </div>
     {expanded && <div className="mcp-candidate__companies" id={listId} role="group" aria-label={`${candidate.name}'s companies`}>{children}</div>}
   </article>;

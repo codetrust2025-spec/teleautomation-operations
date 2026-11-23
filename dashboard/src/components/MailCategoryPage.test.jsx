@@ -132,7 +132,8 @@ describe("a Candidate + Company card", () => {
     // The card counts Selection mail, like the counters; the history counts all.
     expect(within(card).getByLabelText("1 Selection email")).toBeInTheDocument();
     expect(card.querySelector(".mcp-pill--new").textContent).toBe("1 unread");
-    expect(within(card).getByLabelText("0 opened")).toBeInTheDocument();
+    // Opened is the count less unread: not shown again (24 Nov).
+    expect(card.querySelector(".mcp-group__opened")).toBeNull();
     expect(within(card).getByTitle("Latest verified status").textContent).toBe("Joining Confirmed");
     expect(screen.getByText("2 Candidates")).toBeInTheDocument();
     // The server pages by candidate and returns all of their companies.

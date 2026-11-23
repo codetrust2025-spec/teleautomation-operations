@@ -56,7 +56,12 @@ describe("one card per candidate", () => {
     expect(asha.querySelector(".mcp-pill--companies").textContent).toBe("3 companies");
     expect(asha.querySelector(".mcp-pill--new").textContent).toBe("2 unread");
     expect(asha.querySelector(".mcp-pill--status").textContent).toBe("Joining Confirmed");
-    expect(within(asha).getByLabelText("4 opened")).toBeInTheDocument();
+    // Each figure once: the count says what it counts, and opened is not repeated.
+    expect(within(asha).getByLabelText("6 Selection alerts").textContent).toBe("6 alerts");
+    expect(asha.querySelector(".mcp-group__opened")).toBeNull();
+    const badges = asha.querySelector(".mcp-group__badges");
+    expect(badges.parentElement.className).toContain("mcp-group__head");
+    expect([...badges.children].map((b) => b.className.match(/mcp-pill--(\w+)/)[1])).toEqual(["count", "companies", "new", "status"]);
     expect(screen.getByRole("article", { name: "Ravi Testcase" }).querySelector(".mcp-pill--companies").textContent).toBe("1 company");
     expect(screen.getByText("2 Candidates")).toBeInTheDocument();
     // Folded: no company card until it is opened.

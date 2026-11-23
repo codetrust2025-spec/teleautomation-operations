@@ -56,7 +56,7 @@ describe("Needs reading vs Opened", () => {
     const card = await companyCard("Sakthi, Company not identified");
     expect(card.querySelector(".mcp-pill--status")).toBeNull();
     expect(within(card).queryByText("Needs Review")).toBeNull();
-    expect(within(card).getByLabelText("5 opened")).toBeInTheDocument();
+    expect(within(card).getByLabelText("5 Selection emails").textContent).toBe("5 emails");
   });
 
   it("also hides a stored Needs Review label without changing its backend status", async () => {
