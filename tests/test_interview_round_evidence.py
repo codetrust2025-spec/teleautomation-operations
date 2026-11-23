@@ -227,3 +227,63 @@ def test_bookings_analytics_counts_them_as_needs_review(store):
     payload = cs.interview_global_summary(LATER, LATER)
     names = {level["name"] for c in payload["booking_overview"]["by_candidate"] for level in c["levels"]}
     assert "Needs Review" in names and "Unspecified" not in names
+
+
+# -- bookings that are not interviews (23 Nov) -------------------------------
+
+@pytest.mark.parametrize("title, expected", [
+    ("Career Consultation - Candidate Alpha (India Career Growth Pathway)", "Career Consultation"),
+    ("BGV Verification | Candidate Alpha | QA Automation | Acme", "BGV Verification"),
+    ("Background verification call - Candidate Alpha", "BGV Verification"),
+])
+def test_an_invite_title_that_names_a_non_interview_meeting_gives_that_type(title, expected):
+    assert ev.non_interview_type_from_title(title)[0] == expected
+
+
+@pytest.mark.parametrize("title", [
+    "Interview - Career Consultation track",        # it says interview
+    "BGV and Career Consultation",                  # two kinds: not picked between
+    "Round 1 Interview | Full Stack Developer",
+    "Interview with Acme Innovation",
+    "",
+])
+def test_other_titles_stay_interviews(title):
+    assert ev.non_interview_type_from_title(title) == ("", "")
+
+
+def test_a_consultation_booking_is_kept_and_typed_not_given_a_round(store):
+    store["candidates"].append(booking(
+        interview_role="Career Consultation - Candidate Alpha (India Career Growth Pathway)",
+        attendance_status=None, interview_round_evidence={"status": "needs_review", "reason": "x"}))
+
+    saved = cs.record_interview_round_evidence("b1")
+
+    row = store["candidates"][0]
+    assert len(store["candidates"]) == 1 and row["slot_confirmed"] is True and row["date"] == LATER
+    assert row["booking_type"] == "Career Consultation"
+    assert row["interview_round"] == ""
+    assert row["booking_type_evidence"]["previous_booking_type"] == "Interview"
+    assert row["booking_type_evidence"]["phrase"] == "Career Consultation"
+    assert row["interview_round_evidence"]["status"] == "not_an_interview"
+    assert saved["interview_round_needs_review"] is False
+
+
+def test_a_booking_with_a_round_is_never_retyped(store):
+    store["candidates"].append(booking(interview_round="L1", interview_role="BGV Verification | Candidate"))
+    cs.record_interview_round_evidence("b1")
+    assert store["candidates"][0]["booking_type"] == "Interview"
+
+
+def test_non_interview_bookings_leave_the_needs_review_level_and_count_as_their_type(store):
+    store["candidates"] += _roster() + [booking(id="bgv", booking_type="BGV Verification")]
+    assert [r["id"] for r in cs._filter_interview_rows(store["candidates"], filter_round=["Needs Review"])] == ["nr"]
+    payload = cs.interview_global_summary(LATER, LATER)
+    names = {level["name"] for c in payload["booking_overview"]["by_candidate"] for level in c["levels"]}
+    assert "BGV Verification" in names
+
+
+def test_attendance_can_be_recorded_for_a_non_interview_booking():
+    assert cs.booking_has_no_round({"booking_type": "Career Consultation"})
+    assert cs.booking_has_no_round({"booking_type": "Assessment"})
+    assert not cs.booking_has_no_round({"booking_type": ""})
+    assert not cs.booking_has_no_round({"booking_type": "Interview"})

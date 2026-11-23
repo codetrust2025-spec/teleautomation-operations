@@ -166,3 +166,39 @@ def explicit_round(*texts, title: str = "") -> str:
     """The one round a subject/title and body state, or ""."""
     sources = [("title", title)] + [(f"text{i}", t) for i, t in enumerate(texts)]
     return resolve_round(sources)["round"]
+
+
+# -- bookings that are not interviews ---------------------------------------
+#
+# Some invitations the mail agent books are not interviews at all: a career
+# consultation, a background-verification (BGV) call. They hold a slot and are
+# real bookings, so they stay; they just have no interview round, and asking
+# for one ("Needs Review") would never end (owner, 23 Nov 2026). The type is
+# read only from the invite's own title, only when the title names it
+# outright, and never when the title also calls the meeting an interview.
+
+CAREER_CONSULTATION = "Career Consultation"
+BGV_VERIFICATION = "BGV Verification"
+NON_INTERVIEW_BOOKING_TYPES = (CAREER_CONSULTATION, BGV_VERIFICATION)
+
+_NON_INTERVIEW_TITLES = (
+    (re.compile(r"\bcareer\s+consultation\b", re.I), CAREER_CONSULTATION),
+    (re.compile(r"\bBGV\b|\bbackground\s+verification\b", re.I), BGV_VERIFICATION),
+)
+_INTERVIEW_WORD = re.compile(r"\binterview", re.I)
+
+
+def non_interview_type_from_title(title) -> tuple[str, str]:
+    """(booking type, phrase) when an invite title names a non-interview meeting.
+
+    ("", "") when it does not, when it names more than one kind, or when it
+    also says "interview" -- then the booking stays an interview.
+    """
+    text = _plain(title)
+    if not text or _INTERVIEW_WORD.search(text):
+        return "", ""
+    hits = {(kind, m.group(0)) for pattern, kind in _NON_INTERVIEW_TITLES if (m := pattern.search(text))}
+    if len({kind for kind, _ in hits}) != 1:
+        return "", ""
+    kind, phrase = hits.pop()
+    return kind, phrase

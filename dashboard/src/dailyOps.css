@@ -2922,6 +2922,7 @@ tr.row-edit :is(button,a){cursor:pointer}
 /* Interview round: a row with no round says so in amber; the Edit modal
    blocks its status with the owner's message and lists every round change. */
 .ops-round-missing{color:#d97706;font-weight:600}
+.ops-round-not-interview{color:#94a3b8;font-style:italic}
 .ops-slot-round-select--missing{border-color:#d97706}
 .ops-slot-round-hint{color:#d97706}
 .ops-slot-round-history ul{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto}
@@ -3261,6 +3262,7 @@ tr.row-edit :is(button,a){cursor:pointer}
   .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source--candidate { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.35); color: #6ee7b7; }
   .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-source--auto { background: rgba(99, 102, 241, 0.14); border-color: rgba(99, 102, 241, 0.4); color: #c7d2fe; }
   .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-type--assessment { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.38); color: #fcd34d; }
+  .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-booking-type--non-interview { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.38); color: #cbd5e1; }
 }
 
 @media (max-width: 767px) {

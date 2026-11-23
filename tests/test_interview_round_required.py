@@ -183,3 +183,15 @@ def test_the_route_is_registered_on_the_app(role):
     assert not stored("c1").get("interview_attendance_status")
     saved = client.post("/candidates/c2/interview-attendance", json={"status": "cancelled", "remark": "x"})
     assert saved.json()["status"] == "ok"
+
+
+@pytest.mark.parametrize("kind", ["Career Consultation", "BGV Verification"])
+def test_a_non_interview_booking_records_its_outcome_without_a_round(role, kind):
+    # A career consultation or BGV call has no interview round (23 Nov); its
+    # outcome is recorded without one, and no round is stored for it.
+    seed([booking("c1", booking_type=kind)])
+    out = mark("c1", status="attended", remark="done", attendee="Bhavana", feedback="good")
+    assert out["status"] == "ok"
+    row = stored("c1")
+    assert row["interview_attendance_status"] == "attended"
+    assert row["interview_round"] == "" and row["booking_type"] == kind

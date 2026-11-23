@@ -544,7 +544,7 @@ async def candidates_interview_attendance(cid: str, request: Request, body: dict
     # No specified round, no status update (owner, 14 Nov). The round is
     # corrected separately, through the interview edit; this route never sets
     # it and never guesses it, whatever the body carries.
-    if not candidate_store.interview_round_is_set(existing):
+    if not candidate_store.interview_round_is_set(existing) and not candidate_store.booking_has_no_round(existing):
         return {
             "status": "error",
             "code": "round_missing",

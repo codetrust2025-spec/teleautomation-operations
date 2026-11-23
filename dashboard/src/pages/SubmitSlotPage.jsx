@@ -302,6 +302,13 @@ function ConfirmedSlotList({ slots, needsUpdate = false }) {
                           >
                             Assessment
                           </span>
+                        ) : ['Career Consultation', 'BGV Verification'].includes(slot.booking_type) ? (
+                          <span
+                            className="sbs-slot-card__round sbs-slot-card__round--non-interview"
+                            title={`${slot.booking_type}: not an interview, so it has no round`}
+                          >
+                            {slot.booking_type}
+                          </span>
                         ) : slot.interview_round ? (
                           <span className={`sbs-slot-card__round sbs-slot-card__round--${(slot.interview_round || '').toLowerCase().replace(/\s+/g, '')}`}>{slot.interview_round}</span>
                         ) : (

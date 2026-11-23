@@ -121,11 +121,12 @@ def _booking_entries(rows: list[dict]) -> list[dict]:
     for row in rows:
         booking_id = _text(row.get("id"))
         if candidate_store.candidate_has_confirmed_slot(row):
-            assessment = (_text(row.get("booking_type")) or "Interview") == "Assessment"
+            kind = _text(row.get("booking_type")) or "Interview"
+            assessment = kind == "Assessment"
             entries.append(_entry(
                 row.get("slot_confirmed_at") or row.get("created_at"),
                 "assessment" if assessment else "booking",
-                "Assessment booked" if assessment else "Interview booked",
+                f"{kind} booked",
                 _schedule(row), booked_from(row), booking_id=booking_id,
                 mail_id=row.get("interview_source_message_id"),
             ))

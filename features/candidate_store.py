@@ -256,6 +256,20 @@ VALID_INTERVIEW_ROUNDS = STANDARD_INTERVIEW_ROUNDS | frozenset({"Assessment"})
 #: "Others" is every booking whose round is not one of the standard six -- no
 #: round recorded, Assessment, or any other label.
 ROUND_FILTER_OTHER = "other"
+#: Bookings that hold a slot but have no interview round by nature: an
+#: assessment, and the non-interview meetings the mail agent books (career
+#: consultation, BGV verification -- 23 Nov). They are never "Needs Review".
+ROUNDLESS_BOOKING_TYPES = frozenset({"Assessment", *round_evidence.NON_INTERVIEW_BOOKING_TYPES})
+
+
+def booking_type_of(row: dict | None) -> str:
+    """The booking's type; a row without one is an interview."""
+    return _clean_str((row or {}).get("booking_type")) or "Interview"
+
+
+def booking_has_no_round(row: dict | None) -> bool:
+    """True for a booking type that has no interview round (see ROUNDLESS_BOOKING_TYPES)."""
+    return booking_type_of(row) in ROUNDLESS_BOOKING_TYPES
 #: Bookings with no round their evidence states (23 Nov): what Daily Ops shows
 #: as "Needs Review" and Bookings analytics counts under that name. The old
 #: analytics label "Unspecified" still selects them.
@@ -4486,7 +4500,7 @@ def _row_matches_round_filter(row: dict, round_keys: set[str]) -> bool:
     label = normalise_interview_round(row.get("interview_round"))
     if label and label in round_keys:
         return True
-    if ROUND_FILTER_NEEDS_REVIEW in round_keys and not label and _clean_str(row.get("booking_type")) != "Assessment":
+    if ROUND_FILTER_NEEDS_REVIEW in round_keys and not label and not booking_has_no_round(row):
         return True
     return ROUND_FILTER_OTHER in round_keys and label not in STANDARD_INTERVIEW_ROUNDS
 
@@ -4966,7 +4980,7 @@ def interview_global_summary(
     for overview_row in overview_rows:
         candidate_label = canonical_candidate_name((overview_row.get("name") or "").strip()) or "Unknown"
         level_label = normalise_interview_round(overview_row.get("interview_round")) or (
-            "Assessment" if _clean_str(overview_row.get("booking_type")) == "Assessment"
+            booking_type_of(overview_row) if booking_has_no_round(overview_row)
             else ROUND_NEEDS_REVIEW_LABEL
         )
         technology_label = row_candidate_technology(overview_row) or "Unspecified"
@@ -5351,10 +5365,11 @@ def set_interview_round(
 def interview_round_needs_review(row: dict | None) -> bool:
     """A booking with no recognised round: Daily Ops shows "Needs Review".
 
-    An assessment has no round by nature and is not one of these.
+    An assessment, career consultation or BGV verification has no round by
+    nature and is not one of these.
     """
     row = row or {}
-    if _clean_str(row.get("booking_type")) == "Assessment":
+    if booking_has_no_round(row):
         return False
     if len(_clean_str(row.get("date"))[:10]) != 10:
         return False
@@ -5395,6 +5410,14 @@ def record_interview_round_evidence(
     for i, r in enumerate(rows):
         if r.get("id") != cid:
             continue
+        if interview_round_needs_review(r) and not resolution:
+            kind, phrase = round_evidence.non_interview_type_from_title(r.get("interview_role"))
+            if kind:
+                r = _classify_non_interview_booking(r, kind=kind, phrase=phrase, by=by)
+                rows[i] = r
+                data["candidates"] = rows
+                _save(data)
+                return _with_computed(r)
         if not interview_round_needs_review(r):
             return _with_computed(r)
         result = resolution or round_evidence.resolve_round(
@@ -5430,6 +5453,37 @@ def record_interview_round_evidence(
         _save(data)
         return _with_computed(r)
     return None
+
+
+def _classify_non_interview_booking(row: dict, *, kind: str, phrase: str, by: str) -> dict:
+    """Record that an interview-typed booking is really `kind`, and why.
+
+    The booking itself is kept -- slot, status, history -- only its type
+    changes, and the round stays empty: it never had one. The earlier round
+    marker is closed as "not_an_interview" so no count reads it as pending.
+    """
+    now = _now_iso()
+    row = dict(row)
+    row["booking_type_evidence"] = {
+        "booking_type": kind,
+        "previous_booking_type": booking_type_of(row),
+        "evidence_source": "booking.invite_title",
+        "phrase": _clean_str(phrase)[:200],
+        "checked_at": now,
+        "checked_by": _clean_str(by)[:120],
+    }
+    row["booking_type"] = kind
+    previous = row.get("interview_round_evidence") or {}
+    row["interview_round_evidence"] = {
+        **previous,
+        "status": "not_an_interview",
+        "round": "",
+        "reason": f"the invite title names a {kind}, not an interview",
+        "checked_at": now,
+        "checked_by": _clean_str(by)[:120],
+    }
+    row["updated_at"] = now
+    return row
 
 
 def roster_csv_rows(rows: list[dict]) -> str:
