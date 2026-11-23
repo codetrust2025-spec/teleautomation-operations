@@ -457,6 +457,8 @@ function SubscribedCandidatePicker({ candidates, value, onChoose, onOpen, disabl
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const rootRef = useRef(null)
+  const inputRef = useRef(null)
+  const menuRef = useRef(null)
   const options = useMemo(() => dedupeCandidates(candidates), [candidates])
   const needle = query.trim().toLocaleLowerCase()
   const matches = useMemo(
@@ -468,9 +470,23 @@ function SubscribedCandidatePicker({ candidates, value, onChoose, onOpen, disabl
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
   }, [])
-  useEffect(() => { setActive(0) }, [needle, open])
+  // Reopened with nothing typed, the list starts at the chosen candidate,
+  // highlighted and in view (24 Nov); a search starts at its first match.
+  const chosenIndex = matches.findIndex(c => c.name === value)
+  useEffect(() => { setActive(!needle && chosenIndex >= 0 ? chosenIndex : 0) }, [needle, open])
+  useEffect(() => {
+    if (!open) return
+    const chosen = menuRef.current?.querySelector('[aria-selected="true"]')
+    if (chosen && typeof chosen.scrollIntoView === 'function') chosen.scrollIntoView({ block: 'nearest' })
+  }, [open])
   const show = () => { if (!open) { setOpen(true); setQuery(''); onOpen?.() } }
-  const choose = c => { onChoose(c.name); setOpen(false); setQuery('') }
+  // Choosing closes the list and shows the name in the box. The box also lets
+  // go of focus, so a phone's keyboard closes and the next tap on the box
+  // opens the list again rather than finding it already focused.
+  const choose = c => { onChoose(c.name); setOpen(false); setQuery(''); inputRef.current?.blur() }
+  // A tap on the list must not blur the box first: on a phone that closed the
+  // keyboard and moved the list under the finger before the tap landed.
+  const keepFocus = e => e.preventDefault()
   const onKeyDown = e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); show(); setActive(i => Math.min(matches.length - 1, i + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(0, i - 1)) }
@@ -484,7 +500,7 @@ function SubscribedCandidatePicker({ candidates, value, onChoose, onOpen, disabl
         <svg className="sbs-picker__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
         </svg>
-        <input className="sbs-input sbs-name-input" value={open ? query : value}
+        <input ref={inputRef} className="sbs-input sbs-name-input" value={open ? query : value}
           onChange={e => {
             const typed = e.target.value
             setQuery(typed); setOpen(true)
@@ -494,21 +510,21 @@ function SubscribedCandidatePicker({ candidates, value, onChoose, onOpen, disabl
             if (exact && exact.name !== value) onChoose(exact.name)
           }}
           onFocus={show} onClick={show} onKeyDown={onKeyDown}
-          placeholder={loading ? 'Loading…' : empty ? 'None subscribed yet' : 'Search candidates'}
+          placeholder={loading ? 'Loading…' : empty ? 'None subscribed yet' : open && value ? value : 'Search candidates'}
           disabled={disabled} autoComplete="off"
           aria-label="Profile Service candidate" aria-autocomplete="list" aria-expanded={open}
           aria-controls="sbs-candidate-options"
           aria-activedescendant={open && matches[active] ? `sbs-candidate-${candidateNameKey(matches[active].name)}` : undefined} />
-        <button type="button" className="sbs-picker__toggle" onClick={() => (open ? (setOpen(false), setQuery('')) : show())} disabled={disabled} aria-label="Show subscribed candidates" aria-expanded={open}>
+        <button type="button" className="sbs-picker__toggle" onMouseDown={keepFocus} onClick={() => (open ? (setOpen(false), setQuery('')) : show())} disabled={disabled} aria-label="Show subscribed candidates" aria-expanded={open}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
       {open && (
-        <div id="sbs-candidate-options" className="sbs-picker__menu" role="listbox" aria-label="Subscribed Profile Service candidates">
+        <div ref={menuRef} id="sbs-candidate-options" className="sbs-picker__menu" role="listbox" aria-label="Subscribed Profile Service candidates" onMouseDown={keepFocus}>
           {matches.map((c, index) => (
             <button key={candidateNameKey(c.name)} id={`sbs-candidate-${candidateNameKey(c.name)}`} type="button" role="option"
               aria-selected={c.name === value}
-              className={`sbs-picker__option sbs-profile-option${index === active ? ' is-active' : ''}`}
+              className={`sbs-picker__option sbs-profile-option${index === active ? ' is-active' : ''}${c.name === value ? ' is-selected' : ''}`}
               onMouseEnter={() => setActive(index)}
               onClick={() => choose(c)}>
               <span className="sbs-profile-option__name">{c.name}</span>

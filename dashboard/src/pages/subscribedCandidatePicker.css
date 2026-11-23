@@ -12,6 +12,9 @@
   text-align: left;
 }
 .sbs-profile-option.is-active { background: rgba(99, 102, 241, 0.18); }
+/* The chosen candidate stays marked when the list is opened again (24 Nov). */
+.sbs-profile-option.is-selected { background: rgba(99, 102, 241, 0.24); box-shadow: inset 3px 0 0 #818cf8; }
+.sbs-profile-option.is-selected .sbs-profile-option__name { color: #c7d2fe; font-weight: 600; }
 .sbs-profile-option__name { min-width: 0; overflow-wrap: anywhere; }
 .sbs-profile-option__tech {
   max-width: 100%;

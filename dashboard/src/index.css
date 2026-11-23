@@ -18875,6 +18875,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .sbs-screen .sbs-dropdown__item,
 .sbs-screen .sbs-picker__option { min-height: 48px; display: flex; align-items: center; padding: 0 14px; font-size: 1rem; }
 .sbs-screen .sbs-picker__menu { max-height: 288px; }
+.sbs-screen .sbs-picker__option.sbs-profile-option { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 8px 14px; text-align: left; }
 
 /* Uploads: the invite and payment drop zones keep their look at the same rhythm. */
 .sbs-screen .submit-slot-drop { min-height: 72px; border-radius: 12px; }
