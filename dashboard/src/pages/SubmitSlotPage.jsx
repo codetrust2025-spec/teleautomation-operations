@@ -479,11 +479,23 @@ function SubscribedCandidatePicker({ candidates, value, onChoose, onOpen, disabl
     const chosen = menuRef.current?.querySelector('[aria-selected="true"]')
     if (chosen && typeof chosen.scrollIntoView === 'function') chosen.scrollIntoView({ block: 'nearest' })
   }, [open])
-  const show = () => { if (!open) { setOpen(true); setQuery(''); onOpen?.() } }
+  // When a candidate was last chosen: a tap that lands on the box within a
+  // moment of choosing is the same tap, not a request to open the list again.
+  const chosenAt = useRef(0)
+  const show = () => {
+    if (Date.now() - chosenAt.current < 400) return
+    if (!open) { setOpen(true); setQuery(''); onOpen?.() }
+  }
   // Choosing closes the list and shows the name in the box. The box also lets
   // go of focus, so a phone's keyboard closes and the next tap on the box
   // opens the list again rather than finding it already focused.
-  const choose = c => { onChoose(c.name); setOpen(false); setQuery(''); inputRef.current?.blur() }
+  const choose = c => { chosenAt.current = Date.now(); onChoose(c.name); setOpen(false); setQuery(''); inputRef.current?.blur() }
+  // The picker sits inside the field's <label>. Safari (every iPhone browser)
+  // passes a tap on an option's text -- a span inside the option button -- on
+  // to the label's input as a click, which reopened the list the tap had just
+  // closed. Cancelling the click's default stops that hand-off for every press
+  // inside the picker except on the search box itself (24 Nov).
+  const stopLabelHandOff = e => { if (e.target !== inputRef.current) e.preventDefault() }
   // A tap on the list must not blur the box first: on a phone that closed the
   // keyboard and moved the list under the finger before the tap landed.
   const keepFocus = e => e.preventDefault()
@@ -495,7 +507,7 @@ function SubscribedCandidatePicker({ candidates, value, onChoose, onOpen, disabl
   }
   const empty = !loading && !options.length
   return (
-    <div ref={rootRef} className="sbs-picker sbs-profile-picker">
+    <div ref={rootRef} className="sbs-picker sbs-profile-picker" onClick={stopLabelHandOff}>
       <div className="sbs-picker__input-wrap">
         <svg className="sbs-picker__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>

@@ -60,6 +60,8 @@ describe('choosing a Profile Service candidate', () => {
     await openPage()
     fireEvent.click(box())
     fireEvent.click(option('Meera Sample'))
+    // A later, separate tap (the tap that chose is ignored for a moment).
+    await new Promise(resolve => setTimeout(resolve, 450))
     fireEvent.click(box())
     const chosen = option('Meera Sample')
     expect(chosen).toHaveAttribute('aria-selected', 'true')
@@ -75,5 +77,30 @@ describe('choosing a Profile Service candidate', () => {
     const press = createEvent.mouseDown(option('Asha Fakename'))
     fireEvent(option('Asha Fakename'), press)
     expect(press.defaultPrevented).toBe(true)
+  })
+
+  // iPhone (24 Nov, "Still same"): Safari hands a tap on an option's text on to
+  // the <label>'s input as a click, which reopened the list it had just closed.
+  it('stays closed when Safari passes the tap on to the box', async () => {
+    await openPage()
+    fireEvent.click(box())
+    const name = within(option('Ravi Testcase')).getByText('Ravi Testcase')
+    fireEvent.click(name)
+    // What Safari does next: the label's control receives the same tap.
+    fireEvent.click(box())
+    fireEvent.focus(box())
+    expect(list()).toBeNull()
+    expect(box().value).toBe('Ravi Testcase')
+  })
+
+  it('cancels the label hand-off for a tap on an option or the arrow, but not on the box', async () => {
+    await openPage()
+    fireEvent.click(box())
+    const onText = createEvent.click(within(option('Asha Fakename')).getByText('Asha Fakename'))
+    fireEvent(within(option('Asha Fakename')).getByText('Asha Fakename'), onText)
+    expect(onText.defaultPrevented).toBe(true)
+    const onBox = createEvent.click(box())
+    fireEvent(box(), onBox)
+    expect(onBox.defaultPrevented).toBe(false)
   })
 })
