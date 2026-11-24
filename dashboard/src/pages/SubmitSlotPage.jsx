@@ -563,7 +563,8 @@ function ProfileCandidateDetails({ candidate }) {
     <dl className="sbs-profile-details" aria-label={`${candidate.name}'s profile`}>
       <div><dt>Technology</dt><dd>{candidate.technology || 'Not recorded'}</dd></div>
       <div><dt>Payment</dt><dd className={due > 0 ? 'is-due' : 'is-clear'}>{due > 0 ? `₹${due.toLocaleString('en-IN')} due` : 'Paid up'}</dd></div>
-      {candidate.payment_message && <p className="sbs-profile-details__note">{candidate.payment_message}</p>}
+      {/* No payment message here: the payment card below says the same,
+          with the amount due (owner, 24 Nov). */}
     </dl>
   )
 }

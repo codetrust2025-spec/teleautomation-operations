@@ -83,6 +83,8 @@ describe('no helper text', () => {
   it('drops the Profile Service payment helper and the repeated pending line', () => {
     expect(PAGE).not.toContain("'Enter the client name first.'}</span>")
     expect(PAGE).not.toContain('<span className="sbs-hint" role="status">{pendingText}</span>')
+    // Nor the payment message twice: the payment card already says it.
+    expect(PAGE).not.toContain('{candidate.payment_message}')
   })
 
   it('drops the upload instructions under the drop zones', () => {

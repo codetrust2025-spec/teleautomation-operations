@@ -113,7 +113,9 @@ describe('the client is chosen from the subscribed list', () => {
     const details = field().querySelector('.sbs-profile-details')
     expect(details.textContent).toContain('ServiceNow')
     expect(details.textContent).toContain('₹5,000 due')
-    expect(details.textContent).toContain('it can be paid after this interview')
+    // The payment message is not repeated here; the payment card shows the amount due (owner, 24 Nov).
+    expect(details.textContent).not.toContain('it can be paid after this interview')
+    expect(document.querySelector('.sbs-pay-head').textContent).toContain('₹5,000')
     captureLayout('submit-slot-profile-chosen', document.querySelector('.sbs-screen'))
     await waitFor(() => expect(confirm.disabled).toBe(false))
     fireEvent.click(confirm)
