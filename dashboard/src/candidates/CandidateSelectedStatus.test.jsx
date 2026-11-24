@@ -115,6 +115,7 @@ describe("the Candidates table", () => {
   it("filters by Selected and by Closed / Completed, through the server", async () => {
     render(<CandidatesPanel />);
     await screen.findByText("Asha Fakename");
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     const filter = screen.getByRole("combobox", { name: "Filter by stage" });
     const options = within(filter).getAllByRole("option").map((o) => [o.value, o.textContent]);
     expect(options).toEqual([
@@ -122,6 +123,7 @@ describe("the Candidates table", () => {
       ["closed_completed", "Closed / Completed"], ["fail", "Rejected"], ["dropped", "Dropped"],
     ]);
     fireEvent.change(filter, { target: { value: "selected" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Apply/ }));
     await waitFor(() => expect(calls.some((url) => /\/candidates\?.*stage=selected/.test(url))).toBe(true));
   });
 });

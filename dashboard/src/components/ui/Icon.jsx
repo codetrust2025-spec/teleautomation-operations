@@ -182,6 +182,8 @@ const PATHS = {
   'arrow-up': <path d="M12 19V5M6 11l6-6 6 6" />,
   'arrow-down': <path d="M12 5v14M6 13l6 6 6-6" />,
   'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
+  // Candidates page Sort control (24 Nov): arrows up and down.
+  sort: <path d="M7 4v16M3.5 7.5 7 4l3.5 3.5M17 20V4M13.5 16.5 17 20l3.5-3.5" />,
   code: <path d="m8.5 7.5-5 4.5 5 4.5M15.5 7.5l5 4.5-5 4.5" />,
   // Daily Ops booking cards: open WhatsApp with a follow-up (24 Nov).
   whatsapp: (

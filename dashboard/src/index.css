@@ -18896,6 +18896,183 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .sbs-screen .sbs-when__panel .sbs-field-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 }
 
+/* ── Candidates page: Search · Filters · Sort, compact cards (owner, 24 Nov) ──
+   Three controls on one line: Search, a Filters button holding type,
+   referrer, month, stage and pending only in a popup (Apply, Reset and a
+   count of the filters in use), and Sort. The actions follow on one line and
+   a summary says what the list holds. On a phone each candidate is a compact
+   card: name and stage, phone and referrer, technology and date, then the
+   payment with its badges on one wrapping row. Colours are the page's own. */
+.cand-page.cand-page--candidates > .cand-bar.cand-bar {
+  order: -2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+.cand-bar__controls {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(150px, auto);
+  gap: 8px;
+  align-items: center;
+}
+.cand-bar__search,
+.cand-bar__sort { position: relative; display: flex; align-items: center; min-width: 0; margin: 0; }
+.cand-bar__search > .ta-icon,
+.cand-bar__sort > .ta-icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: #94a3b8; pointer-events: none;
+}
+.cand-bar .cand-bar__search > .cand-input--search {
+  flex: 1 1 auto; width: 100%; min-width: 0; height: 40px; padding: 0 12px 0 36px; font-size: 13px;
+}
+.cand-bar .cand-bar__search > .cand-input--search::-webkit-search-cancel-button { cursor: pointer; }
+.cand-bar .cand-bar__sort > select.cand-input {
+  width: 100%; height: 40px; padding: 0 30px 0 34px; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.cand-bar__filters {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 14px;
+  border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #e5e7eb); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background 120ms, border-color 120ms;
+}
+.cand-bar__filters:hover,
+.cand-bar__filters[aria-expanded="true"] { background: rgba(255, 255, 255, 0.07); border-color: rgba(99, 102, 241, 0.6); }
+.cand-bar__filters--active { border-color: rgba(245, 158, 11, 0.55); background: rgba(245, 158, 11, 0.08); color: #fbbf24; }
+.cand-bar__count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  background: #f59e0b; color: #0f172a; font-size: 11px; font-weight: 800; line-height: 1;
+}
+.cand-bar__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cand-bar__actions > .cand-btn { min-height: 34px; gap: 6px; }
+.cand-bar__actions > .cand-btn--primary { margin-left: auto; }
+.cand-bar__short { display: none; }
+.cand-bar__summary { margin: 0; font-size: 12px; color: var(--text-dim, #94a3b8); }
+
+/* The popup: a panel under the controls on a wide screen. */
+.cand-filter-backdrop { display: none; }
+.cand-filter-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+  width: min(360px, 100%);
+  display: flex; flex-direction: column;
+  background: #0f172a; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+.cand-filter-pop__head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.cand-filter-pop__head > strong { font-size: 15px; color: #f1f5f9; }
+.cand-filter-pop__close {
+  margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: #94a3b8; cursor: pointer;
+}
+.cand-filter-pop__close:hover { background: rgba(255, 255, 255, 0.07); color: #e2e8f0; }
+.cand-filter-pop__body { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 16px; }
+.cand-filter-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; }
+.cand-filter-field__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #94a3b8; }
+.cand-filter-field > select.cand-input { width: 100%; height: 40px; padding-top: 0; padding-bottom: 0; font-size: 13px; }
+.cand-filter-check {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(255, 255, 255, 0.04);
+  font-size: 13px; font-weight: 500; color: var(--text, #e5e7eb); cursor: pointer;
+}
+.cand-filter-check input { width: 16px; height: 16px; margin: 0; accent-color: #f59e0b; }
+.cand-filter-check .cand-toggle-badge { margin-left: auto; }
+.cand-filter-check--on { border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.12); color: #fcd34d; }
+.cand-filter-pop__foot { display: flex; gap: 10px; padding: 12px 16px 14px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.cand-filter-pop__foot > .cand-btn { flex: 1 1 0; justify-content: center; min-height: 40px; }
+
+/* Desktop rows: the payment's amount and badges side by side on one or two
+   lines, in a column wide enough to hold them, rather than stacked three high. */
+@media (min-width: 600px) {
+  .cand-page.cand-page--candidates .cand-table .cand-th--pay { width: 300px; }
+  .cand-page--candidates .cand-table .cand-cell-pay .cand-pay { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .cand-page--candidates .cand-table .cand-cell-pay .cand-pay-pillrow { display: contents; }
+  .cand-page--candidates .cand-table tbody td { vertical-align: middle; }
+  .cand-page--candidates .cand-table .cand-cell-stage .cand-badge { display: inline-block; width: auto; }
+}
+
+/* Phone: the three controls on one line under a full-width search; the
+   popup rises from the bottom; cards drop their labels and empty space. */
+@media (max-width: 599px) {
+  .cand-page.cand-page--candidates > .cand-bar.cand-bar { order: 1; margin: 0; }
+  .cand-bar__controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cand-bar__search { grid-column: 1 / -1; }
+  .cand-bar .cand-bar__search > .cand-input--search,
+  .cand-bar .cand-bar__sort > select.cand-input,
+  .cand-bar__filters { height: 44px; font-size: 14px; }
+  .cand-bar__actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
+  .cand-bar__actions > .cand-btn { min-width: 0; min-height: 40px; padding: 0 6px; justify-content: center; font-size: 12px; white-space: nowrap; }
+  .cand-bar__actions > .cand-btn--primary { margin-left: 0; }
+  .cand-bar__long { display: none; }
+  .cand-bar__short { display: inline; }
+
+  .cand-filter-backdrop { display: block; position: fixed; inset: 0; z-index: 1190; background: rgba(2, 6, 23, 0.6); }
+  .cand-filter-pop {
+    position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 1200;
+    width: 100%; max-height: 85vh; overflow-y: auto;
+    border-radius: 16px 16px 0 0; border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .cand-filter-pop__body { grid-template-columns: 1fr; gap: 14px; padding: 16px 20px; }
+  .cand-filter-pop__head { padding: 14px 14px 12px 20px; }
+  .cand-filter-pop__foot { padding: 12px 20px 16px; }
+  .cand-filter-field > select.cand-input,
+  .cand-filter-check { height: 48px; min-height: 48px; font-size: 15px; }
+  .cand-filter-pop__foot > .cand-btn { min-height: 48px; font-size: 15px; }
+
+  /* Compact cards. */
+  .cand-page.cand-page--candidates .cand-table tbody { gap: 8px !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas: "name stage" "tech date" "pay resume" !important;
+    align-items: start !important;
+    gap: 8px 12px !important;
+    padding: 12px 14px !important;
+    min-height: 0 !important;
+    height: auto !important;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td {
+    display: block !important;
+    grid-column: auto !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td::before { content: none !important; display: none !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-name { grid-area: name !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-stage { grid-area: stage !important; justify-self: end; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-tech { grid-area: tech !important; overflow-wrap: anywhere; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date { grid-area: date !important; justify-self: end; text-align: right; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-pay { grid-area: pay !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-resume { grid-area: resume !important; justify-self: end; align-self: end; font-size: 12px; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-resume::before {
+    content: "Resume" !important; display: inline !important; position: static !important;
+    margin-right: 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #64748b;
+  }
+  /* Phone, referrer and service are shown with the name and technology. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-service,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-phone,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref { display: none !important; }
+  .cand-page.cand-page--candidates .cand-table .cand-name { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  .cand-page.cand-page--candidates .cand-table .cand-name-meta {
+    display: flex !important; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 5px;
+    font-size: 12px; color: var(--text-dim, #94a3b8);
+  }
+  .cand-page.cand-page--candidates .cand-table .cand-name-meta__ref { overflow-wrap: anywhere; }
+  .cand-page.cand-page--candidates .cand-table .cand-name-meta__ref::before { content: "Ref "; opacity: 0.65; }
+  .cand-page.cand-page--candidates .cand-table .cand-tech-service { display: inline-flex !important; width: fit-content; margin: 4px 0 0 !important; }
+  .cand-page.cand-page--candidates .cand-table .cand-cell-stage .cand-badge { display: inline-block; width: auto; white-space: nowrap; }
+  .cand-page.cand-page--candidates .cand-table .cand-pay { display: flex !important; flex-direction: row !important; flex-wrap: wrap; align-items: center; gap: 6px !important; }
+  .cand-page.cand-page--candidates .cand-table .cand-pay-pillrow { display: contents !important; }
+}
+
 /* ── Edit Candidate modal: proof cards, footer and scroll ──────────────────────
    Three faults, all from rules written for the old 120px thumbnail layout that
    outranked the later card rules:

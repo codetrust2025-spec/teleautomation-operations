@@ -190,6 +190,7 @@ describe("row marks and filters", () => {
 
   it("shows Service and Stage as active when they filter, like Referrer", async () => {
     await renderTable();
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const service = screen.getByLabelText("Filter by service type");
     const stage = screen.getByLabelText("Filter by stage");
     expect(service.className).not.toContain("cand-input--active");
@@ -198,5 +199,10 @@ describe("row marks and filters", () => {
     fireEvent.change(stage, { target: { value: stage.options[1].value } });
     expect(screen.getByLabelText("Filter by service type").className).toContain("cand-input--active");
     expect(screen.getByLabelText("Filter by stage").className).toContain("cand-input--active");
+    // Applied, the Filters button says how many filters are in use.
+    fireEvent.click(screen.getByRole("button", { name: "Apply (2)" }));
+    const button = screen.getByRole("button", { name: "Filters, 2 in use" });
+    expect(button.className).toContain("cand-bar__filters--active");
+    expect(button.querySelector(".cand-bar__count").textContent).toBe("2");
   });
 });

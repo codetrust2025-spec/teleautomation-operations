@@ -44,7 +44,7 @@ describe("the Candidates page", () => {
   it("draws its toolbar and row controls from the shared icon set", async () => {
     render(<CandidatesPanel />);
     await screen.findByText("Asha Rao");
-    const toolbar = document.querySelector(".cand-toolbar");
+    const toolbar = document.querySelector(".cand-bar");
     for (const [label, icon] of [["Active list", "list"], ["Download active CSV", "download"], ["Total expenditure", "chart"]]) {
       const button = within(toolbar).getByText(label, { exact: false }).closest("button");
       expect(button.querySelector(`svg.ta-icon--${icon}`)).not.toBeNull();

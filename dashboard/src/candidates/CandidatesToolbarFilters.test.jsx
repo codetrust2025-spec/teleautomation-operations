@@ -55,6 +55,13 @@ async function renderPanel() {
   return view;
 }
 
+// Every filter is in the Filters popup (24 Nov): open it, change, Apply.
+function openFilters() {
+  fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+  return screen.getByRole("dialog", { name: "Filters" });
+}
+const applyFilters = () => fireEvent.click(screen.getByRole("button", { name: /^Apply/ }));
+
 beforeEach(() => {
   mockFetch();
   // The dropdown was gated on this flag, so the flag is on for these tests:
@@ -108,37 +115,42 @@ describe("Candidates toolbar — AI status filter removed", () => {
  * still renders and still reaches the API under its own parameter name.
  */
 describe("Candidates toolbar — surviving filters", () => {
-  it("keeps every other filter control in the toolbar", async () => {
+  it("keeps every other filter control, inside the Filters popup", async () => {
     await renderPanel();
 
-    const toolbar = document.querySelector(".cand-toolbar");
+    const toolbar = document.querySelector(".cand-bar");
     expect(toolbar).not.toBeNull();
     expect(
       toolbar.querySelector(".cand-input--search"),
     ).not.toBeNull();
+    // Three controls: search, Filters and Sort.
+    expect(toolbar.querySelectorAll(".cand-bar__controls > *")).toHaveLength(3);
+    const popup = openFilters();
     expect(
-      toolbar.querySelector('[aria-label="Filter by service type"]'),
+      popup.querySelector('[aria-label="Filter by service type"]'),
     ).not.toBeNull();
     expect(
-      toolbar.querySelector('[aria-label="Filter by month"]'),
+      popup.querySelector('[aria-label="Filter by month"]'),
     ).not.toBeNull();
     expect(
-      toolbar.querySelector('[aria-label="Filter by handler / reference"]'),
+      popup.querySelector('[aria-label="Filter by handler / reference"]'),
     ).not.toBeNull();
     expect(
-      toolbar.querySelector('input[type="checkbox"]'),
+      popup.querySelector('input[type="checkbox"]'),
     ).not.toBeNull();
     expect(screen.getByText(/Active list/)).toBeTruthy();
-    // search + service + month + stage + reference, and nothing extra
-    expect(toolbar.querySelectorAll("select.cand-input")).toHaveLength(4);
+    // service + month + stage + reference, and nothing extra
+    expect(popup.querySelectorAll("select.cand-input")).toHaveLength(4);
   });
 
   it("still filters by service type", async () => {
     await renderPanel();
 
+    openFilters();
     fireEvent.change(screen.getByLabelText("Filter by service type"), {
       target: { value: "round_wise" },
     });
+    applyFilters();
 
     await waitFor(() =>
       expect(
@@ -152,8 +164,10 @@ describe("Candidates toolbar — surviving filters", () => {
   it("still filters by month", async () => {
     await renderPanel();
 
+    openFilters();
     const monthSelect = screen.getByLabelText("Filter by month");
     fireEvent.change(monthSelect, { target: { value: "all" } });
+    applyFilters();
 
     await waitFor(() =>
       expect(listQueries().some((p) => !p.has("month"))).toBe(true),
@@ -161,11 +175,10 @@ describe("Candidates toolbar — surviving filters", () => {
   });
 
   it("still filters by pending only", async () => {
-    const { container } = await renderPanel();
+    await renderPanel();
 
-    fireEvent.click(
-      container.querySelector('.cand-toolbar input[type="checkbox"]'),
-    );
+    fireEvent.click(openFilters().querySelector('input[type="checkbox"]'));
+    applyFilters();
 
     await waitFor(() =>
       expect(listQueries().some((p) => p.get("pending_only") === "1")).toBe(

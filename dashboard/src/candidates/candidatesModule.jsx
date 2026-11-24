@@ -16,6 +16,7 @@ import { isSelectedCandidate, stageLabel } from "./candidateOutcome.js";
 import { consumePendingWorkOpenIntent } from "../dailyOps/PendingWorksProvider.jsx";
 import { PendingWorksTab } from "./PendingWorksTab.jsx";
 import { Icon } from "../components/ui/Icon.jsx";
+import { CandidatesFilterBar, sortCandidates } from "./CandidatesFilterBar.jsx";
 import { useRowEdit, ROW_EDIT_CLASS } from "../utils/rowEdit.js";
 import PayoutModal from "./PayoutModal.jsx";
 import "./PayoutModal.css";
@@ -6268,6 +6269,7 @@ function CandidatesPanelImpl() {
   const [candTab, setCandTab] = w.useState("candidates");
   const [P, j] = w.useState(null);
   const [ro, setRo] = w.useState(false);
+  const [sortBy, setSortBy] = w.useState("newest");
   const [showExpenditure, setShowExpenditure] = w.useState(false);
   const { confirm: U } = nc();
   const { gate: W, closeGate: H, runProtected: re } = cR();
@@ -6840,6 +6842,30 @@ function CandidatesPanelImpl() {
       })),
     ];
   }, [c, m]);
+  // The Filters popup works on all five filters at once (24 Nov). A handler
+  // is held to their own referrer, so Reset keeps it.
+  const defaultFilters = w.useMemo(
+    () => ({ service: "all", reference: n && t ? t : "all", month: mR(), stage: "all", pending: false }),
+    [n, t],
+  );
+  const appliedFilters = { service, reference: T, month: m, stage: g, pending: y };
+  const applyFilters = (next) => {
+    setService(next.service);
+    if (a) S(next.reference);
+    _(next.month);
+    p(next.stage);
+    k(Boolean(next.pending));
+  };
+  const sortedRows = w.useMemo(() => sortCandidates(i, sortBy), [i, sortBy]);
+  // One line under the controls says what the list holds.
+  const filterSummary = (() => {
+    const parts = [`${De} candidate${De === 1 ? "" : "s"}`, $e || "All time"];
+    if (service !== "all") parts.push(service === "round_wise" ? "Round-wise" : "Profile");
+    if (g !== "all") parts.push((dR.find((o) => o.value === g) || {}).label || g);
+    if (a && T !== "all") parts.push(`Ref ${T}`);
+    if (y) parts.push("Pending only");
+    return parts.join(" · ");
+  })();
   // Two rows with one name (a repeat booking, or two people) read as the same
   // candidate; those rows carry their phone and referrer under the name.
   const duplicateNames = w.useMemo(() => {
@@ -6898,95 +6924,40 @@ function CandidatesPanelImpl() {
           Pending Works
         </button>
       </nav>
-      <div
-        className="cand-toolbar"
-        role="region"
-        aria-label="Candidate filters"
+      {/* Search, Filters and Sort (owner, 24 Nov): every filter sits in one
+          popup with Apply and Reset; the page's actions keep their own line. */}
+      <CandidatesFilterBar
+        search={E}
+        onSearch={b}
+        filters={appliedFilters}
+        defaults={defaultFilters}
+        onApply={applyFilters}
+        sort={sortBy}
+        onSort={setSortBy}
+        monthOptions={Le.map((ge) => ({ value: ge.value, label: ge.label.replace(" · this month", "") }))}
+        stageOptions={dR}
+        referenceOptions={st}
+        showReference={a}
+        pendingCount={(c == null ? undefined : c.pending_count) || 0}
+        summary={candTab === "candidates" ? filterSummary : ""}
       >
-        <input
-          className="cand-input cand-input--search"
-          placeholder="Search name, tech, reference, phone, notes…"
-          value={E}
-          onChange={(ge) => b(ge.target.value)}
-        />
-        <select
-          className={`cand-input${service !== "all" ? " cand-input--active" : ""}`}
-          value={service}
-          onChange={(ge) => setService(ge.target.value)}
-          aria-label="Filter by service type"
-        >
-          <option value="all">All types</option>
-          <option value="profile_service">Profile</option>
-          <option value="round_wise">Round-wise</option>
-        </select>
-        <select
-          className="cand-input"
-          value={m}
-          onChange={(ge) => _(ge.target.value)}
-          aria-label="Filter by month"
-        >
-          {Le.map((ge) => (
-            <option value={ge.value} key={ge.value}>
-              {ge.label.replace(" · this month", "")}
-            </option>
-          ))}
-        </select>
-        <select
-          className={`cand-input${g !== "all" ? " cand-input--active" : ""}`}
-          value={g}
-          onChange={(ge) => p(ge.target.value)}
-          aria-label="Filter by stage"
-        >
-          {dR.map((ge) => (
-            <option value={ge.value} key={ge.value}>
-              {ge.label}
-            </option>
-          ))}
-        </select>
-        {a && (
-          <select
-            className={`cand-input${T !== "all" ? " cand-input--active" : ""}`}
-            value={T}
-            onChange={(ge) => S(ge.target.value)}
-            aria-label="Filter by handler / reference"
-            title="Show only candidates referred by this handler"
-          >
-            {st.map((ge) => (
-              <option value={ge.value} key={ge.value}>
-                {ge.label}
-              </option>
-            ))}
-          </select>
-        )}
-        <label
-          className={`cand-toggle${y ? " cand-toggle--on" : ""}${(c == null ? undefined : c.pending_count) > 0 ? " cand-toggle--has-pending" : ""}`}
-          title="Show only candidates with a pending balance"
-        >
-          <input
-            type="checkbox"
-            checked={y}
-            onChange={(ge) => k(ge.target.checked)}
-          />
-          <span>Pending only</span>
-          {(c == null ? undefined : c.pending_count) > 0 && (
-            <span className="cand-toggle-badge">{c.pending_count}</span>
-          )}
-        </label>
         <button
           type="button"
-          className="cand-btn cand-btn--ghost cand-btn--sm cand-toolbar-actions-start"
+          className="cand-btn cand-btn--ghost cand-btn--sm"
           onClick={() => setRo(true)}
           title="View all in-progress candidates grouped by technology"
+          aria-label="Active list"
         >
-          <Icon name="list" size={14} /> Active list
+          <Icon name="list" size={14} /> <span className="cand-bar__long">Active list</span><span className="cand-bar__short" aria-hidden="true">Active</span>
         </button>
         <button
           type="button"
           className="cand-btn cand-btn--ghost cand-btn--sm"
           onClick={() => triggerRosterDownload({ month: "all", reference: T })}
           title="Download CSV of all active (in-progress) candidates"
+          aria-label="Download active CSV"
         >
-          <Icon name="download" size={14} /> Download active CSV
+          <Icon name="download" size={14} /> <span className="cand-bar__long">Download active CSV</span><span className="cand-bar__short" aria-hidden="true">CSV</span>
         </button>
         {a && (
           <button
@@ -6994,18 +6965,20 @@ function CandidatesPanelImpl() {
             className="cand-btn cand-btn--ghost cand-btn--sm"
             onClick={() => setShowExpenditure(true)}
             title="View total company expenditure — handler payouts + operational costs"
+            aria-label="Total expenditure"
           >
-            <Icon name="chart" size={14} /> Total expenditure
+            <Icon name="chart" size={14} /> <span className="cand-bar__long">Total expenditure</span><span className="cand-bar__short" aria-hidden="true">Expenses</span>
           </button>
         )}
         <button
           type="button"
           className="cand-btn cand-btn--primary cand-btn--sm"
           onClick={q}
+          aria-label="Add candidate"
         >
-          + Add candidate
+          + <span className="cand-bar__long">Add candidate</span><span className="cand-bar__short" aria-hidden="true">Add</span>
         </button>
-      </div>
+      </CandidatesFilterBar>
       {candTab === "overview" && c && (
         <>
           <J8
@@ -7100,13 +7073,7 @@ function CandidatesPanelImpl() {
                   </td>
                 </tr>
               ) : (
-                i
-                  .slice()
-                  .sort((a2, b2) => {
-                    const da = a2.logged_date || a2.date || "";
-                    const db = b2.logged_date || b2.date || "";
-                    return db.localeCompare(da);
-                  })
+                sortedRows
                   .map((ge) => {
                     const Ge = fR(ge.stage);
                     return (
