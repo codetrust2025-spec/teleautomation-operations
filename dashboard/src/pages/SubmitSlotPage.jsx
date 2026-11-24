@@ -1758,9 +1758,8 @@ export function SubmitSlotPage() {
                   {profileLocked && !paymentComplete && (
                     <span className="sbs-hint sbs-hint--warn" role="status">{lockedText}</span>
                   )}
-                  {profileReminder && !paymentComplete && (
-                    <span className="sbs-hint" role="status">{pendingText}</span>
-                  )}
+                  {/* No "₹X payment pending." line under it: the header beside
+                      it already shows the amount due (owner, 24 Nov). */}
                   {/* The same flow as the invite below: upload, the node reading
                       it, then the result. Nothing waits to be saved. */}
                   {!paymentComplete && (
@@ -1776,8 +1775,10 @@ export function SubmitSlotPage() {
                         busy={paymentAnalysing}
                         onFiles={analysePaymentScreenshots}
                       />
-                      {!paymentUploadReady && (
-                        <span className="sbs-hint">{roundWise ? 'Enter the client name and phone number first.' : 'Enter the client name first.'}</span>
+                      {/* Round-wise only: the phone it waits for is typed just
+                          above. Profile Service has no helper line here. */}
+                      {!paymentUploadReady && roundWise && (
+                        <span className="sbs-hint">Enter the client name and phone number first.</span>
                       )}
                       {missingField === 'payment' && <span className="sbs-hint sbs-hint--warn" role="alert">{paymentAnalysing ? 'Wait for the payment to finish verifying.' : roundWise ? 'Attach the payment screenshot.' : profileLocked ? lockedText : 'Attach a payment screenshot that covers the amount due.'}</span>}
                     </>
@@ -1823,15 +1824,20 @@ export function SubmitSlotPage() {
                 </div>
               )}
 
-              {error && <p className="sbs-alert sbs-alert--error" role="alert">{error}</p>}
-              {success && <div className="sbs-alert sbs-alert--success sbs-success-anim"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{flexShrink:0}}><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg><span>{success}</span></div>}
+              {/* The submit bar: on a phone it is pinned to the bottom of the
+                  screen, so Confirm booking and what it answers are always in
+                  view, on Android and iPhone alike (owner, 24 Nov). */}
+              <div className="sbs-submit-bar">
+                {error && <p className="sbs-alert sbs-alert--error" role="alert">{error}</p>}
+                {success && <div className="sbs-alert sbs-alert--success sbs-success-anim"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{flexShrink:0}}><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg><span>{success}</span></div>}
 
-              {/* Always enabled (owner, 24 Nov): a click checks every required
-                  field in order, marks the first one missing, and books only
-                  when all are valid. */}
-              <button type="submit" className="sbs-cta sbs-cta--ready" disabled={busy}>
-                {busy ? <Spinner size={18} /> : parsing ? 'Reading invite...' : 'Confirm booking'}
-              </button>
+                {/* Always enabled (owner, 24 Nov): a click checks every required
+                    field in order, marks the first one missing, and books only
+                    when all are valid. */}
+                <button type="submit" className="sbs-cta sbs-cta--ready" disabled={busy}>
+                  {busy ? <Spinner size={18} /> : parsing ? 'Reading invite...' : 'Confirm booking'}
+                </button>
+              </div>
             </form>
           </div>
         )}

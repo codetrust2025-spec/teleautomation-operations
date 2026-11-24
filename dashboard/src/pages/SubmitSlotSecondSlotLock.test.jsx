@@ -69,9 +69,11 @@ async function completedForm(name) {
 }
 
 describe('the first interview', () => {
-  it('books with the balance pending, which is shown as a reminder', async () => {
+  it('books with the balance pending, which the payment card shows as the amount due', async () => {
     const { confirm, calls } = await completedForm('Asha Fakename')
-    expect(screen.getByText('₹20,000 payment pending.', { selector: '.sbs-pay-card [role="status"]' })).toBeInTheDocument()
+    // The amount due is the reminder; no helper line repeats it (owner, 24 Nov).
+    expect(document.querySelector('.sbs-pay-head').textContent).toContain('₹20,000')
+    expect(document.querySelector('.sbs-pay-card [role="status"]')).toBeNull()
     expect(screen.queryByText(/Clear the balance to book another/)).toBeNull()
     fireEvent.click(confirm)
     await waitFor(() => expect(calls.confirms).toHaveLength(1))
