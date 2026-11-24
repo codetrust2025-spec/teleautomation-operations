@@ -243,15 +243,23 @@ PROFILE_SERVICE_SLOT_MIN_PAYMENT = 10_000
 VALID_SERVICE_TYPES = {"profile_service", "round_wise"}
 VALID_INTERVIEW_SCOPES = {"external", "internal"}
 VALID_PURPOSES = {"interview_support", "work_support", "experience_docs", "other"}
-#: The six rounds Daily Ops lists by name.
+#: The rounds Daily Ops lists by name. L3 was removed (owner, 24 Nov): it is
+#: no longer offered, filtered by name or accepted for a booking.
 STANDARD_INTERVIEW_ROUNDS = frozenset({
-    "L1", "L2", "L3", "HR", "Final", "Screening",
+    "L1", "L2", "HR", "Final", "Screening",
 })
+#: Rounds no longer offered (owner, 24 Nov). A row that already says L3 keeps
+#: it -- shown, exported and saved unchanged, and filed under "Others" in Daily
+#: Ops -- but nothing new is set to it: see bookable_interview_round.
+RETIRED_INTERVIEW_ROUNDS = frozenset({"L3"})
 #: Every round label a booking may store. Assessment (15 Nov) is kept rather
 #: than saved as blank; Daily Ops files it, with any other label off the
 #: standard six, under "Others". Free text is still not a round: an unknown
 #: label normalises to "" (see normalise_interview_round).
 VALID_INTERVIEW_ROUNDS = STANDARD_INTERVIEW_ROUNDS | frozenset({"Assessment"})
+#: What a stored round may read as: the valid ones and the retired ones, so a
+#: historical L3 is never read back as blank.
+_KNOWN_INTERVIEW_ROUNDS = VALID_INTERVIEW_ROUNDS | RETIRED_INTERVIEW_ROUNDS
 #: Daily Ops round-filter token beside the six round names (owner, 15 Nov):
 #: "Others" is every booking whose round is not one of the standard six -- no
 #: round recorded, Assessment, or any other label.
@@ -1783,12 +1791,16 @@ def _normalise_interview_scope(raw, base: dict | None = None) -> str:
 
 
 def normalise_interview_round(raw) -> str:
-    """Canonical interview round label (L1, L2, L3, …) for slot booking."""
+    """Canonical interview round label (L1, L2, …) as stored or read.
+
+    A retired round (L3) still reads as itself, so history keeps it; use
+    bookable_interview_round for anything being set now.
+    """
     val = _clean_str(raw)
     if not val:
         return ""
     compact = re.sub(r"\s+", "", val).upper()
-    if compact in VALID_INTERVIEW_ROUNDS:
+    if compact in _KNOWN_INTERVIEW_ROUNDS:
         return compact
     # A round number must be the whole supplied label (apart from a supported
     # interview-round prefix). Searching anywhere in the text turns unrelated
@@ -1797,12 +1809,31 @@ def normalise_interview_round(raw) -> str:
     m_num = re.fullmatch(r"(?:(?:TECHNICAL|INTERVIEW)?(?:ROUND|R|L)?)(\d)", compact)
     if m_num:
         label = f"L{m_num.group(1)}"
-        if label in VALID_INTERVIEW_ROUNDS:
+        if label in _KNOWN_INTERVIEW_ROUNDS:
             return label
     title = val.title()
-    if title in VALID_INTERVIEW_ROUNDS:
+    if title in _KNOWN_INTERVIEW_ROUNDS:
         return title
     return ""
+
+
+def bookable_interview_round(raw) -> str:
+    """The round a booking or edit may set now: as normalise_interview_round,
+    but a retired round (L3, owner 24 Nov) is "" -- not set, never guessed."""
+    label = normalise_interview_round(raw)
+    return "" if label in RETIRED_INTERVIEW_ROUNDS else label
+
+
+def _patched_interview_round(record: dict, base: dict) -> str:
+    """The round a save leaves on the row. A retired round (L3) is kept where
+    the row already holds it, and never written onto a row that does not."""
+    current = normalise_interview_round(base.get("interview_round", ""))
+    if "interview_round" not in record:
+        return current
+    label = normalise_interview_round(record.get("interview_round"))
+    if label in RETIRED_INTERVIEW_ROUNDS and label != current:
+        return current
+    return label
 
 
 def _normalise(record: dict, *, existing: dict | None = None) -> dict:
@@ -1891,9 +1922,7 @@ def _normalise(record: dict, *, existing: dict | None = None) -> dict:
         "interview_attendee": _canonical_reference_name(
             _clean_str(record.get("interview_attendee", base.get("interview_attendee")))
         ),
-        "interview_round":  normalise_interview_round(
-            record.get("interview_round", base.get("interview_round", ""))
-        ),
+        "interview_round":  _patched_interview_round(record, base),
         "interview_company": _clean_str(record.get("interview_company", base.get("interview_company"))),
         "interview_role": _clean_str(record.get("interview_role", base.get("interview_role"))),
         "interview_source_thread_id": _clean_str(record.get("interview_source_thread_id", base.get("interview_source_thread_id"))),
@@ -3934,7 +3963,7 @@ def ensure_round_wise_payment_row(
     tech = canonical_technology(_clean_str(technology))
     if (not tech or tech == "Unspecified") and not allow_incomplete:
         raise ValueError("Select the technology for this round")
-    round_label = normalise_interview_round(interview_round)
+    round_label = bookable_interview_round(interview_round)
     if not round_label and not allow_incomplete:
         raise ValueError("Select the interview round")
 
@@ -5302,6 +5331,10 @@ def set_interview_attendee(
 INTERVIEW_ROUND_HISTORY_LIMIT = 50
 
 
+def _select_round_message() -> str:
+    return "Select the interview round (" + ", ".join(sorted(VALID_INTERVIEW_ROUNDS)) + ")."
+
+
 def interview_round_is_set(row: dict | None) -> bool:
     """True when the row carries a recognised round (what the roster shows)."""
     return bool(normalise_interview_round((row or {}).get("interview_round")))
@@ -5322,10 +5355,15 @@ def set_interview_round(
     guessed -- an empty or unrecognised value is refused, not stored.
     """
     label = normalise_interview_round(interview_round)
+    if label in RETIRED_INTERVIEW_ROUNDS:
+        # Re-sending the L3 a row already holds is not a change; setting it
+        # anywhere else is refused (owner, 24 Nov).
+        held = next((r for r in (_load().get("candidates") or []) if r.get("id") == cid), None)
+        if held is not None and normalise_interview_round(held.get("interview_round")) == label:
+            return _with_computed(held)
+        raise ValueError(f"{label} is no longer an interview round. " + _select_round_message())
     if not label:
-        raise ValueError(
-            "Select the interview round (" + ", ".join(sorted(VALID_INTERVIEW_ROUNDS)) + ")."
-        )
+        raise ValueError(_select_round_message())
     data = _load()
     rows = data.get("candidates") or []
     for i, r in enumerate(rows):
@@ -5436,7 +5474,8 @@ def record_interview_round_evidence(
             "checked_at": _now_iso(),
             "checked_by": _clean_str(by)[:120],
         }
-        label = normalise_interview_round(evidence["round"])
+        # A retired round (L3) read from the evidence is not set: Needs Review.
+        label = bookable_interview_round(evidence["round"])
         if label:
             evidence["round"] = label
             return set_interview_round(
@@ -5903,7 +5942,7 @@ def create_interview_slot(
         "phone": _clean_str(phone),
         "notes": _clean_str(notes),
         "interview_attendee": attendee,
-        "interview_round": normalise_interview_round(interview_round),
+        "interview_round": bookable_interview_round(interview_round),
         "interview_booking_source": "candidate_booked",
         "service_type": "round_wise",
         "interview_scope": "external",
@@ -5982,7 +6021,7 @@ def _duplicate_candidate_slot(
         "interview_attendee": attendee,
         # The round is this booking's own: the person's previous interview
         # was another round, and copying it here was a guess (23 Nov).
-        "interview_round": normalise_interview_round(interview_round),
+        "interview_round": bookable_interview_round(interview_round),
         "interview_company": _clean_str(interview_company),
         "interview_role": _clean_str(interview_role),
         "interview_source_thread_id": _clean_str(interview_source_thread_id),
@@ -6136,7 +6175,7 @@ def _assign_interview_slot_unlocked(
         patch["interview_attendee"] = normalise_interview_attendee_name(interview_attendee)
     else:
         patch["interview_attendee"] = row_interview_attendee(existing)
-    rnd = normalise_interview_round(interview_round)
+    rnd = bookable_interview_round(interview_round)
     if rnd:
         patch["interview_round"] = rnd
     patch.update({
@@ -6209,7 +6248,7 @@ def update_interview_slot(
         patch["interview_attendee"] = normalise_interview_attendee_name(interview_attendee)
     elif candidate_defaults_to_tool_attendee(existing.get("name") or ""):
         patch["interview_attendee"] = "Tool"
-    rnd = normalise_interview_round(interview_round)
+    rnd = bookable_interview_round(interview_round)
     if rnd:
         patch["interview_round"] = rnd
     for key, value in (
@@ -6994,7 +7033,7 @@ def _finish_public_slot_import(
             {"phone": normalized_phone},
             allow_slot_without_rules=True,
         )
-    rnd = normalise_interview_round(interview_round)
+    rnd = bookable_interview_round(interview_round)
     if rnd and row.get("id"):
         row = update_candidate(
             str(row["id"]),
@@ -7205,7 +7244,7 @@ def _import_confirmed_interview_slot(
 
     tech = canonical_technology(_clean_str(technology))
     normalized_phone = _clean_str(phone) if is_round_wise else ""
-    rnd = normalise_interview_round(interview_round)
+    rnd = bookable_interview_round(interview_round)
     if "Candidate" in source and not rnd:
         raise ValueError("Select the interview round (L1, L2, etc.)")
 

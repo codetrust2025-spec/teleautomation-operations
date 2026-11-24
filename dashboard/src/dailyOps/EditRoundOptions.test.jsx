@@ -1,9 +1,10 @@
 /**
  * The Edit dialog's Interview round list offers every round a booking can
- * store (VALID_INTERVIEW_ROUNDS): the six standard rounds and Assessment.
+ * store (VALID_INTERVIEW_ROUNDS): the standard rounds and Assessment.
  *
- * L3 was missing (15 Nov): an L3 interview opened with "Select round" shown,
- * and no interview could be set to L3 here. Names are invented.
+ * L3 is retired (owner, 24 Nov): it is not offered, so no interview can be set
+ * to it. An interview that already says L3 still opens showing L3 -- never
+ * "Select round" -- and keeps it when saved. Names are invented.
  */
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -63,10 +64,10 @@ async function openEdit(name) {
 }
 
 describe('the Edit dialog round list', () => {
-  it('offers the six standard rounds and Assessment', async () => {
+  it('offers the standard rounds and Assessment, without L3', async () => {
     const select = await openEdit('First Round Person')
     expect([...select.options].map(o => o.value))
-      .toEqual(['', 'L1', 'L2', 'L3', 'HR', 'Final', 'Screening', 'Assessment'])
+      .toEqual(['', 'L1', 'L2', 'HR', 'Final', 'Screening', 'Assessment'])
   })
 
   it('opens an L3 interview showing L3', async () => {
@@ -74,10 +75,16 @@ describe('the Edit dialog round list', () => {
     expect(select.value).toBe('L3')
   })
 
-  it('saves a change to L3', async () => {
-    const select = await openEdit('First Round Person')
-    fireEvent.change(select, { target: { value: 'L3' } })
+  it('lists L3 only on an interview that already says L3', async () => {
+    const select = await openEdit('Third Round Person')
+    expect([...select.options].map(o => o.value))
+      .toEqual(['', 'L3', 'L1', 'L2', 'HR', 'Final', 'Screening', 'Assessment'])
+  })
+
+  it('moves an L3 interview to another round', async () => {
+    const select = await openEdit('Third Round Person')
+    fireEvent.change(select, { target: { value: 'L2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(writes.some(w => w.body?.interview_round === 'L3')).toBe(true))
+    await waitFor(() => expect(writes.some(w => w.body?.interview_round === 'L2')).toBe(true))
   })
 })

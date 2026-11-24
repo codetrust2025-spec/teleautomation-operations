@@ -1,8 +1,9 @@
 """Daily Ops round filter: "Others" (owner, 15 Nov).
 
-The Interview Round filter lists Screening, L1, L2, L3, HR and Final, each on
-its own, and then Others: every booking whose round is not one of those six --
-no round recorded, Assessment, or any other label a row carries. Others is an
+The Interview Round filter lists Screening, L1, L2, HR and Final, each on its
+own, and then Others: every booking whose round is not one of those five -- no
+round recorded, Assessment, a retired L3 (owner, 24 Nov), or any other label a
+row carries. Others is an
 alternative like any round (L1 or Others), and still ANDs with the other
 filters.
 
@@ -40,8 +41,9 @@ ROWS = [
     {"name": "Blank Person", "interview_round": "", "interview_attendee": "Bhavana"},
     {"name": "Missing Person", "interview_attendee": "Bhavana"},
 ]
-STANDARD = {"Screen Person", "Lone One", "Two Person", "Three Person", "Hr Person", "Final Person"}
-OTHERS = {"Assess Person", "Tech Person", "Blank Person", "Missing Person"}
+STANDARD = {"Screen Person", "Lone One", "Two Person", "Hr Person", "Final Person"}
+# L3 is retired (owner, 24 Nov): an interview that still says L3 is under Others.
+OTHERS = {"Three Person", "Assess Person", "Tech Person", "Blank Person", "Missing Person"}
 
 
 def test_others_is_every_round_off_the_six(store):
@@ -51,6 +53,7 @@ def test_others_is_every_round_off_the_six(store):
 
 def test_the_six_stay_separate(store):
     seed(store, ROWS)
+    # L3 is no longer offered, but asking for it still finds the old L3 rows.
     for name, rnd in [("Screen Person", "Screening"), ("Lone One", "L1"), ("Two Person", "L2"),
                       ("Three Person", "L3"), ("Hr Person", "HR"), ("Final Person", "Final")]:
         assert names(store.daily_interview_roster(DAY, filter_round=[rnd])) == {name}, rnd
@@ -59,7 +62,7 @@ def test_the_six_stay_separate(store):
 def test_others_combines_with_rounds_as_an_alternative(store):
     seed(store, ROWS)
     assert names(store.daily_interview_roster(DAY, filter_round=["L1", "other"])) == OTHERS | {"Lone One"}
-    every = ["Screening", "L1", "L2", "L3", "HR", "Final", "other"]
+    every = ["Screening", "L1", "L2", "HR", "Final", "other"]
     assert names(store.daily_interview_roster(DAY, filter_round=every)) == STANDARD | OTHERS
 
 
@@ -112,6 +115,7 @@ def test_free_text_is_still_not_a_round(raw):
     assert candidate_store.normalise_interview_round(raw) == ""
 
 
-def test_the_standard_six_are_unchanged():
-    assert candidate_store.STANDARD_INTERVIEW_ROUNDS == {"L1", "L2", "L3", "HR", "Final", "Screening"}
+def test_the_standard_rounds_no_longer_include_l3():
+    assert candidate_store.STANDARD_INTERVIEW_ROUNDS == {"L1", "L2", "HR", "Final", "Screening"}
+    assert candidate_store.RETIRED_INTERVIEW_ROUNDS == {"L3"}
     assert candidate_store.VALID_INTERVIEW_ROUNDS == candidate_store.STANDARD_INTERVIEW_ROUNDS | {"Assessment"}

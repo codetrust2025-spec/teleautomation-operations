@@ -220,7 +220,7 @@ describe.each([['desktop', 1440], ['mobile', 440]])('No round, no status update 
   })
 })
 
-it('offers L3 and lists who changed the round and when', async () => {
+it('does not offer L3, and lists who changed the round and when', async () => {
   mockFetch([row('Ravi Testname', {
     interview_round: 'L2',
     interview_round_history: [
@@ -230,7 +230,7 @@ it('offers L3 and lists who changed the round and when', async () => {
   })])
   await renderPanel('Ravi Testname')
   openRowEdit('Ravi Testname')
-  expect([...roundSelect().options].map(o => o.value)).toEqual(['', 'L1', 'L2', 'L3', 'HR', 'Final', 'Screening', 'Assessment'])
+  expect([...roundSelect().options].map(o => o.value)).toEqual(['', 'L1', 'L2', 'HR', 'Final', 'Screening', 'Assessment'])
   captureLayout('round-history-modal')
   const items = within(within(editDialog()).getByRole('list', { name: 'Round history' })).getAllByRole('listitem')
   expect(items.map(item => item.textContent)).toEqual([

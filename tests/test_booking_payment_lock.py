@@ -66,7 +66,7 @@ def candidate(*, paid=0, booked=0, cancelled=0):
 def book(client, key="slot-new"):
     return client.post(
         "/bookings/confirm",
-        data={"name": NAME, "service_type": "profile_service", "interview_round": "L3", "company": "Contoso",
+        data={"name": NAME, "service_type": "profile_service", "interview_round": "L2", "company": "Contoso",
               "date": "2026-11-20", "time": "16:00", "time_end": "17:00", "idempotency_key": key},
         files={"file": ("invite.jpg", b"invite", "image/jpeg")},
     )

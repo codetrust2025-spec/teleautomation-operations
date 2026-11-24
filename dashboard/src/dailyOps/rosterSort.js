@@ -34,7 +34,8 @@ export const ROSTER_SORT_STORAGE_KEY = 'ta.dailyOps.rosterSort.v3'
 
 const VALID = new Set(ROSTER_SORT_OPTIONS.map(option => option.value))
 
-/** Earliest stage first; the same rounds the roster's Level filter offers, plus L3. */
+/** Earliest stage first. L3 is retired (owner, 24 Nov) but older interviews
+ *  that say L3 still sort after L2. */
 const ROUND_ORDER = ['screening', 'l1', 'l2', 'l3', 'final', 'hr']
 /** The order of the status tabs above the table: Pending, Attended, Not attended, ... */
 const STATUS_ORDER = INTERVIEW_STATUSES.map(entry => entry.value)

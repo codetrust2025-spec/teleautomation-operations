@@ -4,7 +4,7 @@
  * - Profile-wise and Round-wise are independent checkboxes for the booking
  *   type (profile service / round-wise service). Both ticked: every booking.
  *   One ticked: that type only, sent as `channel`. The last one stays ticked.
- * - Interview Round: Screening, L1, L2, L3, HR, Final, several at once.
+ * - Interview Round: Screening, L1, L2, HR, Final, several at once (L3 retired 24 Nov).
  * - No technology list any more.
  * - Every click applies at once to the table and the counters; booking type
  *   and rounds must both match. Clear All and the page Reset put both back.
@@ -105,13 +105,13 @@ afterEach(() => {
 })
 
 describe('the Profile + Round control', () => {
-  it('matches the mockup: two booking-type boxes, six rounds then Others, no technology list, no Apply', () => {
+  it('matches the mockup: two booking-type boxes, five rounds then Others (no L3), no technology list, no Apply', () => {
     render(<ProfileRoundFilter />)
     openMenu()
     expect(within(screen.getByRole('group', { name: 'Booking type' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
       .toEqual(['Profile-wise', 'Round-wise'])
     expect(within(screen.getByRole('group', { name: 'Interview rounds' })).getAllByRole('checkbox').map(b => b.getAttribute('aria-label')))
-      .toEqual(['Screening', 'L1', 'L2', 'L3', 'HR', 'Final', 'Others'])
+      .toEqual(['Screening', 'L1', 'L2', 'HR', 'Final', 'Others'])
     expect(screen.queryByRole('group', { name: 'Profiles' })).toBeNull()
     expect(screen.queryByRole('radio')).toBeNull()
     expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
@@ -185,7 +185,7 @@ describe('Others (owner, 15 Nov)', () => {
     render(<ProfileRoundFilter />)
     openMenu()
     const others = box('Interview rounds', 'Others').closest('label')
-    expect(others.getAttribute('title')).toMatch(/Needs Review \(no round\), Assessment, and any round other than Screening, L1, L2, L3, HR or Final/)
+    expect(others.getAttribute('title')).toMatch(/Needs Review \(no round\), Assessment, and any round other than Screening, L1, L2, HR or Final/)
   })
 
   it('emits the server token, alone or with rounds, in menu order', () => {

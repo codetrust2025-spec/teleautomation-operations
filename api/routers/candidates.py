@@ -461,6 +461,8 @@ def _round_change_refusal(request: Request, candidate_store, row: dict, raw) -> 
     if not label:
         return {"status": "error", "message": f"Unknown interview round: {str(raw).strip()[:40]}"}
     current = candidate_store.normalise_interview_round(row.get("interview_round"))
+    if label in candidate_store.RETIRED_INTERVIEW_ROUNDS and label != current:
+        return {"status": "error", "message": f"{label} is no longer an interview round."}
     if current != label and not _is_admin_request(request):
         return {"status": "error", "message": "Only an admin can set or change the interview round."}
     return None

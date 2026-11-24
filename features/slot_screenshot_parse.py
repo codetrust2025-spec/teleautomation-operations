@@ -905,9 +905,10 @@ def parse_invite_screenshot(data: bytes, mime: str = "image/jpeg") -> dict[str, 
             merged = _apply_text_to_merged(merged, raw_text, method="vision-ocr")
             method = method or "vision-ocr"
 
-    from features.candidate_store import canonical_technology, normalise_interview_round
+    from features.candidate_store import bookable_interview_round, canonical_technology
 
-    merged["interview_round"] = normalise_interview_round(merged.get("interview_round"))
+    # An invite that says L3 fills no round: L3 is retired (owner, 24 Nov).
+    merged["interview_round"] = bookable_interview_round(merged.get("interview_round"))
     tech = canonical_technology(merged.get("technology") or "")
     if tech and tech not in {"", "Unspecified"}:
         merged["technology"] = tech

@@ -4,8 +4,9 @@ import { toFilterList } from './DailyOpsFilterMenu.jsx'
 import { FeedbackStatusOptions } from './FeedbackStatusFilter.jsx'
 import { feedbackMeta } from './feedbackScale.js'
 
-/** The six standard rounds (STANDARD_INTERVIEW_ROUNDS), in interview order. */
-export const INTERVIEW_LEVELS = ['Screening', 'L1', 'L2', 'L3', 'HR', 'Final']
+/** The standard rounds (STANDARD_INTERVIEW_ROUNDS), in interview order. L3
+ *  was removed (owner, 24 Nov); interviews that say L3 are under Others. */
+export const INTERVIEW_LEVELS = ['Screening', 'L1', 'L2', 'HR', 'Final']
 
 /** The server's token for every other booking (owner, 15 Nov): no round
  *  recorded, Assessment, or any label that is not one of the six. */
@@ -39,8 +40,8 @@ export function channelFor(types) {
  * - Profile-wise and Round-wise are independent checkboxes for the booking
  *   type. Both ticked shows both types; one ticked shows that type alone. At
  *   least one stays ticked: the last one cannot be unticked.
- * - Interview Round: Screening, L1, L2, L3, HR and Final, then Others (round
- *   not specified, Assessment, any other round), several at once
+ * - Interview Round: Screening, L1, L2, HR and Final, then Others (round
+ *   not specified, Assessment, any other round such as L3), several at once
  *   (any of them). "All Rounds" unticks them all.
  * - Booking type and rounds must both match. Every click applies at once.
  * - "Clear All" ticks both types again and unticks every round.
@@ -216,7 +217,7 @@ export function ProfileRoundFilter({
                   <label
                     key={r}
                     className={`ops-levels-option${checked ? ' ops-levels-option--checked' : ''}`}
-                    title={r === ROUND_OTHER ? 'Needs Review (no round), Assessment, and any round other than Screening, L1, L2, L3, HR or Final' : undefined}
+                    title={r === ROUND_OTHER ? 'Needs Review (no round), Assessment, and any round other than Screening, L1, L2, HR or Final' : undefined}
                   >
                     <input type="checkbox" checked={checked} onChange={() => toggleRound(r)} aria-label={label} />
                     {box(checked)}

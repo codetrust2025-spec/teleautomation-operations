@@ -159,7 +159,8 @@ export function topWithOthers(items, total, limit) {
   return [...head, { name: `Others (${rest.length})`, count, percent: share(count, total), others: rest.length }]
 }
 
-/** The interview levels in the order a round runs, then any others. */
+/** The interview levels in the order a round runs, then any others. L3 is
+ *  retired (owner, 24 Nov); older L3 bookings still count, in their place. */
 const LEVEL_ORDER = ['Screening', 'L1', 'L2', 'L3', 'Final', 'HR']
 
 export function orderedLevels(levels, total) {

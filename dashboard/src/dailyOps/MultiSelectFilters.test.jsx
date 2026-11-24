@@ -1,8 +1,8 @@
 /**
  * Daily Ops Filters take several values per field (Nov 2026).
  *
- * - Rounds HR + L2 + L3 (ticked in Profile + Round, the one place for rounds
- *   and profiles since 15 Nov) go to the server as `round=HR&round=L2&round=L3`,
+ * - Rounds HR + L2 (ticked in Profile + Round, the one place for rounds
+ *   and profiles since 15 Nov) go to the server as `round=L2&round=HR`,
  *   on the table's request and on the counters' request alike. The server ORs
  *   values within a field and ANDs the fields
  *   (tests/test_daily_ops_multi_select_filters.py).
@@ -37,7 +37,7 @@ const ROWS = [
   { id: 'b', name: 'Bala Kumar', phone: '9000000102', date: TODAY, time: '11:00', time_end: '11:30',
     technology: 'Java', interview_round: 'L2', interview_attendee: 'Nikhila', interview_attendance_status: '' },
   { id: 'c', name: 'Chitra Rao', phone: '9000000103', date: TODAY, time: '12:00', time_end: '12:30',
-    technology: 'Java', interview_round: 'L3', interview_attendee: 'Bhavana', interview_attendance_status: '' },
+    technology: 'Java', interview_round: 'HR', interview_attendee: 'Bhavana', interview_attendance_status: '' },
   { id: 'd', name: 'Dev Prasad', phone: '9000000104', date: TODAY, time: '13:00', time_end: '13:30',
     technology: 'Python', interview_round: 'L1', interview_attendee: 'Tool', interview_attendance_status: '' },
 ]
@@ -107,22 +107,21 @@ describe('several levels at once', () => {
     await renderPanel()
     tickProfileRound('Interview rounds', 'HR')
     tickProfileRound('Interview rounds', 'L2')
-    tickProfileRound('Interview rounds', 'L3')
 
     // Applied as ticked, in interview order.
-    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('round')).toEqual(['L2', 'L3', 'HR']))
-    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('round')).toEqual(['L2', 'L3', 'HR']))
+    await waitFor(() => expect(rosterCalls().at(-1).searchParams.getAll('round')).toEqual(['L2', 'HR']))
+    await waitFor(() => expect(globalCalls().at(-1).searchParams.getAll('round')).toEqual(['L2', 'HR']))
     await waitFor(() => expect(inTable('Dev Prasad')).toBe(false))
     expect(inTable('Asha Varma')).toBe(true)
     expect(inTable('Bala Kumar')).toBe(true)
     expect(inTable('Chitra Rao')).toBe(true)
 
-    expect(screen.getByRole('button', { name: 'Profile and round (3 selected)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Profile and round (2 selected)' })).toBeInTheDocument()
     // The Filters button does not count rounds any more.
     expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument()
   })
 
-  it('combines fields with AND: levels HR + L3 and attendee Bhavana', async () => {
+  it('combines fields with AND: levels HR + L2 and attendee Bhavana', async () => {
     await renderPanel()
     tickProfileRound('Interview rounds', 'HR')
     tickProfileRound('Interview rounds', 'L2')
