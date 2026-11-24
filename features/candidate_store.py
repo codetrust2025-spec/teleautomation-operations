@@ -340,6 +340,8 @@ def baseline_for_service(
 HANDLER_COMMISSION_PCT = 50
 PROFILE_CLOSURE_COMPLIMENTARY_AMOUNT = 5_000
 PROFILE_CLOSURE_ADMIN_REFERENCE = "Thrilok"
+# The referrer of a candidate the booking form creates, when none is given.
+DEFAULT_SLOT_BOOKER_REFERENCE = "Ravinder"
 
 _log = logging.getLogger(__name__)
 
@@ -7420,7 +7422,9 @@ def _import_confirmed_interview_slot(
         # assign path so it lands as a confirmed slot (slot_confirmed, booking
         # source, attendee) exactly like a booking for an existing candidate.
         auto_tech = tech or row_candidate_technology({"name": canon})
-        auto_ref = "Thrilok"  # default reference for auto-created slot bookers
+        # A booking made through the form names no referrer; it is Ravinder's
+        # until someone sets another (owner, 24 Nov; it was Thrilok).
+        auto_ref = DEFAULT_SLOT_BOOKER_REFERENCE
         new_candidate = create_candidate({
             "name": canon,
             "technology": auto_tech or "Unspecified",
