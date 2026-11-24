@@ -60,10 +60,12 @@ describe("the payment cell", () => {
     expect(cellText()).toMatch(/₹0.*₹5k due.*1 proof.*awaiting review$/);
   });
 
-  it("flags an amount above what the row expects, and changes nothing", () => {
+  it("shows no above-expected badge, only the amount, Paid and the proofs (owner, 24 Nov)", () => {
     const r = row({ payment: 10000, payment_proofs: [proof("p1", "VERIFIED_COMPANY_PAYMENT"), proof("p2", "VERIFIED_COMPANY_PAYMENT")] });
     render(<PaymentCell row={r} />);
-    expect(screen.getByText("₹5k above expected").getAttribute("title")).toMatch(/Recorded ₹10,000 against ₹5,000 expected/);
+    expect(screen.queryByText(/above expected/)).toBeNull();
+    expect(document.querySelector(".cand-pay-pill--over")).toBeNull();
+    expect(cellText()).toMatch(/^₹10,000.*Paid.*2 proofs.*verified/);
     expect(r.payment).toBe(10000);
   });
 

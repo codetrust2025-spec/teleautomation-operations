@@ -6078,9 +6078,6 @@ export function _Component27({ row: e }) {
         )}
       </span>
     ) : null;
-  // Recorded above what the booking expects: the L2 row that holds ₹10,000
-  // against ₹5,000. Shown, not corrected -- someone has to say which it is.
-  const over = Number(e.expected_payment) > 0 && n > r ? n - r : 0;
   const isUnevidenced =
     Boolean(e.payment_unevidenced) || (n > 0 && l === 0);
   if (n <= 0) {
@@ -6144,14 +6141,8 @@ export function _Component27({ row: e }) {
         <span className="cand-pay-amount">{Cx(n)}</span>
         <span className="cand-pay-pillrow">
           <span className="cand-pay-pill cand-pay-pill--paid">Paid</span>
-          {over > 0 && (
-            <span
-              className="cand-pay-pill cand-pay-pill--over"
-              title={`Recorded ${Cx(n)} against ${Cx(r)} expected for this row. Check it is not counted twice.`}
-            >
-              {Ax(over)} above expected
-            </span>
-          )}
+          {/* No "above expected" badge here (owner, 24 Nov): the amount and
+              Paid say it; the figures themselves are unchanged. */}
           {c}
         </span>
       </div>
