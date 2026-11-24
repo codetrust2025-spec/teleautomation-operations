@@ -18924,11 +18924,11 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   color: #94a3b8; pointer-events: none;
 }
-.cand-bar .cand-bar__search > .cand-input--search {
+.cand-page .cand-bar .cand-bar__search > input.cand-input--search {
   flex: 1 1 auto; width: 100%; min-width: 0; height: 40px; padding: 0 12px 0 36px; font-size: 13px;
 }
 .cand-bar .cand-bar__search > .cand-input--search::-webkit-search-cancel-button { cursor: pointer; }
-.cand-bar .cand-bar__sort > select.cand-input {
+.cand-page .cand-bar .cand-bar__sort > select.cand-input {
   width: 100%; height: 40px; padding: 0 30px 0 34px; font-size: 13px; font-weight: 500; cursor: pointer;
 }
 .cand-bar__filters {
@@ -18971,7 +18971,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
 .cand-filter-pop__body { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 16px; }
 .cand-filter-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; }
 .cand-filter-field__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #94a3b8; }
-.cand-filter-field > select.cand-input { width: 100%; height: 40px; padding-top: 0; padding-bottom: 0; font-size: 13px; }
+/* Beats the app-wide phone rule for inputs (padding: 8px 12px). */
+.cand-page .cand-filter-field > select.cand-input { width: 100%; height: 40px; padding: 0 30px 0 12px; font-size: 13px; }
 .cand-filter-check {
   grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; margin: 0;
   border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(255, 255, 255, 0.04);
@@ -18999,8 +19000,8 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page.cand-page--candidates > .cand-bar.cand-bar { order: 1; margin: 0; }
   .cand-bar__controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .cand-bar__search { grid-column: 1 / -1; }
-  .cand-bar .cand-bar__search > .cand-input--search,
-  .cand-bar .cand-bar__sort > select.cand-input,
+  .cand-page .cand-bar .cand-bar__search > input.cand-input--search,
+  .cand-page .cand-bar .cand-bar__sort > select.cand-input,
   .cand-bar__filters { height: 44px; font-size: 14px; }
   .cand-bar__actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
   .cand-bar__actions > .cand-btn { min-width: 0; min-height: 40px; padding: 0 6px; justify-content: center; font-size: 12px; white-space: nowrap; }
@@ -19018,7 +19019,7 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-filter-pop__body { grid-template-columns: 1fr; gap: 14px; padding: 16px 20px; }
   .cand-filter-pop__head { padding: 14px 14px 12px 20px; }
   .cand-filter-pop__foot { padding: 12px 20px 16px; }
-  .cand-filter-field > select.cand-input,
+  .cand-page .cand-filter-field > select.cand-input,
   .cand-filter-check { height: 48px; min-height: 48px; font-size: 15px; }
   .cand-filter-pop__foot > .cand-btn { min-height: 48px; font-size: 15px; }
 
