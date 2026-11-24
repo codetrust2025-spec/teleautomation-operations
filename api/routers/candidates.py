@@ -821,7 +821,7 @@ async def _upload_proof(request: Request, cid: str, file: UploadFile, note: str,
         return {"status": "error", "message": str(e)}
     if entry is None:
         return {"status": "error", "message": "Candidate not found"}
-    row = candidate_store.get_candidate(cid)
+    row = _proof_change_row(request, cid)
     # Keep the interactive request deterministic. Calling Ollama here used to
     # hold the browser in "Uploading" for up to 30 minutes.
     if ai_extraction:
@@ -844,6 +844,34 @@ async def _upload_proof(request: Request, cid: str, file: UploadFile, note: str,
     if fraud_check:
         resp["fraud_check"] = fraud_check
     return resp
+def _proof_change_row(request: Request, cid: str):
+    """The candidate a proof change answers with.
+
+    The editor shows one candidate whose proofs can be stored on several rows
+    (a profile's slot rows each hold the screenshots uploaded through them).
+    It names the row it shows as `?view=`; the answer is that row as the editor
+    shows it, with every proof still held, so deleting one screenshot of three
+    leaves the other two on screen and the totals are the whole candidate's
+    (24 Nov: the answer was the one row that owned the deleted screenshot, and
+    the editor replaced its list with that row's, so the others vanished).
+    Without `view`, or a view the session may not see, the answer is as before.
+    """
+    from core.dashboard_access import assert_candidate_row_access
+    from features import candidate_store
+
+    view = str(request.query_params.get("view") or "").strip()
+    if view:
+        row = candidate_store.get_candidate_detail(view)
+        if row:
+            try:
+                assert_candidate_row_access(request, row)
+            except Exception:  # noqa: BLE001 - fall back to the owner row
+                row = None
+        if row:
+            return row
+    return candidate_store.get_candidate(cid)
+
+
 @router.get("/candidates/{cid}/proofs/{pid}")
 async def candidates_serve_proof(cid: str, pid: str, request: Request):
     from core.dashboard_access import assert_candidate_row_access
@@ -924,7 +952,7 @@ async def candidates_delete_proof(cid: str, pid: str, request: Request):
     ok = candidate_store.delete_proof(cid, pid)
     if not ok:
         return {"status": "error", "message": "Proof not found"}
-    row = candidate_store.get_candidate(cid)
+    row = _proof_change_row(request, cid)
     from features import payment_receipts
     return {
         "status": "ok", "candidate": row,
@@ -1008,8 +1036,8 @@ async def candidates_archive_proof(cid: str, pid: str, request: Request, body: d
             # No single ledger payment carries this reference; the proof-side
             # archive still stands on its own.
             pass
-    row = candidate_store.get_candidate(cid)
-    after = int((row or {}).get("payment") or 0)
+    after = int((candidate_store.get_candidate(cid) or {}).get("payment") or 0)
+    row = _proof_change_row(request, cid)
     return {
         "status": "ok", "proof": updated, "candidate": row,
         "payment_summary": payment_receipts.api_summary(row),
@@ -1133,7 +1161,7 @@ async def _replace_proof(request: Request, cid: str, pid: str, file: UploadFile,
         reviewer=reviewer,
         reason=reason or "Replacement evidence uploaded and verified.",
     )
-    row = candidate_store.get_candidate(cid)
+    row = _proof_change_row(request, cid)
     return {
         "status": "ok", "proof": updated, "candidate": row,
         "payment_summary": payment_receipts.api_summary(row),
@@ -1160,7 +1188,7 @@ async def candidates_update_proof_note(cid: str, pid: str, body: dict, request: 
     entry = candidate_store.update_proof_note(cid, pid, note)
     if entry is None:
         return {"status": "error", "message": "Proof not found"}
-    row = candidate_store.get_candidate(cid)
+    row = _proof_change_row(request, cid)
     from features import payment_receipts
     return {
         "status": "ok", "proof": entry, "candidate": row,

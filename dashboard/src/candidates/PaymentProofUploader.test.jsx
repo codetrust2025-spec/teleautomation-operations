@@ -222,7 +222,8 @@ describe("PaymentProofUploader", () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     const [url, options] = fetch.mock.calls[0];
-    expect(url).toBe("/candidates/candidate-1/proofs/proof-9/replace");
+    // The answer is the candidate on screen, with every proof it holds (24 Nov).
+    expect(url).toBe("/candidates/candidate-1/proofs/proof-9/replace?view=candidate-1");
     expect(stream().url).toBe(`/public/slots/analysis/${options.body.get("analysis_id")}/events`);
     expect(screen.getByText("Waiting for AI node…")).toBeInTheDocument();
     push({ state: "running", node: "RTX 4060" });

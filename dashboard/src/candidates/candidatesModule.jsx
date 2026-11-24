@@ -95,6 +95,24 @@ function proofCandidateId(proof, fallbackId) {
   const match = String(proof?.url || "").match(/^\/candidates\/([^/]+)\/(?:proofs|attachments\/payment_proof)\//);
   return match?.[1] || fallbackId;
 }
+// The list after deleting one proof: every proof shown before except that id,
+// in the same order, each with the server's newer copy where it sent one.
+// The server deletes by id only, so a proof missing from its answer (one held
+// on another row of the candidate) is still stored and stays on screen.
+export function proofsAfterDelete(before, deletedId, fromServer) {
+  const gone = String(deletedId);
+  const server = new Map(
+    (fromServer || []).map((proof) => [String(proof.id), proof]),
+  );
+  const kept = (before || [])
+    .filter((proof) => String(proof.id) !== gone)
+    .map((proof) => server.get(String(proof.id)) || proof);
+  const shown = new Set(kept.map((proof) => String(proof.id)));
+  const added = (fromServer || []).filter(
+    (proof) => String(proof.id) !== gone && !shown.has(String(proof.id)),
+  );
+  return [...kept, ...added];
+}
 function createProofUploadJob(file) {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -340,7 +358,9 @@ export function PaymentProofUploader({
         const sentAt = Date.now();
         const xhr = new XMLHttpRequest();
         uploadRequestRef.current = { xhr, jobId: job.id };
-        xhr.open("POST", `${ve}/candidates/${e}/proofs`);
+        // `view` names the candidate on screen: the answer carries every
+        // proof it holds, on whichever row (24 Nov).
+        xhr.open("POST", `${ve}/candidates/${e}/proofs?view=${encodeURIComponent(e)}`);
         xhr.withCredentials = true;
         xhr.timeout = PROOF_UPLOAD_TIMEOUT_MS;
         xhr.upload.onprogress = (event) => {
@@ -668,14 +688,22 @@ export function PaymentProofUploader({
     try {
       const ownerId = proofCandidateId(b, e);
       const L = await (
-        await fetch(`${ve}/candidates/${ownerId}/proofs/${b.id}`, {
+        // Only this proof, by its id. `view` is the candidate on screen, so
+        // the answer lists every proof it still holds, on any of its rows,
+        // with the whole candidate's totals (24 Nov: the answer was the one
+        // row that owned this proof, and the other proofs vanished).
+        await fetch(`${ve}/candidates/${ownerId}/proofs/${encodeURIComponent(b.id)}?view=${encodeURIComponent(e)}`, {
           method: "DELETE",
         })
       ).json();
       if (L.status === "ok") {
         if (r != null) {
           r(
-            normalizePaymentProofs((A = L.candidate) == null ? undefined : A),
+            proofsAfterDelete(
+              t,
+              b.id,
+              normalizePaymentProofs((A = L.candidate) == null ? undefined : A),
+            ),
             L.candidate,
             L.payment_summary,
           );
@@ -718,7 +746,7 @@ export function PaymentProofUploader({
       );
       body.append("analysis_id", run.id);
       const res = await fetch(
-        `${ve}/candidates/${ownerId}/proofs/${proof.id}/replace`,
+        `${ve}/candidates/${ownerId}/proofs/${proof.id}/replace?view=${encodeURIComponent(e)}`,
         { method: "POST", body, credentials: "include" },
       );
       const payload = await res.json();
@@ -752,7 +780,7 @@ export function PaymentProofUploader({
     try {
       const ownerId = proofCandidateId(proof, e);
       const res = await fetch(
-        `${ve}/candidates/${ownerId}/proofs/${proof.id}/archive`,
+        `${ve}/candidates/${ownerId}/proofs/${proof.id}/archive?view=${encodeURIComponent(e)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -805,7 +833,7 @@ export function PaymentProofUploader({
       try {
         const ownerId = proofCandidateId(b, e);
         const O = await (
-          await fetch(`${ve}/candidates/${ownerId}/proofs/${b.id}`, {
+          await fetch(`${ve}/candidates/${ownerId}/proofs/${b.id}?view=${encodeURIComponent(e)}`, {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
