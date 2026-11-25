@@ -19293,6 +19293,11 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-interview,
   .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-phone { padding-right: 12px !important; }
   .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref { justify-self: stretch !important; max-width: none; text-align: right; }
+  /* Phone and referrer share one centre line. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-phone,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref { display: flex !important; align-items: center; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref { justify-content: flex-end; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref::before { content: "Ref ·" !important; margin-right: 4px; }
   .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref::before {
     text-transform: none !important; letter-spacing: 0 !important; font-size: inherit !important; font-weight: 400 !important;
   }
