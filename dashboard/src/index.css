@@ -19269,6 +19269,50 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page.cand-page--candidates .cand-table .cand-pay-proofs-state { text-transform: capitalize; }
   .cand-page.cand-page--candidates .cand-table .cand-name { font-size: 16px; font-weight: 700; color: #f8fafc; }
 
+  /* Cells fill their grid area (older card rules centred them, which narrowed
+     the name and wrapped its check mark); rules run edge to edge. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row { column-gap: 0 !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td { justify-self: stretch !important; text-align: left; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-stage { justify-self: end !important; padding-left: 8px !important; }
+  /* Both halves of a row share its height, so their rules line up. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td:not(.cand-cell-stage),
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > span { align-self: stretch !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-name { flex-wrap: nowrap; min-width: 0; }
+  /* Older card rules stack these cells as columns, which centres them. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-name,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-tech,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-service,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-resume,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-pay,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-added,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-interview { flex-direction: row !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-service > .cand-channel-tag { margin-left: 0 !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-name > .cand-name { min-width: 0; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-name > .cand-row-complete { flex: 0 0 auto; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-service,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-interview,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-phone { padding-right: 12px !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref { justify-self: stretch !important; max-width: none; text-align: right; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref::before {
+    text-transform: none !important; letter-spacing: 0 !important; font-size: inherit !important; font-weight: 400 !important;
+  }
+  /* One typeface: the date cell is monospace on the desktop table. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-added,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-interview,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > * > * {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row .cand-channel-tag {
+    display: inline-flex; align-items: center; padding: 3px 12px; border-radius: 999px;
+    border: 1px solid rgba(129, 140, 248, 0.45); background: rgba(99, 102, 241, 0.14); color: #dbe0ff;
+    font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  }
+  .cand-page.cand-page--candidates .cand-table .cand-pay-pill { text-transform: none; letter-spacing: 0; font-size: 13px; padding: 3px 12px; }
+  .cand-page.cand-page--candidates .cand-table td.cand-cell-phone .cand-phone-trigger {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0;
+    border: 0; background: transparent; font-size: 15px;
+  }
+
   /* Taps tint the card, never each cell (the grey blocks on Nishanth's card,
      25 Nov): iOS keeps :hover after a tap, and the shared row-edit rule shaded
      every cell on its own. Text selection and the focus ring are untouched. */
@@ -19276,6 +19320,17 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:active > td { box-shadow: none !important; }
   .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:active { background: rgba(99, 102, 241, 0.08); }
   .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:focus-visible { outline: 2px solid rgba(129, 140, 248, 0.85); outline-offset: 2px; }
+}
+/* Tabs first, then the toolbar, at every width (desktop had the toolbar above). */
+.cand-page.cand-page--candidates > .cand-bar.cand-bar { order: -1; }
+@media (min-width: 600px) {
+  .cand-page.cand-page--candidates > .cand-tabs { justify-content: flex-start; gap: 8px; }
+  .cand-page.cand-page--candidates > .cand-tabs > .cand-tabs__btn { padding: 0 14px; }
+  .cand-page.cand-page--candidates > .cand-bar.cand-bar {
+    grid-template-columns: minmax(240px, 1fr) auto minmax(150px, 200px) auto auto; justify-content: stretch;
+  }
+  .cand-page.cand-page--candidates > .cand-bar .cand-bar__search { grid-column: auto; }
+  .cand-page--candidates .cand-th--date { width: 140px; }
 }
 @media (max-width: 359px) {
   .cand-page.cand-page--candidates > .cand-bar.cand-bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
