@@ -22,7 +22,7 @@ def fresh(monkeypatch):
 
 @pytest.mark.parametrize("url", [
     "postgresql://user:secret@operations-db:5432/teleautomation_operations",
-    "postgresql://user:secret@187.127.164.90:5432/teleautomation_operations",
+    "postgresql://user:secret@203.0.113.10:5432/teleautomation_operations",
     "postgresql://user:secret@localhost:5432/teleautomation_operations",
     "postgresql://user:secret@db.example.com:5432/business_ci",
 ])
