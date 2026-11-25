@@ -1,13 +1,14 @@
 # Off-server watchdog for TeleAutomation production. Source of truth:
 # teleautomation-operations/deploy/ops/watch (copied here unchanged; keep the two identical).
+#
+# Runs on the self-hosted runner `rtx4060-ops-watch` on the RTX 4060 laptop:
+# GitHub-hosted minutes for private repositories are refused for billing, and
+# self-hosted minutes are free. The laptop's scheduled task "TeleAutomation Ops
+# Watch Clock" dispatches this every 30 minutes (GitHub's own schedule ran a
+# 30-minute cron only 3-6 times a day); the schedule below is the fallback.
+# It only runs while the laptop is on.
 name: watchdog
 on:
-  # Started every 30 minutes by the public clock in teleautomation-operations
-  # (.github/workflows/watchdog-clock.yml), which force-pushes `tick` = main + one
-  # empty commit. GitHub's own schedule ran this only 3-6 times a day; it stays
-  # as a fallback should the clock ever stop.
-  push:
-    branches: [tick]
   schedule:
     - cron: "7 */3 * * *"
   workflow_dispatch: {}
@@ -17,9 +18,13 @@ permissions:
 concurrency:
   group: watchdog
   cancel-in-progress: false
+defaults:
+  run:
+    # 8.3 path: the runner does not accept a quoted shell path with spaces.
+    shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
 jobs:
   watch:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ops-watch]
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
@@ -29,15 +34,19 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.WATCH_KNOWN_HOSTS }}
           HOST: ${{ secrets.WATCH_HOST }}
         run: |
-          install -d -m 0700 ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/watch && chmod 0600 ~/.ssh/watch
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          printf 'Host prod\n  HostName %s\n  User root\n  IdentityFile ~/.ssh/watch\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' "$HOST" > ~/.ssh/config
+          d="$(cygpath -m "$RUNNER_TEMP")/watch-ssh"; rm -rf "$d"; mkdir -p "$d"
+          printf '%s\n' "$KEY" > "$d/key" && chmod 0600 "$d/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$d/known_hosts"
+          printf 'Host prod\n  HostName %s\n  User root\n  IdentityFile %s/key\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  UserKnownHostsFile %s/known_hosts\n' "$HOST" "$d" "$d" > "$d/config"
       - name: Check and reconcile alerts
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLIC_HEALTH_URL: https://operations.teleautomation.online/health
           SSH_TARGET: prod
-        run: python3 watchdog.py
+          SSH_BIN: C:\Program Files\Git\usr\bin\ssh.exe
+        run: |
+          export SSH_CONFIG="$(cygpath -m "$RUNNER_TEMP")/watch-ssh/config"
+          export PATH="$PATH:/c/Users/codet/AppData/Local/Microsoft/WinGet/Packages/GitHub.cli_Microsoft.Winget.Source_8wekyb3d8bbwe/bin"
+          python watchdog.py
       - if: always()
-        run: rm -f ~/.ssh/watch
+        run: rm -rf "$(cygpath -m "$RUNNER_TEMP")/watch-ssh"

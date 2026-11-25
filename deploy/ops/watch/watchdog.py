@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Off-server watchdog, run by GitHub Actions every 30 minutes in the private
-teleautomation-ops-watch repository (source of truth: deploy/ops/watch in
-teleautomation-operations).
+teleautomation-ops-watch repository, on a self-hosted runner on the RTX 4060
+laptop (source of truth: deploy/ops/watch in teleautomation-operations).
 
 1. probes the public /health from GitHub's network;
 2. reads the production monitor's status through a command-restricted SSH key
@@ -122,7 +122,12 @@ def probe_public(url: str, attempts: int = 3) -> bool:
 
 def read_status(ssh_target: str, attempts: int = 3) -> dict | None:
     for i in range(attempts):
-        r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", ssh_target, "status"],
+        # SSH_BIN / SSH_CONFIG let a self-hosted runner use its own ssh and a
+        # per-run config instead of the runner user's ~/.ssh.
+        cmd = [os.environ.get("SSH_BIN") or "ssh"]
+        if os.environ.get("SSH_CONFIG"):
+            cmd += ["-F", os.environ["SSH_CONFIG"]]
+        r = subprocess.run(cmd + ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", ssh_target, "status"],
                            capture_output=True, timeout=90)
         if r.returncode == 0:
             try:
