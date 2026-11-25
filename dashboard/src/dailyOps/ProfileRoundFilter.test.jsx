@@ -7,7 +7,7 @@
  * - Interview Round: Screening, L1, L2, HR, Final, several at once (L3 retired 24 Nov).
  * - No technology list any more.
  * - Every click applies at once to the table and the counters; booking type
- *   and rounds must both match. Clear All and the page Reset put both back.
+ *   and rounds must both match. The page Reset puts both back; the menu has no clear buttons (25 Nov).
  */
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -115,8 +115,7 @@ describe('the Profile + Round control', () => {
     expect(screen.queryByRole('group', { name: 'Profiles' })).toBeNull()
     expect(screen.queryByRole('radio')).toBeNull()
     expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Clear all profile and round filters' })).toHaveTextContent('Clear All')
-    expect(screen.getByRole('button', { name: 'All rounds' })).toHaveTextContent('All Rounds')
+    expect(screen.queryByRole('button', { name: /clear|all rounds|all statuses/i })).toBeNull()
     expect(screen.getByText('Select at least one filter (Profile-wise or Round-wise).')).toBeInTheDocument()
     // Both booking types start ticked: nothing is narrowed.
     expect(ticked('Booking type')).toEqual(['Profile-wise', 'Round-wise'])
@@ -138,7 +137,7 @@ describe('the Profile + Round control', () => {
     expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ['profile', 'round_wise'], round: [] })
   })
 
-  it('takes several rounds, in interview order, and All Rounds unticks them', () => {
+  it('takes several rounds, in interview order, and unticks them one by one', () => {
     const onChange = vi.fn()
     const { rerender } = render(<ProfileRoundFilter onChange={onChange} />)
     openMenu()
@@ -147,19 +146,15 @@ describe('the Profile + Round control', () => {
     rerender(<ProfileRoundFilter rounds={['L2']} onChange={onChange} />)
     tick('Interview rounds', 'L1')
     expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ALL_BOOKING_TYPES, round: ['L1', 'L2'] })
-    rerender(<ProfileRoundFilter rounds={['L1', 'L2']} bookingTypes={['round_wise']} onChange={onChange} />)
-    fireEvent.click(screen.getByRole('button', { name: 'All rounds' }))
+    rerender(<ProfileRoundFilter rounds={['L2']} bookingTypes={['round_wise']} onChange={onChange} />)
+    tick('Interview rounds', 'L2')
     expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ['round_wise'], round: [] })
   })
 
-  it('counts and names what narrows on the button, and Clear All puts both types back', () => {
-    const onChange = vi.fn()
-    render(<ProfileRoundFilter bookingTypes={['profile']} rounds={['L1', 'L2']} onChange={onChange} />)
+  it('counts and names what narrows on the button', () => {
+    render(<ProfileRoundFilter bookingTypes={['profile']} rounds={['L1', 'L2']} />)
     const trigger = screen.getByRole('button', { name: 'Profile and round (3 selected)' })
     expect(trigger.getAttribute('title')).toBe('Bookings: Profile-wise\nRounds: L1, L2')
-    openMenu()
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all profile and round filters' }))
-    expect(onChange).toHaveBeenLastCalledWith({ bookingTypes: ['profile', 'round_wise'], round: [] })
   })
 
   it('sends one booking type as the channel, and none for both', () => {
@@ -245,8 +240,9 @@ describe('on Daily Ops', () => {
     await waitFor(() => expect(shown()).toEqual(['Bala Kumar', 'Dev Prasad']))
     await waitFor(() => expect(scheduled()).toBe('2'))
 
-    // Clear All: everything again.
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all profile and round filters' }))
+    // The page Reset: everything again.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: /^Reset all filters/ }))
     await waitFor(() => {
       expect(lastRoster().get('channel')).toBeNull()
       expect(lastRoster().getAll('round')).toEqual([])
@@ -262,7 +258,7 @@ describe('on Daily Ops', () => {
     expect(calls.every(u => !u.searchParams.has('technology'))).toBe(true)
   })
 
-  it('combines with the Filters panel, and keeps its ticks through a panel Apply or Reset', async () => {
+  it('combines with the Filters panel, and keeps its ticks through a panel Apply', async () => {
     await renderPanel()
     openMenu()
     tick('Booking type', 'Round-wise')
@@ -281,7 +277,8 @@ describe('on Daily Ops', () => {
     await waitFor(() => expect(shown()).toEqual(['Esha Pillai']))
 
     openFilters()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    toggleFilterValue('Attendee filter', 'Tool')
+    applyFilters()
     await waitFor(() => expect(lastRoster().getAll('attendee')).toEqual([]))
     expect(lastRoster().get('channel')).toBe('profile')
     expect(screen.getByRole('button', { name: 'Profile and round (2 selected)' })).toBeInTheDocument()
@@ -301,6 +298,41 @@ describe('on Daily Ops', () => {
     })
     openMenu()
     expect(ticked('Booking type')).toEqual(['Profile-wise', 'Round-wise'])
+  })
+
+  it('has one Reset on the page, which clears search and every filter at once; Refresh stays', async () => {
+    await renderPanel()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Candidate search' }), { target: { value: 'Esha' } })
+    openMenu()
+    tick('Booking type', 'Round-wise')
+    tick('Interview rounds', 'L1')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    openFilters()
+    toggleFilterValue('Attendee filter', 'Tool')
+    applyFilters()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reset all filters (4 set)' })).toBeInTheDocument())
+
+    // The only reset/clear control anywhere on the page, menus open or shut.
+    const resets = () => screen.queryAllByRole('button', { name: /reset|clear|all rounds|all statuses/i })
+    expect(resets().map(b => b.getAttribute('aria-label'))).toEqual(['Reset all filters (4 set)'])
+    openMenu()
+    expect(resets()).toHaveLength(1)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    openFilters()
+    expect(resets()).toHaveLength(1)
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Reset all filters/ }))
+    await waitFor(() => {
+      const last = lastRoster()
+      expect(last.get('channel')).toBeNull()
+      expect(last.getAll('round')).toEqual([])
+      expect(last.getAll('attendee')).toEqual([])
+    })
+    expect(screen.getByRole('textbox', { name: 'Candidate search' })).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Reset all filters' })).toBeInTheDocument()
+    await waitFor(() => expect(shown()).toHaveLength(ROWS.length))
+    expect(screen.getByRole('button', { name: /^(Refresh|Updating)$/ })).toBeInTheDocument()
   })
 
   it('sits right after the date, then Status, then Filters, and Today stays beside Filters', async () => {

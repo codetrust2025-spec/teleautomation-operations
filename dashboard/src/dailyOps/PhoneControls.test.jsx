@@ -92,15 +92,17 @@ describe('on a phone', () => {
     expect(screen.getByRole('group', { name: 'Interview rounds' })).toBeTruthy()
   })
 
-  it('applies a status at once, counts it on the button, and Clear All clears it with the rest', async () => {
+  it('applies a status at once, counts it on the button, and the page Reset clears it', async () => {
     await renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /^Profile, round and status/ }))
     fireEvent.click(within(screen.getByRole('group', { name: 'Interview status' })).getByRole('checkbox', { name: /^Good/ }))
     expect(shown()).toEqual(['Asha Varma', 'Bala Kumar'])
     expect(screen.getByRole('button', { name: 'Profile, round and status (1 selected)' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all profile, round and status filters' }))
-    expect(shown()).toHaveLength(ROWS.length)
+    expect(screen.queryByRole('button', { name: /clear|all statuses|all rounds/i })).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: /^Reset all filters/ }))
+    await waitFor(() => expect(shown()).toHaveLength(ROWS.length))
     expect(screen.getByRole('button', { name: 'Profile, round and status' })).toBeTruthy()
   })
 

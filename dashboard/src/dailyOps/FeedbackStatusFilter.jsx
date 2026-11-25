@@ -79,15 +79,6 @@ export function FeedbackStatusFilter({ selected = [], counts = {}, onChange }) {
           <div className="ops-levels-menu ops-feedback-filter-menu" id={menuId}>
             <div className="ops-levels-menu__head">
               <span className="ops-levels-menu__title">Status</span>
-              <button
-                type="button"
-                className="ops-levels-menu__clear"
-                onClick={() => onChange?.([])}
-                disabled={!chosen.length}
-                aria-label="Clear all status filters"
-              >
-                Clear All
-              </button>
             </div>
             <FeedbackStatusOptions selected={chosen} counts={counts} onChange={onChange} />
           </div>

@@ -42,12 +42,13 @@ export function channelFor(types) {
  *   least one stays ticked: the last one cannot be unticked.
  * - Interview Round: Screening, L1, L2, HR and Final, then Others (round
  *   not specified, Assessment, any other round such as L3), several at once
- *   (any of them). "All Rounds" unticks them all.
+ *   (any of them).
  * - Booking type and rounds must both match. Every click applies at once.
- * - "Clear All" ticks both types again and unticks every round.
+ * - No clear buttons in here: the one Reset beside Refresh puts booking type,
+ *   rounds and status back (owner, 25 Nov).
  * - `status` (phones, owner's iPhone request 16 Nov): the Status filter is a
  *   section of this menu instead of a button of its own -- the same options,
- *   counts and instant clicks. Clear All clears it too.
+ *   counts and instant clicks.
  */
 export function ProfileRoundFilter({
   bookingTypes = ALL_BOOKING_TYPES,
@@ -157,18 +158,6 @@ export function ProfileRoundFilter({
           <div className="ops-levels-menu ops-profile-round-menu" id={menuId}>
             <div className="ops-levels-menu__head">
               <span className="ops-levels-menu__title">Profile + Round</span>
-              <button
-                type="button"
-                className="ops-levels-menu__clear"
-                onClick={() => {
-                  onChange?.({ bookingTypes: ALL_BOOKING_TYPES, round: [] })
-                  if (chosenStatus.length) status.onChange?.([])
-                }}
-                disabled={!count}
-                aria-label={status ? 'Clear all profile, round and status filters' : 'Clear all profile and round filters'}
-              >
-                Clear All
-              </button>
             </div>
 
             <div className="ops-profile-round-types" role="group" aria-label="Booking type">
@@ -199,15 +188,6 @@ export function ProfileRoundFilter({
 
             <div className="ops-profile-round-menu__label">
               <span>Interview Round</span>
-              <button
-                type="button"
-                className="ops-levels-menu__clear"
-                onClick={() => emit({ round: [] })}
-                disabled={!chosenRounds.length}
-                aria-label="All rounds"
-              >
-                All Rounds
-              </button>
             </div>
             <div className="ops-levels-menu__list" role="group" aria-label="Interview rounds">
               {roundOptions.map(r => {
@@ -232,15 +212,6 @@ export function ProfileRoundFilter({
                 <div className="ops-profile-round-menu__divider" aria-hidden="true" />
                 <div className="ops-profile-round-menu__label">
                   <span>Status</span>
-                  <button
-                    type="button"
-                    className="ops-levels-menu__clear"
-                    onClick={() => status.onChange?.([])}
-                    disabled={!chosenStatus.length}
-                    aria-label="Clear all status filters"
-                  >
-                    All Statuses
-                  </button>
                 </div>
                 <FeedbackStatusOptions selected={chosenStatus} counts={status.counts || {}} onChange={status.onChange} />
               </>

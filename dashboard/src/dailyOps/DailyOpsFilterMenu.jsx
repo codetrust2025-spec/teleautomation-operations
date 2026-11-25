@@ -11,8 +11,8 @@ import { DEFAULT_ROSTER_SORT, ROSTER_SORT_OPTIONS, rosterSortLabel } from './ros
  *   rounds are filtered by the Profile + Round control beside it (15 Nov).
  * - Matching: values inside one field are alternatives (Bhavana OR Nikhila);
  *   different fields must all match (that level AND that attendee).
- * - Nothing changes until Apply. "Clear all" empties the panel's choices
- *   (still needs Apply); Reset clears and applies straight away.
+ * - Nothing changes until Apply. There is no clear or reset in here: the one
+ *   Reset beside Refresh puts every filter back (owner, 25 Nov).
  */
 
 /** A filter value as a clean list: older callers pass one string. */
@@ -81,16 +81,6 @@ function MultiSelectField({
         <span className="ops-filter-field__state" aria-live="polite">
           {selected.length ? `${selected.length} selected` : anyLabel}
         </span>
-        {selected.length > 0 && (
-          <button
-            type="button"
-            className="ops-filter-field__clear"
-            onClick={() => onChange([])}
-            aria-label={`Clear ${label} filter`}
-          >
-            Clear
-          </button>
-        )}
       </div>
       {searchable && (
         <label className="ops-filter-field__search">
@@ -269,14 +259,6 @@ export function DailyOpsFilterMenu({
     triggerRef.current?.focus()
   }
 
-  function handleClearAll() {
-    setDraft({ candidate: [], attendee: [], sort: DEFAULT_ROSTER_SORT })
-  }
-
-  function handleReset() {
-    emit({ candidate: [], attendee: [], sort: DEFAULT_ROSTER_SORT })
-  }
-
   function handleApply(e) {
     e?.preventDefault()
     emit(draft)
@@ -340,14 +322,6 @@ export function DailyOpsFilterMenu({
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                className="ops-filter-panel__clear-btn"
-                onClick={handleClearAll}
-                aria-label="Clear all filter fields"
-              >
-                Clear all
-              </button>
             </div>
 
             <form className="ops-filter-panel__body" onSubmit={handleApply}>
@@ -399,13 +373,6 @@ export function DailyOpsFilterMenu({
               </div>
 
               <div className="ops-filter-panel__footer">
-                <button
-                  type="button"
-                  className="ops-filter-panel__btn ops-filter-panel__btn--reset"
-                  onClick={handleReset}
-                >
-                  Reset
-                </button>
                 <button
                   type="submit"
                   className="ops-filter-panel__btn ops-filter-panel__btn--apply"

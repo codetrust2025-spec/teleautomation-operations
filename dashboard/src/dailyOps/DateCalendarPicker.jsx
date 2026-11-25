@@ -50,7 +50,6 @@ export function DateCalendarPicker({
   placeholder = 'Upcoming',
   onSelectDate,
   onSelectPreset,
-  onClear,
   label = 'Filter interviews by date',
 }) {
   const today = todayIso()
@@ -278,19 +277,6 @@ export function DateCalendarPicker({
             })}
           </div>
         ))}
-      </div>
-
-      <div className="ops-datepicker__footer">
-        <button
-          type="button"
-          className="ops-datepicker__link ops-datepicker__link--clear"
-          onClick={() => {
-            onClear?.()
-            closePicker()
-          }}
-        >
-          Clear
-        </button>
       </div>
     </div>,
     document.body,

@@ -170,17 +170,18 @@ describe('Sort By on the Daily Ops roster', () => {
     expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
   })
 
-  it('stays sorted after a search refetches the roster, and Reset leaves the choice alone', async () => {
+  it('stays sorted after a search refetches the roster, and Reset puts the default order back', async () => {
     render(<DailyOpsPanel />)
     await waitFor(() => expect(shown()).toHaveLength(4))
     applySort('date_desc')
     fireEvent.change(screen.getByRole('textbox', { name: 'Candidate search' }), { target: { value: 'fake' } })
     await waitFor(() => expect(calls.some(url => url.searchParams.get('candidate_search') === 'fake' || url.searchParams.get('q') === 'fake' || [...url.searchParams.values()].includes('fake'))).toBe(true))
     await waitFor(() => expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha']))
-    fireEvent.click(screen.getByRole('button', { name: /Reset all filters/ }))
+    // Search and sort order both count on the Reset badge; Reset restores the page as it opens.
+    fireEvent.click(screen.getByRole('button', { name: 'Reset all filters (2 set)' }))
     await waitFor(() => expect(shown()).toHaveLength(4))
-    expect(sortBox().value).toBe('date_desc')
-    expect(shown()).toEqual(['Bala', 'Dev', 'Chitra', 'Asha'])
+    expect(screen.getByRole('textbox', { name: 'Candidate search' })).toHaveValue('')
+    expect(sortBox().value).toBe('date_asc')
   })
 })
 

@@ -52,7 +52,6 @@ describe('DailyOpsFilterMenu', () => {
     expect(
       screen.getByText('Tick several values in a field to match any of them. Different fields must all match.')
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Clear all/i })).toBeInTheDocument()
 
     const labels = Array.from(dialog.querySelectorAll('.ops-filter-field__label')).map(el => el.textContent.trim())
     expect(labels).toEqual(['Candidate', 'Attendee', 'Sort by'])
@@ -154,12 +153,21 @@ describe('DailyOpsFilterMenu', () => {
     expect(order()).toEqual(['Dev Prasad', 'Asha Varma', 'Bala Kumar', 'Chitra Rao'])
   })
 
-  it('clears one field with its own Clear link', () => {
-    render(<DailyOpsFilterMenu candidateFilter={['John Doe']} attendeeFilter={['Tool']} candidateOptions={candidateOptions} />)
+  it('has no clear or reset of its own: the page Reset is the only one (25 Nov)', () => {
+    render(
+      <DailyOpsFilterMenu
+        candidateFilter={['John Doe']}
+        attendeeFilter={['Tool']}
+        sortOrder="date_desc"
+        candidateOptions={candidateOptions}
+        attendeeOptions={attendeeOptions}
+      />
+    )
     openFilters()
-    fireEvent.click(screen.getByRole('button', { name: 'Clear Attendee filter' }))
-    expect(checkedFilterValues('Attendee filter')).toEqual([])
-    expect(checkedFilterValues('Candidate filter')).toEqual(['John Doe'])
+    const dialog = screen.getByRole('dialog', { name: 'Filter interviews' })
+    const buttons = [...dialog.querySelectorAll('button')].map(b => b.textContent.trim())
+    expect(buttons.filter(t => /clear|reset/i.test(t))).toEqual([])
+    expect(buttons).toContain('Apply (3)')
   })
 
   it('still accepts a single string per field from older callers', () => {
@@ -170,30 +178,7 @@ describe('DailyOpsFilterMenu', () => {
     expect(checkedFilterValues('Attendee filter')).toEqual(['Nikhila'])
   })
 
-  it('clears draft fields when Clear all is clicked, without applying', () => {
-    const onApply = vi.fn()
-    render(
-      <DailyOpsFilterMenu
-        candidateFilter={['John Doe']}
-        attendeeFilter={['Nikhila', 'Tool']}
-        sortOrder="date_desc"
-        candidateOptions={candidateOptions}
-        attendeeOptions={attendeeOptions}
-        onApply={onApply}
-      />
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Filters (4 active)' }))
-    fireEvent.click(screen.getByRole('button', { name: /Clear all/i }))
-
-    expect(checkedFilterValues('Candidate filter')).toEqual([])
-    expect(checkedFilterValues('Attendee filter')).toEqual([])
-    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('date_asc')
-    expect(onApply).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument()
-  })
-
-  it('resets its own fields and closes when Reset is clicked', () => {
+  it('unticking every value and applying empties the fields', () => {
     const onApply = vi.fn()
     render(
       <DailyOpsFilterMenu
@@ -206,7 +191,9 @@ describe('DailyOpsFilterMenu', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters (2 active)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    toggleFilterValue('Candidate filter', 'John Doe')
+    toggleFilterValue('Attendee filter', 'Nikhila')
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
 
     expect(onApply).toHaveBeenCalledWith({ candidate: [], attendee: [], sort: 'date_asc' })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

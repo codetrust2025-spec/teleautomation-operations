@@ -312,7 +312,7 @@ describe('default behavior and clearing the date', () => {
     expect(lastRosterCall().searchParams.get('upcoming_only')).toBe('true')
   })
 
-  it('filters by single day when date picked and clears back to upcoming on Clear', async () => {
+  it('filters by single day when date picked and the page Reset goes back to upcoming', async () => {
     await renderPanel()
 
     let calendar = await openCalendar()
@@ -322,7 +322,10 @@ describe('default behavior and clearing the date', () => {
     expect(lastRosterCall().searchParams.get('date')).toBe(YESTERDAY)
 
     calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Clear' }))
+    // No Clear in the calendar (25 Nov): the page Reset is the only reset.
+    expect(within(calendar).queryByRole('button', { name: 'Clear' })).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: /^Reset all filters/ }))
 
     await waitFor(() => expect(dateTrigger()).toHaveTextContent('Upcoming'))
     await waitFor(() => expect(lastRosterCall().pathname).toMatch(/\/interviews\/monitor$/))
@@ -360,7 +363,7 @@ describe('default behavior and clearing the date', () => {
     expect(lastRosterCall().searchParams.get('to')).toBe('2026-09-13')
 
     calendar = await openCalendar()
-    fireEvent.click(within(calendar).getByRole('button', { name: 'Clear' }))
+    fireEvent.click(within(calendar).getByRole('button', { name: 'Upcoming' }))
 
     await waitFor(() => expect(dateTrigger()).toHaveTextContent('Upcoming'))
   })

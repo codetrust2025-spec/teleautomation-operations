@@ -3,7 +3,7 @@
  *
  * - A control of its own between Profile + Round and Filters.
  * - Good, Excellent, Average, Needs Improvement and Negative, several at once
- *   (any of them), each with its count; Clear All; no Apply button.
+ *   (any of them), each with its count; no Apply and no Clear All (the page Reset clears it).
  * - Every click applies at once to the table and the counters, without a new
  *   request, and other filters keep working alongside it.
  */
@@ -110,14 +110,14 @@ describe('feedback helpers', () => {
 })
 
 describe('the Status control', () => {
-  it('matches the mockup: five statuses with counts, Clear All, and no Apply button', () => {
+  it('matches the mockup: five statuses with counts, no Clear All and no Apply button', () => {
     render(<FeedbackStatusFilter counts={{ good: 3, excellent: 1 }} />)
     openMenu()
     expect(options()).toEqual(['Good (3)', 'Excellent (1)', 'Average (0)', 'Needs Improvement (0)', 'Negative (0)'])
     const pills = [...document.querySelectorAll('.ops-feedback-filter-pill')]
     expect(pills.map(p => p.className.match(/ops-feedback-pill--(\w+)/)[1]))
       .toEqual(['positive', 'excellent', 'caution', 'warning', 'negative'])
-    expect(screen.getByRole('button', { name: 'Clear all status filters' }).textContent).toBe('Clear All')
+    expect(screen.queryByRole('button', { name: /clear|all statuses/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
   })
 
@@ -141,7 +141,8 @@ describe('the Status control', () => {
     rerender(<FeedbackStatusFilter selected={['good', 'negative']} onChange={onChange} />)
     tick('Good')
     expect(onChange).toHaveBeenLastCalledWith(['negative'])
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all status filters' }))
+    rerender(<FeedbackStatusFilter selected={['negative']} onChange={onChange} />)
+    tick('Negative')
     expect(onChange).toHaveBeenLastCalledWith([])
   })
 
@@ -197,7 +198,7 @@ describe('on the Daily Ops page', () => {
     expect(shown()).toEqual(['Dev Prasad'])
     await waitFor(() => expect(scheduled()).toBe('1'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all status filters' }))
+    tick('Excellent')
     expect(shown()).toHaveLength(ROWS.length)
     await waitFor(() => expect(scheduled()).toBe('9'))
     expect(rosterCalls().length).toBe(before)

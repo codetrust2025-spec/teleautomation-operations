@@ -3,7 +3,7 @@ import { API } from '../config.js'
 import { STATUS_TABS } from './interviewStatuses.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { InterviewRoster } from './InterviewRoster.jsx'
-import { ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } from './rosterSort.js'
+import { DEFAULT_ROSTER_SORT, ROSTER_SORT_OPTIONS, readRosterSort, rosterSortLabel, saveRosterSort } from './rosterSort.js'
 import { DateCalendarPicker } from './DateCalendarPicker.jsx'
 import { DailyOpsFilterMenu, toFilterList } from './DailyOpsFilterMenu.jsx'
 import { appendFilterValues, sameValues } from './filterParams.js'
@@ -121,8 +121,9 @@ export function DailyOpsPanel({
   // Phones (iPhone request, 16 Nov): Status is a section of Profile + Round, not a button of its own.
   const phone = useMediaQuery(PHONE_QUERY)
   const [statusFilter, setStatusFilter] = useState('')
-  // Sort By is a view preference, kept across reloads in this browser; Reset
-  // leaves it alone, as it clears filters rather than the way they are read.
+  // Sort By is a view preference, kept across reloads in this browser. Reset
+  // puts it back to the default with everything else (owner, 25 Nov: one Reset
+  // restores the page as it opens).
   const [sortOrder, setSortOrder] = useState(readRosterSort)
   const changeSortOrder = value => { setSortOrder(value); saveRosterSort(value) }
   const [globalStats, setGlobalStats] = useState(null)
@@ -248,12 +249,15 @@ export function DailyOpsPanel({
   const resetCount = activeFilterCount
     + (selectedDate || selectedPreset ? 1 : 0)
     + (statusFilter ? 1 : 0)
+    + (sortOrder !== DEFAULT_ROSTER_SORT ? 1 : 0)
 
-  /** One click back to the page as it opens, then a fresh read of both the
-   *  counters and the table -- also when nothing was set, so it doubles as a
-   *  full refresh. */
+  /** The only reset on the page (owner, 25 Nov: the filter menus have no
+   *  clear buttons of their own). One click back to the page as it opens --
+   *  search, every filter, date, status tab and sort order -- then a fresh read
+   *  of both the counters and the table. */
   function resetAll() {
     clearFilters()
+    if (sortOrder !== DEFAULT_ROSTER_SORT) changeSortOrder(DEFAULT_ROSTER_SORT)
     setStatusFilter('')
     setSelectedDate('')
     setSelectedPreset('')
@@ -319,7 +323,6 @@ export function DailyOpsPanel({
               preset={selectedPreset}
               onSelectDate={applyExactDate}
               onSelectPreset={applyPreset}
-              onClear={clearDate}
             />
           </div>
 
@@ -382,7 +385,7 @@ export function DailyOpsPanel({
               type="button"
               className="ops-roster-clear ops-roster-reset"
               onClick={resetAll}
-              title="Reset date, search, candidate, attendee, level, profile and status, and reload"
+              title="Reset search, date, candidate, attendee, profile, round, status and sort, and reload"
               aria-label={resetCount > 0 ? `Reset all filters (${resetCount} set)` : 'Reset all filters'}
             >
               <Icon name="reset" size={13} strokeWidth={2.1} />
