@@ -90,10 +90,10 @@ describe("phone and referrer under the name", () => {
 });
 
 describe("the resume cell", () => {
-  it("is a summary either way: Saved or None, with nothing to press", async () => {
+  it("is a summary either way: Saved or No resume, with nothing to press", async () => {
     await renderTable();
     const none = rowById("r3").querySelector(".cand-cell-resume");
-    expect(none.textContent).toBe("None");
+    expect(none.textContent).toBe("No resume");
     const cell = rowById("r1").querySelector(".cand-cell-resume");
     expect(cell.textContent).toBe("Saved");
     expect(cell.querySelector(".cand-resume-status--on").getAttribute("title")).toBe("Ram_Charan.pdf");

@@ -19096,6 +19096,192 @@ html:has(.app-shell--view-candidates)::-webkit-scrollbar-thumb:active {
   .cand-page.cand-page--candidates .cand-table .cand-pay-pillrow { display: contents !important; }
 }
 
+/* ── Candidates page to the owner's mockup (25 Nov) ───────────────────────────
+   Header: + Add beside the account button (portalled into
+   #page-header-actions). Tabs: one underlined row. Toolbar: full-width search,
+   then Filters · Sort · Active · More (CSV and Expenses live in More). Phone
+   cards: 16px page padding, 14px card padding and radius, 12px gaps, and six
+   rows -- name/status, phone/referrer, role, service/added date,
+   interview/resume, payment/proofs. Touch targets are at least 44px. */
+.business-header__page-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.business-header__page-actions:empty { display: none; }
+.business-header__page-actions + .business-header__user-wrap { margin-left: 10px; }
+.cand-header-add.cand-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; padding: 0 16px; border-radius: 12px; font-size: 14px; font-weight: 600; white-space: nowrap;
+}
+
+.cand-page.cand-page--candidates > .cand-tabs {
+  gap: 0; padding: 0; margin: 0 0 14px; justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+.cand-page.cand-page--candidates > .cand-tabs > .cand-tabs__btn {
+  flex: 0 1 auto; min-height: 44px; padding: 0 10px; margin-bottom: -1px;
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent;
+  color: #a7b2c5; font-size: 14px; font-weight: 500; white-space: nowrap;
+}
+.cand-page.cand-page--candidates > .cand-tabs > .cand-tabs__btn:hover { background: transparent; color: #e2e8f0; }
+.cand-page.cand-page--candidates > .cand-tabs > .cand-tabs__btn--active {
+  border-bottom-color: #8b8cf8; color: #c7c8ff; font-weight: 600; background: transparent;
+}
+.cand-page.cand-page--candidates > .cand-tabs > .cand-tabs__btn:focus-visible { outline: 2px solid rgba(129, 140, 248, 0.8); outline-offset: -2px; }
+
+/* Toolbar: one flowing row after the search. */
+.cand-page.cand-page--candidates > .cand-bar.cand-bar {
+  display: grid; grid-template-columns: auto minmax(130px, 220px) auto auto; justify-content: start;
+  align-items: center; gap: 8px;
+}
+.cand-page.cand-page--candidates > .cand-bar > .cand-bar__controls,
+.cand-page.cand-page--candidates > .cand-bar > .cand-bar__actions { display: contents; }
+.cand-page.cand-page--candidates > .cand-bar .cand-bar__search,
+.cand-page.cand-page--candidates > .cand-bar > .cand-bar__summary { grid-column: 1 / -1; }
+.cand-page .cand-bar .cand-bar__search > input.cand-input--search,
+.cand-page .cand-bar .cand-bar__sort > select.cand-input,
+.cand-page .cand-bar .cand-bar__filters,
+.cand-page .cand-bar .cand-bar__actions > .cand-btn,
+.cand-bar__more { height: 44px; min-height: 44px; border-radius: 12px; font-size: 14px; }
+.cand-page .cand-bar .cand-bar__search > input.cand-input--search { padding-left: 40px; }
+.cand-page .cand-bar .cand-bar__sort > select.cand-input { padding: 0 30px 0 12px; }
+.cand-page.cand-page--candidates .cand-bar__sort > .ta-icon { display: none; }
+.cand-page .cand-bar .cand-bar__actions > .cand-btn { padding: 0 12px; gap: 6px; font-weight: 500; }
+.cand-bar__active-chevron { color: #a7b2c5; }
+.cand-bar__active-icon { display: none; }
+.cand-more { position: relative; }
+.cand-bar__more {
+  display: inline-flex; align-items: center; justify-content: center; width: 48px; padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.04); color: #e2e8f0; cursor: pointer;
+}
+.cand-bar__more-icon { transform: rotate(90deg); }
+.cand-bar__more:hover,
+.cand-bar__more--open { background: rgba(255, 255, 255, 0.07); border-color: rgba(99, 102, 241, 0.6); }
+.cand-bar__more:focus-visible { outline: 2px solid rgba(129, 140, 248, 0.8); outline-offset: 2px; }
+.cand-more__menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 12px; background: #111827;
+  box-shadow: 0 14px 34px rgba(2, 6, 23, 0.55);
+}
+.cand-more__item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px;
+  border: 0; border-radius: 8px; background: transparent; color: #e2e8f0; font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.cand-more__item:hover,
+.cand-more__item:focus-visible { background: rgba(99, 102, 241, 0.16); outline: none; }
+.cand-page .cand-bar .cand-bar__summary { color: #a7b2c5; font-size: 13px; }
+
+/* Dates say what they are; resume says "No resume". */
+.cand-date-added { display: inline; }
+.cand-date-added__label { color: #a7b2c5; font-family: var(--font-sans, inherit); font-weight: 500; }
+.cand-resume-cell-react .cand-resume-status.cand-resume-status--none { display: inline-flex; align-items: center; gap: 5px; color: #a7b2c5; }
+
+@media (max-width: 599px) {
+  /* Header: compact, + Add beside the account button. */
+  .desktop-main:has(.cand-page--candidates) .business-header { min-height: 60px; height: auto; padding: 8px 16px; gap: 10px; }
+  .desktop-main:has(.cand-page--candidates) .business-header__eyebrow-more { display: none; }
+  .desktop-main:has(.cand-page--candidates) .business-menu-button { width: 44px; height: 44px; min-width: 44px; }
+  .desktop-main:has(.cand-page--candidates) .desktop-header__user { width: 44px; height: 44px; min-width: 44px; }
+  .cand-header-add.cand-btn { min-height: 44px; padding: 0 16px; }
+
+  /* 16px page padding, no second inset. */
+  .business-body:has(> .cand-page--candidates) { padding: 12px 16px 24px; }
+  .business-body > .cand-page.cand-page--candidates { padding: 0; }
+
+  .cand-page.cand-page--candidates > .cand-tabs { overflow-x: auto; scrollbar-width: none; }
+  .cand-page.cand-page--candidates > .cand-tabs::-webkit-scrollbar { display: none; }
+  .cand-page.cand-page--candidates > .cand-tabs > .cand-tabs__btn { padding: 0 6px; }
+
+  /* Search full width, then Filters · Sort · Active · More in one row. */
+  .cand-page.cand-page--candidates > .cand-bar.cand-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto 44px; justify-content: stretch; gap: 8px; margin: 0;
+  }
+  .cand-page .cand-bar .cand-bar__filters { padding: 0 12px; gap: 6px; }
+  .cand-page .cand-bar .cand-bar__actions > .cand-btn { padding: 0 10px; justify-content: center; }
+  .cand-bar__more { width: 44px; }
+
+  /* Cards. */
+  .cand-page.cand-page--candidates .cand-table tbody { gap: 12px !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "name stage"
+      "phone ref"
+      "tech tech"
+      "service added"
+      "interview resume"
+      "pay pay" !important;
+    gap: 0 12px !important;
+    padding: 14px !important;
+    border-radius: 14px !important;
+    align-items: center !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-name { grid-area: name !important; display: flex !important; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-name > .cand-name-meta { display: none !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-stage { align-self: start; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-phone {
+    display: block !important; grid-area: phone !important; padding: 4px 0 10px !important;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref {
+    display: block !important; grid-area: ref !important; justify-self: end; padding: 4px 0 10px !important;
+    color: #e2e8f0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-ref::before {
+    content: "Ref · " !important; display: inline !important; position: static !important; color: #a7b2c5;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-tech,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-service,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-added,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-interview,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-resume,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-pay {
+    padding: 10px 0 !important; border-top: 1px solid rgba(148, 163, 184, 0.14) !important; min-height: 44px;
+    display: flex !important; align-items: center;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-tech {
+    grid-area: tech !important; font-size: 14px; color: #e2e8f0;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-tech > .cand-tech-service { display: none !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-service { grid-area: service !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date { display: contents !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-added {
+    grid-area: added; justify-content: flex-end; font-size: 13px; color: #e2e8f0; white-space: nowrap; font-family: inherit;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-added > .cand-date-added__label::after { content: " ·"; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-added > .cand-date-added__value { margin-left: 4px; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-interview {
+    grid-area: interview; gap: 6px; font-size: 13px; color: #c7c8ff; white-space: nowrap; font-family: inherit; text-align: left; margin: 0 !important;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-date > .cand-date-interview > .cand-date-interview__label {
+    color: #e2e8f0; font-size: 14px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-resume {
+    grid-area: resume !important; justify-content: flex-end; align-self: stretch !important; font-size: 13px;
+  }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-resume::before { content: none !important; display: none !important; }
+  /* No interview: the resume line takes the whole row so its rule spans the card. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:not(:has(.cand-date-interview)) > td.cand-cell-resume { grid-column: 1 / -1 !important; justify-content: flex-start; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row > td.cand-cell-pay { grid-area: pay !important; padding-bottom: 0 !important; min-height: 0; }
+  .cand-page.cand-page--candidates .cand-table .cand-pay { width: 100%; gap: 8px !important; }
+  .cand-page.cand-page--candidates .cand-table .cand-pay-amount { font-size: 18px; font-weight: 700; }
+  .cand-page.cand-page--candidates .cand-table .cand-pay-proofs {
+    margin-left: auto; padding: 2px 0 2px 12px; border: 0; border-left: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 0; background: transparent; font-size: 13px;
+  }
+  .cand-page.cand-page--candidates .cand-table .cand-pay-proofs-state { text-transform: capitalize; }
+  .cand-page.cand-page--candidates .cand-table .cand-name { font-size: 16px; font-weight: 700; color: #f8fafc; }
+
+  /* Taps tint the card, never each cell (the grey blocks on Nishanth's card,
+     25 Nov): iOS keeps :hover after a tap, and the shared row-edit rule shaded
+     every cell on its own. Text selection and the focus ring are untouched. */
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:hover > td,
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:active > td { box-shadow: none !important; }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:active { background: rgba(99, 102, 241, 0.08); }
+  .cand-page.cand-page--candidates .cand-table tbody tr.cand-row:focus-visible { outline: 2px solid rgba(129, 140, 248, 0.85); outline-offset: 2px; }
+}
+@media (max-width: 359px) {
+  .cand-page.cand-page--candidates > .cand-bar.cand-bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
+  .cand-page.cand-page--candidates > .cand-bar .cand-bar__sort { grid-column: 2 / -1; }
+}
+
 /* ── Edit Candidate modal: proof cards, footer and scroll ──────────────────────
    Three faults, all from rules written for the old 120px thumbnail layout that
    outranked the later card rules:

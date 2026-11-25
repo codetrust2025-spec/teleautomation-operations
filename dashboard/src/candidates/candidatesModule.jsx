@@ -17,6 +17,7 @@ import { consumePendingWorkOpenIntent } from "../dailyOps/PendingWorksProvider.j
 import { PendingWorksTab } from "./PendingWorksTab.jsx";
 import { Icon } from "../components/ui/Icon.jsx";
 import { CandidatesFilterBar, sortCandidates } from "./CandidatesFilterBar.jsx";
+import { CandidatesMoreMenu, HeaderAction } from "./CandidatesMoreMenu.jsx";
 import { useRowEdit, ROW_EDIT_CLASS } from "../utils/rowEdit.js";
 import PayoutModal from "./PayoutModal.jsx";
 import "./PayoutModal.css";
@@ -2027,7 +2028,10 @@ export function ResumeSummary({ candidate }) {
           Saved
         </span>
       ) : (
-        <span className="cand-resume-status cand-resume-status--none">None</span>
+        <span className="cand-resume-status cand-resume-status--none">
+          <Icon name="file" size={13} />
+          No resume
+        </span>
       )}
     </span>
   );
@@ -6221,6 +6225,27 @@ export function deleteRowMessage(row) {
 /** "L2 · 17 Sept" for a row that holds an interview (year added outside this
  *  year); "" for a row that does not. Two rows of one name -- an L1 and an L2,
  *  logged the same day -- read as duplicates without it (12 Oct). */
+/** The row's own date, named for what it is (owner, 25 Nov): "Added" -- the
+ *  day the lead was first logged (logged_date, else created_at) -- or, for an
+ *  old row with neither, the booking's "Date". */
+export function recordDateOf(row) {
+  const added = row?.logged_date || row?.created_at;
+  if (added) return { label: "Added", value: added, title: "Added: the day this candidate was first logged" };
+  if (row?.date) return { label: "Date", value: row.date, title: "Booking date" };
+  return null;
+}
+
+function CandidateRecordDate({ row }) {
+  const info = recordDateOf(row);
+  if (!info) return <span className="cand-date-added">—</span>;
+  return (
+    <span className="cand-date-added" title={info.title}>
+      <span className="cand-date-added__label">{info.label}</span>{" "}
+      <span className="cand-date-added__value">{pR(info.value)}</span>
+    </span>
+  );
+}
+
 export function interviewLabel(row, long = false) {
   const day = String(row?.date || "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
@@ -6967,36 +6992,43 @@ function CandidatesPanelImpl() {
           title="View all in-progress candidates grouped by technology"
           aria-label="Active list"
         >
-          <Icon name="list" size={14} /> <span className="cand-bar__long">Active list</span><span className="cand-bar__short" aria-hidden="true">Active</span>
+          <Icon name="list" size={14} className="cand-bar__active-icon" />
+          <span className="cand-bar__active-label">Active</span>
+          <Icon name="chevron-down" size={14} className="cand-bar__active-chevron" />
         </button>
-        <button
-          type="button"
-          className="cand-btn cand-btn--ghost cand-btn--sm"
-          onClick={() => triggerRosterDownload({ month: "all", reference: T })}
-          title="Download CSV of all active (in-progress) candidates"
-          aria-label="Download active CSV"
-        >
-          <Icon name="download" size={14} /> <span className="cand-bar__long">Download active CSV</span><span className="cand-bar__short" aria-hidden="true">CSV</span>
-        </button>
-        {a && (
+        {/* CSV and Expenses live in More (owner's mockup, 25 Nov). */}
+        <CandidatesMoreMenu
+          items={[
+            {
+              key: "csv",
+              icon: "download",
+              label: "Download active CSV",
+              ariaLabel: "Download active CSV",
+              title: "Download CSV of all active (in-progress) candidates",
+              onSelect: () => triggerRosterDownload({ month: "all", reference: T }),
+            },
+            a && {
+              key: "expenses",
+              icon: "chart",
+              label: "Total expenditure",
+              ariaLabel: "Total expenditure",
+              title: "View total company expenditure — handler payouts + operational costs",
+              onSelect: () => setShowExpenditure(true),
+            },
+          ]}
+        />
+        {/* + Add sits in the shell header beside the account button. */}
+        <HeaderAction>
           <button
             type="button"
-            className="cand-btn cand-btn--ghost cand-btn--sm"
-            onClick={() => setShowExpenditure(true)}
-            title="View total company expenditure — handler payouts + operational costs"
-            aria-label="Total expenditure"
+            className="cand-btn cand-btn--primary cand-btn--sm cand-header-add"
+            onClick={q}
+            aria-label="Add candidate"
           >
-            <Icon name="chart" size={14} /> <span className="cand-bar__long">Total expenditure</span><span className="cand-bar__short" aria-hidden="true">Expenses</span>
+            <Icon name="plus" size={16} strokeWidth={2.2} />
+            <span>Add</span>
           </button>
-        )}
-        <button
-          type="button"
-          className="cand-btn cand-btn--primary cand-btn--sm"
-          onClick={q}
-          aria-label="Add candidate"
-        >
-          + <span className="cand-bar__long">Add candidate</span><span className="cand-bar__short" aria-hidden="true">Add</span>
-        </button>
+        </HeaderAction>
       </CandidatesFilterBar>
       {candTab === "overview" && c && (
         <>
@@ -7068,7 +7100,7 @@ function CandidatesPanelImpl() {
                 <th className="cand-th--tech">Technology</th>
                 <th className="cand-th--stage">Stage</th>
                 <th className="cand-th--pay">Payment</th>
-                <th className="cand-th--date">Date</th>
+                <th className="cand-th--date">Dates</th>
                 <th className="cand-th--phone">Phone</th>
                 {a && <th className="cand-th--ref">Reference</th>}
                 <th className="cand-th--resume">Resume</th>
@@ -7166,7 +7198,7 @@ function CandidatesPanelImpl() {
                           <_Component27 row={ge} />
                         </td>
                         <td className="cand-cell-mono cand-cell-date">
-                          {pR(ge.logged_date || ge.created_at || ge.date)}
+                          <CandidateRecordDate row={ge} />
                           {interviewLabel(ge) && (
                             <span className="cand-date-interview" title={`Interview ${interviewLabel(ge, true)}`}>
                               <span className="cand-date-interview__label">Interview</span>{" "}

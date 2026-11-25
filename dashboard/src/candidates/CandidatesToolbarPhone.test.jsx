@@ -60,16 +60,25 @@ async function renderToolbar() {
   return document.querySelector(".cand-page--candidates > .cand-bar");
 }
 const actions = (toolbar) => [...toolbar.querySelectorAll(".cand-bar__actions > button.cand-btn")].map((b) => b.getAttribute("aria-label"));
+/** What the ••• More menu offers (owner's mockup, 25 Nov: CSV and Expenses live there). */
+const moreItems = (toolbar) => {
+  fireEvent.click(within(toolbar).getByRole("button", { name: "More actions" }));
+  const items = within(screen.getByRole("menu", { name: "More actions" })).getAllByRole("menuitem").map((b) => b.getAttribute("aria-label"));
+  fireEvent.keyDown(document, { key: "Escape" });
+  return items;
+};
 const names = () => [...document.querySelectorAll(".cand-table tbody tr[data-cid]")].map((tr) => tr.querySelector(".cand-name").textContent);
 const lastList = () => new URL(calls.filter((u) => /\/candidates\?/.test(u)).at(-1), "http://x").searchParams;
 
 describe("what the toolbar holds", () => {
-  it("gives an admin three controls and four actions; every filter is in the popup", async () => {
+  it("gives an admin three controls, Active, More (CSV, Expenses) and Add; every filter is in the popup", async () => {
     const toolbar = await renderToolbar();
     const controls = [...toolbar.querySelectorAll(".cand-bar__controls > *")];
     expect(controls.map((el) => el.className.split(" ")[0])).toEqual(["cand-bar__search", "cand-bar__filters", "cand-bar__sort"]);
     expect(toolbar.querySelectorAll("select")).toHaveLength(1);
-    expect(actions(toolbar)).toEqual(["Active list", "Download active CSV", "Total expenditure", "Add candidate"]);
+    // Outside the app shell there is no header slot, so Add stays on the toolbar.
+    expect(actions(toolbar)).toEqual(["Active list", "Add candidate"]);
+    expect(moreItems(toolbar)).toEqual(["Download active CSV", "Total expenditure"]);
     fireEvent.click(within(toolbar).getByRole("button", { name: "Filters" }));
     const popup = screen.getByRole("dialog", { name: "Filters" });
     expect([...popup.querySelectorAll("select")].map((s) => s.getAttribute("aria-label"))).toEqual(
@@ -81,10 +90,11 @@ describe("what the toolbar holds", () => {
     captureLayout("candidates-toolbar-admin");
   });
 
-  it("gives a handler three actions and no referrer filter (they are held to their own)", async () => {
+  it("gives a handler Active, More (CSV only) and Add, and no referrer filter (they are held to their own)", async () => {
     auth.current = { role: "handler", reference: "Karthik", enabled: true };
     const toolbar = await renderToolbar();
-    expect(actions(toolbar)).toEqual(["Active list", "Download active CSV", "Add candidate"]);
+    expect(actions(toolbar)).toEqual(["Active list", "Add candidate"]);
+    expect(moreItems(toolbar)).toEqual(["Download active CSV"]);
     fireEvent.click(within(toolbar).getByRole("button", { name: "Filters" }));
     expect(screen.getByRole("dialog", { name: "Filters" }).querySelectorAll("select")).toHaveLength(3);
     // Reset keeps the handler's own referrer.

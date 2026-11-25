@@ -30,9 +30,9 @@ describe("the table's Resume cell", () => {
     expect(within(container).queryByRole("link")).toBeNull();
   });
 
-  it("says None when no file is stored, even when records of lost files remain", () => {
+  it("says No resume when no file is stored, even when records of lost files remain", () => {
     const { container } = render(<ResumeSummary candidate={{ ...CANDIDATE, resume_count: 0, active_resume: null }} />);
-    expect(container.textContent).toBe("None");
+    expect(container.textContent).toBe("No resume");
     expect(within(container).queryByRole("button")).toBeNull();
   });
 });

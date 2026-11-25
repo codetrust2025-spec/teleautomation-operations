@@ -300,7 +300,7 @@ function OperationsShell({ view, onNavigate }) {
             ☰
           </button>
           <div className="business-header__title-wrap">
-            <p className="business-header__eyebrow">{parentOf(view)?.label || 'Operations workspace'}</p>
+            <p className="business-header__eyebrow">{parentOf(view)?.label || <>Operations<span className="business-header__eyebrow-more"> workspace</span></>}</p>
             <h1 className="business-header__title">{activeView.label}</h1>
           </div>
           {/* The Selection / Interview pages carry their live state beside the title. */}
@@ -309,6 +309,8 @@ function OperationsShell({ view, onNavigate }) {
             <span className="desktop-header__status-pulse" aria-hidden />
             <span className="desktop-header__status-text">Operations service connected</span>
           </div>
+          {/* A page's own header action (Candidates: + Add) is portalled in here. */}
+          <div id="page-header-actions" className="business-header__page-actions" />
           <div className="desktop-header__actions business-header__user-wrap" ref={headerUserMenuRef}>
             <button
               type="button"

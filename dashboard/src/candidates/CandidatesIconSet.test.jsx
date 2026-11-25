@@ -8,7 +8,7 @@ import React from "react";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ICON_NAMES } from "../components/ui/Icon.jsx";
 
@@ -45,10 +45,14 @@ describe("the Candidates page", () => {
     render(<CandidatesPanel />);
     await screen.findByText("Asha Rao");
     const toolbar = document.querySelector(".cand-bar");
-    for (const [label, icon] of [["Active list", "list"], ["Download active CSV", "download"], ["Total expenditure", "chart"]]) {
-      const button = within(toolbar).getByText(label, { exact: false }).closest("button");
-      expect(button.querySelector(`svg.ta-icon--${icon}`)).not.toBeNull();
+    expect(within(toolbar).getByRole("button", { name: "Active list" }).querySelector("svg.ta-icon--list")).not.toBeNull();
+    // CSV and Expenses are in the ••• More menu (25 Nov).
+    fireEvent.click(within(toolbar).getByRole("button", { name: "More actions" }));
+    for (const [label, icon] of [["Download active CSV", "download"], ["Total expenditure", "chart"]]) {
+      const item = screen.getByRole("menuitem", { name: label });
+      expect(item.querySelector(`svg.ta-icon--${icon}`)).not.toBeNull();
     }
+    fireEvent.keyDown(document, { key: "Escape" });
     const row = document.querySelector('tr[data-cid="r1"]');
     // The row itself opens Edit (Daily Ops design): no pencil / trash buttons.
     expect(row.querySelector("svg.ta-icon--pencil, svg.ta-icon--trash")).toBeNull();

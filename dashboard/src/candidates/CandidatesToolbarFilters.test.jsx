@@ -138,7 +138,7 @@ describe("Candidates toolbar — surviving filters", () => {
     expect(
       popup.querySelector('input[type="checkbox"]'),
     ).not.toBeNull();
-    expect(screen.getByText(/Active list/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Active list" })).toBeTruthy();
     // service + month + stage + reference, and nothing extra
     expect(popup.querySelectorAll("select.cand-input")).toHaveLength(4);
   });
