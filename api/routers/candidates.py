@@ -552,6 +552,12 @@ async def candidates_interview_attendance(cid: str, request: Request, body: dict
             "code": "round_missing",
             "message": ROUND_MISSING_MESSAGE,
         }
+    # Profile-wise L2 / HR / Final: Attended needs at least one Gmail of this
+    # candidate with Monitoring Active in AI Mail Review (owner, 26 Nov).
+    from features.attendance_gmail_gate import attended_block
+    blocked = await asyncio.to_thread(attended_block, existing, cid, status=requested_status)
+    if blocked:
+        return blocked
     try:
         row = candidate_store.set_interview_attendance(
             cid,
@@ -569,6 +575,22 @@ async def candidates_interview_attendance(cid: str, request: Request, body: dict
     if not row:
         return {"status": "error", "message": "Candidate not found"}
     return {"status": "ok", "candidate": row}
+@router.get("/candidates/{cid}/attended-gmail")
+async def candidates_attended_gmail(cid: str, request: Request):
+    """Whether Attended needs a monitored Gmail here, and whether one exists. Read-only."""
+    from core.dashboard_access import assert_candidate_row_access
+    from features import candidate_store
+    from features.attendance_gmail_gate import gmail_monitoring_summary
+
+    existing = candidate_store.get_candidate(cid)
+    if not existing:
+        return {"status": "error", "message": "Candidate not found"}
+    assert_candidate_row_access(request, existing)
+    try:
+        summary = await asyncio.to_thread(gmail_monitoring_summary, existing, cid)
+    except Exception:
+        return {"status": "error", "message": "Gmail monitoring could not be checked right now."}
+    return {"status": "ok", **summary}
 @router.patch("/candidates/{cid}/interview-attendee")
 async def candidates_interview_attendee(cid: str, request: Request, body: dict):
     """Change the assigned interview attendee without changing attendance."""
