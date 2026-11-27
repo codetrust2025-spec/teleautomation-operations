@@ -2,6 +2,8 @@
 /* Card icons (24 Nov iPhone mockup) exist for the phone cards only; the phone
    block at the end of the sheet shows them. */
 .ops-card-icon { display: none; }
+.ops-mobile-avatar, .ops-mobile-attendance { display: none; }
+.ops-interview-details, .ops-interview-name, .ops-interview-contact { display: contents; }
 
 /* WhatsApp beside the candidate's number on every booking (24 Nov): WhatsApp
    green on the page's dark surface; a 32px target on a phone. */
@@ -3518,13 +3520,11 @@ tr.row-edit :is(button,a){cursor:pointer}
 
 /* Mobile roster refinement: retain all status filters and existing actions.
    Desktop table layout remains unchanged. */
-.ops-mobile-avatar, .ops-mobile-attendance { display: none; }
-.ops-interview-identity-body, .ops-interview-name, .ops-interview-contact { display: contents; }
 
 @media (max-width: 767px) {
   .daily-ops-page--dashboard { min-width: 0; max-width: 100%; padding-inline: 0; gap: 12px; }
   .daily-ops-page--dashboard .ops-topbar__kpis {
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: grid; grid-template-columns: repeat(4, minmax(56px, 1fr));
     width: 100%; min-width: 0; max-width: 100%; overflow: visible;
     gap: 6px; scroll-snap-type: none; padding: 0;
   }
@@ -3532,7 +3532,7 @@ tr.row-edit :is(button,a){cursor:pointer}
     width: 100%; min-width: 0; height: auto; min-height: 48px;
     flex-direction: column; gap: 3px; padding: 6px 2px;
   }
-  .daily-ops-page--dashboard .ops-dash-kpi__label { white-space: normal; overflow-wrap: anywhere; text-align: center; line-height: 1.2; }
+  .daily-ops-page--dashboard .ops-topbar__kpis .ops-dash-kpi__label { white-space: normal; overflow-wrap: anywhere; text-align: center; line-height: 1.2; }
   .daily-ops-page--dashboard .ops-roster-search input::placeholder { color: #94a3b8; opacity: 1; }
   .daily-ops-page--dashboard .ops-roster-controls .ops-roster-controls__filters {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
@@ -3551,7 +3551,7 @@ tr.row-edit :is(button,a){cursor:pointer}
   }
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: "date time" "cand cand" "comp tech" "attd round" "shot shot" "attn attn" "feed feed";
+    grid-template-areas: "date time" "cand cand" "comp tech" "attd round" "shot shot" "attn attn";
     gap: 8px 12px; margin-inline: 0; padding: 12px; min-width: 0;
     background: #111827; border: 1px solid #293548;
   }
@@ -3567,7 +3567,7 @@ tr.row-edit :is(button,a){cursor:pointer}
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Candidate"] { border-block: 1px solid #293548; padding: 8px 0; gap: 6px; }
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-interview-identity { display: flex; flex: 1 1 100%; align-items: center; flex-wrap: nowrap; gap: 10px; }
   .ops-mobile-avatar { display: grid; place-items: center; flex: 0 0 40px; height: 40px; border-radius: 50%; background: #334b91; color: #fff; font-size: 14px; font-weight: 700; }
-  .daily-ops-page--dashboard .ops-interview-identity-body { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+  .daily-ops-page--dashboard .ops-interview-details { display: flex; flex: 1; flex-direction: column; min-width: 0; }
   .daily-ops-page--dashboard .ops-interview-name, .daily-ops-page--dashboard .ops-interview-contact { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
   .daily-ops-page--dashboard .ops-interview-name strong { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards td[data-label="Candidate"] .ops-whatsapp { width: 44px; height: 44px; }
@@ -3579,8 +3579,9 @@ tr.row-edit :is(button,a){cursor:pointer}
     display: block; grid-column: 2; content: attr(data-label); color: #94a3b8; font-size: 11px; line-height: 1.2; min-width: 0;
   }
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td:is([data-label="Company"],[data-label="Technology"],[data-label="Attendee"],[data-label="Round"]) .ops-card-icon { grid-column: 1; grid-row: 2; margin: 0; }
-  .daily-ops-page--dashboard .ops-card-value, .daily-ops-page--dashboard .ops-interview-company__name { grid-column: 2; min-width: 0; white-space: normal; overflow-wrap: anywhere; overflow: visible; }
+   .daily-ops-page--dashboard .ops-card-value, .daily-ops-page--dashboard .ops-interview-company__name, .daily-ops-page--dashboard .ops-interview-company__none { grid-column: 2; grid-row: 2; min-width: 0; white-space: normal; overflow-wrap: anywhere; overflow: visible; }
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Screenshot"] { justify-content: flex-start; }
+  .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row:has(.ops-status-badge) { grid-template-areas: "date time" "cand cand" "comp tech" "attd round" "shot shot" "attn attn" "feed feed"; }
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards .ops-slot-shot-cell .ops-slot-shot-thumb { width: 110px; height: 64px; }
   .daily-ops-page--dashboard .ops-slot-shot-thumb span { font-size: 12px; padding: 4px; }
   .daily-ops-page--dashboard .ops-dash-table-wrap.ta-table-responsive--cards .ops-interview-row > td[data-label="Attendance"] {
@@ -3590,8 +3591,9 @@ tr.row-edit :is(button,a){cursor:pointer}
     display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 10px;
     border: 1px solid #21765d; border-radius: 8px; color: #6ee7b7; background: #10302a; font: inherit; cursor: pointer;
   }
+  .daily-ops-page--dashboard .ops-interview-status-cell button.ops-status-badge { min-height: 44px; }
   .daily-ops-page--dashboard .ops-mobile-attendance:focus-visible, .daily-ops-page--dashboard .ops-whatsapp:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
 }
 @media (max-width: 360px) {
-  .daily-ops-page--dashboard .ops-topbar__kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .daily-ops-page--dashboard .ops-topbar__kpis { grid-template-columns: repeat(3, minmax(56px, 1fr)); }
 }

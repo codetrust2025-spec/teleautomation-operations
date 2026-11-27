@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { shouldActivateRow, isRowActivationKey } from '../utils/rowEdit'
+import { PHONE_QUERY, useMediaQuery } from '../utils/useMediaQuery.js'
 import { createPortal } from 'react-dom'
 import { API } from '../config.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -378,6 +379,7 @@ export function InterviewRoster({
   const canEditAttendee = !enabled || role === 'admin'
   const handlerView = role === 'handler' && !!reference?.trim()
   const isDashboard = variant === 'dashboard'
+  const phone = useMediaQuery(PHONE_QUERY)
   const hasRange = isDashboard && dashboardFromDate && dashboardToDate
   const isSingleDayRange = hasRange && dashboardFromDate === dashboardToDate
 
@@ -896,8 +898,8 @@ export function InterviewRoster({
                         squeezed onto their line. `display:contents` keeps this
                         wrapper out of the desktop's layout entirely. */}
                     <span className="ops-interview-identity">
-                      {isDashboard && <span className="ops-mobile-avatar" aria-hidden="true">{String(row.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase() || '—'}</span>}
-                      <span className="ops-interview-identity-body">
+                      {isDashboard && phone && <span className="ops-mobile-avatar" aria-hidden="true">{String(row.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase() || '—'}</span>}
+                      <span className="ops-interview-details">
                         <span className="ops-interview-name">
                           <strong title={row.name}>{row.name}</strong>
                           <CandidateSelectedBadge row={row} />
@@ -975,7 +977,7 @@ export function InterviewRoster({
                         {/* Read-only here (12 Oct): the outcome is changed in the
                             row's Edit dialog, with the note it needs. */}
                         <span className={`ops-attendance-status ops-attendance-status--${statusTone(status)}`} aria-label={`Attendance: ${statusLabel(status)}`}>{statusLabel(status)}</span>
-                        {isDashboard && canManage && (
+                        {isDashboard && phone && canManage && (
                           <button type="button" className="ops-mobile-attendance" aria-label={`Edit attendance for ${row.name}`} onClick={event => { event.stopPropagation(); openRowEdit(row) }}>
                             <Icon name="clipboard" size={15} /> Attendance
                           </button>

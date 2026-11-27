@@ -130,7 +130,7 @@ describe('and leaves tablet and phone alone', () => {
     }
   })
 
-  it('keeps the 56px card floor the phone strip lays out on', () => {
+  it('keeps a 56px floor for narrow screens, including the new phone grid', () => {
     const phone = ALL.find(
       r =>
         r.selector.includes('.ops-topbar__kpis .ops-dash-kpi') &&
@@ -144,11 +144,15 @@ describe('and leaves tablet and phone alone', () => {
       r =>
         r.selector.includes('.ops-topbar__kpis .ops-dash-kpi') &&
         !isDesktopOnly(r.media) &&
-        // max-content (24 Nov iPhone mockup) only ever widens a card to its
-        // label, so it cannot squash the strip below the floor.
+        // The phone-only grid supplies its own 56px track floor. Elsewhere,
+        // removing the card floor would still collapse the tablet strip.
+        !(appliesOnlyBelow(r.media, 767) && r.selector === '.daily-ops-page--dashboard .ops-topbar__kpis .ops-dash-kpi') &&
         /min-width\s*:(?!\s*max-content)/.test(r.body),
     )
     expect(later).toHaveLength(0)
+    const grids = ALL.filter(r => r.selector === '.daily-ops-page--dashboard .ops-topbar__kpis' && appliesOnlyBelow(r.media, 767))
+    expect(grids).toHaveLength(2)
+    for (const grid of grids) expect(grid.body).toMatch(/minmax\(56px,\s*1fr\)/)
   })
 
   it('leaves the card hidden on a phone rather than crushed to a sliver', () => {

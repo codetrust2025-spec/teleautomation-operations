@@ -181,34 +181,30 @@ describe('the card labels say what the control does', () => {
 })
 
 
-describe('the counters scroll instead of colliding', () => {
-  it('gives the strip a sideways scroll on a phone', () => {
-    const scrolls = declaring('.ops-topbar__kpis', 'overflow-x')
-    expect(scrolls.length, 'eight counters cannot share 440px without one').toBeGreaterThan(0)
-    for (const rule of scrolls) {
-      expect(rule.body).toMatch(/overflow-x\s*:\s*auto/)
-      expect(phoneOnly(rule.media), `${rule.media} reaches a desktop`).toBe(true)
+describe('all status counters wrap without horizontal scrolling on a phone', () => {
+  it('uses a responsive grid with a 56px track floor and readable wrapping labels', () => {
+    const grid = ALL.filter(r => r.selector === '.daily-ops-page--dashboard .ops-topbar__kpis' && phoneOnly(r.media))
+    expect(grid).toHaveLength(2)
+    expect(grid[0].body).toMatch(/display\s*:\s*grid/)
+    expect(grid[0].body).toContain('repeat(4, minmax(56px, 1fr))')
+    expect(grid[0].body).toMatch(/overflow\s*:\s*visible/)
+    expect(grid[1].body).toContain('repeat(3, minmax(56px, 1fr))')
+    expect(grid[1].media).toContain('360px')
+    const chip = ALL.find(r => r.selector === '.daily-ops-page--dashboard .ops-topbar__kpis .ops-dash-kpi')
+    expect(phoneOnly(chip.media)).toBe(true)
+    expect(chip.body).toMatch(/min-width\s*:\s*0/)
+    expect(chip.body).toMatch(/min-height\s*:\s*48px/)
+    const label = ALL.find(r => r.selector === '.daily-ops-page--dashboard .ops-topbar__kpis .ops-dash-kpi__label')
+    expect(label.body).toMatch(/white-space\s*:\s*normal/)
+  })
+
+  it('keeps all nine status filters available with accessible labels', async () => {
+    await renderPanel()
+    for (const name of ['Scheduled', 'Pending', 'Attended', 'Not attended', 'Technical issue', 'Cancelled', 'Rescheduled', 'Awaiting new slot', 'Re-Service']) {
+      const button = screen.getByRole('button', { name: new RegExp('^' + name + '\\s', 'i') })
+      expect(button).toBeInTheDocument()
+      expect(button).toHaveAttribute('aria-pressed')
     }
-  })
-
-  it('stops the cards being squeezed, without touching the 56px floor', () => {
-    const chip = ALL.filter(r => r.selector.includes('.ops-topbar__kpis .ops-dash-kpi') && phoneOnly(r.media))
-    const held = chip.find(r => /flex\s*:\s*0\s+0\s+auto/.test(r.body))
-    expect(held, 'the cards have to keep their width for a scroll to mean anything').toBeTruthy()
-    // That floor belongs to the 900px block; a later min-width here would
-    // outrank it at every width below 900 and squash the strip again.
-    // max-content (24 Nov mockup) only widens a card to its label.
-    for (const rule of chip) expect(rule.body).not.toMatch(/min-width\s*:(?!\s*max-content)/)
-  })
-
-  it('keeps a thumb-sized target', () => {
-    const tall = ALL.filter(
-      r => phoneOnly(r.media) && /min-height\s*:\s*44px/.test(r.body),
-    ).map(r => r.selector)
-    expect(tall).toEqual(expect.arrayContaining([
-      expect.stringContaining('.ops-topbar__kpis .ops-dash-kpi'),
-      expect.stringContaining('.ops-attendance-select'),
-    ]))
   })
 })
 
@@ -313,12 +309,13 @@ describe('the card is not a page in itself', () => {
     // full screenshot, and the row menu keeps its 44px target.
     expect(screen.getByTitle('View booking screenshot for Asha Rao')).toBeInTheDocument()
     // The last phone-scoped rule wins: an earlier 700px block sizes it 86x50.
-    const thumb = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-slot-shot-thumb')).at(-1)
-    // 24 Nov mockup: beside the details, the height of two of their lines.
-    expect(thumb.body).toMatch(/width\s*:\s*78px/)
-    expect(thumb.body).toMatch(/height\s*:\s*58px/)
-    const menu = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-row-menu__trigger'))
-    expect(menu.some(r => /min-height\s*:\s*44px/.test(r.body))).toBe(true)
+    const thumb = ALL.filter(r => phoneOnly(r.media) && r.selector.trim().endsWith('.ops-slot-shot-cell .ops-slot-shot-thumb')).at(-1)
+    expect(thumb.body).toMatch(/width\s*:\s*110px/)
+    expect(thumb.body).toMatch(/height\s*:\s*64px/)
+    fireEvent.click(screen.getByTitle('View booking screenshot for Asha Rao'))
+    expect(screen.getByRole('dialog', { name: 'Booking screenshot for Asha Rao' })).toBeInTheDocument()
+    const action = ALL.find(r => phoneOnly(r.media) && r.selector === '.daily-ops-page--dashboard .ops-mobile-attendance')
+    expect(action.body).toMatch(/min-height\s*:\s*44px/)
   })
 
   it('shows the whole note on a tap of the badge, never shortened', async () => {
@@ -338,14 +335,24 @@ describe('the card is not a page in itself', () => {
 })
 
 describe('the candidate line', () => {
-  it('groups the name with the number', () => {
-    // One box to lay out, so a phone can keep them together and wrap the
-    // booking source underneath instead of squeezing three things onto a line.
-    // One table renders it now that Awaiting outcome is gone.
-    expect((ROSTER.match(/ops-interview-identity/g) || []).length).toBe(1)
-    const identity = ROSTER.indexOf('ops-interview-identity')
-    expect(ROSTER.slice(identity, identity + 260)).toMatch(/<strong(?: title=\{row\.name\})?>\{row\.name\}<\/strong>/)
-    expect(ROSTER.slice(identity, identity + 260)).toMatch(/ops-interview-phone/)
+  it('groups the name and number into separately wrapping lines', () => {
+    expect((ROSTER.match(/className="ops-interview-identity"/g) || []).length).toBe(1)
+    expect(ROSTER).toContain('className="ops-interview-name"')
+    expect(ROSTER).toContain('className="ops-interview-contact"')
+  })
+
+  it('opens the existing edit dialog from the phone-only attendance action', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(query => ({
+      matches: query.includes('max-width: 767px'), media: query,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })))
+    await renderPanel()
+    const action = await screen.findByRole('button', { name: 'Edit attendance for Asha Rao' })
+    expect(cell('Attendance').querySelector('.ops-attendance-status').textContent).toBe('Pending')
+    expect(cell('Attendance').querySelector('select')).toBeNull()
+    expect(document.querySelector('.ops-mobile-avatar').textContent).toBe('AR')
+    fireEvent.click(action)
+    expect(screen.getByText('Edit interview slot')).toBeInTheDocument()
   })
 
   it('renders that group around the name and phone', async () => {
@@ -380,13 +387,12 @@ describe('on an iPhone (390-430px)', () => {
     r => phoneOnly(r.media) && r.selector.split(',').some(s => s.trim() === `${CARD} > td[data-label="${label}"]`),
   ).at(-1)
 
-  it('lays the card out as the 24 Nov mockup grid', () => {
-    const grids = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === CARD)
-    expect(grids.some(r => /display\s*:\s*grid/.test(r.body))).toBe(true)
-    const grid = grids.at(-1)
-    // Details in two columns and the screenshot in a fixed third.
-    expect(grid.body).toMatch(/grid-template-columns\s*:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1\.2fr\)\s+80px/)
-    expect(grid.body.replace(/\s+/g, ' ')).toContain('grid-template-areas: "date time time" "cand cand cand" "comp tech shot" "attd round shot" "attn feed feed"')
+  it('lays the card out in two shrinkable detail columns', () => {
+    const grid = ALL.find(r => phoneOnly(r.media) && r.selector.trim() === '.daily-ops-page--dashboard ' + CARD)
+    expect(grid.body).toContain('repeat(2, minmax(0, 1fr))')
+    expect(grid.body).toContain('grid-template-areas: "date time" "cand cand" "comp tech" "attd round" "shot shot" "attn attn"')
+    const note = ALL.find(r => r.selector === '.daily-ops-page--dashboard ' + CARD + ':has(.ops-status-badge)')
+    expect(note.body).toContain('"feed feed"')
   })
 
   it('puts every cell in its mockup place', () => {
@@ -404,9 +410,11 @@ describe('on an iPhone (390-430px)', () => {
     expect(empty.body).toMatch(/display\s*:\s*none/)
   })
 
-  it('names every value with an icon instead of a caption (24 Nov mockup)', () => {
+  it('names detail values with aligned icons and captions', () => {
     const hidesAll = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === `${CARD} > td::before`).at(-1)
     expect(hidesAll.body).toMatch(/display\s*:\s*none/)
+    const captions = ALL.find(r => phoneOnly(r.media) && r.selector.startsWith('.daily-ops-page--dashboard ' + CARD) && r.selector.includes('[data-label="Company"]') && r.selector.endsWith('::before'))
+    expect(captions.body).toMatch(/content\s*:\s*attr\(data-label\)/)
     for (const label of ['Date', 'Company', 'Technology', 'Round', 'Attendee']) {
       const at = ROSTER.indexOf(`data-label="${label}"`)
       expect(ROSTER.slice(at, at + 200), `${label} has no icon`).toMatch(/<CardIcon name="[a-z-]+" \/>/)
@@ -429,29 +437,19 @@ describe('on an iPhone (390-430px)', () => {
     expect(desktop?.body).toMatch(/height\s*:\s*16px/)
   })
 
-  it('puts Refresh beside the search box as an icon button that keeps its name', async () => {
-    const order = selector => /(^|[;\s])order\s*:\s*(\d)/.exec(
-      ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === selector && /order\s*:/.test(r.body)).at(-1)?.body || '',
-    )?.[2]
-    expect(order('.ops-roster-controls__filters .ops-roster-search')).toBe('0')
-    expect(order('.ops-roster-controls__filters .ops-roster-controls__actions')).toBe('1')
-    expect(order('.ops-roster-controls__filters .ops-roster-control')).toBe('2')
-    const refresh = ALL.filter(r => phoneOnly(r.media) && r.selector.trim() === '.ops-roster-controls__actions .ops-roster-refresh').at(-1)
-    expect(refresh.body).toMatch(/width\s*:\s*44px/)
-    // 24 Nov mockup: 48px square buttons beside a 44px search box.
-    const square = ALL.filter(r => phoneOnly(r.media) && r.selector.includes('.ops-roster-controls .ops-roster-controls__actions .ops-roster-refresh') && /width\s*:/.test(r.body)).at(-1)
-    expect(square.body).toMatch(/width\s*:\s*48px/)
-    // With a filter set, Reset joins them; the search makes room rather than
-    // the buttons dropping to a row of their own. Since the iPhone layout (16
-    // Nov) the search grows from a 60% floor, which also keeps the date row
-    // from climbing up beside it.
-    const withClear = ALL.filter(r => phoneOnly(r.media) && r.selector.includes(':has(.ops-roster-clear) .ops-roster-search'))
-    // 24 Nov mockup: the search takes all but the two buttons, so the four
-    // filters share the next row.
-    expect(withClear.at(-1)?.body).toMatch(/flex\s*:\s*1 1 calc\(100% - 116px\)/)
-    // font-size:0 hides the word visually only; it still names the button.
+  it('puts search and both actions on one row and retains named controls', async () => {
+    const prefix = '.daily-ops-page--dashboard .ops-roster-controls .ops-roster-controls__filters'
+    const get = suffix => ALL.find(r => phoneOnly(r.media) && r.selector === prefix + suffix)?.body
+    expect(get('')).toContain('repeat(2, minmax(0, 1fr))')
+    expect(get(' .ops-roster-search')).toContain('grid-row: 1')
+    expect(get(' .ops-roster-controls__actions')).toContain('grid-row: 1')
+    expect(get(' .ops-roster-control--date')).toContain('grid-row: 2')
+    expect(get(' .ops-roster-today')).toContain('grid-row: 2')
+    expect(get(' .ops-profile-round-filter')).toContain('grid-row: 3')
+    expect(get(' .ops-filter-dropdown-wrap')).toContain('grid-row: 3')
     await renderPanel()
     expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reset all filters/ })).toBeInTheDocument()
   })
 
   it('drops the captions above the filters only because each field names itself', async () => {
