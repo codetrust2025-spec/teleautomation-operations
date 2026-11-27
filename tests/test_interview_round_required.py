@@ -119,7 +119,14 @@ def test_rows_with_a_round_record_statuses_as_before(role, status):
     assert "interview_round_history" not in row
 
 
-def test_an_admin_sets_the_round_in_the_edit_then_the_status_saves(role):
+def test_an_admin_sets_the_round_in_the_edit_then_the_status_saves(role, monkeypatch):
+    # Profile-wise L2 also needs a Gmail with Monitoring Active (26 Nov): this
+    # candidate has one, so only the round decides here.
+    from features import attendance_gmail_gate as gate
+    monkeypatch.setattr(gate, "_mailbox_rows", lambda: [{
+        "candidate_id": "c1", "canonical_candidate_id": "c1", "connection_status": "CONNECTED",
+        "monitoring_enabled": True, "last_error_message": "", "monitoring_excluded": False,
+    }])
     seed([booking("c1")])
     assert mark("c1", status="attended", remark="x", attendee="Bhavana", feedback="good")["code"] == "round_missing"
     out = edit_slot("c1", interview_round="L2")
