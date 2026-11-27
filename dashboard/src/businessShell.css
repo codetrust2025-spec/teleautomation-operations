@@ -364,3 +364,14 @@
   .business-header__status { display: none; }
   .desktop-body.business-body { min-height: calc(100dvh - 64px); padding: 14px 10px 24px; overflow: visible; }
 }
+
+/* Allow the mobile header title to shrink without pushing the account menu off screen. */
+@media (max-width: 767px) {
+  .business-header { min-width: 0; gap: 8px; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .business-header__title-wrap { min-width: 0; flex: 1 1 0; }
+  .business-header__eyebrow, .business-header__title { overflow-wrap: anywhere; white-space: normal; }
+  .business-header__user-wrap { flex: 0 0 auto; }
+  .business-header__page-actions:empty { display: none; }
+  .business-header .desktop-header__user { min-width: 44px; min-height: 44px; }
+  .business-header .business-menu-button { flex: 0 0 44px; min-width: 44px; min-height: 44px; }
+}
