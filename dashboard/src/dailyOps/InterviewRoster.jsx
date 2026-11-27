@@ -896,10 +896,17 @@ export function InterviewRoster({
                         squeezed onto their line. `display:contents` keeps this
                         wrapper out of the desktop's layout entirely. */}
                     <span className="ops-interview-identity">
-                      <strong title={row.name}>{row.name}</strong>
-                      <CandidateSelectedBadge row={row} />
-                      {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
-                      <WhatsAppLink row={row} status={status} />
+                      {isDashboard && <span className="ops-mobile-avatar" aria-hidden="true">{String(row.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase() || '—'}</span>}
+                      <span className="ops-interview-identity-body">
+                        <span className="ops-interview-name">
+                          <strong title={row.name}>{row.name}</strong>
+                          <CandidateSelectedBadge row={row} />
+                        </span>
+                        <span className="ops-interview-contact">
+                          {row.phone && <span className="ops-interview-phone">{row.phone}</span>}
+                          <WhatsAppLink row={row} status={status} />
+                        </span>
+                      </span>
                     </span>
                     {/* Every row said "Candidate booked" on a line of its own.
                         The source is still here, as a small chip that names it
@@ -959,15 +966,20 @@ export function InterviewRoster({
                           ? <span className="ops-interview-company__name" title={companyOf(row)}>{companyOf(row)}</span>
                           : <span className="ops-interview-company__none" title="No company recorded for this interview" aria-label="No company recorded">—</span>}
                       </td>
-                      <td data-label="Technology"><CardIcon name="layers" />{row.technology || '—'}</td>
-                      <td data-label="Round"><CardIcon name="layers" />{knownRound(row) || (row.booking_type === 'Assessment' ? 'Assessment' : isNonInterviewBooking(row) ? <NotAnInterview row={row} /> : <RoundNeedsReview row={row} />)}</td>
+                      <td data-label="Technology"><CardIcon name="layers" /><span className="ops-card-value">{row.technology || '—'}</span></td>
+                      <td data-label="Round"><CardIcon name="list" /><span className="ops-card-value">{knownRound(row) || (row.booking_type === 'Assessment' ? 'Assessment' : isNonInterviewBooking(row) ? <NotAnInterview row={row} /> : <RoundNeedsReview row={row} />)}</span></td>
                       {showAttendeeColumn && (
-                        <td data-label="Attendee"><CardIcon name="user" />{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</td>
+                        <td data-label="Attendee"><CardIcon name="user" /><span className="ops-card-value">{row.interview_attendee_resolved || row.interview_attendee || 'Bhavana'}</span></td>
                       )}
                       <td data-label="Attendance" className="ops-interview-attendance-cell">
                         {/* Read-only here (12 Oct): the outcome is changed in the
                             row's Edit dialog, with the note it needs. */}
                         <span className={`ops-attendance-status ops-attendance-status--${statusTone(status)}`} aria-label={`Attendance: ${statusLabel(status)}`}>{statusLabel(status)}</span>
+                        {isDashboard && canManage && (
+                          <button type="button" className="ops-mobile-attendance" aria-label={`Edit attendance for ${row.name}`} onClick={event => { event.stopPropagation(); openRowEdit(row) }}>
+                            <Icon name="clipboard" size={15} /> Attendance
+                          </button>
+                        )}
                       </td>
                       <td data-label="Screenshot" className="ops-slot-shot-cell">
                         {row.slot_screenshot_proof
